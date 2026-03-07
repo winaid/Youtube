@@ -66,7 +66,7 @@ export default function PromptGenerator() {
             />
           </div>
           <div className="min-w-0">
-            <ResultPanel result={result} status={status} error={error} />
+            <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} />
           </div>
         </div>
       ) : (
