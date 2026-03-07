@@ -33,7 +33,7 @@ async function fetchGeminiCuts(
   director: DirectorPersona,
   directorPersonaText: string,
   cutCount: number
-): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[] }> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
@@ -85,7 +85,8 @@ async function fetchGeminiCuts(
     return { characterSeeds, cuts };
   } catch (error) {
     console.error("Cuts API error, using fallback:", error);
-    return generateFallbackCuts(input, director, cutCount);
+    const fallback = generateFallbackCuts(input, director, cutCount);
+    return { ...fallback, usedFallback: true, fallbackReason: String(error) };
   }
 }
 
@@ -153,9 +154,10 @@ export async function generatePrompt(
     : director?.persona ?? "";
 
   // 2. 페르소나를 포함하여 장면 생성 (캐릭터 시드 + 감독 스타일 주입)
-  const { characterSeeds, cuts } = director
+  const cutsResult = director
     ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount)
-    : generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount);
+    : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount), usedFallback: true, fallbackReason: "감독 정보 없음" };
+  const { characterSeeds, cuts, usedFallback, fallbackReason } = cutsResult;
 
   const veoStyle =
     input.animationMode === "2D 애니"
@@ -194,5 +196,7 @@ export async function generatePrompt(
       "CUT 1은 Video Prompt로 생성, CUT 2부터는 이전 클립 + Extend Prompt로 연장",
     ],
     cuts,
+    usedFallback,
+    fallbackReason,
   };
 }

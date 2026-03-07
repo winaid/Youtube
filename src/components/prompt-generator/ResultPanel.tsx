@@ -373,6 +373,19 @@ export default function ResultPanel({
           <CardTitle className="text-lg" style={{ color: "#5a5ecc" }}>{result.projectTitle}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
+          {result.usedFallback && (
+            <div className="p-3 rounded-lg text-sm" style={{ background: "#ff634720", border: "1px solid #ff634760", color: "#ff6347" }}>
+              <strong>API 연결 실패 — 임시 프롬프트 사용 중</strong>
+              <p className="text-xs mt-1 opacity-80">
+                Gemini API 호출이 실패하여 기본 템플릿으로 장면이 생성되었습니다.
+                프롬프트가 모두 동일하게 보일 수 있습니다.
+                {result.fallbackReason && <span className="block mt-0.5">사유: {result.fallbackReason}</span>}
+              </p>
+              <p className="text-xs mt-1 opacity-80">
+                해결: GEMINI_API_KEY가 올바르게 설정되어 있는지, API 할당량이 남아있는지 확인하세요.
+              </p>
+            </div>
+          )}
           <p className="text-sm text-muted-foreground">
             {result.conceptSummary}
           </p>

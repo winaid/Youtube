@@ -82,6 +82,8 @@ export interface PromptOutput {
   characterSeeds: CharacterSeed[];
   continuityRules: string[];
   cuts: Cut[];
+  usedFallback?: boolean;
+  fallbackReason?: string;
 }
 
 // ===== 채팅 타입 =====
