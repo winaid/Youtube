@@ -177,14 +177,14 @@ export async function generatePrompt(
 
   // 캐릭터 시드 요약을 글로벌 스타일에 포함
   const charSeedSummary = characterSeeds.length > 0
-    ? characterSeeds.map(s => `[${s.label}: ${s.appearance}]`).join(" ")
+    ? characterSeeds.map(s => `[${s.id}: ${s.appearance}]`).join(" ")
     : "";
 
   return {
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
     conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 Google Veo 8초 x ${cuts.length}장면 = ${cuts.length * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
     totalCuts: cuts.length,
-    globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${directorStyle}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
+    globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
     directorPersonaPrompt: directorPersonaText,
     characterSeeds,
     continuityRules: [
