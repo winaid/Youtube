@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function StoryChat() {
-  const [personaId, setPersonaId] = useState(storyPersonas[0].id);
+  const [personaId] = useState(storyPersonas[0].id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -39,11 +39,6 @@ export default function StoryChat() {
     setInput(prompt);
   };
 
-  const handlePersonaChange = (id: string) => {
-    setPersonaId(id);
-    setMessages([]);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -62,32 +57,6 @@ export default function StoryChat() {
         </p>
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
-        {/* 페르소나 선택 */}
-        <div className="flex flex-wrap gap-1.5">
-          {storyPersonas.map((p) => (
-            <Badge
-              key={p.id}
-              className="cursor-pointer text-xs transition-all"
-              style={
-                personaId === p.id
-                  ? { background: "#787fff", color: "white" }
-                  : { background: "#787fff15", color: "#787fff", border: "1px solid #787fff40" }
-              }
-              onClick={() => handlePersonaChange(p.id)}
-            >
-              {p.name}
-            </Badge>
-          ))}
-        </div>
-
-        {/* 페르소나 설명 */}
-        <div className="rounded-lg p-2.5 text-xs" style={{ background: "linear-gradient(135deg, #fff78715, #787fff08)", border: "1px solid #fff78740" }}>
-          <p className="font-medium mb-1" style={{ color: "#7a7000" }}>{selectedPersona.name}</p>
-          <p className="italic text-muted-foreground leading-relaxed">
-            &ldquo;{selectedPersona.persona}&rdquo;
-          </p>
-        </div>
-
         {/* 채팅 영역 */}
         <div className="rounded-lg border p-3 space-y-3 max-h-80 overflow-y-auto min-h-[120px]" style={{ borderColor: "#787fff20", background: "#fafafa" }}>
           {messages.length === 0 && (
