@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import CutCard from "./CutCard";
 import VideoGenerationPanel from "./VideoGenerationPanel";
+import VideoSettingsPanel from "./VideoSettingsPanel";
 import TimelineEditor from "./TimelineEditor";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 
@@ -316,19 +317,26 @@ export default function ResultPanel({
 
       {/* 영상 생성 섹션 */}
       {activeSection === "generate" && (
-        <VideoGenerationPanel
-          cuts={result.cuts}
-          characterSeeds={result.characterSeeds}
-          clips={videoGen.clips}
-          isAutoMode={videoGen.isAutoMode}
-          progress={videoGen.progress}
-          completedCount={videoGen.completedCount}
-          totalCount={videoGen.totalCount}
-          onGenerateCut={(n) => videoGen.generateCut(n)}
-          onStartAuto={videoGen.startAutoGeneration}
-          onStopAuto={videoGen.stopAutoGeneration}
-          onResetClip={videoGen.resetClip}
-        />
+        <>
+          <VideoSettingsPanel
+            config={videoGen.config}
+            onConfigChange={videoGen.updateConfig}
+          />
+          <VideoGenerationPanel
+            cuts={result.cuts}
+            characterSeeds={result.characterSeeds}
+            clips={videoGen.clips}
+            isAutoMode={videoGen.isAutoMode}
+            progress={videoGen.progress}
+            completedCount={videoGen.completedCount}
+            totalCount={videoGen.totalCount}
+            onGenerateCut={(n) => videoGen.generateCut(n)}
+            onStartAuto={videoGen.startAutoGeneration}
+            onStopAuto={videoGen.stopAutoGeneration}
+            onResetClip={videoGen.resetClip}
+            onSelectVariant={videoGen.selectVariant}
+          />
+        </>
       )}
 
       {/* 타임라인 섹션 */}

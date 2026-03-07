@@ -17,6 +17,7 @@ interface VideoGenerationPanelProps {
   onStartAuto: () => void;
   onStopAuto: () => void;
   onResetClip: (cutNumber: number) => void;
+  onSelectVariant: (cutNumber: number, variantIndex: number) => void;
 }
 
 function ElapsedTime({ startedAt }: { startedAt?: number }) {
@@ -32,7 +33,7 @@ function ElapsedTime({ startedAt }: { startedAt?: number }) {
 }
 
 function StatusBadge({ status }: { status: VideoClip["status"] }) {
-  const config = {
+  const cfg = {
     idle: { bg: "#e5e5e5", color: "#666", label: "대기" },
     generating: { bg: "#787fff30", color: "#787fff", label: "요청 중..." },
     polling: { bg: "#f59e0b30", color: "#d97706", label: "생성 중..." },
@@ -41,11 +42,11 @@ function StatusBadge({ status }: { status: VideoClip["status"] }) {
   }[status];
 
   return (
-    <Badge className="text-[10px]" style={{ background: config.bg, color: config.color }}>
+    <Badge className="text-[10px]" style={{ background: cfg.bg, color: cfg.color }}>
       {(status === "generating" || status === "polling") && (
         <span className="inline-block h-2 w-2 animate-spin rounded-full border border-current border-t-transparent mr-1" />
       )}
-      {config.label}
+      {cfg.label}
     </Badge>
   );
 }
@@ -62,6 +63,7 @@ export default function VideoGenerationPanel({
   onStartAuto,
   onStopAuto,
   onResetClip,
+  onSelectVariant,
 }: VideoGenerationPanelProps) {
   const hasTextPattern = /text|title|caption|subtitle|letter|sign|hangeul|자막|글씨|텍스트|타이틀/i;
 
@@ -72,14 +74,11 @@ export default function VideoGenerationPanel({
           <CardTitle className="text-base" style={{ color: "#16a34a" }}>
             Veo 3.1 영상 생성
           </CardTitle>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs" style={{ borderColor: "#22c55e" }}>
-              {completedCount}/{totalCount} 완료
-            </Badge>
-          </div>
+          <Badge variant="outline" className="text-xs" style={{ borderColor: "#22c55e" }}>
+            {completedCount}/{totalCount} 완료
+          </Badge>
         </div>
 
-        {/* 프로그레스 바 */}
         {totalCount > 0 && (
           <div className="mt-2">
             <div className="h-2 rounded-full overflow-hidden" style={{ background: "#e5e5e5" }}>
@@ -96,7 +95,7 @@ export default function VideoGenerationPanel({
       </CardHeader>
 
       <CardContent className="space-y-3 pt-4">
-        {/* 전체 생성 / 중단 버튼 */}
+        {/* 전체 생성 / 중단 */}
         <div className="flex gap-2">
           {!isAutoMode ? (
             <Button
@@ -109,11 +108,7 @@ export default function VideoGenerationPanel({
               전체 자동 생성
             </Button>
           ) : (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={onStopAuto}
-            >
+            <Button size="sm" variant="destructive" onClick={onStopAuto}>
               자동 생성 중단
             </Button>
           )}
@@ -134,9 +129,7 @@ export default function VideoGenerationPanel({
             const isQuality = hasTextPattern.test(
               cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
             );
-            const prevClip = clips.find(
-              (c) => c.cutNumber === cut.cutNumber - 1
-            );
+            const prevClip = clips.find((c) => c.cutNumber === cut.cutNumber - 1);
             const canGenerate =
               clip.status === "idle" &&
               (cut.cutNumber === 1 || prevClip?.status === "completed");
@@ -158,7 +151,6 @@ export default function VideoGenerationPanel({
                 }}
               >
                 <div className="flex items-center gap-2 p-3">
-                  {/* 컷 번호 */}
                   <div
                     className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
                     style={{
@@ -172,7 +164,6 @@ export default function VideoGenerationPanel({
                     {clip.status === "completed" ? "✓" : cut.cutNumber}
                   </div>
 
-                  {/* 컷 정보 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-sm font-medium">CUT {cut.cutNumber}</span>
@@ -196,7 +187,6 @@ export default function VideoGenerationPanel({
                     </p>
                   </div>
 
-                  {/* 상태 & 액션 */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <ElapsedTime startedAt={clip.startedAt} />
                     <StatusBadge status={clip.status} />
@@ -226,7 +216,7 @@ export default function VideoGenerationPanel({
                   </div>
                 </div>
 
-                {/* 에러 메시지 */}
+                {/* 에러 */}
                 {clip.status === "failed" && clip.error && (
                   <div className="px-3 pb-2">
                     <p className="text-[10px] text-red-500 bg-red-50 rounded p-1.5">
@@ -235,7 +225,7 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
-                {/* Seed 표시 */}
+                {/* Seed */}
                 {clip.seed && (
                   <div className="px-3 pb-2">
                     <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#c4b800", color: "#7a7000" }}>
@@ -256,13 +246,56 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
+                {/* 변형 선택 (sampleCount > 1) */}
+                {clip.status === "completed" && clip.variants && clip.variants.length > 1 && (
+                  <div className="px-3 pb-3 space-y-1.5">
+                    <p className="text-[10px] font-medium" style={{ color: "#787fff" }}>
+                      {clip.variants.length}개 변형 — 베스트를 선택하세요
+                    </p>
+                    <div className="flex gap-2 overflow-x-auto">
+                      {clip.variants.map((variant, vi) => (
+                        <div
+                          key={vi}
+                          className="flex-shrink-0 cursor-pointer rounded-lg overflow-hidden transition-all"
+                          style={{
+                            width: "100px",
+                            border: clip.selectedVariant === vi
+                              ? "2px solid #787fff"
+                              : "2px solid transparent",
+                          }}
+                          onClick={() => onSelectVariant(cut.cutNumber, vi)}
+                        >
+                          <video
+                            src={variant.videoUri}
+                            className="w-full"
+                            style={{ height: "80px", objectFit: "cover" }}
+                            muted
+                            onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
+                            onMouseLeave={(e) => {
+                              const v = e.target as HTMLVideoElement;
+                              v.pause();
+                              v.currentTime = 0;
+                            }}
+                          />
+                          <div className="p-1 text-center">
+                            <span className="text-[9px]" style={{ color: clip.selectedVariant === vi ? "#787fff" : "#999" }}>
+                              변형 {vi + 1}
+                            </span>
+                            {variant.seed && (
+                              <p className="text-[8px] text-muted-foreground">S: {variant.seed}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Extend 연결선 */}
                 {i < cuts.length - 1 && clip.status === "completed" && (
                   <div className="flex items-center gap-1 px-6 pb-1">
                     <div className="h-px flex-1" style={{ background: "#22c55e40" }} />
-                    <span className="text-[9px] text-muted-foreground">
-                      Scene Extension →
-                    </span>
+                    <span className="text-[9px] text-muted-foreground">Scene Extension →</span>
                     <div className="h-px flex-1" style={{ background: "#22c55e40" }} />
                   </div>
                 )}

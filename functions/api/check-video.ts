@@ -4,6 +4,11 @@ interface Env {
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
+interface GeneratedSample {
+  video?: { uri?: string };
+  seed?: number;
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const { operationName } = await context.request.json() as { operationName: string };
@@ -35,14 +40,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       done?: boolean;
       response?: {
         generateVideoResponse?: {
-          generatedSamples?: {
-            video?: {
-              uri?: string;
-            };
-          }[];
+          generatedSamples?: GeneratedSample[];
         };
       };
       error?: { message?: string; code?: number };
+      metadata?: Record<string, unknown>;
     };
 
     if (data.error) {
@@ -53,18 +55,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     if (!data.done) {
-      return Response.json({
-        status: "RUNNING",
-      });
+      return Response.json({ status: "RUNNING" });
     }
 
-    // Extract video URI
+    // Extract all samples (sampleCount > 1 일 때 여러 개)
     const samples = data.response?.generateVideoResponse?.generatedSamples;
-    if (samples && samples.length > 0 && samples[0].video?.uri) {
-      return Response.json({
-        status: "COMPLETED",
-        videoUri: samples[0].video.uri,
-      });
+    if (samples && samples.length > 0) {
+      const variants = samples
+        .filter((s) => s.video?.uri)
+        .map((s) => ({
+          videoUri: s.video!.uri!,
+          seed: s.seed !== undefined ? String(s.seed) : undefined,
+        }));
+
+      if (variants.length > 0) {
+        return Response.json({
+          status: "COMPLETED",
+          videoUri: variants[0].videoUri,
+          seed: variants[0].seed,
+          variants,
+          sampleCount: variants.length,
+        });
+      }
     }
 
     return Response.json({

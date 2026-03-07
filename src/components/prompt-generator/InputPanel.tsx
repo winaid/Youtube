@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { PromptInput, Region, AnimationMode, Duration, DirectorPersona } from "@/types";
+import { PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona } from "@/types";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +53,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>([]);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
     reason: string;
@@ -218,7 +219,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
       region,
       animationMode,
       duration,
-      aspectRatio: "1:1",
+      aspectRatio,
       cutCount: cutCount === "auto" ? undefined : cutCount,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
@@ -489,14 +490,26 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
           />
         </div>
 
-        {/* 화면 비율 (고정) */}
+        {/* 화면 비율 */}
         <div className="space-y-2">
           <Label>화면 비율</Label>
-          <div className="flex items-center gap-2">
-            <Badge style={{ background: "#fff787", color: "#7a7000" }}>1:1</Badge>
-            <span className="text-xs text-muted-foreground">
-              (정사각형 고정)
-            </span>
+          <div className="flex gap-2">
+            {([
+              { value: "9:16" as AspectRatio, label: "세로 (쇼츠)", icon: "📱" },
+              { value: "16:9" as AspectRatio, label: "가로 (유튜브)", icon: "🖥️" },
+              { value: "1:1" as AspectRatio, label: "정사각형", icon: "⬜" },
+            ]).map((ar) => (
+              <Button
+                key={ar.value}
+                variant={aspectRatio === ar.value ? "default" : "outline"}
+                size="sm"
+                className="flex-1 text-xs"
+                style={aspectRatio === ar.value ? { background: "#787fff", color: "white" } : {}}
+                onClick={() => setAspectRatio(ar.value)}
+              >
+                {ar.icon} {ar.label}
+              </Button>
+            ))}
           </div>
         </div>
 

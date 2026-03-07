@@ -1,9 +1,17 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Cut, VideoClip, VideoGenStatus, VideoGenerationState } from "@/types";
+import {
+  Cut,
+  VideoClip,
+  VideoGenStatus,
+  VideoGenerationState,
+  VeoGenerationConfig,
+  VideoVariant,
+  DEFAULT_VEO_CONFIG,
+} from "@/types";
 
-const POLL_INTERVAL = 5000; // 5초마다 폴링
+const POLL_INTERVAL = 5000;
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
@@ -15,6 +23,7 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     clips: [],
     isAutoMode: false,
     currentAutoIndex: -1,
+    config: { ...DEFAULT_VEO_CONFIG },
   });
 
   const pollTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
@@ -53,6 +62,11 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     }));
   }, []);
 
+  // config 업데이트
+  const updateConfig = useCallback((config: VeoGenerationConfig) => {
+    setState((prev) => ({ ...prev, config }));
+  }, []);
+
   // 폴링 시작
   const startPolling = useCallback((cutNumber: number, operationName: string) => {
     const poll = async () => {
@@ -65,12 +79,22 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
         const data = await res.json();
 
         if (data.status === "COMPLETED") {
-          updateClip(cutNumber, {
+          const clipUpdate: Partial<VideoClip> = {
             status: "completed",
             videoUri: data.videoUri,
             seed: data.seed || undefined,
             completedAt: Date.now(),
-          });
+          };
+
+          // 다중 변형 처리
+          if (data.variants && data.variants.length > 0) {
+            clipUpdate.variants = data.variants as VideoVariant[];
+            clipUpdate.selectedVariant = 0;
+            clipUpdate.videoUri = data.variants[0].videoUri;
+            clipUpdate.seed = data.variants[0].seed;
+          }
+
+          updateClip(cutNumber, clipUpdate);
 
           if (data.seed && onSeedDetected) {
             onSeedDetected(cutNumber, data.seed);
@@ -98,7 +122,6 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
           });
           pollTimers.current.delete(cutNumber);
 
-          // 자동 모드 중단
           if (autoModeRef.current) {
             autoModeRef.current = false;
             setState((prev) => ({ ...prev, isAutoMode: false }));
@@ -123,13 +146,11 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
   }, [updateClip, onSeedDetected]);
 
   // 단일 컷 생성
-  const generateCut = useCallback(async (
-    cutNumber: number,
-    options?: { mode?: "fast" | "quality"; durationSec?: number }
-  ) => {
+  const generateCut = useCallback(async (cutNumber: number) => {
     const cut = cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
 
+    const cfg = state.config;
     const prompt = cutNumber === 1 ? cut.videoPrompt : cut.extendPrompt;
 
     // 이전 컷의 videoUri (Scene Extension)
@@ -141,6 +162,8 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
       status: "generating",
       startedAt: Date.now(),
       error: undefined,
+      variants: undefined,
+      selectedVariant: undefined,
     });
 
     try {
@@ -148,14 +171,30 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
         cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
       );
 
+      const body: Record<string, unknown> = {
+        prompt,
+        mode: hasText ? "quality" : cfg.mode,
+        durationSeconds: cfg.durationSeconds,
+        resolution: cfg.resolution,
+        aspectRatio: cfg.aspectRatio,
+        generateAudio: cfg.generateAudio,
+        negativePrompt: cfg.negativePrompt || undefined,
+        personGeneration: cfg.personGeneration,
+        sampleCount: cfg.sampleCount,
+        seed: cfg.seed,
+        // Scene Extension
+        previousVideoUri: cutNumber > 1 ? prevClip?.videoUri : undefined,
+        // First/Last Frame (CUT 1에만 적용)
+        firstFrameBase64: cutNumber === 1 ? cfg.firstFrameBase64 : undefined,
+        lastFrameBase64: cutNumber === 1 ? cfg.lastFrameBase64 : undefined,
+        // Reference Images
+        referenceImages: cfg.referenceImages.length > 0 ? cfg.referenceImages : undefined,
+      };
+
       const res = await fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          mode: options?.mode || (hasText ? "quality" : "fast"),
-          previousVideoUri: cutNumber > 1 ? prevClip?.videoUri : undefined,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -169,6 +208,11 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
 
       const data = await res.json();
       updateClip(cutNumber, { operationName: data.operationName });
+
+      if (data.warning) {
+        console.warn(`CUT ${cutNumber} warning:`, data.warning);
+      }
+
       startPolling(cutNumber, data.operationName);
     } catch (err) {
       updateClip(cutNumber, {
@@ -176,9 +220,9 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
         error: err instanceof Error ? err.message : "요청 실패",
       });
     }
-  }, [cuts, state.clips, updateClip, startPolling]);
+  }, [cuts, state.clips, state.config, updateClip, startPolling]);
 
-  // 자동 모드: currentAutoIndex 변경 시 다음 컷 생성
+  // 자동 모드
   useEffect(() => {
     if (!state.isAutoMode || state.currentAutoIndex < 0) return;
     const clip = state.clips[state.currentAutoIndex];
@@ -187,7 +231,6 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     generateCut(clip.cutNumber);
   }, [state.isAutoMode, state.currentAutoIndex, state.clips, generateCut]);
 
-  // 전체 자동 생성 시작
   const startAutoGeneration = useCallback(() => {
     autoModeRef.current = true;
     setState((prev) => ({
@@ -197,16 +240,29 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     }));
   }, []);
 
-  // 자동 생성 중단
   const stopAutoGeneration = useCallback(() => {
     autoModeRef.current = false;
+    setState((prev) => ({ ...prev, isAutoMode: false }));
+  }, []);
+
+  // 변형 선택
+  const selectVariant = useCallback((cutNumber: number, variantIndex: number) => {
     setState((prev) => ({
       ...prev,
-      isAutoMode: false,
+      clips: prev.clips.map((c) => {
+        if (c.cutNumber !== cutNumber || !c.variants) return c;
+        const variant = c.variants[variantIndex];
+        if (!variant) return c;
+        return {
+          ...c,
+          selectedVariant: variantIndex,
+          videoUri: variant.videoUri,
+          seed: variant.seed,
+        };
+      }),
     }));
   }, []);
 
-  // 클립 순서 변경 (타임라인 편집)
   const reorderClips = useCallback((fromIndex: number, toIndex: number) => {
     setState((prev) => {
       const newClips = [...prev.clips];
@@ -216,12 +272,10 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     });
   }, []);
 
-  // 트림 설정
   const setTrim = useCallback((cutNumber: number, trimStart: number, trimEnd: number) => {
     updateClip(cutNumber, { trimStart, trimEnd });
   }, [updateClip]);
 
-  // 리셋
   const resetClip = useCallback((cutNumber: number) => {
     const timer = pollTimers.current.get(cutNumber);
     if (timer) {
@@ -236,6 +290,8 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
       error: undefined,
       startedAt: undefined,
       completedAt: undefined,
+      variants: undefined,
+      selectedVariant: undefined,
     });
   }, [updateClip]);
 
@@ -245,9 +301,11 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
 
   return {
     ...state,
+    updateConfig,
     generateCut,
     startAutoGeneration,
     stopAutoGeneration,
+    selectVariant,
     reorderClips,
     setTrim,
     resetClip,

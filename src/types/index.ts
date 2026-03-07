@@ -3,6 +3,9 @@ export type Region = "한국" | "일본" | "중국" | "유럽" | "미국";
 export type AnimationMode = "2D 애니" | "실사" | "하이브리드";
 export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
 export type AspectRatio = "1:1" | "9:16" | "16:9";
+export type VeoResolution = "720p" | "1080p" | "4k";
+export type VeoClipDuration = 4 | 6 | 8;
+export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
 export interface DirectorPersona {
   id: string;
@@ -73,8 +76,43 @@ export interface StoryAIPersona {
   samplePrompts: string[];
 }
 
+// ===== Veo 3.1 영상 생성 설정 =====
+export interface VeoGenerationConfig {
+  mode: "fast" | "quality";
+  durationSeconds: VeoClipDuration;
+  resolution: VeoResolution;
+  aspectRatio: AspectRatio;
+  generateAudio: boolean;
+  negativePrompt: string;
+  personGeneration: PersonGeneration;
+  seed?: number;
+  sampleCount: number; // 1~4 변형 생성
+  // First/Last Frame
+  firstFrameBase64?: string;
+  lastFrameBase64?: string;
+  // Reference Images (최대 3장)
+  referenceImages: string[]; // base64 배열
+}
+
+export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
+  mode: "fast",
+  durationSeconds: 8,
+  resolution: "720p",
+  aspectRatio: "9:16",
+  generateAudio: true,
+  negativePrompt: "text overlay, watermark, logo, blurry, distorted face",
+  personGeneration: "allow_all",
+  sampleCount: 1,
+  referenceImages: [],
+};
+
 // ===== 영상 생성 상태 =====
 export type VideoGenStatus = "idle" | "generating" | "polling" | "completed" | "failed";
+
+export interface VideoVariant {
+  videoUri: string;
+  seed?: string;
+}
 
 export interface VideoClip {
   cutNumber: number;
@@ -85,15 +123,18 @@ export interface VideoClip {
   error?: string;
   startedAt?: number;
   completedAt?: number;
-  trimStart?: number; // 트림 시작 (초)
-  trimEnd?: number;   // 트림 끝 (초)
+  trimStart?: number;
+  trimEnd?: number;
   durationSec: number;
+  variants?: VideoVariant[]; // sampleCount > 1일 때 여러 변형
+  selectedVariant?: number; // 선택된 변형 인덱스
 }
 
 export interface VideoGenerationState {
   clips: VideoClip[];
   isAutoMode: boolean;
   currentAutoIndex: number;
+  config: VeoGenerationConfig;
 }
 
 // ===== 상태 타입 =====
