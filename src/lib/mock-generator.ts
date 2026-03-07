@@ -141,7 +141,7 @@ export async function generatePrompt(
       ? Math.min(180, Math.max(60, Math.round(input.storyText.length / 2)))
       : input.duration;
 
-  const cutCount = Math.max(4, Math.round(effectiveDuration / 8));
+  const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / 8));
   const storyWords = input.storyText.slice(0, 30);
 
   // 1. 감독 페르소나 먼저 생성 (컷 생성에 필요)

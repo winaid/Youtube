@@ -21,6 +21,7 @@ export interface PromptInput {
   animationMode: AnimationMode;
   duration: Duration;
   aspectRatio: AspectRatio;
+  cutCount?: number; // 사용자 지정 컷 수 (없으면 자동 계산)
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
 }
 
@@ -70,6 +71,29 @@ export interface StoryAIPersona {
   description: string;
   persona: string;
   samplePrompts: string[];
+}
+
+// ===== 영상 생성 상태 =====
+export type VideoGenStatus = "idle" | "generating" | "polling" | "completed" | "failed";
+
+export interface VideoClip {
+  cutNumber: number;
+  status: VideoGenStatus;
+  operationName?: string;
+  videoUri?: string;
+  seed?: string;
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+  trimStart?: number; // 트림 시작 (초)
+  trimEnd?: number;   // 트림 끝 (초)
+  durationSec: number;
+}
+
+export interface VideoGenerationState {
+  clips: VideoClip[];
+  isAutoMode: boolean;
+  currentAutoIndex: number;
 }
 
 // ===== 상태 타입 =====

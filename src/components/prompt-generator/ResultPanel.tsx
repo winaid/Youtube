@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import CutCard from "./CutCard";
+import VideoGenerationPanel from "./VideoGenerationPanel";
+import TimelineEditor from "./TimelineEditor";
+import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 
 interface ResultPanelProps {
   result: PromptOutput | null;
@@ -23,7 +26,14 @@ export default function ResultPanel({
 }: ResultPanelProps) {
   const [jsonCopied, setJsonCopied] = useState(false);
   const [showJson, setShowJson] = useState(false);
-  const [videoStep, setVideoStep] = useState<"idle" | "preview" | "generating">("idle");
+  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline">("prompts");
+
+  const videoGen = useVideoGeneration({
+    cuts: result?.cuts ?? [],
+    onSeedDetected: (cutNumber, seed) => {
+      console.log(`CUT ${cutNumber} seed: ${seed}`);
+    },
+  });
 
   if (status === "idle") {
     return (
@@ -170,103 +180,119 @@ export default function ResultPanel({
         </CardContent>
       </Card>
 
-      {/* 캐릭터 시드 패널 */}
-      {result.characterSeeds.length > 0 && (
-        <Card className="overflow-hidden border-2" style={{ borderColor: "#e0990040" }}>
-          <CardHeader className="pb-2" style={{ background: "linear-gradient(135deg, #e0990015, #fff78715)" }}>
-            <CardTitle className="text-sm" style={{ color: "#b37700" }}>
-              캐릭터 시드 (전 컷 고정)
-            </CardTitle>
-            <p className="text-[10px] text-muted-foreground">
-              모든 컷의 프롬프트에 아래 캐릭터 외형 묘사가 동일하게 삽입됩니다. 외형이 바뀌면 안 됩니다.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-2 pt-3">
-            {result.characterSeeds.map((seed) => (
-              <div key={seed.id} className="p-2.5 rounded-lg" style={{ background: "#fff78710", border: "1px solid #e0990020" }}>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Badge className="text-[10px] text-white" style={{ background: "#e09900" }}>
-                    {seed.id}
-                  </Badge>
-                  <span className="text-xs font-medium">{seed.label}</span>
-                  <span className="text-[10px] text-muted-foreground">| {seed.appearanceKo}</span>
-                </div>
-                <p className="text-[10px] font-mono p-1.5 rounded break-all leading-relaxed" style={{ background: "white", border: "1px dashed #e0990030" }}>
-                  {seed.appearance}
-                </p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 감독 페르소나 & 글로벌 스타일 */}
-      <Card className="overflow-hidden">
-        <CardContent className="space-y-3 pt-4">
-          {result.directorPersonaPrompt && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium" style={{ color: "#5a5ecc" }}>감독 페르소나 (모든 프롬프트에 반영됨)</p>
-              <p className="text-xs p-2 rounded-md leading-relaxed italic" style={{ background: "#787fff08", border: "1px solid #787fff15" }}>
-                {result.directorPersonaPrompt}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium" style={{ color: "#787fff" }}>Global Style Prompt</p>
-            <p className="text-xs p-2 rounded-md font-mono break-all" style={{ background: "#787fff10" }}>
-              {result.globalStylePrompt}
-            </p>
-          </div>
-
-          <Separator style={{ background: "linear-gradient(to right, #787fff40, #fff78740)" }} />
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium" style={{ color: "#c4b800" }}>연속성 규칙</p>
-            <ul className="text-xs space-y-0.5 list-disc list-inside text-muted-foreground">
-              {result.continuityRules.map((rule, i) => (
-                <li key={i}>{rule}</li>
-              ))}
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 컷 리스트 */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium" style={{ color: "#787fff" }}>
-            컷 리스트 (클릭하여 프롬프트 수정 가능)
-          </h3>
-        </div>
-        {result.cuts.map((cut) => (
-          <CutCard
-            key={cut.cutNumber}
-            cut={cut}
-            characterSeeds={result.characterSeeds}
-            onUpdate={handleCutUpdate}
-          />
+      {/* 섹션 탭 */}
+      <div className="flex gap-2 sticky top-0 z-10 bg-background py-2">
+        {([
+          { key: "prompts", label: "프롬프트", color: "#787fff" },
+          { key: "generate", label: "영상 생성", color: "#22c55e" },
+          { key: "timeline", label: "타임라인", color: "#c4b800" },
+        ] as const).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveSection(tab.key)}
+            className="px-4 py-2 rounded-full text-sm font-medium transition-all"
+            style={
+              activeSection === tab.key
+                ? { background: tab.color, color: "white", boxShadow: `0 2px 8px ${tab.color}40` }
+                : { background: `${tab.color}15`, color: tab.color }
+            }
+          >
+            {tab.label}
+            {tab.key === "generate" && videoGen.completedCount > 0 && (
+              <span className="ml-1.5 text-[10px]">
+                {videoGen.completedCount}/{videoGen.totalCount}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
-      {/* 영상 제작 워크플로우 */}
-      <Card className="overflow-hidden border-2" style={{ borderColor: "#787fff40" }}>
-        <CardHeader className="pb-3" style={{ background: "linear-gradient(135deg, #787fff20, #22c55e10)" }}>
-          <CardTitle className="text-base" style={{ color: "#5a5ecc" }}>
-            영상 제작 워크플로우
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          {/* Step 1: JSON */}
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#787fff" }}>
-              1
+      {/* 프롬프트 섹션 */}
+      {activeSection === "prompts" && (
+        <>
+          {/* 캐릭터 시드 패널 */}
+          {result.characterSeeds.length > 0 && (
+            <Card className="overflow-hidden border-2" style={{ borderColor: "#e0990040" }}>
+              <CardHeader className="pb-2" style={{ background: "linear-gradient(135deg, #e0990015, #fff78715)" }}>
+                <CardTitle className="text-sm" style={{ color: "#b37700" }}>
+                  캐릭터 시드 (전 컷 고정)
+                </CardTitle>
+                <p className="text-[10px] text-muted-foreground">
+                  모든 컷의 프롬프트에 아래 캐릭터 외형 묘사가 동일하게 삽입됩니다.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-3">
+                {result.characterSeeds.map((seed) => (
+                  <div key={seed.id} className="p-2.5 rounded-lg" style={{ background: "#fff78710", border: "1px solid #e0990020" }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Badge className="text-[10px] text-white" style={{ background: "#e09900" }}>
+                        {seed.id}
+                      </Badge>
+                      <span className="text-xs font-medium">{seed.label}</span>
+                      <span className="text-[10px] text-muted-foreground">| {seed.appearanceKo}</span>
+                    </div>
+                    <p className="text-[10px] font-mono p-1.5 rounded break-all leading-relaxed" style={{ background: "white", border: "1px dashed #e0990030" }}>
+                      {seed.appearance}
+                    </p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 감독 페르소나 & 글로벌 스타일 */}
+          <Card className="overflow-hidden">
+            <CardContent className="space-y-3 pt-4">
+              {result.directorPersonaPrompt && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium" style={{ color: "#5a5ecc" }}>감독 페르소나</p>
+                  <p className="text-xs p-2 rounded-md leading-relaxed italic" style={{ background: "#787fff08", border: "1px solid #787fff15" }}>
+                    {result.directorPersonaPrompt}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium" style={{ color: "#787fff" }}>Global Style Prompt</p>
+                <p className="text-xs p-2 rounded-md font-mono break-all" style={{ background: "#787fff10" }}>
+                  {result.globalStylePrompt}
+                </p>
+              </div>
+
+              <Separator style={{ background: "linear-gradient(to right, #787fff40, #fff78740)" }} />
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium" style={{ color: "#c4b800" }}>연속성 규칙</p>
+                <ul className="text-xs space-y-0.5 list-disc list-inside text-muted-foreground">
+                  {result.continuityRules.map((rule, i) => (
+                    <li key={i}>{rule}</li>
+                  ))}
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 컷 리스트 */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium" style={{ color: "#787fff" }}>
+                컷 리스트 (클릭하여 프롬프트 수정 가능)
+              </h3>
             </div>
-            <div className="flex-1 space-y-2">
-              <p className="text-sm font-medium">프롬프트 확인 & JSON 변환</p>
-              <p className="text-xs text-muted-foreground">
-                캐릭터 시드, 감독 스타일, Extend 전략이 포함된 JSON을 내보냅니다
-              </p>
+            {result.cuts.map((cut) => (
+              <CutCard
+                key={cut.cutNumber}
+                cut={cut}
+                characterSeeds={result.characterSeeds}
+                onUpdate={handleCutUpdate}
+              />
+            ))}
+          </div>
+
+          {/* JSON 내보내기 */}
+          <Card className="overflow-hidden">
+            <CardContent className="space-y-3 pt-4">
+              <p className="text-xs font-medium" style={{ color: "#787fff" }}>JSON 내보내기</p>
               <div className="flex gap-2 flex-wrap">
                 <Button size="sm" onClick={handleCopyJson} style={{ background: "#787fff", color: "white" }}>
                   {jsonCopied ? "복사됨!" : "JSON 복사"}
@@ -283,144 +309,36 @@ export default function ResultPanel({
                   {JSON.stringify(veoJson, null, 2)}
                 </pre>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
-          <Separator style={{ background: "#787fff20" }} />
+      {/* 영상 생성 섹션 */}
+      {activeSection === "generate" && (
+        <VideoGenerationPanel
+          cuts={result.cuts}
+          characterSeeds={result.characterSeeds}
+          clips={videoGen.clips}
+          isAutoMode={videoGen.isAutoMode}
+          progress={videoGen.progress}
+          completedCount={videoGen.completedCount}
+          totalCount={videoGen.totalCount}
+          onGenerateCut={(n) => videoGen.generateCut(n)}
+          onStartAuto={videoGen.startAutoGeneration}
+          onStopAuto={videoGen.stopAutoGeneration}
+          onResetClip={videoGen.resetClip}
+        />
+      )}
 
-          {/* Step 2: Extend 전략 */}
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: videoStep === "idle" ? "#aaa" : "#22c55e" }}>
-              2
-            </div>
-            <div className="flex-1 space-y-2">
-              <p className="text-sm font-medium">Veo 영상 생성 (Extend 전략)</p>
-              <p className="text-xs text-muted-foreground">
-                CUT 1: Video Prompt로 첫 8초 생성 → CUT 2~: 이전 클립 + Extend Prompt로 연장
-              </p>
-
-              {videoStep === "idle" && (
-                <Button
-                  size="sm"
-                  onClick={() => setVideoStep("preview")}
-                  className="text-white"
-                  style={{ background: "linear-gradient(135deg, #c4b800, #787fff)" }}
-                >
-                  영상 제작 계획 보기
-                </Button>
-              )}
-
-              {videoStep === "preview" && (
-                <div className="space-y-3 p-3 rounded-lg" style={{ background: "#787fff08", border: "1px solid #787fff20" }}>
-                  {/* Extend 파이프라인 시각화 */}
-                  <div className="space-y-1.5">
-                    {result.cuts.map((cut, i) => {
-                      const isQuality = hasTextPattern.test(
-                        cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
-                      );
-                      const charsInScene = result.characterSeeds
-                        .filter((s) => cut.charactersInScene?.includes(s.id))
-                        .map((s) => s.label);
-
-                      return (
-                        <div key={cut.cutNumber}>
-                          <div className="flex items-center gap-2 p-2 rounded text-xs" style={{ background: "white", border: "1px solid #eee" }}>
-                            <Badge className="text-[10px] text-white flex-shrink-0" style={{ background: isQuality ? "#e09900" : "#22c55e" }}>
-                              {isQuality ? "Quality" : "Fast"}
-                            </Badge>
-                            <span className="font-medium flex-shrink-0">CUT {cut.cutNumber}</span>
-                            <Badge variant="outline" className="text-[10px] flex-shrink-0" style={{
-                              borderColor: cut.cutNumber === 1 ? "#787fff" : "#6b5ce7",
-                              color: cut.cutNumber === 1 ? "#787fff" : "#6b5ce7",
-                            }}>
-                              {cut.cutNumber === 1 ? "Video Prompt" : "Extend"}
-                            </Badge>
-                            {charsInScene.length > 0 && (
-                              <span className="text-[10px] text-muted-foreground truncate">
-                                [{charsInScene.join(", ")}]
-                              </span>
-                            )}
-                            <span className="text-[10px] text-muted-foreground truncate ml-auto">
-                              {cut.sceneDescription.slice(0, 30)}...
-                            </span>
-                          </div>
-                          {i < result.cuts.length - 1 && (
-                            <div className="flex items-center gap-1 py-0.5 pl-6">
-                              <div className="w-px h-3" style={{ background: "#787fff40" }} />
-                              <span className="text-[9px] text-muted-foreground">{cut.transitionHint}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="p-2 rounded text-xs" style={{ background: "#fff78720" }}>
-                    <p className="font-medium" style={{ color: "#7a7000" }}>캐릭터 일관성 보장 방법</p>
-                    <ol className="list-decimal list-inside mt-1 space-y-0.5 text-muted-foreground">
-                      <li>캐릭터 시드 {result.characterSeeds.length}명의 외형이 모든 프롬프트에 동일하게 삽입됨</li>
-                      <li>Extend 시 이전 클립의 마지막 프레임을 참조 이미지로 사용</li>
-                      <li>캐릭터 묘사를 &quot;same as before&quot; 대신 전체 외형을 매번 반복</li>
-                      <li>의상, 헤어, 체형, 피부톤이 컷 간에 절대 변하지 않음</li>
-                    </ol>
-                  </div>
-
-                  <div className="p-2 rounded text-xs" style={{ background: "#787fff10" }}>
-                    <p className="font-medium" style={{ color: "#5a5ecc" }}>Veo 생성 순서</p>
-                    <ol className="list-decimal list-inside mt-1 space-y-0.5 text-muted-foreground">
-                      <li>CUT 1의 <strong>Video Prompt</strong>로 첫 8초 클립 생성</li>
-                      <li>CUT 1 클립의 <strong>마지막 프레임 캡처</strong> → 참조 이미지로 사용</li>
-                      <li>CUT 2의 <strong>Extend Prompt</strong> + 참조 이미지로 다음 8초 연장</li>
-                      <li>반복: 총 {result.cuts.length}개 클립 = <strong>{result.cuts.length * 8}초 ({Math.round((result.cuts.length * 8) / 60)}분)</strong></li>
-                    </ol>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setVideoStep("generating")} className="text-white" style={{ background: "linear-gradient(135deg, #22c55e, #16a34a)" }}>
-                      확인 - 생성 시작
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setVideoStep("idle")}>
-                      닫기
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {videoStep === "generating" && (
-                <div className="space-y-3 p-3 rounded-lg" style={{ background: "#22c55e08", border: "1px solid #22c55e30" }}>
-                  <div className="space-y-2">
-                    {result.cuts.map((cut) => {
-                      const isQuality = hasTextPattern.test(
-                        cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
-                      );
-                      return (
-                        <div key={cut.cutNumber} className="flex items-center gap-3 p-2 rounded text-xs" style={{ background: "white", border: "1px solid #eee" }}>
-                          <Badge className="text-[10px] text-white flex-shrink-0" style={{ background: isQuality ? "#e09900" : "#22c55e" }}>
-                            {isQuality ? "3.1 Quality" : "3.1 Fast"}
-                          </Badge>
-                          <span className="flex-1 font-medium">CUT {cut.cutNumber}</span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {cut.cutNumber === 1 ? "Video Prompt 사용" : "이전 클립 + Extend Prompt"}
-                          </span>
-                          <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#c4b800" }}>
-                            대기중
-                          </Badge>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    위 JSON을 Veo에서 순서대로 생성하세요. CUT 1은 Video Prompt, CUT 2~부터는 이전 클립 마지막 프레임 + Extend Prompt를 사용합니다.
-                  </p>
-                  <Button size="sm" variant="outline" onClick={() => setVideoStep("idle")}>
-                    닫기
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* 타임라인 섹션 */}
+      {activeSection === "timeline" && (
+        <TimelineEditor
+          clips={videoGen.clips}
+          onReorder={videoGen.reorderClips}
+          onTrimChange={videoGen.setTrim}
+        />
+      )}
     </div>
   );
 }

@@ -52,6 +52,13 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
   const [webResults, setWebResults] = useState<WebDirectorResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>([]);
+  const [cutCount, setCutCount] = useState<number | "auto">("auto");
+  const [aiCutRecommendation, setAiCutRecommendation] = useState<{
+    recommendedCuts: number;
+    reason: string;
+    scenes: string[];
+  } | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const allDirectors = useMemo(() => [...directors, ...customDirectors], [customDirectors]);
   const filteredDirectors = allDirectors.filter((d) => d.region === region);
@@ -173,9 +180,37 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
     setWebResults([]);
   };
 
+  // AI 컷 수 분석
+  const analyzeStory = useCallback(async () => {
+    if (!storyText.trim() || storyText.length < 20) return;
+    setIsAnalyzing(true);
+    try {
+      const res = await fetch("/api/analyze-cuts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyText }),
+      });
+      const data = await res.json();
+      setAiCutRecommendation(data);
+    } catch {
+      setAiCutRecommendation(null);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [storyText]);
+
+  // 시나리오 변경 시 디바운스 분석
+  useEffect(() => {
+    if (storyText.trim().length < 20) {
+      setAiCutRecommendation(null);
+      return;
+    }
+    const timer = setTimeout(analyzeStory, 1500);
+    return () => clearTimeout(timer);
+  }, [storyText, analyzeStory]);
+
   const handleSubmit = () => {
     if (!storyText.trim() || !directorPersona) return;
-    // 커스텀 감독이면 감독 정보를 함께 전달
     const selectedDir = allDirectors.find((d) => d.id === directorPersona);
     onGenerate({
       storyText,
@@ -184,6 +219,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
       animationMode,
       duration,
       aspectRatio: "1:1",
+      cutCount: cutCount === "auto" ? undefined : cutCount,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
         : undefined,
@@ -373,6 +409,84 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
               </Button>
             ))}
           </div>
+        </div>
+
+        {/* 컷 수 조절 */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>컷 수</Label>
+            {isAnalyzing && (
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
+                AI 분석 중...
+              </span>
+            )}
+          </div>
+
+          {/* AI 추천 */}
+          {aiCutRecommendation && (
+            <div className="p-2.5 rounded-lg space-y-1.5" style={{ background: "#22c55e08", border: "1px solid #22c55e30" }}>
+              <div className="flex items-center gap-2">
+                <Badge className="text-[10px] text-white" style={{ background: "#22c55e" }}>
+                  AI 추천: {aiCutRecommendation.recommendedCuts}컷
+                </Badge>
+                <button
+                  className="text-[10px] font-medium underline"
+                  style={{ color: "#22c55e" }}
+                  onClick={() => setCutCount(aiCutRecommendation.recommendedCuts)}
+                >
+                  적용
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">{aiCutRecommendation.reason}</p>
+              {aiCutRecommendation.scenes.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {aiCutRecommendation.scenes.slice(0, 5).map((scene, i) => (
+                    <Badge key={i} variant="outline" className="text-[9px]" style={{ borderColor: "#22c55e40" }}>
+                      {scene.slice(0, 20)}{scene.length > 20 ? "..." : ""}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={cutCount === "auto" ? "default" : "outline"}
+              size="sm"
+              className="min-w-[50px]"
+              style={cutCount === "auto" ? { background: "#787fff", color: "white" } : {}}
+              onClick={() => setCutCount("auto")}
+            >
+              자동
+            </Button>
+            {[4, 6, 8, 10, 12, 15, 20].map((n) => (
+              <Button
+                key={n}
+                variant={cutCount === n ? "default" : "outline"}
+                size="sm"
+                className="min-w-[40px]"
+                style={cutCount === n ? { background: "#787fff", color: "white" } : {}}
+                onClick={() => setCutCount(n)}
+              >
+                {n}
+              </Button>
+            ))}
+          </div>
+          <input
+            type="number"
+            min={4}
+            max={25}
+            placeholder="직접 입력 (4~25)"
+            value={typeof cutCount === "number" ? cutCount : ""}
+            onChange={(e) => {
+              const v = parseInt(e.target.value);
+              if (v >= 4 && v <= 25) setCutCount(v);
+              else if (e.target.value === "") setCutCount("auto");
+            }}
+            className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
+          />
         </div>
 
         {/* 화면 비율 (고정) */}
