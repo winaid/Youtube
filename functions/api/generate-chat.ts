@@ -5,58 +5,29 @@ interface Env {
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent";
 
-export const onRequestPost: PagesFunction<Env> = async (context) => {
-  try {
-    const { message, personaId, personaName, personaDescription, personaPrompt } =
-      await context.request.json() as Record<string, string>;
+// 간단한 인메모리 캐시 (동일 요청 중복 방지)
+const responseCache = new Map<string, { reply: string; sources: { title: string; url: string }[]; searchQueries: string[]; ts: number }>();
+const CACHE_TTL = 1000 * 60 * 30; // 30분
 
-    if (!message) {
-      return Response.json({ error: "message is required" }, { status: 400 });
-    }
+const SYSTEM_INSTRUCTION = `당신은 병의원 마케팅 쇼츠 나레이션 대본 전문 작가입니다.
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
+## 핵심 임무
+Google Search로 사용자 요청과 관련된 실제 역사적 사실, 의학 역사, 병의원 마케팅 사례를 검색하세요.
+반드시 검색해서 찾은 실제 사실을 시나리오에 녹여야 합니다. 절대 지어내지 마세요.
 
-    const prompt = `당신은 "${personaName || "AI 시나리오 작가"}"입니다.
+## 대본 스타일 규칙 (절대 준수)
+- 한 줄에 1~2구절만. 짧게 끊어 쓴다
+- 말투: '~임', '~음', '~함' 체. 존댓말 금지
+- ㅋㅋ는 자연스러운 곳에 1~2번만
+- 이모지 금지. 순수 텍스트만
+- [화면], [자막], [BGM] 등 연출 지시어 금지. 순수 나레이션만
+- 번호, 불릿 포인트 금지. 줄글로 작성
+- 빈 줄로 문단 구분
 
-역할 설명: ${personaDescription || "병의원 마케팅 쇼츠 시나리오 전문가"}
+## 대본 구조
+훅(일상 공감) → 역사적 사실(검색 결과 기반) → 현대 교훈(병의원 마케팅)
 
-페르소나: ${personaPrompt || "병의원 마케팅에 특화된 콘텐츠 전문가입니다."}
-
-사용자 요청: "${message}"
-
-## 핵심 임무:
-Google Search를 사용하여 사용자 요청과 관련된 **실제 역사적 사실, 의학 역사, 병의원 마케팅 역사**를 검색하세요.
-반드시 검색해서 찾은 **실제 사실**을 시나리오에 녹여야 합니다. 지어내지 마세요.
-
-검색할 주제 예시:
-- 조선시대/고대 의원의 실제 마케팅 사례 (허준, 이제마, 화타 등)
-- 역사 속 의료 광고, 약방 운영 방식
-- 근대 병의원의 홍보 방법 변천사
-- 동서양 의학 역사에서 환자 유치 전략
-- 현대 병의원 마케팅 트렌드, 성공 사례
-
-검색에서 찾은 사실을 바탕으로 유튜브 쇼츠 나레이션 대본을 작성하세요.
-
-## 필수 스타일 규칙 (절대 지켜야 함):
-
-1. 한 줄에 1~2구절만 쓴다. 짧게 끊어 쓴다. 절대 한 줄에 긴 문장을 쓰지 않는다.
-2. 말투는 '~임', '~음', '~함' 체를 사용한다. 존댓말 금지.
-3. ㅋㅋ는 자연스러운 곳에만 1~2번 사용.
-4. 이모지 사용 금지. 순수 텍스트만.
-5. [화면], [자막], [BGM], [효과음] 같은 연출 지시어 금지. 순수 나레이션 대본만 작성.
-6. 번호 매기기, 불릿 포인트 금지. 그냥 줄글로 쓴다.
-7. 시작은 일상적인 공감 경험으로 훅을 건다.
-8. 중간에 검색으로 찾은 실제 역사/전문 지식으로 반전을 준다.
-9. 끝은 현대 병의원에 적용할 수 있는 교훈으로 마무리한다.
-10. 빈 줄로 문단을 자연스럽게 구분한다.
-
-## 구조:
-- 훅 (일상 공감) → 역사적 사실 (검색 결과 기반) → 현대 교훈 (병의원 마케팅)
-
-## 좋은 예시 (이 스타일을 따라해):
+## 좋은 예시:
 
 지하철에서 델리만쥬 냄새 맡고
 정신차려보니 이미
@@ -78,26 +49,56 @@ Google Search를 사용하여 사용자 요청과 관련된 **실제 역사적 �
 사람 많이 다니는
 담벼락 옆에 약탕기를 둠
 
-## 나쁜 예시 (이렇게 쓰지 마):
-- **(0-3초) 후킹: 텅 빈 진료실** ← 이런 형식 금지
-- "예약 펑크 실화냐..." 같은 자막 지시 금지
-- BGM: 신나는 국악풍 ← 이런 연출 지시 금지
+## 하면 안 되는 것:
+- "(0-3초) 후킹:" 같은 타임코드/형식 금지
+- 자막 지시, BGM 지시, 효과음 지시 금지
 - 이모지 금지
 
-## 마지막에 출처 표기:
-대본 아래에 빈 줄 2개 후 "---" 구분선을 넣고,
-검색에서 찾은 역사적 사실의 출처를 간단히 1~3줄로 적어주세요.
+## 출처 표기
+대본 아래 빈 줄 2개 후 "---" 구분선,
+검색 출처를 1~3줄로 간단히 적기.
 예: "출처: 동의보감 서문 (1613), 조선왕조실록 선조 37년 기록"
 
-나레이션 대본 + 출처만 출력하세요. 다른 설명 없이.`;
+나레이션 대본 + 출처만 출력. 다른 설명 없이.`;
+
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  try {
+    const { message, personaId, personaName, personaDescription, personaPrompt } =
+      await context.request.json() as Record<string, string>;
+
+    if (!message) {
+      return Response.json({ error: "message is required" }, { status: 400 });
+    }
+
+    const apiKey = context.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
+    }
+
+    // 캐시 확인
+    const cacheKey = `${personaId}:${message}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      return Response.json({
+        reply: cached.reply,
+        sources: cached.sources,
+        searchQueries: cached.searchQueries,
+      });
+    }
+
+    const userPrompt = `[페르소나: ${personaName || "AI 시나리오 작가"}]
+${personaPrompt || ""}
+
+사용자 요청: "${message}"`;
 
     const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+        contents: [{ parts: [{ text: userPrompt }] }],
         tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.8, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1500 },
       }),
     });
 
@@ -127,6 +128,17 @@ Google Search를 사용하여 사용자 요청과 관련된 **실제 역사적 �
       .map((c) => ({ title: c.web?.title ?? "", url: c.web?.uri ?? "" }))
       ?? [];
     const searchQueries = grounding?.webSearchQueries ?? [];
+
+    // 캐시 저장
+    responseCache.set(cacheKey, { reply, sources, searchQueries, ts: Date.now() });
+
+    // 오래된 캐시 정리
+    if (responseCache.size > 100) {
+      const now = Date.now();
+      for (const [key, val] of responseCache) {
+        if (now - val.ts > CACHE_TTL) responseCache.delete(key);
+      }
+    }
 
     return Response.json({
       reply,
