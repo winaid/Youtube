@@ -3,18 +3,24 @@ interface Env {
 }
 
 const GEMINI_VISION_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { imageBase64, characterSeeds } = await context.request.json() as {
+    const { imageBase64: rawBase64, characterSeeds } = await context.request.json() as {
       imageBase64: string;
       characterSeeds?: { id: string; label: string; appearance: string }[];
     };
 
-    if (!imageBase64) {
+    if (!rawBase64) {
       return Response.json({ error: "imageBase64 is required" }, { status: 400 });
     }
+
+    // data:image/...;base64, 접두사 제거
+    const imageBase64 = rawBase64.includes(",") ? rawBase64.split(",")[1] : rawBase64;
+    // MIME 타입 추출
+    const mimeMatch = rawBase64.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
 
     const apiKey = context.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -60,7 +66,7 @@ JSON으로만 응답:
           parts: [
             {
               inlineData: {
-                mimeType: "image/png",
+                mimeType,
                 data: imageBase64,
               },
             },
