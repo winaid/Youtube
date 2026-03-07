@@ -37,7 +37,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? `\n\nScene context (the image MUST depict this): ${sceneDescription}`
       : "";
 
-    const imagePrompt = `Generate a storyboard illustration that accurately depicts the described scene. Focus on showing the actual situation, characters, and setting described — NOT generic cinematic imagery. ${aspectLabel}${sceneContext}\n\n${prompt}`;
+    const imagePrompt = `Generate a storyboard illustration that accurately depicts the described scene. Focus on showing the actual situation, characters, and setting described — NOT generic cinematic imagery. IMPORTANT: Do NOT include any visible text, letters, words, signs, papers, documents, or written content in the image. Characters must NOT hold papers, signs, books with visible text, or any objects displaying readable text. Keep the image purely visual with no typography. ${aspectLabel}${sceneContext}\n\n${prompt}`;
 
     const requestBody = {
       contents: [{
