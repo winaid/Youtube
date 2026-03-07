@@ -526,7 +526,7 @@ export default function ResultPanel({
                         const res = await fetch("/api/generate-image", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
+                          body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
                         });
                         const data = await res.json();
                         if (res.ok && data.images?.[0]?.base64) {
@@ -623,7 +623,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
+                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
@@ -938,7 +938,7 @@ export default function ResultPanel({
                   const res = await fetch("/api/generate-image", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
+                    body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
                   });
                   const data = await res.json();
                   if (res.ok && data.images?.[0]?.base64) {

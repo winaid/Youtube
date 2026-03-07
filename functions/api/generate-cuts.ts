@@ -132,11 +132,25 @@ ${String(storyText).slice(0, 3000)}
 - 350단어 초과: Veo가 혼란 → 핵심만 압축
 - 최적 구조: [카메라 2~3문장] + [캐릭터/액션 2~3문장] + [조명/분위기 1~2문장] + [스타일 키워드 1문장]
 
+**!!!! 절대 규칙: imagePrompt, videoPrompt, extendPrompt는 100% 영어만 !!!!**
+- 한국어 단어가 단 하나라도 들어가면 이미지/영상 생성이 실패합니다
+- "역동적인 액션" ❌ → "dynamic action" ✅
+- "기하학적 구도" ❌ → "geometric composition" ✅
+- "날씨의 시각화" ❌ → "weather visualization" ✅
+- "연극적 미장센" ❌ → "theatrical mise-en-scène" ✅
+- 모든 스타일/분위기/카메라/조명 키워드는 반드시 영어로 번역
+
+**imagePrompt는 반드시 실제 장면 내용을 묘사해야 합니다 (핵심!):**
+- ❌ 나쁜 예: "photorealistic, cinematic, A young person, black hair, scene 1, cinematic quality"
+- ✅ 좋은 예: "A young Korean woman sitting on her bed at night, scrolling through her phone reading plastic surgery reviews, phone screen glowing on her face, cozy bedroom with warm desk lamp, photorealistic, 4K"
+- imagePrompt의 첫 문장은 반드시 "누가 어디서 무엇을 하고 있는지"를 구체적으로 묘사
+- 스타일 키워드는 장면 묘사 뒤에 배치
+
 **카메라 용어는 반드시 영어로 (Veo 최적화):**
 - Use: "extreme close-up", "dolly in", "tracking shot", "crane shot", "whip pan", "rack focus", "steadicam", "handheld"
 - Use: "golden hour lighting", "chiaroscuro", "volumetric light rays", "rim lighting", "backlit silhouette"
 - Use: "shallow depth of field", "bokeh", "anamorphic lens", "film grain", "cinematic color grading"
-- NEVER use Korean camera terms in videoPrompt — always English
+- NEVER use Korean in imagePrompt, videoPrompt, or extendPrompt — 100% English only
 
 각 장면의 videoPrompt에는 반드시:
 - **카메라 시퀀스**: 8초 안에서 2~3가지 카메라 무빙을 시간순으로 기술
@@ -171,8 +185,8 @@ ${String(storyText).slice(0, 3000)}
     "sceneDescription": "[한국어] 장면 내용 + 카메라 움직임 한줄 설명",
     "cameraDirection": "[영어] 8초 카메라 시퀀스: [앵글1]→[무빙]→[앵글2]→[무빙]→[앵글3]. ${directorNameKo} style.",
     "moodLighting": "[영어] 조명/분위기 — 감독 스타일",
-    "imagePrompt": "[영어] ${veoStyle}, ${regionFlavor}, directed by ${directorName}, [캐릭터 전체 외형], [장면 핵심 순간], [조명], cinematic quality, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
-    "videoPrompt": "[영어] Cinematic 8-second single-take clip. ${veoStyle}. Directed by ${directorName}. Camera: [시작 앵글], [첫 무빙], [중간 앵글], [두번째 무빙], [최종 앵글]. [캐릭터 전체 외형]. [8초 동안의 동작 시퀀스]. [조명 변화]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text, no watermark",
+    "imagePrompt": "[100% ENGLISH] [WHO is doing WHAT, WHERE — concrete scene description first]. [캐릭터 전체 외형]. [specific setting/environment details]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, [lighting], cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
+    "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take clip. [WHO does WHAT, WHERE — concrete action description]. ${veoStyle}. Style: ${directorName}. Camera: [starting angle], [first movement], [middle angle], [second movement], [final angle]. [캐릭터 전체 외형]. [8-second action sequence with specific movements]. [lighting changes]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text, no watermark",
     "extendPrompt": "",
     "transitionHint": "[한국어] 다음 장면 연결 방식",
     "characterConsistency": "[한국어] 캐릭터 유지 지침",

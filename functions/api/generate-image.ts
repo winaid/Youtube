@@ -12,10 +12,11 @@ const NANO_BANANA_2_URL =
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { prompt, aspectRatio, numberOfImages } = await context.request.json() as {
+    const { prompt, aspectRatio, numberOfImages, sceneDescription } = await context.request.json() as {
       prompt: string;
       aspectRatio?: string;
       numberOfImages?: number;
+      sceneDescription?: string;
     };
 
     if (!prompt?.trim()) {
@@ -31,7 +32,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       : aspectRatio === "1:1" ? "Square 1:1 format."
       : "Portrait 9:16 format.";
 
-    const imagePrompt = `Generate a high-quality cinematic storyboard image. ${aspectLabel}\n\n${prompt}`;
+    // 장면 설명이 있으면 이미지 프롬프트에 포함하여 내용 일치도 향상
+    const sceneContext = sceneDescription
+      ? `\n\nScene context (the image MUST depict this): ${sceneDescription}`
+      : "";
+
+    const imagePrompt = `Generate a storyboard illustration that accurately depicts the described scene. Focus on showing the actual situation, characters, and setting described — NOT generic cinematic imagery. ${aspectLabel}${sceneContext}\n\n${prompt}`;
 
     const requestBody = {
       contents: [{
