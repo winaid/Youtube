@@ -393,123 +393,139 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
           </Select>
         </div>
 
-        {/* 영상 길이 */}
-        <div className="space-y-2">
-          <Label>영상 길이</Label>
-          <div className="flex flex-wrap gap-2">
-            {durations.map((d) => (
-              <Button
-                key={String(d.value)}
-                variant={duration === d.value ? "default" : "outline"}
-                size="sm"
-                className="flex-1 min-w-[60px]"
-                style={duration === d.value ? { background: "#787fff", color: "white" } : {}}
-                onClick={() => setDuration(d.value)}
-              >
-                {d.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {/* 컷 수 조절 */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label>컷 수</Label>
-            {isAnalyzing && (
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
-                AI 분석 중...
-              </span>
-            )}
-          </div>
-
-          {/* AI 추천 */}
-          {aiCutRecommendation && (
-            <div className="p-2.5 rounded-lg space-y-1.5" style={{ background: "#22c55e08", border: "1px solid #22c55e30" }}>
-              <div className="flex items-center gap-2">
-                <Badge className="text-[10px] text-white" style={{ background: "#22c55e" }}>
-                  AI 추천: {aiCutRecommendation.recommendedCuts}컷
-                </Badge>
+        {/* 영상 길이 + 컷 수 + 화면 비율 */}
+        <div className="rounded-xl p-4 space-y-4" style={{ background: "#f8f9fc", border: "1px solid #e8e9f0" }}>
+          {/* 영상 길이 */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>영상 길이</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {durations.map((d) => (
                 <button
-                  className="text-[10px] font-medium underline"
-                  style={{ color: "#22c55e" }}
-                  onClick={() => setCutCount(aiCutRecommendation.recommendedCuts)}
+                  key={String(d.value)}
+                  className="h-8 rounded-lg text-xs font-medium transition-all"
+                  style={
+                    duration === d.value
+                      ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                      : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                  }
+                  onClick={() => setDuration(d.value)}
                 >
-                  적용
+                  {d.label}
                 </button>
-              </div>
-              <p className="text-[10px] text-muted-foreground">{aiCutRecommendation.reason}</p>
-              {aiCutRecommendation.scenes.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {aiCutRecommendation.scenes.slice(0, 5).map((scene, i) => (
-                    <Badge key={i} variant="outline" className="text-[9px]" style={{ borderColor: "#22c55e40" }}>
-                      {scene.slice(0, 20)}{scene.length > 20 ? "..." : ""}
-                    </Badge>
-                  ))}
-                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
+
+          {/* 컷 수 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>컷 수</Label>
+              {isAnalyzing && (
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
+                  AI 분석 중...
+                </span>
               )}
             </div>
-          )}
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={cutCount === "auto" ? "default" : "outline"}
-              size="sm"
-              className="min-w-[50px]"
-              style={cutCount === "auto" ? { background: "#787fff", color: "white" } : {}}
-              onClick={() => setCutCount("auto")}
-            >
-              자동
-            </Button>
-            {[4, 6, 8, 10, 12, 15, 20].map((n) => (
-              <Button
-                key={n}
-                variant={cutCount === n ? "default" : "outline"}
-                size="sm"
-                className="min-w-[40px]"
-                style={cutCount === n ? { background: "#787fff", color: "white" } : {}}
-                onClick={() => setCutCount(n)}
+            {/* AI 추천 */}
+            {aiCutRecommendation && (
+              <button
+                className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
+                style={{ background: "#22c55e0a", border: "1px solid #22c55e25" }}
+                onClick={() => setCutCount(aiCutRecommendation.recommendedCuts)}
               >
-                {n}
-              </Button>
-            ))}
+                <div className="flex items-center gap-2">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style={{ background: "#22c55e" }}>
+                    AI 추천
+                  </span>
+                  <span className="text-xs font-bold" style={{ color: "#16a34a" }}>
+                    {aiCutRecommendation.recommendedCuts}컷
+                  </span>
+                  <span className="text-[10px] text-muted-foreground ml-auto">클릭하여 적용</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{aiCutRecommendation.reason}</p>
+                {aiCutRecommendation.scenes.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {aiCutRecommendation.scenes.slice(0, 4).map((scene, i) => (
+                      <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#16a34a" }}>
+                        {scene.slice(0, 18)}{scene.length > 18 ? "..." : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+            )}
+
+            <div className="grid grid-cols-4 gap-1.5">
+              {([{ value: "auto" as const, label: "자동" }, ...([4, 6, 8, 10, 12, 15, 20] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
+                <button
+                  key={String(item.value)}
+                  className="h-8 rounded-lg text-xs font-medium transition-all"
+                  style={
+                    cutCount === item.value
+                      ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                      : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                  }
+                  onClick={() => setCutCount(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                min={4}
+                max={25}
+                placeholder="직접 입력 (4~25)"
+                value={typeof cutCount === "number" && ![4, 6, 8, 10, 12, 15, 20].includes(cutCount) ? cutCount : ""}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  if (v >= 4 && v <= 25) setCutCount(v);
+                  else if (e.target.value === "") setCutCount("auto");
+                }}
+                className="flex h-8 w-full rounded-lg border bg-white px-3 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
+                style={{ borderColor: "#e2e8f0" }}
+              />
+            </div>
           </div>
-          <input
-            type="number"
-            min={4}
-            max={25}
-            placeholder="직접 입력 (4~25)"
-            value={typeof cutCount === "number" ? cutCount : ""}
-            onChange={(e) => {
-              const v = parseInt(e.target.value);
-              if (v >= 4 && v <= 25) setCutCount(v);
-              else if (e.target.value === "") setCutCount("auto");
-            }}
-            className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
-          />
-        </div>
 
-        {/* 화면 비율 */}
-        <div className="space-y-2">
-          <Label>화면 비율</Label>
-          <div className="flex gap-2">
-            {([
-              { value: "9:16" as AspectRatio, label: "세로 (쇼츠)", icon: "📱" },
-              { value: "16:9" as AspectRatio, label: "가로 (유튜브)", icon: "🖥️" },
-              { value: "1:1" as AspectRatio, label: "정사각형", icon: "⬜" },
-            ]).map((ar) => (
-              <Button
-                key={ar.value}
-                variant={aspectRatio === ar.value ? "default" : "outline"}
-                size="sm"
-                className="flex-1 text-xs"
-                style={aspectRatio === ar.value ? { background: "#787fff", color: "white" } : {}}
-                onClick={() => setAspectRatio(ar.value)}
-              >
-                {ar.icon} {ar.label}
-              </Button>
-            ))}
+          <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
+
+          {/* 화면 비율 */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>화면 비율</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([
+                { value: "9:16" as AspectRatio, label: "세로 (쇼츠)", ratio: "aspect-[9/16]" },
+                { value: "16:9" as AspectRatio, label: "가로 (유튜브)", ratio: "aspect-[16/9]" },
+                { value: "1:1" as AspectRatio, label: "정사각형", ratio: "aspect-square" },
+              ]).map((ar) => (
+                <button
+                  key={ar.value}
+                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg text-xs font-medium transition-all"
+                  style={
+                    aspectRatio === ar.value
+                      ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                      : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                  }
+                  onClick={() => setAspectRatio(ar.value)}
+                >
+                  <span
+                    className="rounded-sm"
+                    style={{
+                      width: ar.value === "16:9" ? 28 : ar.value === "1:1" ? 18 : 12,
+                      height: ar.value === "16:9" ? 16 : ar.value === "1:1" ? 18 : 22,
+                      border: `1.5px solid ${aspectRatio === ar.value ? "white" : "#94a3b8"}`,
+                    }}
+                  />
+                  <span className="text-[10px] leading-tight text-center">{ar.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
