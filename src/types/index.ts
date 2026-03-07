@@ -104,6 +104,16 @@ export interface VeoGenerationConfig {
   lastFrameBase64?: string;
   // Reference Images (최대 3장)
   referenceImages: string[]; // base64 배열
+  // Enhancement: Prompt intensity control (0-100)
+  styleIntensity: number;
+  // Enhancement: Auto-link storyboard as firstFrame
+  autoLinkFirstFrame: boolean;
+  // Enhancement: Auto-retry failed scenes
+  autoRetryOnFailure: boolean;
+  maxRetryCount: number;
+  // Enhancement: Auto verify & refine prompts
+  autoVerifyPrompts: boolean;
+  autoEnglishRefine: boolean;
 }
 
 export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
@@ -116,6 +126,12 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   personGeneration: "allow_all",
   sampleCount: 1,
   referenceImages: [],
+  styleIntensity: 50,
+  autoLinkFirstFrame: true,
+  autoRetryOnFailure: true,
+  maxRetryCount: 2,
+  autoVerifyPrompts: true,
+  autoEnglishRefine: true,
 };
 
 // ===== 영상 생성 상태 =====
@@ -124,6 +140,21 @@ export type VideoGenStatus = "idle" | "generating" | "polling" | "completed" | "
 export interface VideoVariant {
   videoUri: string;
   seed?: string;
+}
+
+export interface PromptVerification {
+  overallScore: number;
+  scores: {
+    characterDescription: number;
+    cameraMovement: number;
+    actionSequence: number;
+    lightingMood: number;
+    veoCompatibility: number;
+  };
+  issues: string[];
+  suggestions: string[];
+  improvedVideoPrompt?: string;
+  improvedExtendPrompt?: string;
 }
 
 export interface VideoClip {
@@ -140,6 +171,8 @@ export interface VideoClip {
   durationSec: number;
   variants?: VideoVariant[]; // sampleCount > 1일 때 여러 변형
   selectedVariant?: number; // 선택된 변형 인덱스
+  retryCount?: number; // Enhancement: auto-retry tracking
+  verification?: PromptVerification; // Enhancement: prompt quality score
 }
 
 export interface VideoGenerationState {

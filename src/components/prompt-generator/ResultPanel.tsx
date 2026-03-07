@@ -52,10 +52,68 @@ export default function ResultPanel({
 
   const videoGen = useVideoGeneration({
     cuts: result?.cuts ?? [],
+    storyboardImages,
     onSeedDetected: (cutNumber, seed) => {
       console.log(`CUT ${cutNumber} seed: ${seed}`);
     },
   });
+
+  // Enhancement 2: Feedback-based prompt refinement
+  const handleFeedbackRefine = useCallback(async (cutNumber: number, feedback: string) => {
+    if (!result || !onUpdateResult) return;
+    const cut = result.cuts.find((c) => c.cutNumber === cutNumber);
+    if (!cut) return;
+    try {
+      const res = await fetch("/api/refine-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoPrompt: cut.videoPrompt,
+          extendPrompt: cut.extendPrompt,
+          feedback,
+          cutNumber,
+          mode: "feedback",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.refinedVideoPrompt) {
+          const updated = { ...cut, videoPrompt: data.refinedVideoPrompt };
+          if (data.refinedExtendPrompt) updated.extendPrompt = data.refinedExtendPrompt;
+          const newCuts = result.cuts.map((c) => c.cutNumber === cutNumber ? updated : c);
+          onUpdateResult({ ...result, cuts: newCuts });
+        }
+      }
+    } catch { /* ignore */ }
+  }, [result, onUpdateResult]);
+
+  // Enhancement 3: English native correction (manual trigger)
+  const handleEnglishRefine = useCallback(async (cutNumber: number) => {
+    if (!result || !onUpdateResult) return;
+    const cut = result.cuts.find((c) => c.cutNumber === cutNumber);
+    if (!cut) return;
+    try {
+      const res = await fetch("/api/refine-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoPrompt: cut.videoPrompt,
+          extendPrompt: cut.extendPrompt,
+          cutNumber,
+          mode: "english-native",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.refinedVideoPrompt) {
+          const updated = { ...cut, videoPrompt: data.refinedVideoPrompt };
+          if (data.refinedExtendPrompt) updated.extendPrompt = data.refinedExtendPrompt;
+          const newCuts = result.cuts.map((c) => c.cutNumber === cutNumber ? updated : c);
+          onUpdateResult({ ...result, cuts: newCuts });
+        }
+      }
+    } catch { /* ignore */ }
+  }, [result, onUpdateResult]);
 
   // Drag & Drop 장면 재배치 — hooks must be before early returns
   const handleDragStart = useCallback((cutIndex: number) => {
@@ -551,6 +609,8 @@ export default function ResultPanel({
                     } catch { /* ignore */ }
                     setSceneTtsLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
                   }}
+                  onFeedbackRefine={handleFeedbackRefine}
+                  onEnglishRefine={handleEnglishRefine}
                 />
               </div>
             ))}

@@ -451,6 +451,121 @@ export default function VideoSettingsPanel({
 
           <Separator style={{ background: "#c4b80030" }} />
 
+          {/* Enhancement: AI 품질 고도화 */}
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold" style={{ color: "#7c3aed" }}>AI 품질 고도화</Label>
+
+            {/* 프롬프트 자동 검증 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs">프롬프트 자동 품질 검증</Label>
+                <p className="text-[10px] text-muted-foreground">생성 전 Gemini가 프롬프트를 리뷰하고 개선</p>
+              </div>
+              <button
+                className="relative w-10 h-5 rounded-full transition-colors"
+                style={{ background: config.autoVerifyPrompts ? "#7c3aed" : "#ccc" }}
+                onClick={() => update({ autoVerifyPrompts: !config.autoVerifyPrompts })}
+              >
+                <div
+                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                  style={{ left: config.autoVerifyPrompts ? "22px" : "2px" }}
+                />
+              </button>
+            </div>
+
+            {/* 영어 네이티브 교정 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs">Veo 영어 네이티브 교정</Label>
+                <p className="text-[10px] text-muted-foreground">Veo가 잘 이해하는 시네마틱 영어로 자동 변환</p>
+              </div>
+              <button
+                className="relative w-10 h-5 rounded-full transition-colors"
+                style={{ background: config.autoEnglishRefine ? "#7c3aed" : "#ccc" }}
+                onClick={() => update({ autoEnglishRefine: !config.autoEnglishRefine })}
+              >
+                <div
+                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                  style={{ left: config.autoEnglishRefine ? "22px" : "2px" }}
+                />
+              </button>
+            </div>
+
+            {/* 스토리보드 → firstFrame 자동 연결 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs">스토리보드 → firstFrame 자동 연결</Label>
+                <p className="text-[10px] text-muted-foreground">스토리보드 이미지를 firstFrame으로 사용</p>
+              </div>
+              <button
+                className="relative w-10 h-5 rounded-full transition-colors"
+                style={{ background: config.autoLinkFirstFrame ? "#22c55e" : "#ccc" }}
+                onClick={() => update({ autoLinkFirstFrame: !config.autoLinkFirstFrame })}
+              >
+                <div
+                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                  style={{ left: config.autoLinkFirstFrame ? "22px" : "2px" }}
+                />
+              </button>
+            </div>
+
+            {/* 실패 장면 자동 재시도 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs">실패 장면 자동 재시도</Label>
+                <p className="text-[10px] text-muted-foreground">negativePrompt 강화 후 자동 재생성</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={config.maxRetryCount}
+                  onChange={(e) => update({ maxRetryCount: parseInt(e.target.value) })}
+                  className="h-7 rounded-md border text-[10px] px-1"
+                >
+                  <option value={1}>1회</option>
+                  <option value={2}>2회</option>
+                  <option value={3}>3회</option>
+                </select>
+                <button
+                  className="relative w-10 h-5 rounded-full transition-colors"
+                  style={{ background: config.autoRetryOnFailure ? "#ef4444" : "#ccc" }}
+                  onClick={() => update({ autoRetryOnFailure: !config.autoRetryOnFailure })}
+                >
+                  <div
+                    className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                    style={{ left: config.autoRetryOnFailure ? "22px" : "2px" }}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* 프롬프트 강도 조절 슬라이더 */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">감독 스타일 강도</Label>
+                <span className="text-[10px] font-mono" style={{ color: "#7c3aed" }}>{config.styleIntensity}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={10}
+                value={config.styleIntensity}
+                onChange={(e) => update({ styleIntensity: parseInt(e.target.value) })}
+                className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, #ccc 0%, #7c3aed ${config.styleIntensity}%, #e5e5e5 ${config.styleIntensity}%)`,
+                }}
+              />
+              <div className="flex justify-between text-[9px] text-muted-foreground">
+                <span>자연스러움</span>
+                <span>균형</span>
+                <span>스타일 극대화</span>
+              </div>
+            </div>
+          </div>
+
+          <Separator style={{ background: "#c4b80030" }} />
+
           {/* 비용 요약 */}
           <div className="p-2.5 rounded-lg" style={{ background: "#fff78710", border: "1px solid #c4b80020" }}>
             <div className="flex items-center justify-between">

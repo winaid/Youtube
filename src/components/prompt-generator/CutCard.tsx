@@ -23,6 +23,8 @@ interface CutCardProps {
   sceneTtsUrl?: string;
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
+  onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
+  onEnglishRefine?: (cutNumber: number) => Promise<void>;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -129,8 +131,13 @@ export default function CutCard({
   cut, characterSeeds, onUpdate,
   storyboardImage, storyboardLoading, onGenerateImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
+  onFeedbackRefine, onEnglishRefine,
 }: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
+  const [feedbackText, setFeedbackText] = useState("");
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [refining, setRefining] = useState(false);
+  const [englishRefining, setEnglishRefining] = useState(false);
 
   const handleFieldSave = (field: keyof Cut, value: string) => {
     if (onUpdate) {
@@ -269,6 +276,71 @@ export default function CutCard({
             {cut.moodLighting}
           </div>
         </div>
+
+        {/* Enhancement 2: Feedback loop + Enhancement 3: English refine */}
+        <div className="flex gap-1.5 flex-wrap">
+          {onFeedbackRefine && storyboardImage && (
+            <button
+              onClick={() => setShowFeedback(!showFeedback)}
+              className="text-[10px] px-2 py-1 rounded-md transition-colors"
+              style={{ background: "#787fff10", color: "#787fff", border: "1px solid #787fff20" }}
+            >
+              {showFeedback ? "피드백 닫기" : "장면 피드백"}
+            </button>
+          )}
+          {onEnglishRefine && (
+            <button
+              onClick={async () => {
+                setEnglishRefining(true);
+                await onEnglishRefine(cut.cutNumber);
+                setEnglishRefining(false);
+              }}
+              disabled={englishRefining}
+              className="text-[10px] px-2 py-1 rounded-md transition-colors"
+              style={{ background: "#7c3aed10", color: "#7c3aed", border: "1px solid #7c3aed20" }}
+            >
+              {englishRefining ? "교정 중..." : "영어 네이티브 교정"}
+            </button>
+          )}
+        </div>
+
+        {/* Enhancement 2: Feedback input */}
+        {showFeedback && onFeedbackRefine && (
+          <div className="space-y-1.5 p-2 rounded-lg" style={{ background: "#787fff08", border: "1px solid #787fff15" }}>
+            <Textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              rows={2}
+              className="text-xs"
+              placeholder="이 장면의 어떤 부분을 수정하고 싶으세요? (예: 카메라 앵글을 더 낮게, 표정을 더 밝게)"
+            />
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                className="h-6 text-[10px] text-white"
+                style={{ background: "#787fff" }}
+                disabled={!feedbackText.trim() || refining}
+                onClick={async () => {
+                  setRefining(true);
+                  await onFeedbackRefine(cut.cutNumber, feedbackText);
+                  setRefining(false);
+                  setFeedbackText("");
+                  setShowFeedback(false);
+                }}
+              >
+                {refining ? "개선 중..." : "프롬프트 개선"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-[10px]"
+                onClick={() => { setShowFeedback(false); setFeedbackText(""); }}
+              >
+                취소
+              </Button>
+            </div>
+          </div>
+        )}
 
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="prompts" className="border-none">

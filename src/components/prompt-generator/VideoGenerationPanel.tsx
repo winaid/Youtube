@@ -225,6 +225,31 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
+                {/* Quality Score & Retry Info */}
+                {(clip.verification || (clip.retryCount && clip.retryCount > 0)) && (
+                  <div className="px-3 pb-2 flex gap-1.5 flex-wrap">
+                    {clip.verification && (
+                      <Badge
+                        className="text-[10px] text-white"
+                        style={{
+                          background: clip.verification.overallScore >= 80
+                            ? "#22c55e"
+                            : clip.verification.overallScore >= 60
+                            ? "#e09900"
+                            : "#ef4444",
+                        }}
+                      >
+                        품질 {clip.verification.overallScore}/100
+                      </Badge>
+                    )}
+                    {clip.retryCount && clip.retryCount > 0 && (
+                      <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#ef4444", color: "#dc2626" }}>
+                        재시도 {clip.retryCount}회
+                      </Badge>
+                    )}
+                  </div>
+                )}
+
                 {/* Seed */}
                 {clip.seed && (
                   <div className="px-3 pb-2">
