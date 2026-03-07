@@ -31,6 +31,12 @@ Aspect Ratio: ${input.aspectRatio || "16:9"}
 
 Thumbnail Description: ${input.thumbnailPrompt}
 
+IMPORTANT composition & camera rules:
+- Use a cinematic camera perspective. Think like a film director choosing the best angle.
+- When a person is looking at an object (phone, book, screen, etc.), position the camera BEHIND or OVER THE SHOULDER of the person. The viewer should see the BACK of the object, NOT the screen/front. The subject (person) is the focus, not the object's content.
+- Avoid flat front-facing compositions. Use depth, layering, and natural perspective.
+- The main subject should dominate 60-70% of the frame.
+
 Make it eye-catching, high contrast, and optimized for small display sizes. Use bold colors and clear focal points.`;
 
     const models = ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"];

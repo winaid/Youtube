@@ -74,7 +74,7 @@ Return a JSON object with this exact structure:
   "description": "A full YouTube description (500-1000 chars) with hooks, content summary, timestamps placeholder, and call-to-action",
   "tags": ["15-25 relevant tags for YouTube search optimization"],
   "hashtags": ["5-8 hashtags for YouTube shorts/social sharing"],
-  "thumbnailPrompt": "A detailed image generation prompt for creating a compelling YouTube thumbnail",
+  "thumbnailPrompt": "A detailed image generation prompt for a YouTube thumbnail. MUST specify camera angle/perspective (e.g. over-the-shoulder, behind the subject, low angle). When a person interacts with an object (phone, laptop, book), describe the camera as positioned BEHIND or BESIDE the person so the object's back is visible, NOT the screen. Focus on the person as the subject, not the object's content.",
   "predictedCTR": 0.0
 }
 
