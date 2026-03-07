@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Cut } from "@/types";
+import { Cut, CharacterSeed } from "@/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 
 interface CutCardProps {
   cut: Cut;
+  characterSeeds?: CharacterSeed[];
   onUpdate?: (updated: Cut) => void;
 }
 
@@ -118,7 +119,7 @@ function EditableField({
   );
 }
 
-export default function CutCard({ cut, onUpdate }: CutCardProps) {
+export default function CutCard({ cut, characterSeeds, onUpdate }: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
 
   const handleFieldSave = (field: keyof Cut, value: string) => {
@@ -127,10 +128,14 @@ export default function CutCard({ cut, onUpdate }: CutCardProps) {
     }
   };
 
-  // 글씨 포함 여부 감지 (text, title, caption, subtitle, letter, sign, hangeul, 자막 등)
   const hasText = /text|title|caption|subtitle|letter|sign|hangeul|자막|글씨|텍스트|타이틀/i.test(
     cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
   );
+
+  // 이 컷에 등장하는 캐릭터들
+  const charsInScene = characterSeeds?.filter(
+    (s) => cut.charactersInScene?.includes(s.id)
+  ) ?? [];
 
   return (
     <Card
@@ -159,11 +164,38 @@ export default function CutCard({ cut, onUpdate }: CutCardProps) {
             >
               {hasText ? "Veo 3.1 Quality" : "Veo 3.1 Fast"}
             </Badge>
+            {cut.cutNumber === 1 ? (
+              <Badge className="text-xs" style={{ background: "#787fff30", color: "#5a5ecc" }}>
+                Video Prompt
+              </Badge>
+            ) : (
+              <Badge className="text-xs" style={{ background: "#6b5ce720", color: "#6b5ce7" }}>
+                Extend
+              </Badge>
+            )}
           </div>
           <Badge variant="outline" className="text-xs" style={{ borderColor: isEven ? "#fff787" : "#787fff80" }}>
             {cut.transitionHint}
           </Badge>
         </div>
+
+        {/* 등장 캐릭터 */}
+        {charsInScene.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <span className="text-[10px] text-muted-foreground">등장:</span>
+            {charsInScene.map((ch) => (
+              <Badge
+                key={ch.id}
+                variant="outline"
+                className="text-[10px] py-0"
+                style={{ borderColor: "#e09900", color: "#e09900" }}
+                title={ch.appearance}
+              >
+                {ch.label}
+              </Badge>
+            ))}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
         <p className="text-sm">{cut.sceneDescription}</p>
@@ -199,16 +231,18 @@ export default function CutCard({ cut, onUpdate }: CutCardProps) {
                 bgColor="#fff78720"
                 onSave={(v) => handleFieldSave("videoPrompt", v)}
               />
-              <EditableField
-                label="Veo Extend Prompt"
-                value={cut.extendPrompt}
-                color="#6b5ce7"
-                bgColor="#6b5ce710"
-                onSave={(v) => handleFieldSave("extendPrompt", v)}
-              />
+              {cut.cutNumber > 1 && (
+                <EditableField
+                  label="Veo Extend Prompt (이전 클립 연장)"
+                  value={cut.extendPrompt}
+                  color="#6b5ce7"
+                  bgColor="#6b5ce710"
+                  onSave={(v) => handleFieldSave("extendPrompt", v)}
+                />
+              )}
               <div className="space-y-1">
                 <span className="text-xs font-medium" style={{ color: "#e09900" }}>
-                  캐릭터 일관성
+                  캐릭터 일관성 지침
                 </span>
                 <p className="text-xs p-2 rounded-md leading-relaxed" style={{ background: "#fff78710", border: "1px dashed #fff78760" }}>
                   {cut.characterConsistency}

@@ -24,6 +24,14 @@ export interface PromptInput {
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
 }
 
+// ===== 캐릭터 시드 =====
+export interface CharacterSeed {
+  id: string;
+  label: string;
+  appearance: string;
+  appearanceKo: string;
+}
+
 // ===== 출력 타입 =====
 export interface Cut {
   cutNumber: number;
@@ -36,6 +44,7 @@ export interface Cut {
   extendPrompt: string;
   transitionHint: string;
   characterConsistency: string;
+  charactersInScene: string[];
 }
 
 export interface PromptOutput {
@@ -44,6 +53,7 @@ export interface PromptOutput {
   totalCuts: number;
   globalStylePrompt: string;
   directorPersonaPrompt: string;
+  characterSeeds: CharacterSeed[];
   continuityRules: string[];
   cuts: Cut[];
 }

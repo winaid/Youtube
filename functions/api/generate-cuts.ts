@@ -12,6 +12,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       directorName,
       directorNameKo,
       directorStyle,
+      directorPersona,
       animationMode,
       aspectRatio,
       region,
@@ -27,50 +28,122 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
-    const prompt = `당신은 영상 프로듀서이자 Veo 프롬프트 전문가입니다.
+    const veoStyleMap: Record<string, string> = {
+      "2D 애니": "2D anime style, cel-shaded animation, vibrant colors, anime character design",
+      "실사": "photorealistic, cinematic film grain, 4K quality, real human actors",
+      "하이브리드": "hybrid 2D-3D rendering, stylized semi-realistic, blending anime and live-action",
+    };
+    const veoStyle = veoStyleMap[String(animationMode)] || veoStyleMap["2D 애니"];
 
-감독: ${directorNameKo || directorName} (${directorName})
-스타일: ${directorStyle || "시네마틱"}
-애니메이션 모드: ${animationMode || "2D 애니"}
-화면비: ${aspectRatio || "16:9"}
-지역: ${region || "한국"}
-컷 수: ${cutCount || 8}
+    const regionFlavorMap: Record<string, string> = {
+      "한국": "Korean aesthetic, Korean urban-rural atmosphere",
+      "일본": "Japanese aesthetic, traditional-modern contrast",
+      "중국": "Chinese cinematic grandeur, classical architecture",
+      "유럽": "European architecture, classical atmosphere",
+      "미국": "American cinematic, diverse urban landscape",
+    };
+    const regionFlavor = regionFlavorMap[String(region)] || regionFlavorMap["한국"];
 
-시나리오:
-${String(storyText).slice(0, 2000)}
+    const prompt = `당신은 Google Veo 영상 프롬프트 전문가이자 영상 연출가입니다.
 
-위 시나리오를 ${cutCount || 8}개의 Veo 8초 클립 컷으로 나눠주세요.
+## 감독 정보
+- 감독: ${directorNameKo || directorName} (${directorName})
+- 연출 스타일: ${directorStyle || "시네마틱"}
+${directorPersona ? `- 감독 페르소나: ${String(directorPersona).slice(0, 500)}` : ""}
 
-각 컷은 다음 JSON 형식으로 작성:
+## 프로젝트 설정
+- 애니메이션 모드: ${animationMode || "2D 애니"}
+- Veo 스타일: ${veoStyle}
+- 화면비: ${aspectRatio || "1:1"}
+- 지역 감성: ${regionFlavor}
+- 컷 수: ${cutCount || 8}
+
+## 시나리오
+${String(storyText).slice(0, 3000)}
+
+---
+
+## 작업 순서
+
+### STEP 1: 캐릭터 정의
+시나리오에 등장하는 모든 캐릭터를 먼저 정의하세요.
+각 캐릭터의 외형을 **구체적이고 고정된 영어 묘사**로 작성합니다.
+이 묘사는 모든 컷의 프롬프트에 동일하게 반복 삽입됩니다.
+
+캐릭터 묘사에 반드시 포함할 항목:
+- 성별, 나이대
+- 머리 스타일과 색상
+- 얼굴 특징 (눈, 코, 입 등 주요 특징)
+- 체형
+- 의상 (색상, 소재, 디테일까지 구체적으로)
+- 피부톤
+
+예시: "A young Korean man in his late 20s, short black hair with side part, sharp jawline, slim athletic build, wearing a navy blue cotton hoodie with white drawstrings and dark grey slim jeans, warm ivory skin tone"
+
+### STEP 2: 컷 생성
+${Number(cutCount) || 8}개의 컷을 생성합니다.
+
+**핵심 규칙 — 캐릭터 일관성:**
+- 모든 컷의 videoPrompt, imagePrompt, extendPrompt에 해당 컷에 등장하는 캐릭터의 **전체 외형 묘사를 매번 반복**해서 넣으세요
+- "same character as before" 같은 참조 표현 절대 금지. 항상 전체 묘사를 다시 써야 합니다
+- 캐릭터의 의상, 헤어, 체형이 컷 간에 절대 변하면 안 됩니다
+
+**핵심 규칙 — 감독 스타일:**
+- 모든 videoPrompt와 imagePrompt에 감독의 시그니처 스타일 키워드를 포함하세요
+- ${directorNameKo}의 특징: ${directorStyle}
+- 카메라 워크, 색감, 조명, 구도에 감독 스타일을 반영하세요
+
+**핵심 규칙 — Extend 프롬프트:**
+- CUT 1: extendPrompt는 빈 문자열 ""
+- CUT 2 이후: extendPrompt는 **이전 컷의 마지막 장면에서 자연스럽게 이어지는** 묘사
+- extendPrompt에도 캐릭터 전체 외형 묘사를 반드시 포함
+- "Continue from previous clip" 같은 모호한 표현 금지. 구체적으로 어떤 장면에서 어떻게 이어지는지 묘사
+
+---
+
+## 출력 형식
+
+다음 JSON 구조로 출력하세요. 마크다운 펜스 없이 순수 JSON만:
+
 {
-  "cutNumber": 1,
-  "durationSec": 8,
-  "sceneDescription": "[한국어] 이 컷에서 어떤 장면이 펼쳐지는지 설명",
-  "cameraDirection": "[영어] 카메라 무빙 (예: slow push-in, tracking shot 등)",
-  "moodLighting": "[영어] 조명/분위기 (예: golden hour warm lighting, soft shadows)",
-  "imagePrompt": "[영어] Veo 이미지 참조용 프롬프트. 스타일+지역+감독스타일+장면묘사+조명+화질",
-  "videoPrompt": "[영어] Veo 8초 비디오 생성 프롬프트. 카메라동작+스타일+장면+분위기+감독레퍼런스",
-  "extendPrompt": "[영어] 이전 클립에서 이어지는 Extend 프롬프트",
-  "transitionHint": "[한국어] 다음 컷으로의 전환 방식 (예: 디졸브, 하드컷, 매치컷 등)",
-  "characterConsistency": "[한국어] 캐릭터 일관성 유지 지침"
+  "characterSeeds": [
+    {
+      "id": "char-1",
+      "label": "[한국어 캐릭터 이름/역할]",
+      "appearance": "[영어 전체 외형 묘사 — 위 STEP 1에서 정의한 것]",
+      "appearanceKo": "[한국어 외형 요약]"
+    }
+  ],
+  "cuts": [
+    {
+      "cutNumber": 1,
+      "durationSec": 8,
+      "sceneDescription": "[한국어] 이 컷의 장면 설명",
+      "cameraDirection": "[영어] 카메라 무빙 — 감독 스타일 반영",
+      "moodLighting": "[영어] 조명/분위기 — 감독 스타일 반영",
+      "imagePrompt": "[영어] ${veoStyle}, ${regionFlavor}, [감독 스타일 키워드], [캐릭터 전체 외형 묘사], [장면 묘사], [조명], [구도], cinematic quality, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no watermark",
+      "videoPrompt": "[영어] Cinematic 8-second clip. ${veoStyle}. [감독 스타일 키워드 + 카메라 동작]. [캐릭터 전체 외형 묘사]. [장면 동작 묘사]. [조명/분위기]. Smooth motion, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
+      "extendPrompt": "",
+      "transitionHint": "[한국어] 다음 컷으로의 전환 방식",
+      "characterConsistency": "[한국어] 이 컷의 캐릭터 유지 지침",
+      "charactersInScene": ["char-1"]
+    },
+    {
+      "cutNumber": 2,
+      "extendPrompt": "[영어] The scene continues from [이전 컷 마지막 장면 구체 묘사]. [캐릭터 전체 외형 묘사 반복]. [이번 컷 동작]. [감독 스타일]. ${veoStyle}. Smooth transition, maintain exact character appearance, ${aspectRatio || "1:1"} aspect ratio",
+      "...": "나머지 필드도 동일"
+    }
+  ]
 }
 
-규칙:
-1. 시나리오 내용을 실제로 반영해서 각 컷의 장면을 구체적으로 작성
-2. 감독의 시그니처 스타일(${directorStyle})을 영상 프롬프트에 녹여낼 것
-3. imagePrompt와 videoPrompt는 영어로 작성 (Veo 최적화)
-4. sceneDescription, transitionHint, characterConsistency는 한국어
-5. 컷 간 자연스러운 흐름과 연결성 유지
-6. 첫 컷은 도입, 마지막 컷은 마무리/여운
-
-JSON 배열만 출력하세요. 설명이나 마크다운 펜스 없이.`;
+중요: JSON만 출력. 설명, 마크다운 펜스, 주석 없이.`;
 
     const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
+        generationConfig: { temperature: 0.7, maxOutputTokens: 16384 },
       }),
     });
 
@@ -81,17 +154,26 @@ JSON 배열만 출력하세요. 설명이나 마크다운 펜스 없이.`;
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
 
-    let cuts;
+    let parsed;
     try {
-      cuts = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
-      const match = text.match(/\[[\s\S]*\]/);
-      cuts = match ? JSON.parse(match[0]) : [];
+      // Try extracting JSON from markdown fences or other wrapper
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      } else {
+        const arrayMatch = text.match(/\[[\s\S]*\]/);
+        parsed = arrayMatch ? { cuts: JSON.parse(arrayMatch[0]), characterSeeds: [] } : { cuts: [], characterSeeds: [] };
+      }
     }
 
-    return Response.json({ cuts });
+    const characterSeeds = Array.isArray(parsed.characterSeeds) ? parsed.characterSeeds : [];
+    const cuts = Array.isArray(parsed.cuts) ? parsed.cuts : (Array.isArray(parsed) ? parsed : []);
+
+    return Response.json({ characterSeeds, cuts });
   } catch (error) {
     console.error("Cuts generation error:", error);
     return Response.json({ error: "Failed to generate cuts" }, { status: 500 });

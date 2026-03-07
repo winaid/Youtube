@@ -1,4 +1,4 @@
-import { PromptInput, PromptOutput, Cut, DirectorPersona } from "@/types";
+import { PromptInput, PromptOutput, Cut, DirectorPersona, CharacterSeed } from "@/types";
 import { directors } from "@/data/directors";
 
 async function fetchGeminiPersona(
@@ -29,8 +29,9 @@ async function fetchGeminiPersona(
 async function fetchGeminiCuts(
   input: PromptInput,
   director: DirectorPersona,
+  directorPersonaText: string,
   cutCount: number
-): Promise<Cut[]> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[] }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
@@ -40,6 +41,7 @@ async function fetchGeminiCuts(
         directorName: director.name,
         directorNameKo: director.nameKo,
         directorStyle: director.style,
+        directorPersona: directorPersonaText,
         animationMode: input.animationMode,
         aspectRatio: input.aspectRatio,
         region: input.region,
@@ -50,21 +52,34 @@ async function fetchGeminiCuts(
     if (!res.ok) throw new Error(`API error: ${res.status}`);
 
     const data = await res.json();
-    if (Array.isArray(data.cuts) && data.cuts.length > 0) {
-      return data.cuts.map((cut: Partial<Cut>, i: number) => ({
-        cutNumber: cut.cutNumber ?? i + 1,
-        durationSec: cut.durationSec ?? 8,
-        sceneDescription: cut.sceneDescription ?? "",
-        cameraDirection: cut.cameraDirection ?? "",
-        moodLighting: cut.moodLighting ?? "",
-        imagePrompt: cut.imagePrompt ?? "",
-        videoPrompt: cut.videoPrompt ?? "",
-        extendPrompt: cut.extendPrompt ?? "",
-        transitionHint: cut.transitionHint ?? "",
-        characterConsistency: cut.characterConsistency ?? "",
-      }));
-    }
-    throw new Error("Empty cuts");
+    const characterSeeds: CharacterSeed[] = Array.isArray(data.characterSeeds)
+      ? data.characterSeeds.map((s: Partial<CharacterSeed>) => ({
+          id: s.id ?? "char-unknown",
+          label: s.label ?? "",
+          appearance: s.appearance ?? "",
+          appearanceKo: s.appearanceKo ?? "",
+        }))
+      : [];
+
+    const cuts: Cut[] = Array.isArray(data.cuts) && data.cuts.length > 0
+      ? data.cuts.map((cut: Partial<Cut>, i: number) => ({
+          cutNumber: cut.cutNumber ?? i + 1,
+          durationSec: cut.durationSec ?? 8,
+          sceneDescription: cut.sceneDescription ?? "",
+          cameraDirection: cut.cameraDirection ?? "",
+          moodLighting: cut.moodLighting ?? "",
+          imagePrompt: cut.imagePrompt ?? "",
+          videoPrompt: cut.videoPrompt ?? "",
+          extendPrompt: cut.extendPrompt ?? "",
+          transitionHint: cut.transitionHint ?? "",
+          characterConsistency: cut.characterConsistency ?? "",
+          charactersInScene: Array.isArray(cut.charactersInScene) ? cut.charactersInScene : [],
+        }))
+      : [];
+
+    if (cuts.length === 0) throw new Error("Empty cuts from API");
+
+    return { characterSeeds, cuts };
   } catch (error) {
     console.error("Cuts API error, using fallback:", error);
     return generateFallbackCuts(input, director, cutCount);
@@ -75,7 +90,7 @@ function generateFallbackCuts(
   input: PromptInput,
   director: DirectorPersona,
   cutCount: number
-): Cut[] {
+): { characterSeeds: CharacterSeed[]; cuts: Cut[] } {
   const storyWords = input.storyText.slice(0, 30);
   const directorStyle = director.style;
 
@@ -86,35 +101,34 @@ function generateFallbackCuts(
         ? "hybrid 2D-3D rendering, stylized semi-realistic"
         : "photorealistic, cinematic film grain, 4K quality";
 
-  const regionFlavor: Record<string, string> = {
-    한국: "Korean aesthetic, hangeul signage, Korean urban-rural atmosphere",
-    일본: "Japanese aesthetic, cherry blossoms, traditional-modern contrast",
-    중국: "Chinese cinematic grandeur, silk textures, classical architecture",
-    유럽: "European architecture, classical oil-painting atmosphere",
-    미국: "American cinematic, diverse urban landscape, wide open spaces",
-  };
-  const region = regionFlavor[input.region] ?? "";
+  const characterSeeds: CharacterSeed[] = [{
+    id: "char-1",
+    label: "주인공",
+    appearance: "A young person, black hair, average build, wearing casual modern clothing",
+    appearanceKo: "검은 머리, 보통 체형, 캐주얼 현대 의상 (API 연결 후 AI가 구체적으로 생성합니다)",
+  }];
 
-  return Array.from({ length: cutCount }, (_, i) => ({
+  const charDesc = characterSeeds[0].appearance;
+
+  const cuts = Array.from({ length: cutCount }, (_, i) => ({
     cutNumber: i + 1,
     durationSec: 8,
     sceneDescription: `[컷 ${i + 1}] ${storyWords} 기반 장면 (API 연결 후 AI가 생성합니다)`,
     cameraDirection: "slow push-in toward subject",
     moodLighting: "golden hour warm lighting, soft shadows",
-    imagePrompt: `${veoStyle}, ${region}, ${directorStyle}, scene ${i + 1}, highly detailed`,
-    videoPrompt: `Cinematic 8-second clip. ${veoStyle}, ${region}. Style: ${director.name}. Smooth motion.`,
+    imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1}, highly detailed, cinematic quality`,
+    videoPrompt: `Cinematic 8-second clip. ${veoStyle}. Style: ${director.name}, ${directorStyle}. ${charDesc}. Smooth motion, no text, no watermark`,
     extendPrompt: i > 0
-      ? `Continue from cut ${i}. Maintain consistency. ${directorStyle} tone.`
-      : `Opening shot. ${veoStyle}, ${region}. Establishing scene.`,
-    transitionHint: "디졸브 – 장면 전환",
-    characterConsistency: `캐릭터 시드 고정: 동일 인물 외형 유지. ${directorStyle} 톤 일관성 유지.`,
+      ? `The scene continues from the previous moment. ${charDesc}. ${directorStyle} visual tone. ${veoStyle}. Maintain exact same character appearance. Smooth transition.`
+      : "",
+    transitionHint: i < cutCount - 1 ? "디졸브 - 다음 장면으로 자연스럽게 전환" : "페이드 아웃 - 마무리",
+    characterConsistency: `캐릭터 시드 char-1 고정: ${characterSeeds[0].appearanceKo}. 모든 컷에서 동일한 외형 유지. ${directorStyle} 톤 일관성 유지.`,
+    charactersInScene: ["char-1"],
   }));
+
+  return { characterSeeds, cuts };
 }
 
-/**
- * Veo 최적화 프롬프트 생성기
- * Gemini API를 통해 시나리오 기반 컷을 AI가 생성합니다.
- */
 export async function generatePrompt(
   input: PromptInput
 ): Promise<PromptOutput> {
@@ -130,15 +144,15 @@ export async function generatePrompt(
   const cutCount = Math.max(4, Math.round(effectiveDuration / 8));
   const storyWords = input.storyText.slice(0, 30);
 
-  // Gemini API 호출을 병렬로 실행
-  const [directorPersonaText, cuts] = await Promise.all([
-    director && (!director.persona || input.customDirector)
-      ? fetchGeminiPersona(director, input.storyText, input.animationMode)
-      : Promise.resolve(director?.persona ?? ""),
-    director
-      ? fetchGeminiCuts(input, director, cutCount)
-      : Promise.resolve(generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount)),
-  ]);
+  // 1. 감독 페르소나 먼저 생성 (컷 생성에 필요)
+  const directorPersonaText = director && (!director.persona || input.customDirector)
+    ? await fetchGeminiPersona(director, input.storyText, input.animationMode)
+    : director?.persona ?? "";
+
+  // 2. 페르소나를 포함하여 컷 생성 (캐릭터 시드 + 감독 스타일 주입)
+  const { characterSeeds, cuts } = director
+    ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount)
+    : generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount);
 
   const veoStyle =
     input.animationMode === "2D 애니"
@@ -148,27 +162,33 @@ export async function generatePrompt(
         : "photorealistic, cinematic film grain, 4K quality";
 
   const regionFlavor: Record<string, string> = {
-    한국: "Korean aesthetic, hangeul signage, Korean urban-rural atmosphere",
-    일본: "Japanese aesthetic, cherry blossoms, traditional-modern contrast",
-    중국: "Chinese cinematic grandeur, silk textures, classical architecture",
-    유럽: "European architecture, classical oil-painting atmosphere",
-    미국: "American cinematic, diverse urban landscape, wide open spaces",
+    한국: "Korean aesthetic, Korean urban-rural atmosphere",
+    일본: "Japanese aesthetic, traditional-modern contrast",
+    중국: "Chinese cinematic grandeur, classical architecture",
+    유럽: "European architecture, classical atmosphere",
+    미국: "American cinematic, diverse urban landscape",
   };
   const region = regionFlavor[input.region] ?? "";
 
+  // 캐릭터 시드 요약을 글로벌 스타일에 포함
+  const charSeedSummary = characterSeeds.length > 0
+    ? characterSeeds.map(s => `[${s.label}: ${s.appearance}]`).join(" ")
+    : "";
+
   return {
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
-    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 Google Veo 8초 × ${cuts.length}컷 = ${cuts.length * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. Gemini AI가 시나리오를 분석하여 각 컷을 생성했습니다.`,
+    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 Google Veo 8초 x ${cuts.length}컷 = ${cuts.length * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 컷에서 동일한 외형을 유지합니다.`,
     totalCuts: cuts.length,
-    globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, inspired by ${director?.name ?? "auteur"} filmmaking, ${directorStyle}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
+    globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${directorStyle}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
     directorPersonaPrompt: directorPersonaText,
+    characterSeeds,
     continuityRules: [
-      "Veo 생성 시 이전 컷의 마지막 프레임을 참조 이미지로 활용",
-      "캐릭터 외형(의상, 헤어스타일, 체형)을 모든 컷에서 일관되게 유지",
-      "조명 방향과 시간대를 연속된 컷 간에 일치시킬 것",
-      `색감 팔레트는 ${directorName} 스타일의 시그니처 톤을 유지`,
-      "각 8초 클립의 시작/끝 프레임이 자연스럽게 이어지도록 구성",
-      "Extend 프롬프트 사용 시 캐릭터/배경 묘사를 동일하게 유지",
+      `캐릭터 시드 ${characterSeeds.length}명 고정: 모든 컷의 프롬프트에 캐릭터 전체 외형 묘사가 반복 삽입됨`,
+      "Extend 프롬프트 사용 시 이전 컷 마지막 장면을 구체적으로 묘사하여 자연스러운 연결",
+      "캐릭터 외형(의상, 헤어스타일, 체형, 피부톤)을 모든 컷에서 절대 변경 금지",
+      `색감/조명은 ${directorName} 스타일의 시그니처 톤으로 통일`,
+      "각 8초 클립의 시작 프레임이 이전 클립의 끝 프레임과 매칭되도록 구성",
+      "CUT 1은 Video Prompt로 생성, CUT 2부터는 이전 클립 + Extend Prompt로 연장",
     ],
     cuts,
   };
