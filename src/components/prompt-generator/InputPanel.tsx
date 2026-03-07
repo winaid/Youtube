@@ -517,11 +517,14 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               <SelectValue placeholder="감독 스타일을 선택하세요" />
             </SelectTrigger>
             <SelectContent>
-              {filteredDirectors.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.nameKo}
-                </SelectItem>
-              ))}
+              {filteredDirectors.map((d) => {
+                const isCustom = customDirectors.some((cd) => cd.id === d.id);
+                return (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.nameKo}{isCustom ? " (검색 추가)" : ""}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
