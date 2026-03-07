@@ -126,6 +126,18 @@ ${String(storyText).slice(0, 3000)}
 
 **한 장면 = 8초 영상 클립. 이 안에서 카메라가 자유롭게 움직인다!**
 
+**프롬프트 길이 최적화 (중요!):**
+- 각 videoPrompt는 반드시 150~300 단어 (영어 기준)
+- 100단어 미만: Veo가 디테일 부족으로 저품질 생성 → 카메라/조명/질감 묘사 추가
+- 350단어 초과: Veo가 혼란 → 핵심만 압축
+- 최적 구조: [카메라 2~3문장] + [캐릭터/액션 2~3문장] + [조명/분위기 1~2문장] + [스타일 키워드 1문장]
+
+**카메라 용어는 반드시 영어로 (Veo 최적화):**
+- Use: "extreme close-up", "dolly in", "tracking shot", "crane shot", "whip pan", "rack focus", "steadicam", "handheld"
+- Use: "golden hour lighting", "chiaroscuro", "volumetric light rays", "rim lighting", "backlit silhouette"
+- Use: "shallow depth of field", "bokeh", "anamorphic lens", "film grain", "cinematic color grading"
+- NEVER use Korean camera terms in videoPrompt — always English
+
 각 장면의 videoPrompt에는 반드시:
 - **카메라 시퀀스**: 8초 안에서 2~3가지 카메라 무빙을 시간순으로 기술
   "Camera starts with [앵글1], then [무빙1] into [앵글2], finally [무빙2] settling on [앵글3]"

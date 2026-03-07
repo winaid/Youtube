@@ -12,6 +12,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { cameraPresets, categoryLabels, type CameraPreset } from "@/data/camera-presets";
 
 interface CutCardProps {
   cut: Cut;
@@ -138,6 +139,7 @@ export default function CutCard({
   const [showFeedback, setShowFeedback] = useState(false);
   const [refining, setRefining] = useState(false);
   const [englishRefining, setEnglishRefining] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
 
   const handleFieldSave = (field: keyof Cut, value: string) => {
     if (onUpdate) {
@@ -275,6 +277,63 @@ export default function CutCard({
             <span className="font-medium" style={{ color: "#c4b800" }}>조명: </span>
             {cut.moodLighting}
           </div>
+        </div>
+
+        {/* Camera Preset Selector */}
+        <div>
+          <button
+            onClick={() => setShowPresets(!showPresets)}
+            className="text-[10px] px-2 py-1 rounded-md transition-colors"
+            style={{ background: "#787fff10", color: "#787fff", border: "1px solid #787fff20" }}
+          >
+            {showPresets ? "프리셋 닫기" : "카메라 프리셋 적용"}
+          </button>
+          {showPresets && (
+            <div className="mt-2 p-2 rounded-lg space-y-2" style={{ background: "#787fff05", border: "1px solid #787fff15" }}>
+              {Object.entries(
+                cameraPresets.reduce<Record<string, CameraPreset[]>>((acc, p) => {
+                  if (!acc[p.category]) acc[p.category] = [];
+                  acc[p.category].push(p);
+                  return acc;
+                }, {})
+              ).map(([cat, presets]) => (
+                <div key={cat}>
+                  <p className="text-[10px] font-medium mb-1" style={{ color: "#787fff" }}>
+                    {categoryLabels[cat] || cat}
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {presets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        onClick={() => {
+                          if (onUpdate) {
+                            onUpdate({
+                              ...cut,
+                              cameraDirection: preset.cameraDirection,
+                              videoPrompt: cut.videoPrompt.replace(
+                                /Camera[^.]*\./i,
+                                preset.cameraDirection + "."
+                              ),
+                            });
+                          }
+                          setShowPresets(false);
+                        }}
+                        className="text-[10px] px-2 py-1 rounded-md transition-all hover:scale-105"
+                        style={{
+                          background: "#fff",
+                          border: "1px solid #787fff30",
+                          color: "#333",
+                        }}
+                        title={`${preset.description}\n적합: ${preset.bestFor}\n\n${preset.cameraDirection}`}
+                      >
+                        {preset.nameKo}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Enhancement 2: Feedback loop + Enhancement 3: English refine */}

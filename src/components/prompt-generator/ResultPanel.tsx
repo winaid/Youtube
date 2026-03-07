@@ -501,6 +501,7 @@ export default function ResultPanel({
                   className="text-[10px] h-7"
                   style={{ borderColor: "#787fff40", color: "#787fff" }}
                   onClick={async () => {
+                    let failCount = 0;
                     for (const cut of result.cuts) {
                       if (storyboardImages[cut.cutNumber]) continue;
                       setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
@@ -510,14 +511,21 @@ export default function ResultPanel({
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
                         });
-                        if (res.ok) {
-                          const data = await res.json();
-                          if (data.images?.[0]?.base64) {
-                            setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
-                          }
+                        const data = await res.json();
+                        if (res.ok && data.images?.[0]?.base64) {
+                          setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                        } else {
+                          console.error(`CUT ${cut.cutNumber} 실패:`, data.error);
+                          failCount++;
                         }
-                      } catch { /* ignore */ }
+                      } catch (err) {
+                        console.error(`CUT ${cut.cutNumber} 에러:`, err);
+                        failCount++;
+                      }
                       setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                    }
+                    if (failCount > 0) {
+                      alert(`${failCount}개 장면 이미지 생성 실패. 콘솔에서 상세 에러를 확인하세요.`);
                     }
                   }}
                 >
@@ -600,13 +608,17 @@ export default function ResultPanel({
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
                       });
-                      if (res.ok) {
-                        const data = await res.json();
-                        if (data.images?.[0]?.base64) {
-                          setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
-                        }
+                      const data = await res.json();
+                      if (res.ok && data.images?.[0]?.base64) {
+                        setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                      } else {
+                        console.error(`CUT ${cut.cutNumber} 이미지 생성 실패:`, data.error || `HTTP ${res.status}`);
+                        alert(`CUT ${cut.cutNumber} 이미지 생성 실패: ${data.error || "알 수 없는 오류"}`);
                       }
-                    } catch { /* ignore */ }
+                    } catch (err) {
+                      console.error("이미지 생성 에러:", err);
+                      alert(`이미지 생성 요청 실패: ${err instanceof Error ? err.message : "네트워크 오류"}`);
+                    }
                     setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
                   }}
                   sceneTtsUrl={sceneTtsUrls[cut.cutNumber]}

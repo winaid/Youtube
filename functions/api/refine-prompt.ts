@@ -22,9 +22,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let systemPrompt: string;
 
     if (mode === "english-native") {
-      // Enhancement 3: Veo prompt English native correction
+      // Enhancement 3: Veo prompt English native correction + Prompt Length Optimizer
       systemPrompt = `You are an expert at writing prompts for Google Veo video generation AI.
 Your task is to refine the following video generation prompt to use more natural, precise English that Veo understands best.
+
+## CRITICAL: Prompt Length Rules
+- Veo works BEST with prompts between 150-300 words (the sweet spot)
+- Under 100 words: TOO SHORT — add specific camera, lighting, atmosphere, texture details
+- Over 350 words: TOO LONG — condense redundant descriptions, merge similar concepts
+- Current prompt word count: approximately ${String(videoPrompt).split(/\s+/).length} words
+
+## Korean → English Term Optimization
+Replace any Korean film terms with Veo-optimized English:
+- 클로즈업 → "extreme close-up shot"
+- 달리 인 → "slow dolly in toward the subject"
+- 트래킹 샷 → "lateral tracking shot following the subject"
+- 핸드헬드 → "handheld camera, slight organic shake"
+- 크레인 샷 → "crane shot sweeping upward"
+- 랙 포커스 → "rack focus shifting from foreground to background"
+- 롱테이크 → "long continuous take without cuts"
+- 역광 → "strong backlight, lens flare"
+- 골든아워 → "golden hour warm sunlight, long shadows"
+- 키아로스쿠로 → "chiaroscuro lighting, dramatic contrast"
+- 볼류메트릭 라이트 → "volumetric light rays, god rays through dust"
 
 ## Rules:
 1. Use cinematic terminology that Veo responds well to: "tracking shot", "dolly in", "rack focus", "whip pan", "crane shot", "steadicam", "handheld"
@@ -35,6 +55,8 @@ Your task is to refine the following video generation prompt to use more natural
 6. Keep character descriptions intact and complete
 7. Ensure smooth temporal flow for 8-second clips
 8. Add cinematic keywords Veo responds to: "cinematic", "film grain", "depth of field", "bokeh", "anamorphic"
+9. TARGET 200-250 words for optimal Veo performance
+10. If Korean terms exist, replace with the English equivalents above
 
 ## Original Video Prompt (CUT ${cutNumber || 1}):
 ${String(videoPrompt)}
@@ -43,8 +65,9 @@ ${extendPrompt ? `## Original Extend Prompt:\n${String(extendPrompt)}` : ""}
 
 ## Output JSON only (no markdown):
 {
-  "refinedVideoPrompt": "the native-corrected video prompt",
+  "refinedVideoPrompt": "the native-corrected video prompt (TARGET: 200-250 words)",
   "refinedExtendPrompt": "the native-corrected extend prompt (if applicable)",
+  "wordCount": number,
   "changes": ["list of what was changed and why"]
 }`;
     } else {

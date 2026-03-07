@@ -22,6 +22,54 @@ interface UseVideoGenerationOptions {
   onSeedDetected?: (cutNumber: number, seed: string) => void;
 }
 
+// Capture the last frame of a video element as base64
+function captureVideoLastFrame(videoUri: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.preload = "auto";
+
+    const timeout = setTimeout(() => {
+      video.remove();
+      resolve(null);
+    }, 10000);
+
+    video.onloadedmetadata = () => {
+      // Seek to last frame (duration - small offset)
+      video.currentTime = Math.max(0, video.duration - 0.05);
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(video, 0, 0);
+        const dataUrl = canvas.toDataURL("image/png");
+        const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+        clearTimeout(timeout);
+        video.remove();
+        resolve(base64.length > 100 ? base64 : null);
+      } catch {
+        clearTimeout(timeout);
+        video.remove();
+        resolve(null);
+      }
+    };
+
+    video.onerror = () => {
+      clearTimeout(timeout);
+      video.remove();
+      resolve(null);
+    };
+
+    video.src = videoUri;
+  });
+}
+
 // Style intensity keywords at different levels
 const STYLE_KEYWORDS_BY_INTENSITY: Record<string, string[]> = {
   low: [],
@@ -172,6 +220,48 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
             onSeedDetected(cutNumber, data.seed);
           }
 
+          // Enhancement 9: Auto video quality verification via Gemini Vision
+          if (clipUpdate.videoUri) {
+            try {
+              const lastFrame = await captureVideoLastFrame(clipUpdate.videoUri);
+              if (lastFrame) {
+                const cut = cuts.find((c) => c.cutNumber === cutNumber);
+                fetch("/api/verify-video-quality", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    frameBase64: lastFrame,
+                    videoPrompt: cut?.videoPrompt || "",
+                    sceneDescription: cut?.sceneDescription || "",
+                    cutNumber,
+                  }),
+                }).then(async (qRes) => {
+                  if (qRes.ok) {
+                    const quality = await qRes.json();
+                    if (quality.overallScore !== undefined) {
+                      updateClip(cutNumber, {
+                        verification: {
+                          overallScore: quality.overallScore,
+                          scores: {
+                            characterDescription: quality.scores?.promptMatch ?? 0,
+                            cameraMovement: quality.scores?.composition ?? 0,
+                            actionSequence: quality.scores?.motionCoherence ?? 0,
+                            lightingMood: quality.scores?.styleConsistency ?? 0,
+                            veoCompatibility: quality.scores?.visualQuality ?? 0,
+                          },
+                          issues: quality.issues || [],
+                          suggestions: quality.suggestion ? [quality.suggestion] : [],
+                        },
+                      });
+                    }
+                  }
+                }).catch(() => {});
+              }
+            } catch {
+              // Quality verification is optional, don't block
+            }
+          }
+
           pollTimers.current.delete(cutNumber);
 
           // 자동 모드면 다음 장면 시작
@@ -238,7 +328,7 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
 
     updateClip(cutNumber, { status: "polling" });
     poll();
-  }, [updateClip, onSeedDetected]);
+  }, [updateClip, onSeedDetected, cuts]);
 
   // Auto-retry effect: when a clip becomes "idle" with retryCount > 0, auto-generate
   useEffect(() => {
@@ -312,14 +402,52 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
         cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
       );
 
+      // Enhancement 8: Smart negative prompt auto-generation
+      let negativePrompt = cfg.negativePrompt;
+      if (retryCount === 0) {
+        try {
+          const negRes = await fetch("/api/auto-negative", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              videoPrompt: prompt,
+              sceneDescription: cut.sceneDescription,
+              animationMode: "cinematic",
+              useAI: false, // local mode for speed, no API call
+            }),
+          });
+          if (negRes.ok) {
+            const negData = await negRes.json();
+            if (negData.negativePrompt) {
+              negativePrompt = negData.negativePrompt;
+            }
+          }
+        } catch {
+          // Fallback to default negative prompt
+        }
+      }
+
       // Enhancement 6: Strengthen negative prompt on retry
-      const negativePrompt = retryCount > 0
-        ? strengthenNegativePrompt(cfg.negativePrompt || "", retryCount)
-        : cfg.negativePrompt;
+      if (retryCount > 0) {
+        negativePrompt = strengthenNegativePrompt(negativePrompt || "", retryCount);
+      }
 
       // Enhancement 4: Auto-link storyboard as firstFrame
+      // Enhancement 7: Scene continuity auto-chain — use previous scene's last frame
       let firstFrameBase64 = cutNumber === 1 ? cfg.firstFrameBase64 : undefined;
-      if (cfg.autoLinkFirstFrame && storyboardImages) {
+      if (cutNumber > 1 && cfg.autoLinkFirstFrame && prevClip?.videoUri) {
+        // Try to capture last frame from previous completed video
+        try {
+          const lastFrame = await captureVideoLastFrame(prevClip.videoUri);
+          if (lastFrame) {
+            firstFrameBase64 = lastFrame;
+          }
+        } catch {
+          console.warn(`Failed to capture last frame from CUT ${cutNumber - 1}`);
+        }
+      }
+      // Fallback to storyboard images if no last frame captured
+      if (!firstFrameBase64 && cfg.autoLinkFirstFrame && storyboardImages) {
         if (cutNumber === 1 && !firstFrameBase64 && storyboardImages[1]) {
           firstFrameBase64 = storyboardImages[1];
         } else if (cutNumber > 1 && storyboardImages[cutNumber]) {

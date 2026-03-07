@@ -491,11 +491,11 @@ export default function VideoSettingsPanel({
               </button>
             </div>
 
-            {/* 스토리보드 → firstFrame 자동 연결 */}
+            {/* 장면 연속성 자동 체인 + 스토리보드 → firstFrame 자동 연결 */}
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-xs">스토리보드 → firstFrame 자동 연결</Label>
-                <p className="text-[10px] text-muted-foreground">스토리보드 이미지를 firstFrame으로 사용</p>
+                <Label className="text-xs">장면 연속성 자동 체인</Label>
+                <p className="text-[10px] text-muted-foreground">이전 영상의 마지막 프레임 → 다음 장면 시작 프레임으로 자동 연결</p>
               </div>
               <button
                 className="relative w-10 h-5 rounded-full transition-colors"
