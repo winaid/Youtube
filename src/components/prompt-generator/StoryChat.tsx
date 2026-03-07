@@ -328,7 +328,9 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
                       : { background: "white", border: "1px solid #787fff20" }
                   }
                 >
-                  {msg.content}
+                  {msg.role === "assistant"
+                    ? msg.content.replace(/\n*[-—]*\s*(?:출처|참고|참조|Source|Reference)[:\s].*/gi, "").replace(/\n*\[?\d+\]?\s*https?:\/\/\S+/g, "").trim()
+                    : msg.content}
                 </div>
 
                 {/* 검색 출처 표시 */}
