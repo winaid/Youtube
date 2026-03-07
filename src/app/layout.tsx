@@ -12,7 +12,7 @@ const geistSans = localFont({
 export const metadata: Metadata = {
   title: "AI 영상 프롬프트 생성기",
   description:
-    "감독 페르소나 기반 AI 영상 컷 리스트 & 프롬프트 자동 생성 도구",
+    "감독 페르소나 기반 AI 영상 장면 리스트 & 프롬프트 자동 생성 도구",
 };
 
 export default function RootLayout({

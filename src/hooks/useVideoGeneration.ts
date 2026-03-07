@@ -102,7 +102,7 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
 
           pollTimers.current.delete(cutNumber);
 
-          // 자동 모드면 다음 컷 시작
+          // 자동 모드면 다음 장면 시작
           if (autoModeRef.current) {
             setState((prev) => {
               const nextIdx = prev.currentAutoIndex + 1;
@@ -145,7 +145,7 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     poll();
   }, [updateClip, onSeedDetected]);
 
-  // 단일 컷 생성
+  // 단일 장면 생성
   const generateCut = useCallback(async (cutNumber: number) => {
     const cut = cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
@@ -153,7 +153,7 @@ export function useVideoGeneration({ cuts, onSeedDetected }: UseVideoGenerationO
     const cfg = state.config;
     const prompt = cutNumber === 1 ? cut.videoPrompt : cut.extendPrompt;
 
-    // 이전 컷의 videoUri (Scene Extension)
+    // 이전 장면의 videoUri (Scene Extension)
     const prevClip = state.clips.find(
       (c) => c.cutNumber === cutNumber - 1 && c.status === "completed"
     );

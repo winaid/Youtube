@@ -132,7 +132,7 @@ export default function CutCard({ cut, characterSeeds, onUpdate }: CutCardProps)
     cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
   );
 
-  // 이 컷에 등장하는 캐릭터들
+  // 이 장면에 등장하는 캐릭터들
   const charsInScene = characterSeeds?.filter(
     (s) => cut.charactersInScene?.includes(s.id)
   ) ?? [];

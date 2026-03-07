@@ -120,7 +120,7 @@ export default function VideoGenerationPanel({
           )}
         </div>
 
-        {/* 컷별 상태 */}
+        {/* 장면별 상태 */}
         <div className="space-y-2">
           {cuts.map((cut, i) => {
             const clip = clips.find((c) => c.cutNumber === cut.cutNumber);

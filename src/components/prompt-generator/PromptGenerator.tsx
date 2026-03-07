@@ -42,7 +42,7 @@ export default function PromptGenerator() {
               : { background: "#787fff15", color: "#787fff" }
           }
         >
-          컷 프롬프트 생성
+          장면 프롬프트 생성
         </button>
         <button
           onClick={() => setActiveTab("story")}

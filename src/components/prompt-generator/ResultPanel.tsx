@@ -61,7 +61,7 @@ export default function ResultPanel({
           </p>
           <div className="text-xs text-muted-foreground space-y-1">
             <p>1. 캐릭터 외형 정의 (성별, 헤어, 의상, 체형...)</p>
-            <p>2. 감독 스타일 적용 & 컷 분할</p>
+            <p>2. 감독 스타일 적용 & 장면 분할</p>
             <p>3. Extend 프롬프트 생성 (캐릭터 일관성 보장)</p>
           </div>
         </CardContent>
@@ -168,9 +168,9 @@ export default function ResultPanel({
           </p>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge style={{ background: "#787fff", color: "white" }}>총 {result.totalCuts}컷</Badge>
-            <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}컷</Badge>
-            <Badge style={{ background: "#e09900", color: "white" }}>Quality: {qualityCuts.length}컷</Badge>
+            <Badge style={{ background: "#787fff", color: "white" }}>총 {result.totalCuts}장면</Badge>
+            <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}장면</Badge>
+            <Badge style={{ background: "#e09900", color: "white" }}>Quality: {qualityCuts.length}장면</Badge>
             <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
               총 {result.cuts.length * 8}초 ({Math.round((result.cuts.length * 8) / 60)}분)
             </Badge>
@@ -216,10 +216,10 @@ export default function ResultPanel({
             <Card className="overflow-hidden border-2" style={{ borderColor: "#e0990040" }}>
               <CardHeader className="pb-2" style={{ background: "linear-gradient(135deg, #e0990015, #fff78715)" }}>
                 <CardTitle className="text-sm" style={{ color: "#b37700" }}>
-                  캐릭터 시드 (전 컷 고정)
+                  캐릭터 시드 (전 장면 고정)
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground">
-                  모든 컷의 프롬프트에 아래 캐릭터 외형 묘사가 동일하게 삽입됩니다.
+                  모든 장면의 프롬프트에 아래 캐릭터 외형 묘사가 동일하게 삽입됩니다.
                 </p>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
@@ -277,7 +277,7 @@ export default function ResultPanel({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium" style={{ color: "#787fff" }}>
-                컷 리스트 (클릭하여 프롬프트 수정 가능)
+                장면 리스트 (클릭하여 프롬프트 수정 가능)
               </h3>
             </div>
             {result.cuts.map((cut) => (

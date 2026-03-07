@@ -24,7 +24,7 @@ export interface PromptInput {
   animationMode: AnimationMode;
   duration: Duration;
   aspectRatio: AspectRatio;
-  cutCount?: number; // 사용자 지정 컷 수 (없으면 자동 계산)
+  cutCount?: number; // 사용자 지정 장면 수 (없으면 자동 계산)
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
 }
 

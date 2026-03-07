@@ -393,7 +393,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
           </Select>
         </div>
 
-        {/* 영상 길이 + 컷 수 + 화면 비율 */}
+        {/* 영상 길이 + 장면 수 + 화면 비율 */}
         <div className="rounded-xl p-4 space-y-4" style={{ background: "#f8f9fc", border: "1px solid #e8e9f0" }}>
           {/* 영상 길이 */}
           <div className="space-y-2">
@@ -418,10 +418,10 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
 
-          {/* 컷 수 */}
+          {/* 장면 수 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>컷 수</Label>
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면 수</Label>
               {isAnalyzing && (
                 <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                   <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
@@ -442,7 +442,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
                     AI 추천
                   </span>
                   <span className="text-xs font-bold" style={{ color: "#16a34a" }}>
-                    {aiCutRecommendation.recommendedCuts}컷
+                    {aiCutRecommendation.recommendedCuts}장면
                   </span>
                   <span className="text-[10px] text-muted-foreground ml-auto">클릭하여 적용</span>
                 </div>

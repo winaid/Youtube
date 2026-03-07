@@ -10,7 +10,7 @@ export default function Home() {
             AI 영상 프롬프트 생성기
           </h1>
           <p className="text-sm text-white/80 mt-1">
-            감독 페르소나 기반 컷 리스트 &amp; 프롬프트 자동 생성
+            감독 페르소나 기반 장면 리스트 &amp; 프롬프트 자동 생성
           </p>
         </div>
       </header>

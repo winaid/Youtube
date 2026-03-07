@@ -62,7 +62,8 @@ ${directorPersona ? `- 감독 페르소나: ${String(directorPersona).slice(0, 5
 - Veo 스타일: ${veoStyle}
 - 화면비: ${aspectRatio || "1:1"}
 - 지역 감성: ${regionFlavor}
-- 컷 수: ${cutCount || 8}
+- 장면 수: ${cutCount || 8}
+(장면 = 8초짜리 하나의 영상 클립. 장면 안에서 카메라 무빙/앵글 변화 가능)
 
 ## 시나리오
 ${String(storyText).slice(0, 3000)}
@@ -74,7 +75,7 @@ ${String(storyText).slice(0, 3000)}
 ### STEP 1: 캐릭터 정의
 시나리오에 등장하는 모든 캐릭터를 먼저 정의하세요.
 각 캐릭터의 외형을 **구체적이고 고정된 영어 묘사**로 작성합니다.
-이 묘사는 모든 컷의 프롬프트에 동일하게 반복 삽입됩니다.
+이 묘사는 모든 장면의 프롬프트에 동일하게 반복 삽입됩니다.
 
 캐릭터 묘사에 반드시 포함할 항목:
 - 성별, 나이대
@@ -86,13 +87,14 @@ ${String(storyText).slice(0, 3000)}
 
 예시: "A young Korean man in his late 20s, short black hair with side part, sharp jawline, slim athletic build, wearing a navy blue cotton hoodie with white drawstrings and dark grey slim jeans, warm ivory skin tone"
 
-### STEP 2: 컷 생성
-${Number(cutCount) || 8}개의 컷을 생성합니다.
+### STEP 2: 장면 생성
+${Number(cutCount) || 8}개의 장면을 생성합니다.
+각 장면은 8초짜리 영상 클립이며, 장면 안에서 카메라 무빙과 앵글 변화가 자유롭게 일어날 수 있습니다.
 
 **핵심 규칙 — 캐릭터 일관성:**
-- 모든 컷의 videoPrompt, imagePrompt, extendPrompt에 해당 컷에 등장하는 캐릭터의 **전체 외형 묘사를 매번 반복**해서 넣으세요
+- 모든 장면의 videoPrompt, imagePrompt, extendPrompt에 해당 장면에 등장하는 캐릭터의 **전체 외형 묘사를 매번 반복**해서 넣으세요
 - "same character as before" 같은 참조 표현 절대 금지. 항상 전체 묘사를 다시 써야 합니다
-- 캐릭터의 의상, 헤어, 체형이 컷 간에 절대 변하면 안 됩니다
+- 캐릭터의 의상, 헤어, 체형이 장면 간에 절대 변하면 안 됩니다
 
 **핵심 규칙 — 감독 스타일:**
 - 모든 videoPrompt와 imagePrompt에 감독의 시그니처 스타일 키워드를 포함하세요
@@ -100,8 +102,8 @@ ${Number(cutCount) || 8}개의 컷을 생성합니다.
 - 카메라 워크, 색감, 조명, 구도에 감독 스타일을 반영하세요
 
 **핵심 규칙 — Extend 프롬프트:**
-- CUT 1: extendPrompt는 빈 문자열 ""
-- CUT 2 이후: extendPrompt는 **이전 컷의 마지막 장면에서 자연스럽게 이어지는** 묘사
+- 장면 1: extendPrompt는 빈 문자열 ""
+- 장면 2 이후: extendPrompt는 **이전 장면의 마지막 순간에서 자연스럽게 이어지는** 묘사
 - extendPrompt에도 캐릭터 전체 외형 묘사를 반드시 포함
 - "Continue from previous clip" 같은 모호한 표현 금지. 구체적으로 어떤 장면에서 어떻게 이어지는지 묘사
 
@@ -124,19 +126,19 @@ ${Number(cutCount) || 8}개의 컷을 생성합니다.
     {
       "cutNumber": 1,
       "durationSec": 8,
-      "sceneDescription": "[한국어] 이 컷의 장면 설명",
+      "sceneDescription": "[한국어] 이 장면의 내용 설명",
       "cameraDirection": "[영어] 카메라 무빙 — 감독 스타일 반영",
       "moodLighting": "[영어] 조명/분위기 — 감독 스타일 반영",
       "imagePrompt": "[영어] ${veoStyle}, ${regionFlavor}, [감독 스타일 키워드], [캐릭터 전체 외형 묘사], [장면 묘사], [조명], [구도], cinematic quality, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no watermark",
       "videoPrompt": "[영어] Cinematic 8-second clip. ${veoStyle}. [감독 스타일 키워드 + 카메라 동작]. [캐릭터 전체 외형 묘사]. [장면 동작 묘사]. [조명/분위기]. Smooth motion, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
       "extendPrompt": "",
-      "transitionHint": "[한국어] 다음 컷으로의 전환 방식",
-      "characterConsistency": "[한국어] 이 컷의 캐릭터 유지 지침",
+      "transitionHint": "[한국어] 다음 장면으로의 전환 방식",
+      "characterConsistency": "[한국어] 이 장면의 캐릭터 유지 지침",
       "charactersInScene": ["char-1"]
     },
     {
       "cutNumber": 2,
-      "extendPrompt": "[영어] The scene continues from [이전 컷 마지막 장면 구체 묘사]. [캐릭터 전체 외형 묘사 반복]. [이번 컷 동작]. [감독 스타일]. ${veoStyle}. Smooth transition, maintain exact character appearance, ${aspectRatio || "1:1"} aspect ratio",
+      "extendPrompt": "[영어] The scene continues from [이전 장면 마지막 순간 구체 묘사]. [캐릭터 전체 외형 묘사 반복]. [이번 장면 동작]. [감독 스타일]. ${veoStyle}. Smooth transition, maintain exact character appearance, ${aspectRatio || "1:1"} aspect ratio",
       "...": "나머지 필드도 동일"
     }
   ]

@@ -113,7 +113,7 @@ function generateFallbackCuts(
   const cuts = Array.from({ length: cutCount }, (_, i) => ({
     cutNumber: i + 1,
     durationSec: 8,
-    sceneDescription: `[컷 ${i + 1}] ${storyWords} 기반 장면 (API 연결 후 AI가 생성합니다)`,
+    sceneDescription: `[장면 ${i + 1}] ${storyWords} 기반 장면 (API 연결 후 AI가 생성합니다)`,
     cameraDirection: "slow push-in toward subject",
     moodLighting: "golden hour warm lighting, soft shadows",
     imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1}, highly detailed, cinematic quality`,
@@ -122,7 +122,7 @@ function generateFallbackCuts(
       ? `The scene continues from the previous moment. ${charDesc}. ${directorStyle} visual tone. ${veoStyle}. Maintain exact same character appearance. Smooth transition.`
       : "",
     transitionHint: i < cutCount - 1 ? "디졸브 - 다음 장면으로 자연스럽게 전환" : "페이드 아웃 - 마무리",
-    characterConsistency: `캐릭터 시드 char-1 고정: ${characterSeeds[0].appearanceKo}. 모든 컷에서 동일한 외형 유지. ${directorStyle} 톤 일관성 유지.`,
+    characterConsistency: `캐릭터 시드 char-1 고정: ${characterSeeds[0].appearanceKo}. 모든 장면에서 동일한 외형 유지. ${directorStyle} 톤 일관성 유지.`,
     charactersInScene: ["char-1"],
   }));
 
@@ -144,12 +144,12 @@ export async function generatePrompt(
   const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / 8));
   const storyWords = input.storyText.slice(0, 30);
 
-  // 1. 감독 페르소나 먼저 생성 (컷 생성에 필요)
+  // 1. 감독 페르소나 먼저 생성 (장면 생성에 필요)
   const directorPersonaText = director && (!director.persona || input.customDirector)
     ? await fetchGeminiPersona(director, input.storyText, input.animationMode)
     : director?.persona ?? "";
 
-  // 2. 페르소나를 포함하여 컷 생성 (캐릭터 시드 + 감독 스타일 주입)
+  // 2. 페르소나를 포함하여 장면 생성 (캐릭터 시드 + 감독 스타일 주입)
   const { characterSeeds, cuts } = director
     ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount)
     : generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount);
@@ -177,15 +177,15 @@ export async function generatePrompt(
 
   return {
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
-    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 Google Veo 8초 x ${cuts.length}컷 = ${cuts.length * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 컷에서 동일한 외형을 유지합니다.`,
+    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 Google Veo 8초 x ${cuts.length}장면 = ${cuts.length * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
     totalCuts: cuts.length,
     globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${directorStyle}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
     directorPersonaPrompt: directorPersonaText,
     characterSeeds,
     continuityRules: [
-      `캐릭터 시드 ${characterSeeds.length}명 고정: 모든 컷의 프롬프트에 캐릭터 전체 외형 묘사가 반복 삽입됨`,
-      "Extend 프롬프트 사용 시 이전 컷 마지막 장면을 구체적으로 묘사하여 자연스러운 연결",
-      "캐릭터 외형(의상, 헤어스타일, 체형, 피부톤)을 모든 컷에서 절대 변경 금지",
+      `캐릭터 시드 ${characterSeeds.length}명 고정: 모든 장면의 프롬프트에 캐릭터 전체 외형 묘사가 반복 삽입됨`,
+      "Extend 프롬프트 사용 시 이전 장면 마지막 순간을 구체적으로 묘사하여 자연스러운 연결",
+      "캐릭터 외형(의상, 헤어스타일, 체형, 피부톤)을 모든 장면에서 절대 변경 금지",
       `색감/조명은 ${directorName} 스타일의 시그니처 톤으로 통일`,
       "각 8초 클립의 시작 프레임이 이전 클립의 끝 프레임과 매칭되도록 구성",
       "CUT 1은 Video Prompt로 생성, CUT 2부터는 이전 클립 + Extend Prompt로 연장",
