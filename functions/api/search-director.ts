@@ -3,7 +3,7 @@ interface Env {
 }
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -31,7 +31,7 @@ Return a JSON array of up to 5 matching directors. Each object should have:
 - id: a unique slug like "region-lastname" (e.g. "kr-bong", "jp-miyazaki")
 - name: English name
 - nameKo: Korean name
-- region: one of "한국", "일본", "중국", "유럽", "미국"
+- region: one of "한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"
 - style: comma-separated style keywords in Korean (max 4)
 - description: 1-2 sentence description of their directing style in Korean
 - matchedBy: why this director matched the search (e.g. "작품: 기생충" or "이름 일치")

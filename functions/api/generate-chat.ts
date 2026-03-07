@@ -98,7 +98,7 @@ ${personaPrompt || ""}
         system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
         contents: [{ parts: [{ text: userPrompt }] }],
         tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 1500 },
+        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
       }),
     });
 

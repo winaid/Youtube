@@ -41,6 +41,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "중국": "Chinese cinematic grandeur, classical architecture",
       "유럽": "European architecture, classical atmosphere",
       "미국": "American cinematic, diverse urban landscape",
+      "인도": "Indian cinematic, vibrant colors, diverse cultural landscape",
+      "중동": "Middle Eastern aesthetic, desert and ancient architecture, warm tones",
+      "동남아": "Southeast Asian tropical atmosphere, lush greenery, vibrant street life",
+      "중남미": "Latin American magical realism, vivid colors, colonial architecture",
+      "아프리카": "African landscape, warm earth tones, diverse cultural patterns",
+      "오세아니아": "Oceanian vast landscapes, dramatic natural scenery, epic wilderness",
     };
     const regionFlavor = regionFlavorMap[String(region)] || regionFlavorMap["한국"];
 

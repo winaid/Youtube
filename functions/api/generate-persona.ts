@@ -3,7 +3,7 @@ interface Env {
 }
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
