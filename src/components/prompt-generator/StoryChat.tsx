@@ -31,7 +31,15 @@ export default function StoryChat() {
     setIsLoading(true);
 
     const response = await generateChatResponse(userMsg, personaId);
-    setMessages((prev) => [...prev, { role: "assistant", content: response }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: response.reply,
+        sources: response.sources,
+        searchQueries: response.searchQueries,
+      },
+    ]);
     setIsLoading(false);
   };
 
@@ -58,7 +66,7 @@ export default function StoryChat() {
           시나리오 AI 생성
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          병의원 마케팅 쇼츠 시나리오를 AI가 만들어줍니다
+          실제 역사를 검색하여 병의원 마케팅 쇼츠 시나리오를 만들어줍니다
         </p>
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
@@ -81,10 +89,12 @@ export default function StoryChat() {
         </div>
 
         {/* 채팅 영역 */}
-        <div className="rounded-lg border p-3 space-y-3 max-h-80 overflow-y-auto min-h-[120px]" style={{ borderColor: "#787fff20", background: "#fafafa" }}>
+        <div className="rounded-lg border p-3 space-y-3 max-h-[500px] overflow-y-auto min-h-[120px]" style={{ borderColor: "#787fff20", background: "#fafafa" }}>
           {messages.length === 0 && (
             <p className="text-xs text-muted-foreground text-center py-4">
               아래 예시를 클릭하거나 직접 질문해보세요!
+              <br />
+              <span style={{ color: "#22c55e" }}>Google Search로 실제 역사를 검색하여 시나리오에 반영합니다</span>
             </p>
           )}
           {messages.map((msg, i) => (
@@ -92,15 +102,47 @@ export default function StoryChat() {
               key={i}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div
-                className="rounded-xl px-3 py-2 max-w-[85%] text-xs whitespace-pre-line leading-relaxed"
-                style={
-                  msg.role === "user"
-                    ? { background: "#787fff", color: "white" }
-                    : { background: "white", border: "1px solid #787fff20" }
-                }
-              >
-                {msg.content}
+              <div className="max-w-[85%]">
+                <div
+                  className="rounded-xl px-3 py-2 text-xs whitespace-pre-line leading-relaxed"
+                  style={
+                    msg.role === "user"
+                      ? { background: "#787fff", color: "white" }
+                      : { background: "white", border: "1px solid #787fff20" }
+                  }
+                >
+                  {msg.content}
+                </div>
+
+                {/* 검색 출처 표시 */}
+                {msg.sources && msg.sources.length > 0 && (
+                  <div className="mt-1.5 px-1">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] font-medium" style={{ color: "#22c55e" }}>
+                        검색 출처
+                      </span>
+                      {msg.searchQueries && msg.searchQueries.length > 0 && (
+                        <span className="text-[8px] text-muted-foreground">
+                          ({msg.searchQueries.slice(0, 2).join(", ")})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {msg.sources.slice(0, 5).map((source, si) => (
+                        <a
+                          key={si}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full transition-colors hover:opacity-80"
+                          style={{ background: "#22c55e15", color: "#16a34a", border: "1px solid #22c55e30" }}
+                        >
+                          {source.title.slice(0, 30)}{source.title.length > 30 ? "..." : ""}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -108,7 +150,7 @@ export default function StoryChat() {
             <div className="flex justify-start">
               <div className="rounded-xl px-3 py-2 text-xs flex items-center gap-2" style={{ background: "white", border: "1px solid #787fff20" }}>
                 <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-                시나리오 작성 중...
+                역사 검색 & 시나리오 작성 중...
               </div>
             </div>
           )}

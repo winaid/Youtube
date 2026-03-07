@@ -66,6 +66,8 @@ export interface PromptOutput {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  sources?: { title: string; url: string }[];
+  searchQueries?: string[];
 }
 
 export interface StoryAIPersona {
