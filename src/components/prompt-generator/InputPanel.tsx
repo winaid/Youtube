@@ -36,7 +36,21 @@ interface InputPanelProps {
 }
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
-const animationModes: AnimationMode[] = ["2D 애니", "실사", "하이브리드"];
+
+const animationStyles: { mode: AnimationMode; label: string; desc: string; directors: string[] }[] = [
+  { mode: "2D 애니", label: "2D 애니", desc: "셀 애니메이션, 선명한 외곽선", directors: ["미야자키 하야오", "신카이 마코토", "콘 사토시"] },
+  { mode: "실사", label: "실사", desc: "포토리얼, 시네마틱 필름 그레인", directors: ["봉준호", "크리스토퍼 놀란", "데이비드 핀처"] },
+  { mode: "하이브리드", label: "하이브리드", desc: "2D+3D 혼합, 반실사 스타일", directors: ["이안", "기예르모 델 토로"] },
+  { mode: "수채화 애니", label: "수채화", desc: "번지는 수채 물감 질감, 파스텔 톤", directors: ["미야자키 하야오", "임권택"] },
+  { mode: "로토스코핑", label: "로토스코핑", desc: "실사 위에 그림 덧씌움, A Scanner Darkly 풍", directors: ["콘 사토시", "왕가위"] },
+  { mode: "스톱모션", label: "스톱모션", desc: "클레이/인형 프레임별 촬영", directors: ["웨스 앤더슨", "기예르모 델 토로"] },
+  { mode: "픽셀아트", label: "픽셀아트", desc: "16비트 레트로 게임 감성", directors: ["쿼틴 타란티노", "콘 사토시"] },
+  { mode: "잉크워시", label: "동양화", desc: "수묵화 붓터치, 먹과 한지 질감", directors: ["장이머우", "임권택", "아피찻퐁"] },
+  { mode: "클레이", label: "클레이", desc: "점토 캐릭터, 수제 미니어처", directors: ["웨스 앤더슨", "피터 잭슨"] },
+  { mode: "빈티지 필름", label: "빈티지 필름", desc: "70년대 필름 그레인, 바랜 색감", directors: ["쿼틴 타란티노", "왕가위", "알폰소 쿠아론"] },
+  { mode: "네온 사이버펑크", label: "네온 사이버펑크", desc: "네온, 비 젖은 거리, 홀로그램", directors: ["니콜라스 빈딩 레픈", "드니 빌뇌브", "콘 사토시"] },
+  { mode: "미니어처", label: "미니어처", desc: "틸트시프트, 인형의 집 스타일", directors: ["웨스 앤더슨", "피터 잭슨"] },
+];
 const durations: { value: Duration; label: string }[] = [
   { value: "auto", label: "자동" },
   { value: 60, label: "60초" },
@@ -454,22 +468,55 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
         {/* 애니메이션 모드 */}
         <div className="space-y-2">
-          <Label>애니메이션 모드</Label>
-          <Select
-            value={animationMode}
-            onValueChange={(v) => setAnimationMode(v as AnimationMode)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {animationModes.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label>영상 스타일</Label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {animationStyles.map((style) => (
+              <button
+                key={style.mode}
+                className="text-left p-2 rounded-lg transition-all hover:shadow-sm"
+                style={
+                  animationMode === style.mode
+                    ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                    : { background: "white", color: "#333", border: "1px solid #e2e8f0" }
+                }
+                onClick={() => setAnimationMode(style.mode)}
+              >
+                <p className="text-[11px] font-semibold leading-tight">{style.label}</p>
+                <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: animationMode === style.mode ? 0.85 : 0.5 }}>
+                  {style.desc}
+                </p>
+              </button>
+            ))}
+          </div>
+          {/* 감독 추천 */}
+          {(() => {
+            const selected = animationStyles.find((s) => s.mode === animationMode);
+            if (!selected) return null;
+            return (
+              <div className="flex items-start gap-1.5 p-2 rounded-lg" style={{ background: "#f0f0ff", border: "1px solid #787fff15" }}>
+                <span className="text-[10px] shrink-0 mt-0.5" style={{ color: "#787fff" }}>추천 감독:</span>
+                <div className="flex flex-wrap gap-1">
+                  {selected.directors.map((d) => (
+                    <Badge
+                      key={d}
+                      variant="outline"
+                      className="text-[9px] py-0 cursor-pointer hover:bg-[#787fff10]"
+                      style={{ borderColor: "#787fff40", color: "#5a5ecc" }}
+                      onClick={() => {
+                        const found = allDirectors.find((dir) => dir.nameKo.includes(d));
+                        if (found) {
+                          setRegion(found.region);
+                          setDirectorPersona(found.id);
+                        }
+                      }}
+                    >
+                      {d}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 영상 길이 + 장면 수 + 화면 비율 */}

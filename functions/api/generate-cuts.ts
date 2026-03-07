@@ -33,6 +33,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "2D 애니": "2D anime style, cel-shaded animation, vibrant colors, anime character design",
       "실사": "photorealistic, cinematic film grain, 4K quality, real human actors",
       "하이브리드": "hybrid 2D-3D rendering, stylized semi-realistic, blending anime and live-action",
+      "수채화 애니": "watercolor painting animation, soft bleeding edges, pastel tones, hand-painted texture, Studio Ghibli background style, delicate brush strokes",
+      "로토스코핑": "rotoscope animation style, traced over live-action footage, A Scanner Darkly aesthetic, fluid realistic motion with hand-drawn outlines, painterly filter",
+      "스톱모션": "stop-motion animation, claymation texture, Laika Studios style, handcrafted miniature sets, visible fingerprints on clay, frame-by-frame movement",
+      "픽셀아트": "pixel art animation, 16-bit retro game aesthetic, limited color palette, crisp pixel edges, chiptune era visual style, nostalgic game cutscene",
+      "잉크워시": "East Asian ink wash painting animation, sumi-e brush strokes, black ink on rice paper texture, flowing calligraphic lines, minimalist zen aesthetic",
+      "클레이": "clay animation, plasticine characters, handmade texture, Wallace and Gromit style, warm tactile quality, sculpted environments",
+      "빈티지 필름": "vintage 1970s film stock, heavy grain, faded warm color palette, light leaks, lens flare, old projector artifacts, retro analog cinema",
+      "네온 사이버펑크": "neon-drenched cyberpunk, rain-soaked streets, holographic signs, electric blue and hot pink palette, Blade Runner aesthetic, futuristic noir",
+      "미니어처": "tilt-shift miniature effect, diorama style, shallow depth of field, toy-like proportions, Wes Anderson dollhouse aesthetic, everything looks tiny",
     };
     const veoStyle = veoStyleMap[String(animationMode)] || veoStyleMap["2D 애니"];
 

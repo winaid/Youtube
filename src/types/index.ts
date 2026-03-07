@@ -1,6 +1,18 @@
 // ===== 입력 타입 =====
 export type Region = "한국" | "일본" | "중국" | "유럽" | "미국" | "인도" | "중동" | "동남아" | "중남미" | "아프리카" | "오세아니아";
-export type AnimationMode = "2D 애니" | "실사" | "하이브리드";
+export type AnimationMode =
+  | "2D 애니"
+  | "실사"
+  | "하이브리드"
+  | "수채화 애니"
+  | "로토스코핑"
+  | "스톱모션"
+  | "픽셀아트"
+  | "잉크워시"
+  | "클레이"
+  | "빈티지 필름"
+  | "네온 사이버펑크"
+  | "미니어처";
 export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
 export type AspectRatio = "1:1" | "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
