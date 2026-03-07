@@ -17,6 +17,12 @@ interface CutCardProps {
   cut: Cut;
   characterSeeds?: CharacterSeed[];
   onUpdate?: (updated: Cut) => void;
+  storyboardImage?: string;
+  storyboardLoading?: boolean;
+  onGenerateImage?: () => void;
+  sceneTtsUrl?: string;
+  sceneTtsLoading?: boolean;
+  onGenerateSceneTts?: () => void;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -119,7 +125,11 @@ function EditableField({
   );
 }
 
-export default function CutCard({ cut, characterSeeds, onUpdate }: CutCardProps) {
+export default function CutCard({
+  cut, characterSeeds, onUpdate,
+  storyboardImage, storyboardLoading, onGenerateImage,
+  sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
+}: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
 
   const handleFieldSave = (field: keyof Cut, value: string) => {
@@ -198,7 +208,56 @@ export default function CutCard({ cut, characterSeeds, onUpdate }: CutCardProps)
         )}
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
-        <p className="text-sm">{cut.sceneDescription}</p>
+        {/* 스토리보드 이미지 + 장면 설명 */}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <p className="text-sm">{cut.sceneDescription}</p>
+          </div>
+          {storyboardImage ? (
+            <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden border" style={{ borderColor: isEven ? "#fff78740" : "#787fff40" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`data:image/png;base64,${storyboardImage}`} alt={`장면 ${cut.cutNumber}`} className="w-full h-full object-cover" />
+            </div>
+          ) : onGenerateImage ? (
+            <button
+              onClick={onGenerateImage}
+              disabled={storyboardLoading}
+              className="shrink-0 w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors hover:bg-gray-50"
+              style={{ borderColor: "#787fff30" }}
+            >
+              {storyboardLoading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                    <circle cx="9" cy="9" r="2"/>
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                  </svg>
+                  <span className="text-[9px]" style={{ color: "#787fff" }}>이미지</span>
+                </>
+              )}
+            </button>
+          ) : null}
+        </div>
+
+        {/* 장면별 TTS */}
+        {onGenerateSceneTts && (
+          <div className="flex items-center gap-2">
+            {sceneTtsUrl ? (
+              <audio controls src={sceneTtsUrl} className="h-7 flex-1" style={{ maxWidth: 200 }} />
+            ) : (
+              <button
+                onClick={onGenerateSceneTts}
+                disabled={sceneTtsLoading}
+                className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                style={{ background: "#7c3aed10", color: "#7c3aed", border: "1px solid #7c3aed20" }}
+              >
+                {sceneTtsLoading ? "생성 중..." : "나레이션 생성"}
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>

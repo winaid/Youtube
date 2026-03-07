@@ -40,6 +40,15 @@ export default function ResultPanel({
   const [ttsRate, setTtsRate] = useState(1.0);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragItemRef = useRef<number | null>(null);
+  // 스토리보드 이미지
+  const [storyboardImages, setStoryboardImages] = useState<Record<number, string>>({});
+  const [storyboardLoading, setStoryboardLoading] = useState<Record<number, boolean>>({});
+  // 장면별 TTS
+  const [sceneTtsUrls, setSceneTtsUrls] = useState<Record<number, string>>({});
+  const [sceneTtsLoading, setSceneTtsLoading] = useState<Record<number, boolean>>({});
+  // SRT
+  const [srtContent, setSrtContent] = useState<string | null>(null);
+  const [srtLoading, setSrtLoading] = useState(false);
 
   const videoGen = useVideoGeneration({
     cuts: result?.cuts ?? [],
@@ -400,7 +409,83 @@ export default function ResultPanel({
               <h3 className="text-sm font-medium" style={{ color: "#787fff" }}>
                 장면 리스트 (드래그로 순서 변경, 클릭하여 프롬프트 수정)
               </h3>
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-[10px] h-7"
+                  style={{ borderColor: "#787fff40", color: "#787fff" }}
+                  onClick={async () => {
+                    for (const cut of result.cuts) {
+                      if (storyboardImages[cut.cutNumber]) continue;
+                      setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                      try {
+                        const res = await fetch("/api/generate-image", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          if (data.images?.[0]?.base64) {
+                            setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                          }
+                        }
+                      } catch { /* ignore */ }
+                      setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                    }
+                  }}
+                >
+                  전체 스토리보드 생성
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-[10px] h-7"
+                  style={{ borderColor: "#7c3aed40", color: "#7c3aed" }}
+                  disabled={srtLoading}
+                  onClick={async () => {
+                    setSrtLoading(true);
+                    try {
+                      const res = await fetch("/api/generate-srt", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          scenes: result.cuts.map((c) => ({
+                            cutNumber: c.cutNumber,
+                            sceneDescription: c.sceneDescription,
+                            durationSec: c.durationSec,
+                          })),
+                        }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.srt) {
+                          setSrtContent(data.srt);
+                          const blob = new Blob([data.srt], { type: "text/plain;charset=utf-8" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `subtitles-${Date.now()}.srt`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }
+                      }
+                    } catch { /* ignore */ }
+                    setSrtLoading(false);
+                  }}
+                >
+                  {srtLoading ? "자막 생성 중..." : "SRT 자막 생성"}
+                </Button>
+              </div>
             </div>
+
+            {srtContent && (
+              <div className="p-2 rounded-lg text-[10px] font-mono max-h-32 overflow-auto" style={{ background: "#1e1e2e", color: "#cdd6f4" }}>
+                <pre>{srtContent}</pre>
+              </div>
+            )}
+
             {result.cuts.map((cut, index) => (
               <div
                 key={cut.cutNumber}
@@ -417,10 +502,55 @@ export default function ResultPanel({
                 }}
               >
                 <CutCard
-                  key={cut.cutNumber}
                   cut={cut}
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
+                  storyboardImage={storyboardImages[cut.cutNumber]}
+                  storyboardLoading={storyboardLoading[cut.cutNumber]}
+                  onGenerateImage={async () => {
+                    setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                    try {
+                      const res = await fetch("/api/generate-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.images?.[0]?.base64) {
+                          setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                        }
+                      }
+                    } catch { /* ignore */ }
+                    setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                  }}
+                  sceneTtsUrl={sceneTtsUrls[cut.cutNumber]}
+                  sceneTtsLoading={sceneTtsLoading[cut.cutNumber]}
+                  onGenerateSceneTts={async () => {
+                    setSceneTtsLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                    try {
+                      const res = await fetch("/api/tts", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          text: cut.sceneDescription,
+                          voiceName: ttsVoice,
+                          speakingRate: ttsRate,
+                        }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.audioBase64) {
+                          const blob = new Blob(
+                            [Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0))],
+                            { type: "audio/mp3" }
+                          );
+                          setSceneTtsUrls((prev) => ({ ...prev, [cut.cutNumber]: URL.createObjectURL(blob) }));
+                        }
+                      }
+                    } catch { /* ignore */ }
+                    setSceneTtsLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                  }}
                 />
               </div>
             ))}
