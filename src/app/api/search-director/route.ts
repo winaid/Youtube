@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+export const runtime = "edge";
+
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,10 +12,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "query is required" }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-pro-preview-06-05",
-      generationConfig: { temperature: 0.3 },
-    });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY not configured", directors: [] },
+        { status: 500 }
+      );
+    }
 
     const prompt = `You are a film/animation director database. The user searched for: "${query}"
 
@@ -34,15 +39,32 @@ Return a JSON array of up to 5 matching directors. Each object should have:
 Return ONLY valid JSON array, no markdown fences, no explanation.
 If no directors match, return an empty array [].`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
+    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3 },
+      }),
+    });
 
-    // Parse the JSON response
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini API error:", res.status, errText);
+      return NextResponse.json(
+        { error: `Gemini API error: ${res.status}`, directors: [] },
+        { status: 500 }
+      );
+    }
+
+    const data = await res.json();
+    const text =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
+
     let directors;
     try {
       directors = JSON.parse(text);
     } catch {
-      // Try to extract JSON from potential markdown fences
       const match = text.match(/\[[\s\S]*\]/);
       directors = match ? JSON.parse(match[0]) : [];
     }

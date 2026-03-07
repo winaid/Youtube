@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+export const runtime = "edge";
+
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,10 +17,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-pro-preview-06-05",
-      generationConfig: { temperature: 0.8, maxOutputTokens: 1024 },
-    });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY not configured" },
+        { status: 500 }
+      );
+    }
 
     const prompt = `당신은 영화/애니메이션 감독의 페르소나를 작성하는 전문가입니다.
 
@@ -41,8 +46,27 @@ ${storyText ? `- 시나리오 맥락: ${storyText.slice(0, 200)}` : ""}
 
 페르소나 프롬프트만 출력하세요. 설명이나 제목 없이 순수 텍스트만.`;
 
-    const result = await model.generateContent(prompt);
-    const persona = result.response.text().trim();
+    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.8, maxOutputTokens: 1024 },
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini API error:", res.status, errText);
+      return NextResponse.json(
+        { error: `Gemini API error: ${res.status}` },
+        { status: 500 }
+      );
+    }
+
+    const data = await res.json();
+    const persona =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 
     return NextResponse.json({ persona });
   } catch (error) {
