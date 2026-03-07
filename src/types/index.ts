@@ -21,6 +21,7 @@ export interface PromptInput {
   animationMode: AnimationMode;
   duration: Duration;
   aspectRatio: AspectRatio;
+  customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
 }
 
 // ===== 출력 타입 =====

@@ -1,21 +1,50 @@
-import { PromptInput, PromptOutput, Cut } from "@/types";
+import { PromptInput, PromptOutput, Cut, DirectorPersona } from "@/types";
 import { directors } from "@/data/directors";
+
+async function fetchGeminiPersona(
+  director: DirectorPersona,
+  storyText: string,
+  animationMode: string
+): Promise<string> {
+  try {
+    const res = await fetch("/api/generate-persona", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directorName: director.name,
+        directorNameKo: director.nameKo,
+        style: director.style,
+        description: director.description,
+        storyText,
+        animationMode,
+      }),
+    });
+    const data = await res.json();
+    return data.persona || director.persona || "";
+  } catch {
+    return director.persona || "";
+  }
+}
 
 /**
  * Veo 최적화 프롬프트 생성기
  * Google Veo 8초 클립 기반으로 프롬프트를 생성합니다.
- *
- * TODO: 실제 AI API 연결 시 이 함수를 교체하세요.
+ * 커스텀 감독(웹 검색)의 경우 Gemini 3.1 Pro Preview가 페르소나를 생성합니다.
  */
 export async function generatePrompt(
   input: PromptInput
 ): Promise<PromptOutput> {
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-
-  const director = directors.find((d) => d.id === input.directorPersona);
+  const director = input.customDirector ?? directors.find((d) => d.id === input.directorPersona);
   const directorName = director?.nameKo ?? "알 수 없는 감독";
   const directorStyle = director?.style ?? "";
-  const directorPersonaText = director?.persona ?? "";
+
+  // Gemini로 페르소나 프롬프트 생성 (커스텀 감독이거나 페르소나가 비어있을 때)
+  let directorPersonaText: string;
+  if (director && (!director.persona || input.customDirector)) {
+    directorPersonaText = await fetchGeminiPersona(director, input.storyText, input.animationMode);
+  } else {
+    directorPersonaText = director?.persona ?? "";
+  }
 
   // "auto" 모드: 시나리오 길이에 따라 자동 결정
   const effectiveDuration =

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { PromptInput, Region, AnimationMode, Duration } from "@/types";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { PromptInput, Region, AnimationMode, Duration, DirectorPersona } from "@/types";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+
+interface WebDirectorResult {
+  id: string;
+  name: string;
+  nameKo: string;
+  region: Region;
+  style: string;
+  description: string;
+  matchedBy: string;
+}
 
 interface InputPanelProps {
   onGenerate: (input: PromptInput) => void;
@@ -39,21 +49,24 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
   const [animationMode, setAnimationMode] = useState<AnimationMode>("2D 애니");
   const [duration, setDuration] = useState<Duration>("auto");
   const [directorSearch, setDirectorSearch] = useState("");
+  const [webResults, setWebResults] = useState<WebDirectorResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>([]);
 
-  const filteredDirectors = directors.filter((d) => d.region === region);
+  const allDirectors = useMemo(() => [...directors, ...customDirectors], [customDirectors]);
+  const filteredDirectors = allDirectors.filter((d) => d.region === region);
 
-  // 검색어로 감독 찾기 (감독 이름 또는 작품명)
-  const searchResults = useMemo(() => {
+  // 로컬 검색
+  const localResults = useMemo(() => {
     const query = directorSearch.trim();
     if (!query) return [];
 
-    const results: { director: typeof directors[0]; matchedBy: string }[] = [];
+    const results: { director: DirectorPersona; matchedBy: string }[] = [];
     const addedIds = new Set<string>();
 
-    // 1. 작품명으로 검색
     for (const [workTitle, dirId] of Object.entries(workToDirectorMap)) {
       if (workTitle.includes(query)) {
-        const director = directors.find((d) => d.id === dirId);
+        const director = allDirectors.find((d) => d.id === dirId);
         if (director && !addedIds.has(director.id)) {
           addedIds.add(director.id);
           results.push({ director, matchedBy: `작품: ${workTitle}` });
@@ -61,8 +74,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
       }
     }
 
-    // 2. 감독 이름으로 검색
-    for (const d of directors) {
+    for (const d of allDirectors) {
       if (addedIds.has(d.id)) continue;
       if (
         d.nameKo.includes(query) ||
@@ -73,8 +85,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
       }
     }
 
-    // 3. 스타일 키워드로 검색
-    for (const d of directors) {
+    for (const d of allDirectors) {
       if (addedIds.has(d.id)) continue;
       if (d.style.includes(query) || d.description.includes(query)) {
         addedIds.add(d.id);
@@ -83,19 +94,81 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
     }
 
     return results;
-  }, [directorSearch]);
+  }, [directorSearch, allDirectors]);
+
+  // 웹 검색 (로컬 결과 없을 때 자동 실행)
+  const searchWeb = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    setIsSearching(true);
+    try {
+      const res = await fetch("/api/search-director", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      const data = await res.json();
+      if (data.directors && Array.isArray(data.directors)) {
+        setWebResults(data.directors);
+      }
+    } catch {
+      setWebResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // 디바운스된 웹 검색
+  useEffect(() => {
+    const query = directorSearch.trim();
+    if (!query || localResults.length > 0) {
+      setWebResults([]);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchWeb(query);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [directorSearch, localResults.length, searchWeb]);
+
+  const searchResults = localResults;
 
   const handleSearchSelect = (directorId: string) => {
-    const director = directors.find((d) => d.id === directorId);
+    const director = allDirectors.find((d) => d.id === directorId);
     if (director) {
       setRegion(director.region);
       setDirectorPersona(director.id);
       setDirectorSearch("");
+      setWebResults([]);
     }
+  };
+
+  const handleWebSelect = (webDir: WebDirectorResult) => {
+    // 웹 결과를 커스텀 감독으로 추가 (페르소나는 나중에 Gemini가 생성)
+    const newDirector: DirectorPersona = {
+      id: webDir.id,
+      name: webDir.name,
+      nameKo: webDir.nameKo,
+      region: webDir.region,
+      style: webDir.style,
+      description: webDir.description,
+      persona: "", // Gemini가 생성 시 채움
+    };
+    setCustomDirectors((prev) => {
+      if (prev.some((d) => d.id === newDirector.id)) return prev;
+      return [...prev, newDirector];
+    });
+    setRegion(webDir.region);
+    setDirectorPersona(webDir.id);
+    setDirectorSearch("");
+    setWebResults([]);
   };
 
   const handleSubmit = () => {
     if (!storyText.trim() || !directorPersona) return;
+    // 커스텀 감독이면 감독 정보를 함께 전달
+    const selectedDir = allDirectors.find((d) => d.id === directorPersona);
     onGenerate({
       storyText,
       directorPersona,
@@ -103,6 +176,9 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
       animationMode,
       duration,
       aspectRatio: "1:1",
+      customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
+        ? selectedDir
+        : undefined,
     });
   };
 
@@ -143,7 +219,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
               placeholder="감독 이름 또는 영화/애니 제목으로 검색..."
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
             />
-            {directorSearch.trim() && searchResults.length > 0 && (
+            {directorSearch.trim() && (searchResults.length > 0 || webResults.length > 0 || isSearching) && (
               <div className="absolute z-50 w-full mt-1 rounded-md border bg-white shadow-lg max-h-60 overflow-y-auto">
                 {searchResults.map(({ director, matchedBy }) => (
                   <button
@@ -166,9 +242,49 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
                     </p>
                   </button>
                 ))}
+                {searchResults.length === 0 && webResults.length > 0 && (
+                  <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-gray-50 border-b" style={{ color: "#787fff" }}>
+                    웹 검색 결과 (Gemini)
+                  </div>
+                )}
+                {webResults.map((webDir) => (
+                  <button
+                    key={webDir.id}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-b-0 transition-colors"
+                    onClick={() => handleWebSelect(webDir)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{webDir.nameKo}</span>
+                      <div className="flex items-center gap-1">
+                        <Badge
+                          variant="outline"
+                          className="text-[10px]"
+                          style={{ borderColor: "#787fff60", color: "#787fff" }}
+                        >
+                          {webDir.region}
+                        </Badge>
+                        <Badge
+                          className="text-[10px]"
+                          style={{ background: "#787fff20", color: "#787fff" }}
+                        >
+                          웹
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {webDir.matchedBy} | {webDir.style?.slice(0, 40)}...
+                    </p>
+                  </button>
+                ))}
+                {isSearching && (
+                  <div className="px-3 py-3 text-xs text-center text-muted-foreground flex items-center justify-center gap-2">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+                    웹에서 감독 검색 중...
+                  </div>
+                )}
               </div>
             )}
-            {directorSearch.trim() && searchResults.length === 0 && (
+            {directorSearch.trim() && searchResults.length === 0 && webResults.length === 0 && !isSearching && (
               <div className="absolute z-50 w-full mt-1 rounded-md border bg-white shadow-lg p-3">
                 <p className="text-xs text-muted-foreground text-center">
                   검색 결과가 없습니다. 다른 감독이나 작품명을 검색해보세요.
