@@ -20,6 +20,14 @@ function SfxPlayer({ sfx }: { sfx: SfxMatch }) {
 
   const toggle = () => {
     if (!audioRef.current) return;
+    if (error) {
+      // 에러 복구 시도: 소스 재로드
+      setError(false);
+      audioRef.current.load();
+      audioRef.current.play().catch(() => setError(true));
+      setPlaying(true);
+      return;
+    }
     if (playing) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -34,24 +42,28 @@ function SfxPlayer({ sfx }: { sfx: SfxMatch }) {
     const audio = audioRef.current;
     if (!audio) return;
     const handleEnded = () => setPlaying(false);
+    const handleError = () => { setError(true); setPlaying(false); };
     audio.addEventListener("ended", handleEnded);
-    return () => audio.removeEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
+    return () => {
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
+    };
   }, []);
 
   return (
     <div className="flex items-center gap-1.5">
       <button
         onClick={toggle}
-        disabled={error}
         className="w-6 h-6 rounded-full flex items-center justify-center transition-all text-[10px]"
         style={{
-          background: playing ? "#ff6b6b" : "#787fff15",
-          color: playing ? "white" : "#787fff",
-          border: `1px solid ${playing ? "#ff6b6b" : "#787fff30"}`,
+          background: error ? "#ffa50030" : playing ? "#ff6b6b" : "#787fff15",
+          color: error ? "#e67700" : playing ? "white" : "#787fff",
+          border: `1px solid ${error ? "#ffa50050" : playing ? "#ff6b6b" : "#787fff30"}`,
         }}
-        title={error ? "재생 불가" : sfx.label}
+        title={error ? "재생 실패 — 클릭하여 재시도" : sfx.label}
       >
-        {error ? "!" : playing ? "||" : "\u25B6"}
+        {error ? "↻" : playing ? "||" : "\u25B6"}
       </button>
       <audio ref={audioRef} src={sfx.audioUrl} preload="none" />
     </div>
@@ -142,12 +154,14 @@ export default function SfxPanel({
   onSceneSfxChange,
 }: SfxPanelProps) {
   const [matching, setMatching] = useState(false);
+  const [matchError, setMatchError] = useState<string | null>(null);
   const [expandedCut, setExpandedCut] = useState<number | null>(null);
   const [browsingCut, setBrowsingCut] = useState<number | null>(null);
 
   // AI 자동 매칭
   const autoMatchAll = useCallback(async () => {
     setMatching(true);
+    setMatchError(null);
     try {
       const res = await fetch("/api/match-sfx", {
         method: "POST",
@@ -190,6 +204,7 @@ export default function SfxPanel({
       onSceneSfxChange(newList);
     } catch (error) {
       console.error("SFX matching failed:", error);
+      setMatchError("효과음 매칭에 실패했습니다. 다시 시도해 주세요.");
     }
     setMatching(false);
   }, [cuts, onSceneSfxChange]);
@@ -287,7 +302,13 @@ export default function SfxPanel({
       </CardHeader>
 
       <CardContent className="space-y-2 pt-3">
-        {sceneSfxList.length === 0 && !matching && (
+        {matchError && (
+          <p className="text-[11px] text-center py-2 px-3 rounded-md" style={{ background: "#fee2e2", color: "#dc2626" }}>
+            {matchError}
+          </p>
+        )}
+
+        {sceneSfxList.length === 0 && !matching && !matchError && (
           <p className="text-[11px] text-muted-foreground text-center py-3">
             &quot;AI 자동 매칭&quot; 버튼을 누르면 각 장면에 어울리는 효과음을
             자동으로 찾아줍니다.

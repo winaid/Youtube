@@ -327,22 +327,22 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
         }
       }
 
-      // 캐릭터 얼굴 레퍼런스 자동 주입
-      const allReferenceImages = [...(cfg.referenceImages || [])];
+      // 캐릭터 얼굴 레퍼런스 자동 주입 (Set으로 O(1) 중복 검사)
+      const refImageSet = new Set<string>(cfg.referenceImages || []);
       if (faceRefs && faceRefs.length > 0) {
-        // 이 장면에 등장하는 캐릭터의 얼굴 레퍼런스 추가
         const charsInScene = cut.charactersInScene || [];
         const relevantFaces = charsInScene.length > 0
           ? faceRefs.filter((ref) => charsInScene.includes(ref.characterId))
-          : faceRefs; // 캐릭터 정보 없으면 모든 얼굴 주입
+          : faceRefs;
         for (const ref of relevantFaces) {
-          if (!allReferenceImages.includes(ref.faceBase64)) {
-            allReferenceImages.push(ref.faceBase64);
+          // base64 유효성 검증 (최소 100자 이상)
+          if (ref.faceBase64 && ref.faceBase64.length > 100) {
+            refImageSet.add(ref.faceBase64);
           }
         }
       }
       // Veo는 최대 3장 reference image 지원
-      const finalRefImages = allReferenceImages.slice(0, 3);
+      const finalRefImages = Array.from(refImageSet).slice(0, 3);
 
       const body: Record<string, unknown> = {
         prompt,

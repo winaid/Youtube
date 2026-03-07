@@ -41,7 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // === Build instance ===
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
-    // Scene Extension
+    // Scene Extension (이전 영상 이어 생성)
     if (req.previousVideoUri) {
       instance.video = { uri: req.previousVideoUri };
     }
@@ -49,37 +49,43 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // First Frame (Image-to-Video)
     if (req.firstFrameBase64) {
       instance.image = {
-        bytesBase64Encoded: req.firstFrameBase64,
-        mimeType: "image/png",
+        inlineData: {
+          mimeType: "image/png",
+          data: req.firstFrameBase64,
+        },
       };
     }
 
     // Last Frame
     if (req.lastFrameBase64) {
       instance.lastFrame = {
-        bytesBase64Encoded: req.lastFrameBase64,
-        mimeType: "image/png",
+        inlineData: {
+          mimeType: "image/png",
+          data: req.lastFrameBase64,
+        },
       };
     }
 
-    // Reference Images (최대 3장)
+    // Reference Images (최대 3장) — Gemini API 형식
     if (req.referenceImages && req.referenceImages.length > 0) {
       instance.referenceImages = req.referenceImages.slice(0, 3).map((base64) => ({
-        referenceImage: {
-          imageBytes: base64,
+        image: {
+          inlineData: {
+            mimeType: "image/png",
+            data: base64,
+          },
         },
-        referenceType: "SUBJECT_IMAGE",
+        referenceType: "asset",
       }));
     }
 
-    // === Build parameters ===
+    // === Build parameters (Gemini API 형식) ===
     const parameters: Record<string, unknown> = {
       aspectRatio: req.aspectRatio || "9:16",
       durationSeconds: req.durationSeconds || 8,
       personGeneration: req.personGeneration || "allow_all",
-      generateAudio: req.generateAudio !== false,
       resolution: req.resolution || "720p",
-      sampleCount: Math.min(4, Math.max(1, req.sampleCount || 1)),
+      numberOfVideos: Math.min(4, Math.max(1, req.sampleCount || 1)),
     };
 
     if (req.negativePrompt) {

@@ -259,15 +259,35 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
-                {/* 완료된 영상 미리보기 */}
+                {/* 완료된 영상 미리보기 + 다운로드 */}
                 {clip.status === "completed" && clip.videoUri && (
-                  <div className="px-3 pb-3">
+                  <div className="px-3 pb-3 space-y-1.5">
                     <video
                       src={clip.videoUri}
                       controls
                       className="w-full rounded-lg"
                       style={{ maxHeight: "200px" }}
                     />
+                    <div className="flex gap-1.5">
+                      <a
+                        href={clip.videoUri}
+                        download={`cut-${cut.cutNumber}.mp4`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] px-2.5 py-1 rounded-md inline-flex items-center gap-1"
+                        style={{ background: "#22c55e15", color: "#16a34a", border: "1px solid #22c55e30" }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        MP4 다운로드
+                      </a>
+                      <button
+                        onClick={() => onResetClip(cut.cutNumber)}
+                        className="text-[10px] px-2.5 py-1 rounded-md"
+                        style={{ background: "#ef444410", color: "#dc2626", border: "1px solid #ef444420" }}
+                      >
+                        재생성
+                      </button>
+                    </div>
                   </div>
                 )}
 

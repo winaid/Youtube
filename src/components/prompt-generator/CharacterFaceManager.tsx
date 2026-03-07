@@ -39,24 +39,35 @@ export default function CharacterFaceManager({
             return;
           }
 
-          // 바운딩 박스를 픽셀로 변환
-          const sx = Math.round(box.x * img.width);
-          const sy = Math.round(box.y * img.height);
-          const sw = Math.round(box.width * img.width);
-          const sh = Math.round(box.height * img.height);
+          // 바운딩 박스를 픽셀로 변환 (여백 10% 추가로 자연스러운 크롭)
+          const margin = 0.1;
+          const rawX = box.x - box.width * margin;
+          const rawY = box.y - box.height * margin;
+          const rawW = box.width * (1 + margin * 2);
+          const rawH = box.height * (1 + margin * 2);
 
-          // 정사각형에 가깝게 크롭 (reference image 최적화)
-          const size = Math.max(sw, sh);
-          canvas.width = size;
-          canvas.height = size;
+          // 정사각형으로 확장 (얼굴이 프레임 채우도록)
+          const maxDim = Math.max(rawW * img.width, rawH * img.height);
+          const centerX = (rawX + rawW / 2) * img.width;
+          const centerY = (rawY + rawH / 2) * img.height;
 
-          // 중앙 정렬
-          const offsetX = (size - sw) / 2;
-          const offsetY = (size - sh) / 2;
+          // 소스 정사각형 영역 (이미지 범위 클램핑)
+          const sx = Math.max(0, Math.round(centerX - maxDim / 2));
+          const sy = Math.max(0, Math.round(centerY - maxDim / 2));
+          const sSize = Math.round(Math.min(maxDim, img.width - sx, img.height - sy));
 
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, size, size);
-          ctx.drawImage(img, sx, sy, sw, sh, offsetX, offsetY, sw, sh);
+          // 최소 크기 검증 (너무 작은 얼굴 방지)
+          if (sSize < 64) {
+            resolve("");
+            return;
+          }
+
+          // 512px 정사각형으로 출력 (Veo reference image 최적)
+          const outSize = 512;
+          canvas.width = outSize;
+          canvas.height = outSize;
+
+          ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, outSize, outSize);
 
           const croppedBase64 = canvas.toDataURL("image/png").split(",")[1];
           resolve(croppedBase64);

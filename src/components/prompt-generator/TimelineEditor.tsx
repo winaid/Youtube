@@ -6,6 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+function formatTimecode(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const f = Math.round((seconds % 1) * 30); // 30fps
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}:${String(f).padStart(2, "0")}`;
+}
+
 interface TimelineEditorProps {
   clips: VideoClip[];
   onReorder: (fromIndex: number, toIndex: number) => void;
@@ -185,17 +193,49 @@ export default function TimelineEditor({
     setDragOverIndex(null);
   };
 
-  // ZIP 다운로드
+  // 전체 영상 순차 다운로드
+  const [downloading, setDownloading] = useState(false);
   const handleDownloadAll = async () => {
-    // 개별 다운로드 (ZIP은 별도 라이브러리 필요)
-    for (const clip of completedClips) {
+    setDownloading(true);
+    for (let i = 0; i < completedClips.length; i++) {
+      const clip = completedClips[i];
       if (!clip.videoUri) continue;
       const a = document.createElement("a");
       a.href = clip.videoUri;
-      a.download = `cut-${clip.cutNumber}.mp4`;
+      a.download = `cut-${String(clip.cutNumber).padStart(2, "0")}.mp4`;
       a.target = "_blank";
       a.click();
+      // 브라우저 다운로드 간격
+      if (i < completedClips.length - 1) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
     }
+    setDownloading(false);
+  };
+
+  // 프로젝트 메타데이터 내보내기 (편집 소프트웨어 연동용)
+  const handleExportEdl = () => {
+    let edl = "TITLE: Veo Project\nFCM: NON-DROP FRAME\n\n";
+    let timecodeSec = 0;
+    completedClips.forEach((clip, i) => {
+      const start = clip.trimStart ?? 0;
+      const end = clip.trimEnd ?? clip.durationSec;
+      const duration = end - start;
+      const srcIn = formatTimecode(start);
+      const srcOut = formatTimecode(end);
+      const recIn = formatTimecode(timecodeSec);
+      const recOut = formatTimecode(timecodeSec + duration);
+      edl += `${String(i + 1).padStart(3, "0")}  cut-${String(clip.cutNumber).padStart(2, "0")}  V  C  ${srcIn} ${srcOut} ${recIn} ${recOut}\n`;
+      edl += `* FROM CLIP NAME: cut-${String(clip.cutNumber).padStart(2, "0")}.mp4\n\n`;
+      timecodeSec += duration;
+    });
+    const blob = new Blob([edl], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `veo-project-${Date.now()}.edl`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (completedClips.length === 0) {
@@ -273,9 +313,18 @@ export default function TimelineEditor({
             size="sm"
             variant="outline"
             onClick={handleDownloadAll}
+            disabled={downloading}
             style={{ borderColor: "#22c55e60", color: "#16a34a" }}
           >
-            전체 다운로드
+            {downloading ? "다운로드 중..." : "전체 MP4 다운로드"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportEdl}
+            style={{ borderColor: "#c4b80060", color: "#7a7000" }}
+          >
+            EDL 내보내기
           </Button>
         </div>
 
