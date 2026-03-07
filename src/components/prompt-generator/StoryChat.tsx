@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ChatMessage } from "@/types";
-import { storyPersonas } from "@/data/story-personas";
+import { storyPersonas, shufflePrompts } from "@/data/story-personas";
 import { generateChatResponse } from "@/lib/mock-chat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,18 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function StoryChat() {
+  const [personas, setPersonas] = useState(() => shufflePrompts(storyPersonas));
   const [personaId, setPersonaId] = useState(storyPersonas[0].id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const selectedPersona = storyPersonas.find((p) => p.id === personaId)!;
+  const selectedPersona = personas.find((p) => p.id === personaId)!;
+
+  const handleRefreshPrompts = () => {
+    setPersonas(shufflePrompts(storyPersonas));
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -72,7 +77,7 @@ export default function StoryChat() {
       <CardContent className="space-y-3 pt-3">
         {/* 페르소나 선택 */}
         <div className="flex flex-wrap gap-1.5">
-          {storyPersonas.map((p) => (
+          {personas.map((p) => (
             <Badge
               key={p.id}
               className="cursor-pointer text-xs transition-all"
@@ -158,7 +163,7 @@ export default function StoryChat() {
         </div>
 
         {/* 샘플 프롬프트 */}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 items-center">
           {selectedPersona.samplePrompts.map((prompt) => (
             <Badge
               key={prompt}
@@ -170,6 +175,18 @@ export default function StoryChat() {
               {prompt}
             </Badge>
           ))}
+          <button
+            onClick={handleRefreshPrompts}
+            className="inline-flex items-center justify-center h-6 w-6 rounded-full transition-colors hover:bg-[#fff78730]"
+            title="다른 예시 보기"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.5 2v6h-6" />
+              <path d="M2.5 22v-6h6" />
+              <path d="M2 11.5a10 10 0 0 1 18.8-4.3" />
+              <path d="M22 12.5a10 10 0 0 1-18.8 4.2" />
+            </svg>
+          </button>
         </div>
 
         {/* 입력 */}

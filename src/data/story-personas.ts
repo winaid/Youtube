@@ -57,6 +57,19 @@ function pickRandom<T>(arr: T[], count: number): T[] {
   return shuffled.slice(0, count);
 }
 
+const promptPools: Record<string, string[]> = {
+  "history-marketing": historyMarketingPrompts,
+  "shorts-scenario": shortsScenarioPrompts,
+  "trust-builder": trustBuilderPrompts,
+};
+
+export function shufflePrompts(personas: StoryAIPersona[]): StoryAIPersona[] {
+  return personas.map((p) => ({
+    ...p,
+    samplePrompts: pickRandom(promptPools[p.id] ?? p.samplePrompts, 4),
+  }));
+}
+
 export const storyPersonas: StoryAIPersona[] = [
   {
     id: "history-marketing",
