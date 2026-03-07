@@ -73,7 +73,7 @@ If no directors match, return an empty array [].`;
   } catch (error) {
     console.error("Director search error:", error);
     return NextResponse.json(
-      { error: "Failed to search directors", directors: [] },
+      { error: `Failed to search directors: ${error instanceof Error ? error.message : String(error)}`, directors: [] },
       { status: 500 }
     );
   }

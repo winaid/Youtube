@@ -96,7 +96,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
     return results;
   }, [directorSearch, allDirectors]);
 
-  // 웹 검색 (로컬 결과 없을 때 자동 실행)
+  // 웹 검색 (항상 실행)
   const searchWeb = useCallback(async (query: string) => {
     if (!query.trim()) return;
     setIsSearching(true);
@@ -106,31 +106,39 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
       });
+      if (!res.ok) {
+        console.error("search-director API error:", res.status, await res.text());
+        setWebResults([]);
+        return;
+      }
       const data = await res.json();
       if (data.directors && Array.isArray(data.directors)) {
-        setWebResults(data.directors);
+        // 로컬에 이미 있는 감독은 제외
+        const localIds = new Set(localResults.map((r) => r.director.id));
+        setWebResults(data.directors.filter((d: WebDirectorResult) => !localIds.has(d.id)));
       }
-    } catch {
+    } catch (err) {
+      console.error("search-director fetch error:", err);
       setWebResults([]);
     } finally {
       setIsSearching(false);
     }
-  }, []);
+  }, [localResults]);
 
   // 디바운스된 웹 검색
   useEffect(() => {
     const query = directorSearch.trim();
-    if (!query || localResults.length > 0) {
+    if (!query) {
       setWebResults([]);
       return;
     }
 
     const timer = setTimeout(() => {
       searchWeb(query);
-    }, 500);
+    }, 600);
 
     return () => clearTimeout(timer);
-  }, [directorSearch, localResults.length, searchWeb]);
+  }, [directorSearch, searchWeb]);
 
   const searchResults = localResults;
 
@@ -242,7 +250,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
                     </p>
                   </button>
                 ))}
-                {searchResults.length === 0 && webResults.length > 0 && (
+                {webResults.length > 0 && (
                   <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-gray-50 border-b" style={{ color: "#787fff" }}>
                     웹 검색 결과 (Gemini)
                   </div>
