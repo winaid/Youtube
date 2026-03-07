@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { PromptInput, Region, AnimationMode, Duration } from "@/types";
-import { directors, sampleScenarios, workToDirectorMap } from "@/data/directors";
+import { directors, workToDirectorMap } from "@/data/directors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -130,19 +130,6 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
             rows={5}
             className="resize-none focus-visible:ring-[#787fff]"
           />
-          <div className="flex flex-wrap gap-1.5">
-            {sampleScenarios.map((s) => (
-              <Badge
-                key={s.label}
-                variant="outline"
-                className="cursor-pointer transition-colors"
-                style={{ borderColor: "#787fff60" }}
-                onClick={() => setStoryText(s.text)}
-              >
-                {s.label}
-              </Badge>
-            ))}
-          </div>
         </div>
 
         {/* 감독 검색 */}
