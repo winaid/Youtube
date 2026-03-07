@@ -86,7 +86,7 @@ export default function CutCard({ cut }: CutCardProps) {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium" style={{ color: "#787fff" }}>
-                    Image Prompt
+                    Image Prompt (Veo 참조)
                   </span>
                   <CopyButton text={cut.imagePrompt} label="Image" />
                 </div>
@@ -97,7 +97,7 @@ export default function CutCard({ cut }: CutCardProps) {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium" style={{ color: "#c4b800" }}>
-                    Video Prompt (8초)
+                    Veo Video Prompt (8초)
                   </span>
                   <CopyButton text={cut.videoPrompt} label="Video" />
                 </div>
@@ -108,7 +108,7 @@ export default function CutCard({ cut }: CutCardProps) {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium" style={{ color: "#6b5ce7" }}>
-                    이어붙이기 Prompt
+                    Veo Extend Prompt
                   </span>
                   <CopyButton text={cut.extendPrompt} label="Extend" />
                 </div>
