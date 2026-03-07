@@ -66,8 +66,12 @@ export function extractScenarioTitle(messages: ChatMessage[]): string {
 }
 
 export function extractFinalScenario(messages: ChatMessage[]): string {
-  // 마지막 AI 응답을 시나리오 텍스트로 사용
+  // 마지막 AI 응답을 시나리오 텍스트로 사용 (출처 정보 제거)
   const assistantMsgs = messages.filter((m) => m.role === "assistant");
   if (assistantMsgs.length === 0) return "";
-  return assistantMsgs[assistantMsgs.length - 1].content;
+  let text = assistantMsgs[assistantMsgs.length - 1].content;
+  // 출처/참고 섹션 제거 (줄 끝에 붙는 패턴들)
+  text = text.replace(/\n*(?:출처|참고|참조|Source|Reference)[:\s].*/gi, "");
+  text = text.replace(/\n*\[?\d+\]?\s*https?:\/\/\S+/g, "");
+  return text.trim();
 }
