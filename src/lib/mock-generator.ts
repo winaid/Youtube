@@ -27,10 +27,23 @@ export async function generatePrompt(
   const director = directors.find((d) => d.id === input.directorPersona);
   const directorName = director?.nameKo ?? "알 수 없는 감독";
   const directorStyle = director?.style ?? "";
+  const directorPersonaText = director?.persona ?? "";
 
-  const cutCount = input.duration === 60 ? 6 : input.duration === 90 ? 8 : 10;
-  const cutDuration = Math.floor(input.duration / cutCount);
-
+  // "auto" 모드: 시나리오 길이에 따라 자동 결정 (60~180초)
+  const effectiveDuration =
+    input.duration === "auto"
+      ? Math.min(180, Math.max(60, Math.round(input.storyText.length / 2)))
+      : input.duration;
+  const cutCount =
+    effectiveDuration <= 60
+      ? 6
+      : effectiveDuration <= 90
+        ? 8
+        : effectiveDuration <= 120
+          ? 10
+          : effectiveDuration <= 150
+            ? 12
+            : 14;
   const storyWords = input.storyText.slice(0, 30);
 
   const moodOptions = [
@@ -103,23 +116,30 @@ export async function generatePrompt(
 
     const basePrompt = `${animationTag}${regionStyle[input.region] ?? ""}${directorStyle}, cinematic composition`;
 
+    const sceneDesc = sceneTemplates[i % sceneTemplates.length];
+
     return {
       cutNumber: i + 1,
-      durationSec: i === cutCount - 1 ? input.duration - cutDuration * (cutCount - 1) : cutDuration,
-      sceneDescription: sceneTemplates[i % sceneTemplates.length],
+      durationSec: 8,
+      sceneDescription: sceneDesc,
       cameraDirection: camera,
       moodLighting: mood,
-      imagePrompt: `${basePrompt}, ${mood.toLowerCase()}, scene ${i + 1}: ${sceneTemplates[i % sceneTemplates.length].slice(0, 60)}, highly detailed, masterpiece quality, ${input.aspectRatio} aspect ratio`,
-      videoPrompt: `${basePrompt}, smooth motion, ${camera.toLowerCase()}, ${mood.toLowerCase()}, scene ${i + 1}, cinematic movement, ${input.duration}s total video, cut ${i + 1} of ${cutCount}`,
+      imagePrompt: `${basePrompt}, ${mood.toLowerCase()}, scene ${i + 1}: ${sceneDesc.slice(0, 60)}, highly detailed, masterpiece quality, ${input.aspectRatio} aspect ratio`,
+      videoPrompt: `${basePrompt}, smooth motion, ${camera.toLowerCase()}, ${mood.toLowerCase()}, scene ${i + 1}, cinematic movement, 8 second clip, cut ${i + 1} of ${cutCount}`,
+      extendPrompt: i > 0
+        ? `Continue from previous cut ${i}. Maintain same character appearance, clothing, and environment. ${camera.toLowerCase()}, ${mood.toLowerCase()}, seamless continuation, 8 second extension`
+        : `First scene establishing shot. ${camera.toLowerCase()}, ${mood.toLowerCase()}, 8 second clip`,
       transitionHint: transition,
+      characterConsistency: `캐릭터 시드 고정: 동일 인물 외형(얼굴, 체형, 의상) 유지. 이전 컷 마지막 프레임을 참조 이미지로 사용. ${directorStyle} 톤 일관성 유지.`,
     };
   });
 
   return {
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
-    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 ${input.duration}초 분량의 ${input.animationMode} 영상으로 구성한 컷 리스트입니다. ${input.region} 지역의 미학적 요소를 반영하였습니다.`,
+    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 8초 × ${cutCount}컷 = ${cutCount * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. 각 컷은 캐릭터 일관성을 유지하며 이어붙여 완성합니다.`,
     totalCuts: cutCount,
     globalStylePrompt: `${animationTag}${regionStyle[input.region] ?? ""}inspired by ${director?.name ?? "auteur"} filmmaking, ${directorStyle}, consistent character design, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality`,
+    directorPersonaPrompt: directorPersonaText,
     continuityRules: [
       "캐릭터 외형(의상, 헤어스타일, 체형)을 모든 컷에서 일관되게 유지",
       "조명 방향과 시간대를 연속된 컷 간에 일치시킬 것",
