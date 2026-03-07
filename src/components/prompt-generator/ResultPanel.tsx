@@ -19,7 +19,6 @@ export default function ResultPanel({
   status,
   error,
 }: ResultPanelProps) {
-  const [showJson, setShowJson] = useState(false);
   const [jsonCopied, setJsonCopied] = useState(false);
 
   // 아이들 상태
@@ -95,17 +94,6 @@ export default function ResultPanel({
 
           <Separator style={{ background: "linear-gradient(to right, #787fff40, #fff78740)" }} />
 
-          {result.directorPersonaPrompt && (
-            <div className="rounded-lg p-3" style={{ background: "linear-gradient(135deg, #787fff10, #fff78718)", border: "1px solid #787fff25" }}>
-              <p className="text-xs font-medium mb-1" style={{ color: "#5a5ecc" }}>
-                감독 페르소나
-              </p>
-              <p className="text-xs italic leading-relaxed" style={{ color: "#5a5ecc" }}>
-                &ldquo;{result.directorPersonaPrompt}&rdquo;
-              </p>
-            </div>
-          )}
-
           <div className="space-y-1">
             <p className="text-xs font-medium" style={{ color: "#787fff" }}>
               Global Style Prompt
@@ -135,29 +123,22 @@ export default function ResultPanel({
         ))}
       </div>
 
-      {/* JSON 보기 토글 */}
+      {/* JSON 복사 */}
       <Card>
         <CardContent className="pt-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setShowJson(!showJson)}
+              onClick={handleCopyJson}
               style={{ borderColor: "#787fff60", color: "#787fff" }}
             >
-              {showJson ? "JSON 숨기기" : "전체 결과 JSON 보기"}
+              {jsonCopied ? "복사됨!" : "전체 JSON 프롬프트 복사"}
             </Button>
-            {showJson && (
-              <Button variant="ghost" size="sm" onClick={handleCopyJson}>
-                {jsonCopied ? "복사됨!" : "JSON 복사"}
-              </Button>
-            )}
+            <span className="text-xs text-muted-foreground">
+              상세 프롬프트를 JSON으로 복사하여 활용하세요
+            </span>
           </div>
-          {showJson && (
-            <pre className="text-xs p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto font-mono" style={{ background: "#787fff08" }}>
-              {JSON.stringify(result, null, 2)}
-            </pre>
-          )}
         </CardContent>
       </Card>
     </div>

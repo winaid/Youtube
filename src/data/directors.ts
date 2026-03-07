@@ -1,5 +1,29 @@
 import { DirectorPersona } from "@/types";
 
+// 영화/애니 제목 → 감독 ID 매핑
+export const workToDirectorMap: Record<string, string> = {
+  // 한국
+  "기생충": "kr-bong", "괴물": "kr-bong", "설국열차": "kr-bong", "마더": "kr-bong", "살인의 추억": "kr-bong", "옥자": "kr-bong",
+  "올드보이": "kr-park", "아가씨": "kr-park", "친절한 금자씨": "kr-park", "헤어질 결심": "kr-park", "박쥐": "kr-park", "공동경비구역": "kr-park",
+  "서편제": "kr-im", "취화선": "kr-im", "춘향뎐": "kr-im", "축제": "kr-im",
+  // 일본 애니
+  "센과 치히로의 행방불명": "jp-miyazaki", "이웃집 토토로": "jp-miyazaki", "하울의 움직이는 성": "jp-miyazaki", "모노노케 히메": "jp-miyazaki", "원령공주": "jp-miyazaki", "바람이 분다": "jp-miyazaki", "벼랑 위의 포뇨": "jp-miyazaki", "천공의 성 라퓨타": "jp-miyazaki", "붉은 돼지": "jp-miyazaki", "나우시카": "jp-miyazaki",
+  "너의 이름은": "jp-shinkai", "날씨의 아이": "jp-shinkai", "스즈메의 문단속": "jp-shinkai", "초속 5센티미터": "jp-shinkai", "언어의 정원": "jp-shinkai", "별의 목소리": "jp-shinkai",
+  "퍼펙트 블루": "jp-kon", "파프리카": "jp-kon", "천년여우": "jp-kon", "도쿄 갓파더즈": "jp-kon", "망상대리인": "jp-kon",
+  // 중국
+  "영웅": "cn-zhang", "집으로 가는 길": "cn-zhang", "홍등": "cn-zhang", "인생": "cn-zhang", "그림자": "cn-zhang", "붉은 수수밭": "cn-zhang", "만리장성": "cn-zhang",
+  "화양연화": "cn-wong", "중경삼림": "cn-wong", "타락천사": "cn-wong", "2046": "cn-wong", "동사서독": "cn-wong", "해피 투게더": "cn-wong",
+  "와호장룡": "cn-ang", "색계": "cn-ang", "라이프 오브 파이": "cn-ang", "브로크백 마운틴": "cn-ang", "이성 감성": "cn-ang", "쌍자성": "cn-ang",
+  // 유럽
+  "인셉션": "eu-nolan", "다크나이트": "eu-nolan", "인터스텔라": "eu-nolan", "테넷": "eu-nolan", "메멘토": "eu-nolan", "오펜하이머": "eu-nolan", "덩케르크": "eu-nolan", "프레스티지": "eu-nolan",
+  "듄": "eu-villeneuve", "블레이드 러너 2049": "eu-villeneuve", "시카리오": "eu-villeneuve", "컨택트": "eu-villeneuve", "프리즈너스": "eu-villeneuve", "어라이벌": "eu-villeneuve",
+  "드라이브": "eu-refn", "네온 데몬": "eu-refn", "온리 갓 포기브스": "eu-refn", "발할라 라이징": "eu-refn",
+  // 미국
+  "펄프 픽션": "us-tarantino", "킬 빌": "us-tarantino", "장고": "us-tarantino", "바스터즈": "us-tarantino", "원스 어폰 어 타임 인 할리우드": "us-tarantino", "저수지의 개들": "us-tarantino", "헤이트풀8": "us-tarantino",
+  "세븐": "us-fincher", "파이트 클럽": "us-fincher", "조디악": "us-fincher", "소셜 네트워크": "us-fincher", "나를 찾아줘": "us-fincher", "벤자민 버튼": "us-fincher", "패닉 룸": "us-fincher",
+  "그랜드 부다페스트 호텔": "us-wes", "문라이즈 킹덤": "us-wes", "프렌치 디스패치": "us-wes", "아스테로이드 시티": "us-wes", "로얄 테넌바움": "us-wes", "판타스틱 Mr. 폭스": "us-wes", "이슬 오브 독스": "us-wes",
+};
+
 export const directors: DirectorPersona[] = [
   // 한국 감독 3명
   {

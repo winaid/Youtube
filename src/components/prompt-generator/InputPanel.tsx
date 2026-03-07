@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { PromptInput, Region, AnimationMode, Duration } from "@/types";
-import { directors, sampleScenarios } from "@/data/directors";
+import { directors, sampleScenarios, workToDirectorMap } from "@/data/directors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,7 @@ const durations: { value: Duration; label: string }[] = [
   { value: 60, label: "60초" },
   { value: 90, label: "90초" },
   { value: 120, label: "2분" },
-  { value: 150, label: "2분30" },
+  { value: 150, label: "2분 30초" },
   { value: 180, label: "3분" },
 ];
 
@@ -38,9 +38,61 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
   const [region, setRegion] = useState<Region>("한국");
   const [animationMode, setAnimationMode] = useState<AnimationMode>("2D 애니");
   const [duration, setDuration] = useState<Duration>("auto");
+  const [directorSearch, setDirectorSearch] = useState("");
 
   const filteredDirectors = directors.filter((d) => d.region === region);
-  const selectedDirector = directors.find((d) => d.id === directorPersona);
+
+  // 검색어로 감독 찾기 (감독 이름 또는 작품명)
+  const searchResults = useMemo(() => {
+    const query = directorSearch.trim();
+    if (!query) return [];
+
+    const results: { director: typeof directors[0]; matchedBy: string }[] = [];
+    const addedIds = new Set<string>();
+
+    // 1. 작품명으로 검색
+    for (const [workTitle, dirId] of Object.entries(workToDirectorMap)) {
+      if (workTitle.includes(query)) {
+        const director = directors.find((d) => d.id === dirId);
+        if (director && !addedIds.has(director.id)) {
+          addedIds.add(director.id);
+          results.push({ director, matchedBy: `작품: ${workTitle}` });
+        }
+      }
+    }
+
+    // 2. 감독 이름으로 검색
+    for (const d of directors) {
+      if (addedIds.has(d.id)) continue;
+      if (
+        d.nameKo.includes(query) ||
+        d.name.toLowerCase().includes(query.toLowerCase())
+      ) {
+        addedIds.add(d.id);
+        results.push({ director: d, matchedBy: "이름 일치" });
+      }
+    }
+
+    // 3. 스타일 키워드로 검색
+    for (const d of directors) {
+      if (addedIds.has(d.id)) continue;
+      if (d.style.includes(query) || d.description.includes(query)) {
+        addedIds.add(d.id);
+        results.push({ director: d, matchedBy: "스타일 일치" });
+      }
+    }
+
+    return results;
+  }, [directorSearch]);
+
+  const handleSearchSelect = (directorId: string) => {
+    const director = directors.find((d) => d.id === directorId);
+    if (director) {
+      setRegion(director.region);
+      setDirectorPersona(director.id);
+      setDirectorSearch("");
+    }
+  };
 
   const handleSubmit = () => {
     if (!storyText.trim() || !directorPersona) return;
@@ -93,6 +145,52 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
           </div>
         </div>
 
+        {/* 감독 검색 */}
+        <div className="space-y-2">
+          <Label>감독 검색</Label>
+          <div className="relative">
+            <input
+              type="text"
+              value={directorSearch}
+              onChange={(e) => setDirectorSearch(e.target.value)}
+              placeholder="감독 이름 또는 영화/애니 제목으로 검색..."
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
+            />
+            {directorSearch.trim() && searchResults.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 rounded-md border bg-white shadow-lg max-h-60 overflow-y-auto">
+                {searchResults.map(({ director, matchedBy }) => (
+                  <button
+                    key={director.id}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 transition-colors"
+                    onClick={() => handleSearchSelect(director.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{director.nameKo}</span>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] ml-2"
+                        style={{ borderColor: "#787fff60", color: "#787fff" }}
+                      >
+                        {director.region}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {matchedBy} | {director.style.slice(0, 40)}...
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+            {directorSearch.trim() && searchResults.length === 0 && (
+              <div className="absolute z-50 w-full mt-1 rounded-md border bg-white shadow-lg p-3">
+                <p className="text-xs text-muted-foreground text-center">
+                  검색 결과가 없습니다. 다른 감독이나 작품명을 검색해보세요.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* 지역 선택 */}
         <div className="space-y-2">
           <Label>지역</Label>
@@ -112,7 +210,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
 
         {/* 감독 페르소나 */}
         <div className="space-y-2">
-          <Label>감독 페르소나</Label>
+          <Label>감독 스타일</Label>
           <Select value={directorPersona} onValueChange={setDirectorPersona}>
             <SelectTrigger>
               <SelectValue placeholder="감독 스타일을 선택하세요" />
@@ -125,16 +223,6 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
               ))}
             </SelectContent>
           </Select>
-          {selectedDirector && (
-            <div className="rounded-lg p-3 mt-2 space-y-2" style={{ background: "linear-gradient(135deg, #787fff10, #fff78720)", border: "1px solid #787fff30" }}>
-              <p className="text-xs text-muted-foreground">
-                {selectedDirector.description}
-              </p>
-              <p className="text-xs italic leading-relaxed" style={{ color: "#5a5ecc" }}>
-                &ldquo;{selectedDirector.persona}&rdquo;
-              </p>
-            </div>
-          )}
         </div>
 
         {/* 애니메이션 모드 */}
