@@ -7,6 +7,14 @@ export type VeoResolution = "720p" | "1080p" | "4k";
 export type VeoClipDuration = 4 | 6 | 8;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
+export interface SignatureTechniques {
+  cameraWork?: string;
+  colorPalette?: string;
+  lighting?: string;
+  editingStyle?: string;
+  moodKeywords?: string;
+}
+
 export interface DirectorPersona {
   id: string;
   name: string;
@@ -15,6 +23,8 @@ export interface DirectorPersona {
   style: string;
   description: string;
   persona: string;
+  signatureTechniques?: SignatureTechniques;
+  notableWorks?: string[];
 }
 
 export interface PromptInput {

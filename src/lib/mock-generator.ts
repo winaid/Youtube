@@ -17,6 +17,8 @@ async function fetchGeminiPersona(
         description: director.description,
         storyText,
         animationMode,
+        signatureTechniques: director.signatureTechniques || null,
+        notableWorks: director.notableWorks || [],
       }),
     });
     const data = await res.json();
@@ -42,6 +44,7 @@ async function fetchGeminiCuts(
         directorNameKo: director.nameKo,
         directorStyle: director.style,
         directorPersona: directorPersonaText,
+        directorTechniques: director.signatureTechniques || null,
         animationMode: input.animationMode,
         aspectRatio: input.aspectRatio,
         region: input.region,

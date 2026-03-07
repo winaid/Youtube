@@ -3,7 +3,7 @@ interface Env {
 }
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -20,31 +20,38 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const prompt = `You are a film/animation director database. The user searched for: "${query}"
+    const prompt = `You are a world-class film/animation encyclopedia. The user searched for: "${query}"
 
-Find real directors or animation creators that match this search query. The query could be:
-- A director's name (Korean, Japanese, Chinese, English, etc.)
-- A movie or animation title
-- A visual style keyword
+The query could be a director's name, a movie/anime/animation title, or a visual style keyword.
+Search your knowledge deeply and return matching directors with **rich visual style analysis**.
 
-Return a JSON array of up to 5 matching directors. Each object should have:
-- id: a unique slug like "region-lastname" (e.g. "kr-bong", "jp-miyazaki")
+Return a JSON array of up to 5 matching directors. Each object must have:
+- id: unique slug like "region-lastname" (e.g. "kr-bong", "jp-miyazaki")
 - name: English name
 - nameKo: Korean name
 - region: one of "한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"
-- style: comma-separated style keywords in Korean (max 4)
-- description: 1-2 sentence description of their directing style in Korean
-- matchedBy: why this director matched the search (e.g. "작품: 기생충" or "이름 일치")
+- style: comma-separated style keywords in Korean (max 5)
+- description: 2-3 sentence description of directing style in Korean — be SPECIFIC about visual techniques
+- matchedBy: why matched (e.g. "작품: 기생충" or "이름 일치")
+- signatureTechniques: JSON object with these keys:
+  - cameraWork: string — signature camera techniques in English (e.g. "long tracking shots, symmetrical framing, whip pans")
+  - colorPalette: string — typical color grading in English (e.g. "desaturated cool tones with warm highlights")
+  - lighting: string — lighting style in English (e.g. "chiaroscuro, neon-lit night scenes")
+  - editingStyle: string — editing approach in English (e.g. "slow dissolves, match cuts, long takes")
+  - moodKeywords: string — 3-5 mood keywords in English (e.g. "melancholic, tense, dreamlike")
+- notableWorks: array of 3-5 representative work titles in original language + Korean
+
+If the query is a movie/anime title, find the director of that work AND suggest similar-style directors.
 
 Return ONLY valid JSON array, no markdown fences, no explanation.
-If no directors match, return an empty array [].`;
+If no match, return empty array [].`;
 
     const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3 },
+        generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
       }),
     });
 

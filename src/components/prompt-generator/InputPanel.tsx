@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona } from "@/types";
+import { PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques } from "@/types";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,8 @@ interface WebDirectorResult {
   style: string;
   description: string;
   matchedBy: string;
+  signatureTechniques?: SignatureTechniques;
+  notableWorks?: string[];
 }
 
 interface InputPanelProps {
@@ -161,7 +163,7 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
   };
 
   const handleWebSelect = (webDir: WebDirectorResult) => {
-    // 웹 결과를 커스텀 감독으로 추가 (페르소나는 나중에 Gemini가 생성)
+    // 웹 결과를 커스텀 감독으로 추가 (signatureTechniques 포함)
     const newDirector: DirectorPersona = {
       id: webDir.id,
       name: webDir.name,
@@ -170,6 +172,8 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
       style: webDir.style,
       description: webDir.description,
       persona: "", // Gemini가 생성 시 채움
+      signatureTechniques: webDir.signatureTechniques,
+      notableWorks: webDir.notableWorks,
     };
     setCustomDirectors((prev) => {
       if (prev.some((d) => d.id === newDirector.id)) return prev;
