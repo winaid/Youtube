@@ -42,9 +42,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       },
     };
 
-    // 1차: 나노바나나 프로 (Gemini 3 Pro Image) — 최고 품질
+    // 1차: 나노바나나 2 (Gemini 3.1 Flash Image) — 7.5배 빠르고 4K 지원, 가성비 최고
     try {
-      const res = await fetch(`${NANO_BANANA_PRO_URL}?key=${apiKey}`, {
+      const res = await fetch(`${NANO_BANANA_2_URL}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -53,19 +53,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (res.ok) {
         const images = extractImages(await res.json());
         if (images.length > 0) {
-          return Response.json({ images, source: "nano-banana-pro" });
+          return Response.json({ images, source: "nano-banana-2" });
         }
-        console.warn("Nano Banana Pro returned OK but no images, trying fallback");
+        console.warn("Nano Banana 2 returned OK but no images, trying fallback");
       } else {
         const errText = await res.text();
-        console.warn("Nano Banana Pro error:", res.status, errText.slice(0, 300), "— trying fallback");
+        console.warn("Nano Banana 2 error:", res.status, errText.slice(0, 300), "— trying fallback");
       }
     } catch (err) {
-      console.warn("Nano Banana Pro call failed:", err, "— trying fallback");
+      console.warn("Nano Banana 2 call failed:", err, "— trying fallback");
     }
 
-    // 2차: 나노바나나 2 (Gemini 3.1 Flash Image) — 빠른 폴백
-    const fallbackRes = await fetch(`${NANO_BANANA_2_URL}?key=${apiKey}`, {
+    // 2차: 나노바나나 프로 (Gemini 3 Pro Image) — 고품질 폴백
+    const fallbackRes = await fetch(`${NANO_BANANA_PRO_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
@@ -73,7 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!fallbackRes.ok) {
       const errText = await fallbackRes.text();
-      console.error("Nano Banana 2 fallback error:", fallbackRes.status, errText.slice(0, 500));
+      console.error("Nano Banana Pro fallback error:", fallbackRes.status, errText.slice(0, 500));
       return Response.json(
         { error: `이미지 생성 실패 (${fallbackRes.status}). 프롬프트를 단순화해보세요.`, details: errText.slice(0, 200) },
         { status: 500 }
@@ -88,7 +88,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    return Response.json({ images, source: "nano-banana-2" });
+    return Response.json({ images, source: "nano-banana-pro" });
   } catch (error) {
     console.error("Image generation error:", error);
     return Response.json(
