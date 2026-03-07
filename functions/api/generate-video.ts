@@ -2,16 +2,17 @@ interface Env {
   GEMINI_API_KEY: string;
 }
 
-const VEO_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning";
+const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { prompt, imageBase64, mode } = await context.request.json() as {
-      prompt: string;
-      imageBase64?: string;
-      mode?: "fast" | "quality";
-    };
+    const { prompt, mode, referenceImageBase64, previousVideoUri } =
+      await context.request.json() as {
+        prompt: string;
+        mode?: "fast" | "quality";
+        referenceImageBase64?: string;
+        previousVideoUri?: string;
+      };
 
     if (!prompt) {
       return Response.json({ error: "prompt is required" }, { status: 400 });
@@ -22,27 +23,40 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
-    // Build request body for Veo
-    const instances: Record<string, unknown>[] = [{ prompt }];
+    const model = mode === "quality"
+      ? "veo-3.1-generate-preview"
+      : "veo-3.1-fast-generate-preview";
 
-    // If reference image provided (for Extend), include it
-    if (imageBase64) {
-      instances[0].image = {
-        bytesBase64Encoded: imageBase64,
-      };
+    // Build instances
+    const instance: Record<string, unknown> = { prompt };
+
+    // Scene Extension: 이전 영상 URI로 연장
+    if (previousVideoUri) {
+      instance.video = { uri: previousVideoUri };
+    }
+
+    // Reference image for character consistency
+    if (referenceImageBase64) {
+      instance.referenceImages = [{
+        referenceImage: {
+          imageBytes: referenceImageBase64,
+        },
+        referenceType: "STYLE_IMAGE",
+      }];
     }
 
     const requestBody = {
-      instances,
+      instances: [instance],
       parameters: {
         aspectRatio: "1:1",
         durationSeconds: 8,
         personGeneration: "allow_all",
-        ...(mode === "quality" ? { generateMode: "quality" } : {}),
+        generateAudio: true,
+        resolution: "720p",
       },
     };
 
-    const res = await fetch(`${VEO_API_URL}?key=${apiKey}`, {
+    const res = await fetch(`${BASE_URL}/models/${model}:predictLongRunning?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
@@ -57,12 +71,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const data = await res.json();
+    const data = await res.json() as { name: string };
 
-    // Veo returns a long-running operation
-    // Response format: { name: "operations/xxx", metadata: {...} }
     return Response.json({
       operationName: data.name,
+      model,
       status: "RUNNING",
     });
   } catch (error) {
