@@ -200,5 +200,31 @@ export interface VideoGenerationState {
   config: VeoGenerationConfig;
 }
 
+// ===== 캐릭터 얼굴 레퍼런스 =====
+export interface CharacterFaceRef {
+  characterId: string; // CharacterSeed.id와 매칭
+  faceBase64: string; // 크롭된 얼굴 이미지
+  sourceCutNumber: number; // 어느 장면에서 추출했는지
+  boundingBox?: { x: number; y: number; width: number; height: number };
+}
+
+// ===== 효과음 (SFX) =====
+export interface SfxMatch {
+  id: string;
+  category: string; // "impact", "whoosh", "comedy", etc.
+  label: string; // "빰! 등장 효과음"
+  labelEn: string;
+  audioUrl: string;
+  duration: number; // seconds
+  trending: boolean;
+}
+
+export interface SceneSfx {
+  cutNumber: number;
+  sfxMatches: SfxMatch[];
+  timing?: string; // "장면 시작 시", "중간에", etc.
+  reason: string; // AI가 왜 이 효과음을 매칭했는지
+}
+
 // ===== 상태 타입 =====
 export type GeneratorStatus = "idle" | "loading" | "success" | "error";

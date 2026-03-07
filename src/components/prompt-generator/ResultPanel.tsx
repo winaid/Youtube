@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { PromptOutput, Cut, GeneratorStatus } from "@/types";
+import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, SceneSfx } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import CutCard from "./CutCard";
 import VideoGenerationPanel from "./VideoGenerationPanel";
 import VideoSettingsPanel from "./VideoSettingsPanel";
 import TimelineEditor from "./TimelineEditor";
+import CharacterFaceManager from "./CharacterFaceManager";
+import SfxPanel from "./SfxPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 
 interface ResultPanelProps {
@@ -49,10 +51,15 @@ export default function ResultPanel({
   // SRT
   const [srtContent, setSrtContent] = useState<string | null>(null);
   const [srtLoading, setSrtLoading] = useState(false);
+  // 캐릭터 얼굴 레퍼런스
+  const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
+  // 효과음 매칭
+  const [sceneSfxList, setSceneSfxList] = useState<SceneSfx[]>([]);
 
   const videoGen = useVideoGeneration({
     cuts: result?.cuts ?? [],
     storyboardImages,
+    faceRefs,
     onSeedDetected: (cutNumber, seed) => {
       console.log(`CUT ${cutNumber} seed: ${seed}`);
     },
@@ -364,6 +371,16 @@ export default function ResultPanel({
             <Badge variant="outline" style={{ borderColor: "#e09900" }}>
               캐릭터 {result.characterSeeds.length}명 시드 고정
             </Badge>
+            {faceRefs.length > 0 && (
+              <Badge style={{ background: "#d63031", color: "white" }}>
+                얼굴 {faceRefs.length}명 REF 고정
+              </Badge>
+            )}
+            {sceneSfxList.length > 0 && (
+              <Badge style={{ background: "#e64436", color: "white" }}>
+                SFX {sceneSfxList.reduce((a, s) => a + s.sfxMatches.length, 0)}개
+              </Badge>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -374,7 +391,7 @@ export default function ResultPanel({
           { key: "prompts", label: "프롬프트", color: "#787fff" },
           { key: "generate", label: "영상 생성", color: "#22c55e" },
           { key: "timeline", label: "타임라인", color: "#c4b800" },
-          { key: "audio", label: "BGM/TTS", color: "#e09900" },
+          { key: "audio", label: "BGM/TTS/SFX", color: "#e09900" },
         ] as const).map((tab) => (
           <button
             key={tab.key}
@@ -427,6 +444,16 @@ export default function ResultPanel({
                 ))}
               </CardContent>
             </Card>
+          )}
+
+          {/* 캐릭터 얼굴 고정 시스템 */}
+          {result.characterSeeds.length > 0 && (
+            <CharacterFaceManager
+              characterSeeds={result.characterSeeds}
+              storyboardImages={storyboardImages}
+              faceRefs={faceRefs}
+              onFaceRefsChange={setFaceRefs}
+            />
           )}
 
           {/* 감독 페르소나 & 글로벌 스타일 */}
@@ -683,9 +710,16 @@ export default function ResultPanel({
         />
       )}
 
-      {/* BGM / TTS 섹션 */}
+      {/* BGM / TTS / SFX 섹션 */}
       {activeSection === "audio" && (
         <div className="space-y-4">
+          {/* 효과음 자동 매칭 */}
+          <SfxPanel
+            cuts={result.cuts}
+            sceneSfxList={sceneSfxList}
+            onSceneSfxChange={setSceneSfxList}
+          />
+
           {/* BGM 추천 */}
           <Card className="overflow-hidden border-2" style={{ borderColor: "#e0990040" }}>
             <CardHeader className="pb-2" style={{ background: "linear-gradient(135deg, #e0990015, #fff78715)" }}>

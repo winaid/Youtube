@@ -9,6 +9,7 @@ import {
   VeoGenerationConfig,
   VideoVariant,
   PromptVerification,
+  CharacterFaceRef,
   DEFAULT_VEO_CONFIG,
 } from "@/types";
 
@@ -17,6 +18,7 @@ const POLL_INTERVAL = 5000;
 interface UseVideoGenerationOptions {
   cuts: Cut[];
   storyboardImages?: Record<number, string>;
+  faceRefs?: CharacterFaceRef[];
   onSeedDetected?: (cutNumber: number, seed: string) => void;
 }
 
@@ -43,7 +45,7 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
   return extras ? `${original}, ${extras}` : original;
 }
 
-export function useVideoGeneration({ cuts, storyboardImages, onSeedDetected }: UseVideoGenerationOptions) {
+export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
     clips: [],
     isAutoMode: false,
@@ -325,6 +327,23 @@ export function useVideoGeneration({ cuts, storyboardImages, onSeedDetected }: U
         }
       }
 
+      // 캐릭터 얼굴 레퍼런스 자동 주입
+      const allReferenceImages = [...(cfg.referenceImages || [])];
+      if (faceRefs && faceRefs.length > 0) {
+        // 이 장면에 등장하는 캐릭터의 얼굴 레퍼런스 추가
+        const charsInScene = cut.charactersInScene || [];
+        const relevantFaces = charsInScene.length > 0
+          ? faceRefs.filter((ref) => charsInScene.includes(ref.characterId))
+          : faceRefs; // 캐릭터 정보 없으면 모든 얼굴 주입
+        for (const ref of relevantFaces) {
+          if (!allReferenceImages.includes(ref.faceBase64)) {
+            allReferenceImages.push(ref.faceBase64);
+          }
+        }
+      }
+      // Veo는 최대 3장 reference image 지원
+      const finalRefImages = allReferenceImages.slice(0, 3);
+
       const body: Record<string, unknown> = {
         prompt,
         mode: hasText ? "quality" : cfg.mode,
@@ -341,8 +360,8 @@ export function useVideoGeneration({ cuts, storyboardImages, onSeedDetected }: U
         // First Frame (Enhancement 4: auto-linked or manual)
         firstFrameBase64: firstFrameBase64,
         lastFrameBase64: cutNumber === 1 ? cfg.lastFrameBase64 : undefined,
-        // Reference Images
-        referenceImages: cfg.referenceImages.length > 0 ? cfg.referenceImages : undefined,
+        // Reference Images (캐릭터 얼굴 + 수동 레퍼런스)
+        referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
       };
 
       const res = await fetch("/api/generate-video", {
@@ -374,7 +393,7 @@ export function useVideoGeneration({ cuts, storyboardImages, onSeedDetected }: U
         error: err instanceof Error ? err.message : "요청 실패",
       });
     }
-  }, [cuts, state.clips, state.config, storyboardImages, updateClip, startPolling, verifyPrompt, refinePromptEnglish]);
+  }, [cuts, state.clips, state.config, storyboardImages, faceRefs, updateClip, startPolling, verifyPrompt, refinePromptEnglish]);
 
   // 자동 모드
   useEffect(() => {
