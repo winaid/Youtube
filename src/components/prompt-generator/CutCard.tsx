@@ -20,8 +20,10 @@ interface CutCardProps {
   characterSeeds?: CharacterSeed[];
   onUpdate?: (updated: Cut) => void;
   storyboardImage?: string;
+  storyboardCandidates?: string[];
   storyboardLoading?: boolean;
   onGenerateImage?: () => void;
+  onSelectCandidate?: (base64: string) => void;
   sceneTtsUrl?: string;
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
@@ -131,7 +133,7 @@ function EditableField({
 
 export default function CutCard({
   cut, characterSeeds, onUpdate,
-  storyboardImage, storyboardLoading, onGenerateImage,
+  storyboardImage, storyboardCandidates, storyboardLoading, onGenerateImage, onSelectCandidate,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
 }: CutCardProps) {
@@ -223,33 +225,73 @@ export default function CutCard({
           <div className="flex-1">
             <p className="text-sm">{cut.sceneDescription}</p>
           </div>
-          {storyboardImage ? (
-            <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden border" style={{ borderColor: isEven ? "#fff78740" : "#787fff40" }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`data:image/png;base64,${storyboardImage}`} alt={`장면 ${cut.cutNumber}`} className="w-full h-full object-cover" />
-            </div>
-          ) : onGenerateImage ? (
-            <button
-              onClick={onGenerateImage}
-              disabled={storyboardLoading}
-              className="shrink-0 w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors hover:bg-gray-50"
-              style={{ borderColor: "#787fff30" }}
-            >
-              {storyboardLoading ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-                    <circle cx="9" cy="9" r="2"/>
-                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-                  </svg>
-                  <span className="text-[9px]" style={{ color: "#787fff" }}>이미지</span>
-                </>
-              )}
-            </button>
-          ) : null}
+          <div className="shrink-0 flex flex-col items-center gap-1">
+            {storyboardImage ? (
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-lg overflow-hidden border" style={{ borderColor: isEven ? "#fff78740" : "#787fff40" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`data:image/png;base64,${storyboardImage}`} alt={`장면 ${cut.cutNumber}`} className="w-full h-full object-cover" />
+                </div>
+                {onGenerateImage && (
+                  <button
+                    onClick={onGenerateImage}
+                    disabled={storyboardLoading}
+                    className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] shadow-md transition-transform hover:scale-110"
+                    style={{ background: isEven ? "#c4b800" : "#787fff" }}
+                    title="다른 이미지 생성"
+                  >
+                    {storyboardLoading ? (
+                      <span className="h-3 w-3 animate-spin rounded-full border border-t-transparent border-white" />
+                    ) : "↻"}
+                  </button>
+                )}
+              </div>
+            ) : onGenerateImage ? (
+              <button
+                onClick={onGenerateImage}
+                disabled={storyboardLoading}
+                className="w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors hover:bg-gray-50/5"
+                style={{ borderColor: "#787fff30" }}
+              >
+                {storyboardLoading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                      <circle cx="9" cy="9" r="2"/>
+                      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                    </svg>
+                    <span className="text-[9px]" style={{ color: "#787fff" }}>이미지</span>
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        {/* 이미지 후보 선택 */}
+        {storyboardCandidates && storyboardCandidates.length > 1 && onSelectCandidate && (
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted-foreground">후보 이미지 선택:</span>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {storyboardCandidates.map((candidate, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSelectCandidate(candidate)}
+                  className="shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all hover:scale-105"
+                  style={{
+                    borderColor: candidate === storyboardImage ? (isEven ? "#c4b800" : "#787fff") : "transparent",
+                    opacity: candidate === storyboardImage ? 1 : 0.6,
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`data:image/png;base64,${candidate}`} alt={`후보 ${i + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 장면별 TTS */}
         {onGenerateSceneTts && (

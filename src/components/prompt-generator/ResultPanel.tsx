@@ -60,6 +60,7 @@ export default function ResultPanel({
   const dragItemRef = useRef<number | null>(null);
   // 스토리보드 이미지
   const [storyboardImages, setStoryboardImages] = useState<Record<number, string>>({});
+  const [storyboardCandidates, setStoryboardCandidates] = useState<Record<number, string[]>>({});
   const [storyboardLoading, setStoryboardLoading] = useState<Record<number, boolean>>({});
   // 장면별 TTS
   const [sceneTtsUrls, setSceneTtsUrls] = useState<Record<number, string>>({});
@@ -543,7 +544,12 @@ export default function ResultPanel({
                         });
                         const data = await res.json();
                         if (res.ok && data.images?.[0]?.base64) {
-                          setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                          const newImage = data.images[0].base64;
+                          setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: newImage }));
+                          setStoryboardCandidates((prev) => ({
+                            ...prev,
+                            [cut.cutNumber]: [...(prev[cut.cutNumber] ?? []), newImage],
+                          }));
                         } else {
                           console.error(`CUT ${cut.cutNumber} 실패:`, data.error);
                           failCount++;
@@ -629,6 +635,7 @@ export default function ResultPanel({
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
                   storyboardImage={storyboardImages[cut.cutNumber]}
+                  storyboardCandidates={storyboardCandidates[cut.cutNumber]}
                   storyboardLoading={storyboardLoading[cut.cutNumber]}
                   onGenerateImage={async () => {
                     setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
@@ -640,7 +647,12 @@ export default function ResultPanel({
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
-                        setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                        const newImage = data.images[0].base64;
+                        setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: newImage }));
+                        setStoryboardCandidates((prev) => {
+                          const existing = prev[cut.cutNumber] ?? [];
+                          return { ...prev, [cut.cutNumber]: [...existing, newImage] };
+                        });
                       } else {
                         console.error(`CUT ${cut.cutNumber} 이미지 생성 실패:`, data.error || `HTTP ${res.status}`);
                         alert(`CUT ${cut.cutNumber} 이미지 생성 실패: ${data.error || "알 수 없는 오류"}`);
@@ -650,6 +662,9 @@ export default function ResultPanel({
                       alert(`이미지 생성 요청 실패: ${err instanceof Error ? err.message : "네트워크 오류"}`);
                     }
                     setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                  }}
+                  onSelectCandidate={(base64) => {
+                    setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: base64 }));
                   }}
                   sceneTtsUrl={sceneTtsUrls[cut.cutNumber]}
                   sceneTtsLoading={sceneTtsLoading[cut.cutNumber]}
@@ -955,7 +970,12 @@ export default function ResultPanel({
                   });
                   const data = await res.json();
                   if (res.ok && data.images?.[0]?.base64) {
-                    setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                    const newImage = data.images[0].base64;
+                    setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: newImage }));
+                    setStoryboardCandidates((prev) => ({
+                      ...prev,
+                      [cut.cutNumber]: [...(prev[cut.cutNumber] ?? []), newImage],
+                    }));
                   }
                 } catch { /* continue */ }
                 setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));

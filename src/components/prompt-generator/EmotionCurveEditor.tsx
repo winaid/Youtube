@@ -83,10 +83,18 @@ export default function EmotionCurveEditor({
 
       <div
         style={{
+          overflowX: "auto",
+          overflowY: "hidden",
+          paddingBottom: 4,
+        }}
+      >
+      <div
+        style={{
           display: "flex",
-          gap: 6,
+          gap: 4,
           alignItems: "flex-end",
-          minHeight: 180,
+          minHeight: 160,
+          minWidth: cuts.length > 12 ? cuts.length * 44 : undefined,
         }}
       >
         {cuts.map((cut) => {
@@ -97,12 +105,13 @@ export default function EmotionCurveEditor({
             <div
               key={cut.cutNumber}
               style={{
-                flex: 1,
+                flex: cuts.length <= 12 ? 1 : undefined,
+                width: cuts.length > 12 ? 40 : undefined,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 4,
-                minWidth: 48,
+                gap: 3,
+                minWidth: 36,
               }}
             >
               {/* Intensity label */}
@@ -114,7 +123,7 @@ export default function EmotionCurveEditor({
               <div
                 style={{
                   width: "100%",
-                  height: 120,
+                  height: 100,
                   background: "#12121f",
                   borderRadius: 6,
                   position: "relative",
@@ -178,6 +187,7 @@ export default function EmotionCurveEditor({
             </div>
           );
         })}
+      </div>
       </div>
 
       {/* Legend */}
