@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "@/types";
 import { storyPersonas, shufflePrompts } from "@/data/story-personas";
 import { generateChatResponse } from "@/lib/mock-chat";
@@ -15,12 +15,57 @@ export default function StoryChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const selectedPersona = personas.find((p) => p.id === personaId)!;
 
-  const handleRefreshPrompts = () => {
+  // API로 샘플 프롬프트 동적 생성
+  const fetchSuggestedPrompts = useCallback(async (targetPersonaId?: string) => {
+    const pid = targetPersonaId ?? personaId;
+    const persona = storyPersonas.find((p) => p.id === pid);
+    if (!persona) return;
+
+    setIsRefreshing(true);
+    try {
+      const res = await fetch("/api/suggest-prompts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personaId: persona.id,
+          personaName: persona.name,
+          personaDescription: persona.description,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.prompts && data.prompts.length > 0) {
+          setPersonas((prev) =>
+            prev.map((p) =>
+              p.id === pid ? { ...p, samplePrompts: data.prompts } : p
+            )
+          );
+          return;
+        }
+      }
+    } catch {
+      // API 실패 시 로컬 풀에서 셔플
+    }
+    // fallback: 로컬 셔플
     setPersonas(shufflePrompts(storyPersonas));
+    setIsRefreshing(false);
+  }, [personaId]);
+
+  // API 응답 후 refreshing 해제
+  useEffect(() => {
+    if (isRefreshing) {
+      setIsRefreshing(false);
+    }
+  }, [personas]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRefreshPrompts = () => {
+    fetchSuggestedPrompts();
   };
 
   useEffect(() => {
@@ -55,6 +100,8 @@ export default function StoryChat() {
   const handlePersonaChange = (id: string) => {
     setPersonaId(id);
     setMessages([]);
+    // 페르소나 변경 시에도 API로 프롬프트 새로 가져오기
+    fetchSuggestedPrompts(id);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -164,23 +211,42 @@ export default function StoryChat() {
 
         {/* 샘플 프롬프트 */}
         <div className="flex flex-wrap gap-1.5 items-center">
-          {selectedPersona.samplePrompts.map((prompt) => (
-            <Badge
-              key={prompt}
-              variant="outline"
-              className="cursor-pointer text-xs transition-colors"
-              style={{ borderColor: "#fff78780" }}
-              onClick={() => handleSampleClick(prompt)}
-            >
-              {prompt}
-            </Badge>
-          ))}
+          {isRefreshing ? (
+            <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+              새로운 예시 생성 중...
+            </div>
+          ) : (
+            selectedPersona.samplePrompts.map((prompt) => (
+              <Badge
+                key={prompt}
+                variant="outline"
+                className="cursor-pointer text-xs transition-colors hover:bg-[#fff78715]"
+                style={{ borderColor: "#fff78780" }}
+                onClick={() => handleSampleClick(prompt)}
+              >
+                {prompt}
+              </Badge>
+            ))
+          )}
           <button
             onClick={handleRefreshPrompts}
-            className="inline-flex items-center justify-center h-6 w-6 rounded-full transition-colors hover:bg-[#fff78730]"
-            title="다른 예시 보기"
+            disabled={isRefreshing}
+            className="inline-flex items-center justify-center h-6 w-6 rounded-full transition-colors hover:bg-[#fff78730] disabled:opacity-40"
+            title="AI로 새로운 예시 생성"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#787fff"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={isRefreshing ? "animate-spin" : ""}
+            >
               <path d="M21.5 2v6h-6" />
               <path d="M2.5 22v-6h6" />
               <path d="M2 11.5a10 10 0 0 1 18.8-4.3" />

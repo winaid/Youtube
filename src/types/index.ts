@@ -1,5 +1,5 @@
 // ===== 입력 타입 =====
-export type Region = "한국" | "일본" | "중국" | "유럽" | "미국";
+export type Region = "한국" | "일본" | "중국" | "유럽" | "미국" | "인도" | "중동" | "동남아" | "중남미" | "아프리카";
 export type AnimationMode = "2D 애니" | "실사" | "하이브리드";
 export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
 export type AspectRatio = "1:1" | "9:16" | "16:9";

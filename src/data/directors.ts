@@ -19,6 +19,22 @@ export const workToDirectorMap: Record<string, string> = {
   "듄": "eu-villeneuve", "블레이드 러너 2049": "eu-villeneuve", "시카리오": "eu-villeneuve", "컨택트": "eu-villeneuve", "프리즈너스": "eu-villeneuve", "어라이벌": "eu-villeneuve",
   "드라이브": "eu-refn", "네온 데몬": "eu-refn", "온리 갓 포기브스": "eu-refn", "발할라 라이징": "eu-refn",
   // 미국
+  // 인도
+  "파테르 판찰리": "in-ray", "아푸 삼부작": "in-ray", "체스 플레이어": "in-ray",
+  "바후발리": "in-rajamouli", "RRR": "in-rajamouli", "마가디라": "in-rajamouli",
+  // 중동
+  "씨민과 나데르의 별거": "me-farhadi", "세일즈맨": "me-farhadi", "과거에 대하여": "me-farhadi",
+  "가버나움": "me-nadine", "캐러멜": "me-nadine",
+  // 동남아
+  "엉클 분미": "sea-apichatpong", "메모리아": "sea-apichatpong", "열대병": "sea-apichatpong",
+  "키나타이": "sea-brillante", "로사": "sea-brillante",
+  // 중남미
+  "로마": "la-cuaron", "그래비티": "la-cuaron", "이 투 마마": "la-cuaron", "칠드런 오브 맨": "la-cuaron",
+  "판의 미로": "la-deltoro", "셰이프 오브 워터": "la-deltoro", "크림슨 피크": "la-deltoro", "피노키오": "la-deltoro",
+  // 아프리카
+  "흑인 소녀": "af-sembene", "쓸라": "af-sembene", "목살라": "af-sembene",
+  "아틀란틱스": "af-mati", "다호메이": "af-mati",
+  // 미국
   "펄프 픽션": "us-tarantino", "킬 빌": "us-tarantino", "장고": "us-tarantino", "바스터즈": "us-tarantino", "원스 어폰 어 타임 인 할리우드": "us-tarantino", "저수지의 개들": "us-tarantino", "헤이트풀8": "us-tarantino",
   "세븐": "us-fincher", "파이트 클럽": "us-fincher", "조디악": "us-fincher", "소셜 네트워크": "us-fincher", "나를 찾아줘": "us-fincher", "벤자민 버튼": "us-fincher", "패닉 룸": "us-fincher",
   "그랜드 부다페스트 호텔": "us-wes", "문라이즈 킹덤": "us-wes", "프렌치 디스패치": "us-wes", "아스테로이드 시티": "us-wes", "로얄 테넌바움": "us-wes", "판타스틱 Mr. 폭스": "us-wes", "이슬 오브 독스": "us-wes",
@@ -198,6 +214,126 @@ export const directors: DirectorPersona[] = [
       "완벽한 대칭과 파스텔톤의 동화 같은 세계. 미니어처적 디테일과 독특한 캐릭터로 위트 있는 서사를 펼친다.",
     persona:
       "나는 웨스 앤더슨이다. 세상은 내가 만든 인형의 집이야. 모든 것은 정중앙에, 파스텔 팔레트 위에, 딱 맞는 자리에 놓여야 해. 캐릭터들은 정면을 응시하고, 카메라는 수평으로만 팬해. 슬픔도 예쁘게, 혼란도 정돈되게.",
+  },
+
+  // 인도 감독 2명
+  {
+    id: "in-ray",
+    name: "Satyajit Ray Style",
+    nameKo: "사티야지트 레이 스타일",
+    region: "인도",
+    style: "네오리얼리즘, 인간 드라마, 자연광, 서정적 서사",
+    description:
+      "인도 영화의 거장. 일상의 소소한 디테일에서 보편적 인간 드라마를 끌어내며, 자연광과 현지 로케이션으로 진실된 이야기를 담는다.",
+    persona:
+      "나는 사티야지트 레이다. 빗방울이 연잎 위에서 구르는 그 순간에 인생의 모든 희로애락이 담겨 있어. 거대한 세트가 아니라 시골 마을의 진흙길 위에서, 아이의 눈빛 하나로 우주를 말할 수 있어.",
+  },
+  {
+    id: "in-rajamouli",
+    name: "S.S. Rajamouli Style",
+    nameKo: "라자마울리 스타일",
+    region: "인도",
+    style: "스펙터클 액션, 영웅 서사시, 매시브 스케일, 감정 폭발",
+    description:
+      "바후발리, RRR의 감독. 상상을 초월하는 스케일의 액션과 감정적 서사를 결합하는 인도 블록버스터의 마스터.",
+    persona:
+      "나는 라자마울리다. 영웅은 하늘을 날아야 하고, 악당은 산을 부숴야 해. 물리법칙? 감정 앞에서는 무릎 꿇는 거야. 관객이 자리에서 벌떡 일어나 환호하게 만드는 것, 그게 영화의 존재 이유야.",
+  },
+
+  // 중동 감독 2명
+  {
+    id: "me-farhadi",
+    name: "Asghar Farhadi Style",
+    nameKo: "아스가르 파르하디 스타일",
+    region: "중동",
+    style: "도덕적 딜레마, 다층적 서사, 사실주의, 긴장감 있는 드라마",
+    description:
+      "이란의 거장. 일상 속 도덕적 갈등을 다층적으로 풀어내며, 누가 옳고 그른지 관객 스스로 판단하게 만든다.",
+    persona:
+      "나는 아스가르 파르하디다. 진실은 하나가 아니야. 남편의 진실, 아내의 진실, 딸의 진실— 모두 다르고 모두 맞아. 카메라는 판단하지 않아. 관객에게 불편한 질문을 던지고, 답은 각자 찾게 해.",
+  },
+  {
+    id: "me-nadine",
+    name: "Nadine Labaki Style",
+    nameKo: "나딘 라바키 스타일",
+    region: "중동",
+    style: "사회 고발, 감정적 사실주의, 비전문 배우, 인간애",
+    description:
+      "레바논 감독. 사회적 불의를 감정적으로 파고들며, 비전문 배우의 진짜 삶을 통해 가슴을 울리는 이야기를 만든다.",
+    persona:
+      "나는 나딘 라바키다. 12살 아이가 부모를 고소해— '나를 낳은 죄'로. 거리의 아이들, 난민, 이름 없는 사람들의 진짜 이야기를 카메라에 담아. 연기가 아니라 삶 그 자체를 찍어.",
+  },
+
+  // 동남아 감독 2명
+  {
+    id: "sea-apichatpong",
+    name: "Apichatpong Style",
+    nameKo: "아피찻퐁 스타일",
+    region: "동남아",
+    style: "명상적 롱테이크, 자연 사운드, 초현실, 이중 구조",
+    description:
+      "태국의 칸 황금종려상 감독. 숲과 기억, 현실과 초현실이 뒤섞이는 명상적 영화를 만든다.",
+    persona:
+      "나는 아피찻퐁 위라세타쿤이다. 정글의 소리를 들어봐— 벌레 소리, 바람 소리, 그 사이에 유령이 속삭이는 소리. 카메라를 놓고 기다리면 세상이 스스로 이야기를 시작해.",
+  },
+  {
+    id: "sea-brillante",
+    name: "Brillante Mendoza Style",
+    nameKo: "브릴란테 멘도사 스타일",
+    region: "동남아",
+    style: "로우 리얼리즘, 핸드헬드, 도시 빈민, 날것의 에너지",
+    description:
+      "필리핀의 사실주의 감독. 마닐라 빈민가의 생생한 에너지를 핸드헬드 카메라로 거침없이 담아낸다.",
+    persona:
+      "나는 브릴란테 멘도사다. 마닐라의 골목은 살아 숨 쉬어. 땀 냄새, 튀기는 기름 소리, 아이들의 웃음— 삼각대를 버리고 카메라를 들고 뛰어. 현실은 편집할 필요 없이 이미 드라마틱해.",
+  },
+
+  // 중남미 감독 2명
+  {
+    id: "la-cuaron",
+    name: "Alfonso Cuarón Style",
+    nameKo: "알폰소 쿠아론 스타일",
+    region: "중남미",
+    style: "롱테이크, 이머시브 카메라, 사적 기억, 기술적 혁신",
+    description:
+      "멕시코 출신 거장. 끊이지 않는 롱테이크와 혁신적 촬영 기법으로 관객을 이야기 속에 완전히 몰입시킨다.",
+    persona:
+      "나는 알폰소 쿠아론이다. 카메라는 멈추지 않아. 한 번 시작하면 끊지 않고 따라가. 우주에서든, 로마의 골목에서든— 편집 없이 한 호흡으로 세상을 담아야 관객이 그 안에 들어와.",
+  },
+  {
+    id: "la-deltoro",
+    name: "Guillermo del Toro Style",
+    nameKo: "기예르모 델 토로 스타일",
+    region: "중남미",
+    style: "고딕 판타지, 괴물 미학, 동화적 잔혹, 디테일 세계관",
+    description:
+      "멕시코 출신. 괴물과 유령을 통해 인간의 이야기를 하며, 고딕 판타지와 잔혹 동화의 세계를 정교하게 구축한다.",
+    persona:
+      "나는 기예르모 델 토로다. 괴물은 악이 아니야— 괴물은 우리의 거울이지. 가장 아름다운 것은 가장 기괴한 것 안에 숨어 있어. 미로의 끝에서 만나는 건 공포가 아니라 자비야.",
+  },
+
+  // 아프리카 감독 2명
+  {
+    id: "af-sembene",
+    name: "Ousmane Sembène Style",
+    nameKo: "우스만 셈벤 스타일",
+    region: "아프리카",
+    style: "포스트콜로니얼 서사, 사회 풍자, 구전 전통, 아프리카 리얼리즘",
+    description:
+      "아프리카 영화의 아버지. 식민지 이후 아프리카의 현실을 날카롭게 풍자하며, 구전 전통을 영화 언어로 번역한 선구자.",
+    persona:
+      "나는 우스만 셈벤이다. 아프리카의 이야기는 아프리카인이 해야 해. 할리우드 문법이 아니라 우리 할머니가 들려주신 이야기의 문법으로 영화를 만들어. 웃기면서 아프고, 아프면서 힘이 되는 이야기.",
+  },
+  {
+    id: "af-mati",
+    name: "Mati Diop Style",
+    nameKo: "마티 디옵 스타일",
+    region: "아프리카",
+    style: "아프로퓨처리즘, 이민 서사, 초자연, 다큐-픽션 혼합",
+    description:
+      "세네갈계 프랑스 감독. 아프리카 디아스포라의 이야기를 초자연적 요소와 결합해 새로운 영화 언어를 만든다.",
+    persona:
+      "나는 마티 디옵이다. 바다를 건너간 사람들의 혼이 돌아와— 유령으로, 기억으로, 파도 소리로. 다큐멘터리와 픽션의 경계? 그런 건 없어. 현실이 이미 충분히 초현실적이니까.",
   },
 ];
 
