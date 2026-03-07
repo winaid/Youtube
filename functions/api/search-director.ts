@@ -1,20 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
-
-export const runtime = "edge";
+interface Env {
+  GEMINI_API_KEY: string;
+}
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
-export async function POST(req: NextRequest) {
+export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { query } = await req.json();
+    const { query } = await context.request.json() as Record<string, string>;
     if (!query || typeof query !== "string") {
-      return NextResponse.json({ error: "query is required" }, { status: 400 });
+      return Response.json({ error: "query is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = context.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
+      return Response.json(
         { error: "GEMINI_API_KEY not configured", directors: [] },
         { status: 500 }
       );
@@ -51,15 +51,14 @@ If no directors match, return an empty array [].`;
     if (!res.ok) {
       const errText = await res.text();
       console.error("Gemini API error:", res.status, errText);
-      return NextResponse.json(
+      return Response.json(
         { error: `Gemini API error: ${res.status}`, directors: [] },
         { status: 500 }
       );
     }
 
-    const data = await res.json();
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
+    const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
 
     let directors;
     try {
@@ -69,12 +68,12 @@ If no directors match, return an empty array [].`;
       directors = match ? JSON.parse(match[0]) : [];
     }
 
-    return NextResponse.json({ directors });
+    return Response.json({ directors });
   } catch (error) {
     console.error("Director search error:", error);
-    return NextResponse.json(
+    return Response.json(
       { error: `Failed to search directors: ${error instanceof Error ? error.message : String(error)}`, directors: [] },
       { status: 500 }
     );
   }
-}
+};

@@ -5,13 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "pages:build": "npx @cloudflare/next-on-pages",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
-    "@cloudflare/next-on-pages": "^1.13.16",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-select": "^2.2.6",

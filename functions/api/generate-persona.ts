@@ -1,28 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-
-export const runtime = "edge";
+interface Env {
+  GEMINI_API_KEY: string;
+}
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
-export async function POST(req: NextRequest) {
+export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const { directorName, directorNameKo, style, description, storyText, animationMode } =
-      await req.json();
+      await context.request.json() as Record<string, string>;
 
     if (!directorName) {
-      return NextResponse.json(
-        { error: "directorName is required" },
-        { status: 400 }
-      );
+      return Response.json({ error: "directorName is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = context.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY not configured" },
-        { status: 500 }
-      );
+      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
     const prompt = `당신은 영화/애니메이션 감독의 페르소나를 작성하는 전문가입니다.
@@ -58,22 +52,15 @@ ${storyText ? `- 시나리오 맥락: ${storyText.slice(0, 200)}` : ""}
     if (!res.ok) {
       const errText = await res.text();
       console.error("Gemini API error:", res.status, errText);
-      return NextResponse.json(
-        { error: `Gemini API error: ${res.status}` },
-        { status: 500 }
-      );
+      return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
     }
 
-    const data = await res.json();
-    const persona =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+    const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const persona = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 
-    return NextResponse.json({ persona });
+    return Response.json({ persona });
   } catch (error) {
     console.error("Persona generation error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate persona" },
-      { status: 500 }
-    );
+    return Response.json({ error: "Failed to generate persona" }, { status: 500 });
   }
-}
+};
