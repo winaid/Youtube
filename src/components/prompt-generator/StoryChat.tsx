@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ChatMessage } from "@/types";
+import { ChatMessage, PromptCard } from "@/types";
 import { storyPersonas, shufflePrompts } from "@/data/story-personas";
 import { generateChatResponse } from "@/lib/mock-chat";
 import {
@@ -60,10 +60,23 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
 
       if (res.ok) {
         const data = await res.json();
+        // 새 카드 형식 우선, fallback으로 기존 string 형식
+        if (data.cards && data.cards.length > 0) {
+          setPersonas((prev) =>
+            prev.map((p) =>
+              p.id === pid
+                ? { ...p, sampleCards: data.cards, samplePrompts: data.cards.map((c: PromptCard) => c.title) }
+                : p
+            )
+          );
+          return;
+        }
         if (data.prompts && data.prompts.length > 0) {
           setPersonas((prev) =>
             prev.map((p) =>
-              p.id === pid ? { ...p, samplePrompts: data.prompts } : p
+              p.id === pid
+                ? { ...p, samplePrompts: data.prompts, sampleCards: data.prompts.map((t: string) => ({ title: t, hook: "" })) }
+                : p
             )
           );
           return;
@@ -376,50 +389,67 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
           </button>
         )}
 
-        {/* 샘플 프롬프트 */}
-        <div className="flex flex-wrap gap-1.5 items-center">
+        {/* 샘플 프롬프트 카드 */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">주제를 골라보세요</span>
+            <button
+              onClick={handleRefreshPrompts}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] transition-colors hover:bg-[#fff78730] disabled:opacity-40"
+              style={{ color: "#787fff" }}
+              title="AI로 새로운 예시 생성"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={isRefreshing ? "animate-spin" : ""}
+              >
+                <path d="M21.5 2v6h-6" />
+                <path d="M2.5 22v-6h6" />
+                <path d="M2 11.5a10 10 0 0 1 18.8-4.3" />
+                <path d="M22 12.5a10 10 0 0 1-18.8 4.2" />
+              </svg>
+              새 주제
+            </button>
+          </div>
+
           {isRefreshing ? (
-            <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 py-3 justify-center text-xs text-muted-foreground">
               <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-              새로운 예시 생성 중...
+              새로운 주제 생성 중...
             </div>
           ) : (
-            selectedPersona.samplePrompts.map((prompt) => (
-              <Badge
-                key={prompt}
-                variant="outline"
-                className="cursor-pointer text-xs transition-colors hover:bg-[#fff78715]"
-                style={{ borderColor: "#fff78780" }}
-                onClick={() => handleSampleClick(prompt)}
-              >
-                {prompt}
-              </Badge>
-            ))
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {selectedPersona.sampleCards.map((card) => (
+                <button
+                  key={card.title}
+                  className="text-left p-3 rounded-xl transition-all hover:shadow-md hover:scale-[1.01] active:scale-[0.99] group"
+                  style={{
+                    background: "white",
+                    border: "1px solid #fff78760",
+                  }}
+                  onClick={() => handleSampleClick(card.title)}
+                >
+                  <p className="text-xs font-semibold leading-snug group-hover:text-[#787fff] transition-colors" style={{ color: "#333" }}>
+                    {card.title}
+                  </p>
+                  {card.hook && (
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                      {card.hook}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
           )}
-          <button
-            onClick={handleRefreshPrompts}
-            disabled={isRefreshing}
-            className="inline-flex items-center justify-center h-6 w-6 rounded-full transition-colors hover:bg-[#fff78730] disabled:opacity-40"
-            title="AI로 새로운 예시 생성"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#787fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={isRefreshing ? "animate-spin" : ""}
-            >
-              <path d="M21.5 2v6h-6" />
-              <path d="M2.5 22v-6h6" />
-              <path d="M2 11.5a10 10 0 0 1 18.8-4.3" />
-              <path d="M22 12.5a10 10 0 0 1-18.8 4.2" />
-            </svg>
-          </button>
         </div>
 
         {/* 입력 */}

@@ -80,12 +80,18 @@ export interface ChatMessage {
   searchQueries?: string[];
 }
 
+export interface PromptCard {
+  title: string;
+  hook: string;
+}
+
 export interface StoryAIPersona {
   id: string;
   name: string;
   description: string;
   persona: string;
   samplePrompts: string[];
+  sampleCards: PromptCard[];
 }
 
 // ===== Veo 3.1 영상 생성 설정 =====

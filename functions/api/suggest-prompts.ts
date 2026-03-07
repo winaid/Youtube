@@ -18,23 +18,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const prompt = `너는 병의원 마케팅 쇼츠 시나리오 AI의 "${personaName}" 페르소나야.
 설명: ${personaDescription}
 
-이 페르소나에게 사용자가 물어볼 만한 샘플 질문/프롬프트를 정확히 4개 만들어줘.
+## 임무
+이 페르소나에 맞는 쇼츠 주제 카드를 정확히 4개 만들어줘.
+각 카드는 "제목(title)"과 "일상 공감 훅(hook)" 2줄 구성이야.
 
 ## 핵심 컨셉
-쇼츠 주제는 "실제 역사 속에서 병의원/의료기관이 어떻게 운영되었는지, 어떤 마케팅/환자 유치 전략을 썼는지"를 흥미롭게 다루는 것.
-전 세계 각 시대의 실제 의료 역사 이야기(조선시대 어의, 고대 이집트 의사, 중세 유럽 외과의, 로마 군의관, 에도시대 난학 의사 등)에서 자연스럽게 현대 병의원 마케팅 교훈을 끌어내는 구조.
+- 실제 역사 속에서 병의원/의사들이 어떻게 환자를 모으고, 마케팅하고, 신뢰를 쌓았는지를 다루는 것
+- 전 세계 각 시대의 실제 의료 역사 이야기에서 현대 병의원 마케팅 교훈을 끌어내는 구조
 
-## 규칙:
-- 각 프롬프트는 15~35자의 짧은 한국어 문장
-- "~해줘", "~알려줘", "~써줘", "~만들어줘" 같은 요청형
-- 반드시 "실제 역사 속 의료인/병의원 운영 이야기"를 기반으로 한 주제
-- 좋은 예: "조선시대 어의가 개인 의원 차린 이야기 써줘", "고대 로마 군의관이 환자 모은 방법 알려줘"
-- 나쁜 예: "칭기즈칸 전략을 정형외과에 적용해줘" (역사 컨셉을 억지로 의료에 갖다 붙이는 것 ❌)
-- "약사" 절대 금지 → 의사, 의원, 병원, 클리닉으로만
+## 제목(title) 규칙:
+- 15~30자 한국어 주제형 제목 (요청형 "~해줘" 절대 금지!)
+- "~비결", "~전략", "~마케팅", "~방법", "~이야기" 등 주제형 명사로 끝냄
+- 좋은 예: "중국 화타가 전설적 의사가 된 브랜딩 비결"
+- 나쁜 예: "조선시대 의원이 쓴 마케팅 전략 알려줘" (요청형 금지)
+
+## 일상 공감 훅(hook) 규칙:
+- 20~40자, 현대인이 공감하는 일상 상황으로 시작
+- MZ세대 말투 ("~잖아", "~있음", "~인데", "~봤지?")
+- 예: "병원 가면 1분 첫 진료에 약만 덜렁 받고 나올 때 많음"
+- 예: "성형외과나 피부과 갈 때 다들 후기부터 찾아봄"
+
+## 금지사항:
+- "약사" 절대 금지 → 의사, 의원, 병원만
 - 매번 다른 시대/지역의 흥미로운 실제 의료 역사 주제
 
 JSON 배열로만 응답해. 다른 텍스트 없이.
-예시: ["조선시대 어의가 의원 차려서 환자 모은 이야기 써줘", "고대 그리스 히포크라테스가 환자 신뢰 얻은 방법 알려줘", "중세 아랍 병원이 무료 진료로 유명해진 비결 써줘", "에도시대 난학 의사가 입소문 탄 이야기 만들어줘"]`;
+예시: [{"title": "중국 화타가 전설적 의사가 된 브랜딩 비결", "hook": "병원 가면 1분 첫 진료에 약만 덜렁 받고 나올 때 많음"}, {"title": "일본 에도시대 의원의 입소문 마케팅", "hook": "성형외과나 피부과 갈 때 다들 후기부터 찾아봄 비포 애프터"}]`;
 
     const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: "POST",
@@ -43,7 +52,7 @@ JSON 배열로만 응답해. 다른 텍스트 없이.
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 1.0,
-          maxOutputTokens: 256,
+          maxOutputTokens: 512,
           responseMimeType: "application/json",
         },
       }),
@@ -61,15 +70,24 @@ JSON 배열로만 응답해. 다른 텍스트 없이.
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
 
-    let prompts: string[];
+    let cards: { title: string; hook: string }[];
     try {
-      prompts = JSON.parse(text);
-      if (!Array.isArray(prompts)) prompts = [];
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        cards = parsed.filter((c: unknown) =>
+          typeof c === "object" && c !== null && "title" in c && "hook" in c
+        );
+      } else {
+        cards = [];
+      }
     } catch {
-      prompts = [];
+      cards = [];
     }
 
-    return Response.json({ prompts: prompts.slice(0, 4) });
+    // backwards compat: also return string prompts
+    const prompts = cards.map((c) => c.title);
+
+    return Response.json({ cards: cards.slice(0, 4), prompts: prompts.slice(0, 4) });
   } catch (error) {
     console.error("Suggest prompts error:", error);
     return Response.json({ error: "Failed to generate prompts" }, { status: 500 });
