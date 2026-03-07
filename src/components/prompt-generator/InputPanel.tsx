@@ -31,6 +31,8 @@ interface WebDirectorResult {
 interface InputPanelProps {
   onGenerate: (input: PromptInput) => void;
   isLoading: boolean;
+  prefillScenario?: string;
+  onPrefillConsumed?: () => void;
 }
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
@@ -44,7 +46,7 @@ const durations: { value: Duration; label: string }[] = [
   { value: 180, label: "3분" },
 ];
 
-export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -62,6 +64,16 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
     scenes: string[];
   } | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [blendDirector, setBlendDirector] = useState("");
+  const [blendRatio, setBlendRatio] = useState(70); // 메인 감독 비율
+
+  // 시나리오 프리필
+  useEffect(() => {
+    if (prefillScenario) {
+      setStoryText(prefillScenario);
+      onPrefillConsumed?.();
+    }
+  }, [prefillScenario, onPrefillConsumed]);
 
   const allDirectors = useMemo(() => [...directors, ...customDirectors], [customDirectors]);
   const filteredDirectors = allDirectors.filter((d) => d.region === region);
@@ -217,8 +229,16 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
   const handleSubmit = () => {
     if (!storyText.trim() || !directorPersona) return;
     const selectedDir = allDirectors.find((d) => d.id === directorPersona);
+    const blendDir = blendDirector ? allDirectors.find((d) => d.id === blendDirector) : undefined;
+
+    // 블렌딩 정보를 storyText에 메타로 추가 (API 호환 유지)
+    let finalStory = storyText;
+    if (blendDir && selectedDir) {
+      finalStory = `[감독 스타일 블렌딩: ${selectedDir.nameKo} ${blendRatio}% + ${blendDir.nameKo} ${100 - blendRatio}%]\n\n${storyText}`;
+    }
+
     onGenerate({
-      storyText,
+      storyText: finalStory,
       directorPersona,
       region,
       animationMode,
@@ -376,6 +396,61 @@ export default function InputPanel({ onGenerate, isLoading }: InputPanelProps) {
             </SelectContent>
           </Select>
         </div>
+
+        {/* 감독 블렌딩 */}
+        {directorPersona && (
+          <div className="space-y-2 p-3 rounded-lg" style={{ background: "#f8f0ff", border: "1px solid #d8b4fe40" }}>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold" style={{ color: "#7c3aed" }}>
+                스타일 블렌딩 (선택)
+              </Label>
+              {blendDirector && (
+                <button
+                  onClick={() => setBlendDirector("")}
+                  className="text-[10px] text-muted-foreground hover:text-red-400"
+                >
+                  해제
+                </button>
+              )}
+            </div>
+            <Select value={blendDirector} onValueChange={setBlendDirector}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="두 번째 감독 스타일 선택..." />
+              </SelectTrigger>
+              <SelectContent>
+                {allDirectors
+                  .filter((d) => d.id !== directorPersona)
+                  .map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.nameKo} ({d.region})
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            {blendDirector && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span style={{ color: "#5a5ecc" }}>
+                    {allDirectors.find((d) => d.id === directorPersona)?.nameKo} {blendRatio}%
+                  </span>
+                  <span style={{ color: "#7c3aed" }}>
+                    {allDirectors.find((d) => d.id === blendDirector)?.nameKo} {100 - blendRatio}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={90}
+                  step={10}
+                  value={blendRatio}
+                  onChange={(e) => setBlendRatio(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-full appearance-none"
+                  style={{ background: `linear-gradient(to right, #787fff ${blendRatio}%, #7c3aed ${blendRatio}%)` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 애니메이션 모드 */}
         <div className="space-y-2">

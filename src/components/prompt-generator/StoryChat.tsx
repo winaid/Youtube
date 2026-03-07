@@ -4,21 +4,41 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "@/types";
 import { storyPersonas, shufflePrompts } from "@/data/story-personas";
 import { generateChatResponse } from "@/lib/mock-chat";
+import {
+  ScenarioEntry,
+  getScenarioHistory,
+  saveScenario,
+  deleteScenario,
+  extractScenarioTitle,
+  extractFinalScenario,
+} from "@/lib/scenario-history";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 
-export default function StoryChat() {
+interface StoryChatProps {
+  onUseAsScenario?: (scenarioText: string) => void;
+}
+
+export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
   const [personas, setPersonas] = useState(() => shufflePrompts(storyPersonas));
   const [personaId, setPersonaId] = useState(storyPersonas[0].id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<ScenarioEntry[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const selectedPersona = personas.find((p) => p.id === personaId)!;
+
+  // 히스토리 로드
+  useEffect(() => {
+    setHistory(getScenarioHistory());
+  }, []);
 
   // API로 샘플 프롬프트 동적 생성
   const fetchSuggestedPrompts = useCallback(async (targetPersonaId?: string) => {
@@ -52,12 +72,10 @@ export default function StoryChat() {
     } catch {
       // API 실패 시 로컬 풀에서 셔플
     }
-    // fallback: 로컬 셔플
     setPersonas(shufflePrompts(storyPersonas));
     setIsRefreshing(false);
   }, [personaId]);
 
-  // API 응답 후 refreshing 해제
   useEffect(() => {
     if (isRefreshing) {
       setIsRefreshing(false);
@@ -72,25 +90,47 @@ export default function StoryChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 대화 저장
+  const saveCurrentChat = useCallback((msgs: ChatMessage[]) => {
+    if (msgs.filter((m) => m.role === "assistant").length === 0) return;
+    const persona = storyPersonas.find((p) => p.id === personaId);
+    const entry = saveScenario({
+      title: extractScenarioTitle(msgs),
+      personaId,
+      personaName: persona?.name || personaId,
+      messages: msgs,
+      finalScenario: extractFinalScenario(msgs),
+    });
+    setCurrentSessionId(entry.id);
+    setHistory(getScenarioHistory());
+  }, [personaId]);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
     const userMsg = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    const newMsgs: ChatMessage[] = [...messages, { role: "user", content: userMsg }];
+    setMessages(newMsgs);
     setIsLoading(true);
 
     const response = await generateChatResponse(userMsg, personaId);
-    setMessages((prev) => [
-      ...prev,
+    const finalMsgs: ChatMessage[] = [
+      ...newMsgs,
       {
         role: "assistant",
         content: response.reply,
         sources: response.sources,
         searchQueries: response.searchQueries,
       },
-    ]);
+    ];
+    setMessages(finalMsgs);
     setIsLoading(false);
+
+    // 자동 저장 (첫 AI 응답 후)
+    if (!currentSessionId) {
+      saveCurrentChat(finalMsgs);
+    }
   };
 
   const handleSampleClick = (prompt: string) => {
@@ -100,7 +140,7 @@ export default function StoryChat() {
   const handlePersonaChange = (id: string) => {
     setPersonaId(id);
     setMessages([]);
-    // 페르소나 변경 시에도 API로 프롬프트 새로 가져오기
+    setCurrentSessionId(null);
     fetchSuggestedPrompts(id);
   };
 
@@ -111,17 +151,129 @@ export default function StoryChat() {
     }
   };
 
+  const handleNewChat = () => {
+    // 현재 대화 최종 저장
+    if (messages.length > 0 && messages.some((m) => m.role === "assistant")) {
+      saveCurrentChat(messages);
+    }
+    setMessages([]);
+    setCurrentSessionId(null);
+  };
+
+  const handleLoadHistory = (entry: ScenarioEntry) => {
+    setMessages(entry.messages);
+    setPersonaId(entry.personaId);
+    setCurrentSessionId(entry.id);
+    setShowHistory(false);
+  };
+
+  const handleDeleteHistory = (id: string) => {
+    deleteScenario(id);
+    setHistory(getScenarioHistory());
+    if (currentSessionId === id) {
+      setMessages([]);
+      setCurrentSessionId(null);
+    }
+  };
+
+  const handleUseAsScenario = () => {
+    const scenario = extractFinalScenario(messages);
+    if (scenario && onUseAsScenario) {
+      onUseAsScenario(scenario);
+    }
+  };
+
+  const hasAssistantResponse = messages.some((m) => m.role === "assistant");
+
   return (
     <Card className="border-2 overflow-hidden" style={{ borderColor: "#fff78760" }}>
       <CardHeader className="pb-3" style={{ background: "linear-gradient(135deg, #fff78720, #787fff10)" }}>
-        <CardTitle className="text-lg" style={{ color: "#7a7000" }}>
-          시나리오 AI 생성
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          실제 역사를 검색하여 병의원 마케팅 쇼츠 시나리오를 만들어줍니다
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-lg" style={{ color: "#7a7000" }}>
+              시나리오 AI 생성
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              실제 역사를 검색하여 병의원 마케팅 쇼츠 시나리오를 만들어줍니다
+            </p>
+          </div>
+          <div className="flex gap-1.5">
+            <button
+              onClick={handleNewChat}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors"
+              style={{ background: "#787fff15", color: "#787fff", border: "1px solid #787fff30" }}
+            >
+              새 대화
+            </button>
+            <button
+              onClick={() => { setShowHistory(!showHistory); }}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors"
+              style={
+                showHistory
+                  ? { background: "#fff787", color: "#7a7000" }
+                  : { background: "#fff78720", color: "#7a7000", border: "1px solid #fff78740" }
+              }
+            >
+              히스토리 ({history.length})
+            </button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
+        {/* 히스토리 패널 */}
+        {showHistory && (
+          <div className="rounded-lg border p-2 space-y-1 max-h-[300px] overflow-y-auto" style={{ borderColor: "#fff78740", background: "#fffef5" }}>
+            {history.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">저장된 시나리오가 없습니다</p>
+            ) : (
+              history.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-start gap-2 p-2 rounded-lg transition-colors hover:bg-white group"
+                  style={currentSessionId === entry.id ? { background: "#fff78720", border: "1px solid #fff78740" } : {}}
+                >
+                  <button
+                    className="flex-1 text-left min-w-0"
+                    onClick={() => handleLoadHistory(entry)}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium truncate">{entry.title}</span>
+                      <Badge className="text-[9px] shrink-0" style={{ background: "#787fff15", color: "#787fff" }}>
+                        {entry.personaName}
+                      </Badge>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
+                      {entry.finalScenario.slice(0, 80)}...
+                    </p>
+                    <span className="text-[9px] text-muted-foreground">
+                      {new Date(entry.updatedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </button>
+                  <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onUseAsScenario && (
+                      <button
+                        onClick={() => onUseAsScenario(entry.finalScenario)}
+                        className="px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors"
+                        style={{ background: "#22c55e15", color: "#16a34a", border: "1px solid #22c55e30" }}
+                        title="장면 생성에 사용"
+                      >
+                        장면
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteHistory(entry.id)}
+                      className="px-1.5 py-0.5 rounded text-[9px] text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="삭제"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
         {/* 페르소나 선택 */}
         <div className="flex flex-wrap gap-1.5">
           {personas.map((p) => (
@@ -208,6 +360,21 @@ export default function StoryChat() {
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* 장면 생성 버튼 */}
+        {hasAssistantResponse && onUseAsScenario && (
+          <button
+            onClick={handleUseAsScenario}
+            className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+            style={{
+              background: "linear-gradient(135deg, #22c55e, #16a34a)",
+              color: "white",
+              boxShadow: "0 2px 10px #22c55e30",
+            }}
+          >
+            이 시나리오로 장면 생성하기 →
+          </button>
+        )}
 
         {/* 샘플 프롬프트 */}
         <div className="flex flex-wrap gap-1.5 items-center">

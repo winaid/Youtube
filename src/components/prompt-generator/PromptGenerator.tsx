@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
 import InputPanel from "./InputPanel";
@@ -12,6 +12,7 @@ export default function PromptGenerator() {
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"prompt" | "story">("prompt");
+  const [prefillScenario, setPrefillScenario] = useState<string>("");
 
   const handleGenerate = async (input: PromptInput) => {
     setStatus("loading");
@@ -28,6 +29,12 @@ export default function PromptGenerator() {
       setStatus("error");
     }
   };
+
+  // 시나리오 → 장면 프롬프트 탭으로 이동 + 시나리오 텍스트 프리필
+  const handleUseAsScenario = useCallback((scenarioText: string) => {
+    setPrefillScenario(scenarioText);
+    setActiveTab("prompt");
+  }, []);
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 md:p-6 space-y-4">
@@ -63,6 +70,8 @@ export default function PromptGenerator() {
             <InputPanel
               onGenerate={handleGenerate}
               isLoading={status === "loading"}
+              prefillScenario={prefillScenario}
+              onPrefillConsumed={() => setPrefillScenario("")}
             />
           </div>
           <div className="min-w-0">
@@ -70,7 +79,7 @@ export default function PromptGenerator() {
           </div>
         </div>
       ) : (
-        <StoryChat />
+        <StoryChat onUseAsScenario={handleUseAsScenario} />
       )}
     </div>
   );
