@@ -51,6 +51,121 @@ const animationStyles: { mode: AnimationMode; label: string; desc: string; direc
   { mode: "네온 사이버펑크", label: "네온 사이버펑크", desc: "네온, 비 젖은 거리, 홀로그램", directors: ["니콜라스 빈딩 레픈", "드니 빌뇌브", "콘 사토시"] },
   { mode: "미니어처", label: "미니어처", desc: "틸트시프트, 인형의 집 스타일", directors: ["웨스 앤더슨", "피터 잭슨"] },
 ];
+// 감독 스타일 분석 → 영상 스타일 추천
+function recommendStylesForDirector(
+  director: DirectorPersona | undefined,
+): { mode: AnimationMode; reason: string; score: number }[] {
+  if (!director) return [];
+
+  const style = (director.style || "").toLowerCase();
+  const desc = (director.description || "").toLowerCase();
+  const tech = director.signatureTechniques;
+  const all = [
+    style, desc,
+    tech?.cameraWork, tech?.colorPalette, tech?.lighting,
+    tech?.editingStyle, tech?.moodKeywords,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const scores: { mode: AnimationMode; reason: string; score: number }[] = [];
+  const check = (pattern: RegExp) => pattern.test(all);
+
+  // 실사
+  let s = 0;
+  if (check(/photorealistic|real|live.?action|cinematic|film grain|realism/)) s += 3;
+  if (check(/사실|실사|리얼|사회|누아르|범죄|스릴러|드라마|긴장|묵직/)) s += 2;
+  if (check(/tracking|handheld|steadicam|dolly|crane|deep focus|long take/)) s += 1;
+  if (s > 0) scores.push({ mode: "실사", reason: "시네마틱 실사 촬영에 최적", score: s });
+
+  // 2D 애니
+  s = 0;
+  if (check(/anime|2d|cel.?shad|animation|animated/)) s += 3;
+  if (check(/애니|셀|만화|일본|지브리|작화/)) s += 2;
+  if (check(/vibrant|colorful|hand.?drawn/)) s += 1;
+  if (s > 0) scores.push({ mode: "2D 애니", reason: "셀 애니메이션 스타일", score: s });
+
+  // 수채화 애니
+  s = 0;
+  if (check(/watercolor|pastel|soft|gentle|ghibli/)) s += 3;
+  if (check(/수채|파스텔|몽환|서정|자연|따뜻/)) s += 2;
+  if (check(/warm.*tone|soft.*light|natural.*beauty/)) s += 1;
+  if (s > 0) scores.push({ mode: "수채화 애니", reason: "수채화 감성과 어울림", score: s });
+
+  // 빈티지 필름
+  s = 0;
+  if (check(/vintage|70s|retro|grain|faded|analog|film stock|old school/)) s += 3;
+  if (check(/빈티지|레트로|필름|바랜|클래식|노스탤지|올드/)) s += 2;
+  if (check(/desaturated|sepia|amber|warm.*highlight/)) s += 1;
+  if (s > 0) scores.push({ mode: "빈티지 필름", reason: "빈티지 필름 그레인 감성", score: s });
+
+  // 네온 사이버펑크
+  s = 0;
+  if (check(/neon|cyberpunk|futuristic|noir|blade runner|electric/)) s += 3;
+  if (check(/네온|사이버|미래|도시|야경|형광|어둠/)) s += 2;
+  if (check(/blue.*pink|cold|rain|wet.*street/)) s += 1;
+  if (s > 0) scores.push({ mode: "네온 사이버펑크", reason: "네온빛 미래 도시 감성", score: s });
+
+  // 잉크워시 (동양화)
+  s = 0;
+  if (check(/ink wash|sumi.?e|brush|calligraph|minimalist|zen|oriental/)) s += 3;
+  if (check(/수묵|동양|먹|한지|붓|절제|여백|무사|사무라이/)) s += 2;
+  if (check(/monochrome|sparse|contrast/)) s += 1;
+  if (s > 0) scores.push({ mode: "잉크워시", reason: "수묵화 여백과 절제미", score: s });
+
+  // 하이브리드
+  s = 0;
+  if (check(/hybrid|blend|semi.?real|stylized|cgi|vfx/)) s += 3;
+  if (check(/혼합|반실사|하이브리드|판타지|대서사/)) s += 2;
+  if (s > 0) scores.push({ mode: "하이브리드", reason: "2D+3D 혼합 반실사", score: s });
+
+  // 로토스코핑
+  s = 0;
+  if (check(/rotoscop|dreamlike|surreal|psychedelic|hallucin/)) s += 3;
+  if (check(/몽환|초현실|환각|꿈|편집증/)) s += 2;
+  if (s > 0) scores.push({ mode: "로토스코핑", reason: "초현실 몽환적 연출", score: s });
+
+  // 스톱모션
+  s = 0;
+  if (check(/stop.?motion|puppet|handcraft/)) s += 3;
+  if (check(/스톱|인형|수작업/)) s += 2;
+  if (s > 0) scores.push({ mode: "스톱모션", reason: "수작업 스톱모션 감성", score: s });
+
+  // 클레이
+  s = 0;
+  if (check(/clay|plasticine|sculpt|wallace/)) s += 3;
+  if (check(/점토|클레이|수제/)) s += 2;
+  if (s > 0) scores.push({ mode: "클레이", reason: "점토 캐릭터 질감", score: s });
+
+  // 픽셀아트
+  s = 0;
+  if (check(/pixel|retro.*game|8.?bit|16.?bit|arcade/)) s += 3;
+  if (check(/픽셀|레트로|게임|도트/)) s += 2;
+  if (s > 0) scores.push({ mode: "픽셀아트", reason: "레트로 게임 픽셀 스타일", score: s });
+
+  // 미니어처
+  s = 0;
+  if (check(/tilt.?shift|diorama|dollhouse|miniature|symmetr/)) s += 3;
+  if (check(/대칭|미니어처|인형의 집|정교/)) s += 2;
+  if (s > 0) scores.push({ mode: "미니어처", reason: "대칭 미니어처 디오라마", score: s });
+
+  scores.sort((a, b) => b.score - a.score);
+
+  // 매칭 없으면 지역 기반 기본 추천
+  if (scores.length === 0) {
+    const r = director.region;
+    if (r === "일본") {
+      scores.push({ mode: "2D 애니", reason: "일본 감독 기본 추천", score: 1 });
+      scores.push({ mode: "수채화 애니", reason: "일본 서정 감성", score: 1 });
+      scores.push({ mode: "실사", reason: "시네마틱 실사", score: 1 });
+    } else {
+      scores.push({ mode: "실사", reason: "시네마틱 실사 기본", score: 1 });
+      scores.push({ mode: "빈티지 필름", reason: "클래식 필름 감성", score: 1 });
+      scores.push({ mode: "하이브리드", reason: "반실사 하이브리드", score: 1 });
+    }
+  }
+
+  return scores.slice(0, 3);
+}
+
 const durations: { value: Duration; label: string }[] = [
   { value: "auto", label: "자동" },
   { value: 60, label: "60초" },
@@ -465,6 +580,80 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             )}
           </div>
         )}
+
+        {/* 감독 기반 영상 스타일 AI 추천 */}
+        {directorPersona && (() => {
+          const selectedDir = allDirectors.find((d) => d.id === directorPersona);
+          const recommendations = recommendStylesForDirector(selectedDir);
+          if (recommendations.length === 0) return null;
+          return (
+            <div className="space-y-2 p-3 rounded-lg" style={{ background: "linear-gradient(135deg, #22c55e08, #787fff08)", border: "1px solid #22c55e25" }}>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-semibold" style={{ color: "#16a34a" }}>
+                  {selectedDir?.nameKo} 추천 영상 스타일
+                </Label>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full text-white" style={{ background: "#22c55e" }}>
+                  AI 분석
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                감독의 시그니처 기법을 분석하여 가장 어울리는 스타일을 추천합니다. 어떤 스타일을 선택해도 감독 특유의 연출 색깔은 유지됩니다.
+              </p>
+              <div className="flex gap-1.5">
+                {recommendations.map((rec, i) => (
+                  <button
+                    key={rec.mode}
+                    onClick={() => setAnimationMode(rec.mode)}
+                    className="flex-1 p-2 rounded-lg transition-all text-left"
+                    style={
+                      animationMode === rec.mode
+                        ? { background: "#22c55e", color: "white", boxShadow: "0 2px 8px #22c55e30" }
+                        : { background: "white", border: "1px solid #22c55e30" }
+                    }
+                  >
+                    <div className="flex items-center gap-1">
+                      {i === 0 && (
+                        <span className="text-[8px] px-1 py-0.5 rounded text-white shrink-0" style={{ background: animationMode === rec.mode ? "#ffffff40" : "#22c55e" }}>
+                          BEST
+                        </span>
+                      )}
+                      <span className="text-[11px] font-semibold truncate">
+                        {animationStyles.find((s) => s.mode === rec.mode)?.label || rec.mode}
+                      </span>
+                    </div>
+                    <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: 0.7 }}>
+                      {rec.reason}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              {selectedDir?.signatureTechniques && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {selectedDir.signatureTechniques.cameraWork && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff10", color: "#5a5ecc" }}>
+                      {selectedDir.signatureTechniques.cameraWork.split(",")[0].trim()}
+                    </span>
+                  )}
+                  {selectedDir.signatureTechniques.colorPalette && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: "#e0990010", color: "#b37700" }}>
+                      {selectedDir.signatureTechniques.colorPalette.split(",")[0].trim()}
+                    </span>
+                  )}
+                  {selectedDir.signatureTechniques.lighting && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#16a34a" }}>
+                      {selectedDir.signatureTechniques.lighting.split(",")[0].trim()}
+                    </span>
+                  )}
+                  {selectedDir.signatureTechniques.moodKeywords && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: "#ef444410", color: "#dc2626" }}>
+                      {selectedDir.signatureTechniques.moodKeywords.split(",")[0].trim()}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 애니메이션 모드 */}
         <div className="space-y-2">
