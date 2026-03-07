@@ -333,7 +333,7 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
 
                 {/* 검색 출처 표시 */}
                 {msg.sources && msg.sources.length > 0 && (
-                  <div className="mt-1.5 px-1" style={{ userSelect: "none" }}
+                  <div className="mt-1.5 px-1" style={{ userSelect: "none" }}>
                     <div className="flex items-center gap-1 mb-1">
                       <span className="text-[9px] font-medium" style={{ color: "#22c55e" }}>
                         검색 출처
