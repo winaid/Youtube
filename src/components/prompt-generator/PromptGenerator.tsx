@@ -25,6 +25,7 @@ export default function PromptGenerator() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"prompt" | "story" | "dashboard">("prompt");
   const [prefillScenario, setPrefillScenario] = useState<string>("");
+  const [lastInput, setLastInput] = useState<PromptInput | null>(null);
 
   // A/B 테스트
   const [abResult, setAbResult] = useState<PromptOutput | null>(null);
@@ -46,6 +47,7 @@ export default function PromptGenerator() {
   const handleGenerate = async (input: PromptInput) => {
     setStatus("loading");
     setError(null);
+    setLastInput(input);
 
     try {
       const output = await generatePrompt(input);
@@ -171,10 +173,10 @@ export default function PromptGenerator() {
               )}
               <div className="min-w-0">
                 {!abMode && (
-                  <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} />
+                  <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} />
                 )}
                 {abMode && result && (
-                  <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} />
+                  <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} />
                 )}
               </div>
             </div>

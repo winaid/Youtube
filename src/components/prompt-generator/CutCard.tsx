@@ -13,6 +13,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { cameraPresets, categoryLabels, type CameraPreset } from "@/data/camera-presets";
+import { motionLevels } from "@/data/motion-intensity-presets";
 
 interface CutCardProps {
   cut: Cut;
@@ -335,6 +336,43 @@ export default function CutCard({
             </div>
           )}
         </div>
+
+        {/* 모션 강도 컨트롤 */}
+        {onUpdate && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium" style={{ color: "#787fff" }}>모션:</span>
+            <div className="flex gap-0.5">
+              {motionLevels.map((ml) => (
+                <button
+                  key={ml.level}
+                  onClick={() => {
+                    const currentKeywords = motionLevels.find((m) =>
+                      cut.cameraDirection.toLowerCase().includes(m.cameraKeywords.split(",")[0].trim().toLowerCase())
+                    );
+                    let newDirection = cut.cameraDirection;
+                    if (currentKeywords) {
+                      newDirection = newDirection.replace(
+                        new RegExp(currentKeywords.cameraKeywords.split(",")[0].trim(), "i"),
+                        ml.cameraKeywords.split(",")[0].trim()
+                      );
+                    }
+                    onUpdate({ ...cut, cameraDirection: newDirection });
+                  }}
+                  className="text-[9px] px-1.5 py-0.5 rounded transition-all"
+                  style={{
+                    background: cut.cameraDirection.toLowerCase().includes(ml.cameraKeywords.split(",")[0].trim().toLowerCase().slice(0, 10))
+                      ? "#787fff" : "#f5f5f5",
+                    color: cut.cameraDirection.toLowerCase().includes(ml.cameraKeywords.split(",")[0].trim().toLowerCase().slice(0, 10))
+                      ? "white" : "#666",
+                  }}
+                  title={ml.description}
+                >
+                  {ml.nameKo}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Enhancement 2: Feedback loop + Enhancement 3: English refine */}
         <div className="flex gap-1.5 flex-wrap">

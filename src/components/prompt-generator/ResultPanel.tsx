@@ -12,13 +12,24 @@ import VideoSettingsPanel from "./VideoSettingsPanel";
 import TimelineEditor from "./TimelineEditor";
 import CharacterFaceManager from "./CharacterFaceManager";
 import SfxPanel from "./SfxPanel";
+import SeriesManager from "./SeriesManager";
+import OneClickPipeline from "./OneClickPipeline";
+import EnvironmentPanel from "./EnvironmentPanel";
+import ABTestPanel from "./ABTestPanel";
+import EmotionCurveEditor from "./EmotionCurveEditor";
+import YouTubeSEOPanel from "./YouTubeSEOPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
+import { EmotionPoint } from "@/types";
 
 interface ResultPanelProps {
   result: PromptOutput | null;
   status: GeneratorStatus;
   error: string | null;
   onUpdateResult?: (updated: PromptOutput) => void;
+  storyText?: string;
+  directorName?: string;
+  region?: string;
+  animationMode?: string;
 }
 
 export default function ResultPanel({
@@ -26,11 +37,16 @@ export default function ResultPanel({
   status,
   error,
   onUpdateResult,
+  storyText,
+  directorName,
+  region,
+  animationMode,
 }: ResultPanelProps) {
   const [jsonCopied, setJsonCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [showJson, setShowJson] = useState(false);
-  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline" | "audio">("prompts");
+  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline" | "audio" | "tools">("prompts");
+  const [emotionPoints, setEmotionPoints] = useState<EmotionPoint[]>([]);
   interface BgmMainResult { mood: string; genre: string; tempo: string; searchKeywords: string[]; suggestions: string[]; source: string; }
   interface BgmSceneResult { forScenes: string; mood: string; searchKeywords: string[]; suggestion: string; }
   interface BgmData { mainBgm?: BgmMainResult; sceneBgm?: BgmSceneResult[]; }
@@ -392,6 +408,7 @@ export default function ResultPanel({
           { key: "generate", label: "영상 생성", color: "#22c55e" },
           { key: "timeline", label: "타임라인", color: "#c4b800" },
           { key: "audio", label: "BGM/TTS/SFX", color: "#e09900" },
+          { key: "tools", label: "고도화 도구", color: "#7c3aed" },
         ] as const).map((tab) => (
           <button
             key={tab.key}
@@ -899,6 +916,147 @@ export default function ResultPanel({
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* 고도화 도구 섹션 */}
+      {activeSection === "tools" && (
+        <div className="space-y-4">
+          {/* 원클릭 파이프라인 */}
+          <OneClickPipeline
+            hasCuts={result.cuts.length > 0}
+            hasStoryboard={Object.keys(storyboardImages).length >= result.cuts.length}
+            hasVideo={videoGen.completedCount >= result.cuts.length}
+            hasSrt={!!srtContent}
+            hasBgm={!!bgmResult}
+            hasSeo={false}
+            onRunStoryboard={async () => {
+              for (const cut of result.cuts) {
+                if (storyboardImages[cut.cutNumber]) continue;
+                setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                try {
+                  const res = await fetch("/api/generate-image", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16" }),
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.images?.[0]?.base64) {
+                    setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: data.images[0].base64 }));
+                  }
+                } catch { /* continue */ }
+                setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+              }
+            }}
+            onRunVideoGeneration={() => videoGen.startAutoGeneration()}
+            onRunSrt={async () => {
+              const res = await fetch("/api/generate-srt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  scenes: result.cuts.map((c) => ({
+                    cutNumber: c.cutNumber,
+                    sceneDescription: c.sceneDescription,
+                    durationSec: c.durationSec,
+                  })),
+                }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.srt) setSrtContent(data.srt);
+              }
+            }}
+            onRunBgm={async () => {
+              const res = await fetch("/api/recommend-bgm", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  scenes: result.cuts.map((c) => ({
+                    sceneDescription: c.sceneDescription,
+                    moodLighting: c.moodLighting,
+                  })),
+                }),
+              });
+              if (res.ok) setBgmResult(await res.json());
+            }}
+            onRunSeo={async () => { /* handled by YouTubeSEOPanel */ }}
+            onRunThumbnail={async () => { /* handled by YouTubeSEOPanel */ }}
+          />
+
+          {/* 유튜브 SEO + 썸네일 + 시청자 예측 */}
+          <YouTubeSEOPanel
+            result={result}
+            region={region}
+            animationMode={animationMode}
+          />
+
+          {/* 감정 곡선 에디터 */}
+          <EmotionCurveEditor
+            cuts={result.cuts}
+            emotionPoints={emotionPoints}
+            onChange={setEmotionPoints}
+          />
+
+          {/* 날씨/시간대 일관성 */}
+          <EnvironmentPanel
+            cuts={result.cuts}
+            onApplyEnvironment={(suffix) => {
+              if (!onUpdateResult) return;
+              const newCuts = result.cuts.map((cut) => ({
+                ...cut,
+                videoPrompt: cut.videoPrompt.includes(suffix.split(",")[0])
+                  ? cut.videoPrompt
+                  : `${cut.videoPrompt}. ${suffix}`,
+                moodLighting: `${cut.moodLighting}, ${suffix.split(",").slice(0, 2).join(",")}`,
+              }));
+              onUpdateResult({ ...result, cuts: newCuts });
+            }}
+          />
+
+          {/* A/B 테스트 */}
+          <ABTestPanel
+            currentCuts={result.cuts}
+            currentCharacterSeeds={result.characterSeeds}
+            currentDirectorName={directorName || "현재 감독"}
+            storyText={storyText || result.conceptSummary}
+            onGenerateVariant={async (directorId) => {
+              const res = await fetch("/api/generate-cuts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  storyText: storyText || result.conceptSummary,
+                  directorName: directorId,
+                  directorNameKo: directorId,
+                  animationMode: animationMode || "2D 애니",
+                  aspectRatio: "9:16",
+                  region: region || "한국",
+                  cutCount: result.cuts.length,
+                }),
+              });
+              if (res.ok) return await res.json();
+              return null;
+            }}
+            onSelectWinner={(cuts, characterSeeds) => {
+              if (onUpdateResult) {
+                onUpdateResult({ ...result, cuts, characterSeeds, totalCuts: cuts.length });
+              }
+            }}
+          />
+
+          {/* 시리즈 연속성 관리 */}
+          <SeriesManager
+            characterSeeds={result.characterSeeds}
+            projectTitle={result.projectTitle}
+            onLoadCharacters={(chars) => {
+              if (onUpdateResult) {
+                const merged = [...result.characterSeeds];
+                for (const ch of chars) {
+                  if (!merged.find((m) => m.id === ch.id)) merged.push(ch);
+                }
+                onUpdateResult({ ...result, characterSeeds: merged });
+              }
+            }}
+          />
         </div>
       )}
     </div>

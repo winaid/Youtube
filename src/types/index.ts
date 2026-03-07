@@ -226,5 +226,105 @@ export interface SceneSfx {
   reason: string; // AI가 왜 이 효과음을 매칭했는지
 }
 
+// ===== 고도화 타입 =====
+
+// 캐릭터 일관성 검증
+export interface CharacterConsistencyResult {
+  characterId: string;
+  consistencyScore: number; // 0-100
+  issues: string[];
+  cutComparisons: { cutA: number; cutB: number; similarity: number; differences: string[] }[];
+}
+
+// 색보정 일관성
+export interface ColorPalette {
+  primary: string;
+  secondary: string;
+  accent: string;
+  shadow: string;
+  highlight: string;
+  mood: string;
+}
+
+// 감정 곡선
+export interface EmotionPoint {
+  cutNumber: number;
+  intensity: number; // 0-100
+  emotion: "tension" | "release" | "joy" | "sadness" | "anger" | "surprise" | "calm" | "excitement";
+}
+
+// 날씨/시간대
+export interface EnvironmentSetting {
+  weather: "clear" | "rain" | "snow" | "fog" | "storm" | "cloudy" | "wind";
+  timeOfDay: "dawn" | "morning" | "noon" | "afternoon" | "golden-hour" | "dusk" | "night" | "midnight";
+  customDescription?: string;
+}
+
+// 유튜브 SEO
+export interface YouTubeSEO {
+  titles: string[];
+  description: string;
+  tags: string[];
+  hashtags: string[];
+  thumbnailPrompt: string;
+  predictedCTR: number;
+}
+
+// 시청자 반응 예측
+export interface ViewerPrediction {
+  estimatedViews: string;
+  engagementRate: number;
+  retentionCurve: number[];
+  strengths: string[];
+  weaknesses: string[];
+  improvements: string[];
+}
+
+// 자막 스타일
+export interface SubtitleStyle {
+  id: string;
+  nameKo: string;
+  font: string;
+  color: string;
+  bgColor: string;
+  animation: string;
+  bestFor: string;
+}
+
+// 시리즈 연속성
+export interface SeriesEpisode {
+  id: string;
+  title: string;
+  episodeNumber: number;
+  characterSeeds: CharacterSeed[];
+  worldSetting: string;
+  colorPalette?: ColorPalette;
+  environmentSetting?: EnvironmentSetting;
+  createdAt: number;
+}
+
+export interface SeriesProject {
+  id: string;
+  seriesTitle: string;
+  episodes: SeriesEpisode[];
+  sharedCharacters: CharacterSeed[];
+  worldRules: string[];
+}
+
+// A/B 테스트
+export interface ABTestVariant {
+  id: string;
+  label: string;
+  directorId: string;
+  directorName: string;
+  cuts: Cut[];
+  characterSeeds: CharacterSeed[];
+  thumbnailBase64?: string;
+  predictedCTR?: number;
+}
+
+// 모션 강도
+export type MotionIntensity = 0 | 25 | 50 | 75 | 100;
+
 // ===== 상태 타입 =====
 export type GeneratorStatus = "idle" | "loading" | "success" | "error";
