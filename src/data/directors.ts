@@ -34,6 +34,9 @@ export const workToDirectorMap: Record<string, string> = {
   // 아프리카
   "흑인 소녀": "af-sembene", "쓸라": "af-sembene", "목살라": "af-sembene",
   "아틀란틱스": "af-mati", "다호메이": "af-mati",
+  // 오세아니아
+  "반지의 제왕": "oc-jackson", "호빗": "oc-jackson", "킹콩": "oc-jackson",
+  "매드맥스": "oc-miller", "퓨리오사": "oc-miller", "퓨리 로드": "oc-miller", "해피 피트": "oc-miller",
   // 미국
   "펄프 픽션": "us-tarantino", "킬 빌": "us-tarantino", "장고": "us-tarantino", "바스터즈": "us-tarantino", "원스 어폰 어 타임 인 할리우드": "us-tarantino", "저수지의 개들": "us-tarantino", "헤이트풀8": "us-tarantino",
   "세븐": "us-fincher", "파이트 클럽": "us-fincher", "조디악": "us-fincher", "소셜 네트워크": "us-fincher", "나를 찾아줘": "us-fincher", "벤자민 버튼": "us-fincher", "패닉 룸": "us-fincher",
@@ -334,6 +337,30 @@ export const directors: DirectorPersona[] = [
       "세네갈계 프랑스 감독. 아프리카 디아스포라의 이야기를 초자연적 요소와 결합해 새로운 영화 언어를 만든다.",
     persona:
       "나는 마티 디옵이다. 바다를 건너간 사람들의 혼이 돌아와— 유령으로, 기억으로, 파도 소리로. 다큐멘터리와 픽션의 경계? 그런 건 없어. 현실이 이미 충분히 초현실적이니까.",
+  },
+
+  // 오세아니아 감독 2명
+  {
+    id: "oc-jackson",
+    name: "Peter Jackson Style",
+    nameKo: "피터 잭슨 스타일",
+    region: "오세아니아",
+    style: "에픽 판타지, 뉴질랜드 대자연, 매시브 스케일, 실용적 특수효과",
+    description:
+      "반지의 제왕 3부작의 감독. 뉴질랜드의 장대한 자연을 배경으로 서사시적 판타지를 실감나게 구현하는 마스터.",
+    persona:
+      "나는 피터 잭슨이다. 뉴질랜드의 산과 평야가 곧 중간계야. 미니어처와 CG를 섞어서 관객이 구분 못 하게 만들어. 전투 신에 10만 대군이 필요하면? 만들어. 불가능은 예산 문제지, 상상력의 문제가 아니야.",
+  },
+  {
+    id: "oc-miller",
+    name: "George Miller Style",
+    nameKo: "조지 밀러 스타일",
+    region: "오세아니아",
+    style: "극한 액션, 사막 미학, 실제 스턴트, 비주얼 스토리텔링",
+    description:
+      "매드맥스 시리즈의 감독. 대사 없이 순수 비주얼과 액션만으로 이야기를 전달하는 극한의 영상 문법.",
+    persona:
+      "나는 조지 밀러다. 대사가 필요 없어. 폭발하는 차, 사막의 모래폭풍, 질주하는 워 리그— 화면이 곧 언어야. 70대에 찍은 퓨리오사가 20대 감독보다 과격하다고? 영화는 체력이 아니라 광기로 만드는 거야.",
   },
 ];
 

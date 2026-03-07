@@ -31,7 +31,7 @@ interface InputPanelProps {
   isLoading: boolean;
 }
 
-const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카"];
+const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
 const animationModes: AnimationMode[] = ["2D 애니", "실사", "하이브리드"];
 const durations: { value: Duration; label: string }[] = [
   { value: "auto", label: "자동" },
