@@ -21,6 +21,50 @@ interface GenerateVideoRequest {
   referenceImages?: string[];
 }
 
+// Gemini Files API로 base64 이미지를 업로드하고 file URI를 반환
+async function uploadImageToGemini(base64: string, apiKey: string, displayName: string): Promise<string | null> {
+  try {
+    // Step 1: base64 → binary
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+
+    // Step 2: Upload via media.upload
+    const uploadRes = await fetch(
+      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "image/png",
+          "X-Goog-Upload-Protocol": "raw",
+          "X-Goog-Upload-Display-Name": displayName,
+        },
+        body: bytes,
+      }
+    );
+
+    if (!uploadRes.ok) {
+      console.warn("File upload failed:", uploadRes.status, await uploadRes.text().catch(() => ""));
+      return null;
+    }
+
+    const uploadData = await uploadRes.json() as { file?: { uri?: string; name?: string } };
+    const fileUri = uploadData.file?.uri;
+    if (!fileUri) {
+      console.warn("File upload returned no URI:", JSON.stringify(uploadData).slice(0, 200));
+      return null;
+    }
+
+    console.log(`Uploaded ${displayName} → ${fileUri}`);
+    return fileUri;
+  } catch (err) {
+    console.warn("File upload error:", err);
+    return null;
+  }
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const req = await context.request.json() as GenerateVideoRequest;
@@ -38,6 +82,39 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? "veo-3.1-generate-preview"
       : "veo-3.1-fast-generate-preview";
 
+    // === Upload images to Gemini Files API (base64 → URI) ===
+    let firstFrameUri: string | null = null;
+    let lastFrameUri: string | null = null;
+    const refImageUris: string[] = [];
+
+    // 병렬 업로드
+    const uploadPromises: Promise<void>[] = [];
+
+    if (req.firstFrameBase64) {
+      uploadPromises.push(
+        uploadImageToGemini(req.firstFrameBase64, apiKey, "first-frame.png")
+          .then((uri) => { firstFrameUri = uri; })
+      );
+    }
+    if (req.lastFrameBase64) {
+      uploadPromises.push(
+        uploadImageToGemini(req.lastFrameBase64, apiKey, "last-frame.png")
+          .then((uri) => { lastFrameUri = uri; })
+      );
+    }
+    if (req.referenceImages && req.referenceImages.length > 0) {
+      for (let i = 0; i < Math.min(3, req.referenceImages.length); i++) {
+        uploadPromises.push(
+          uploadImageToGemini(req.referenceImages[i], apiKey, `ref-image-${i}.png`)
+            .then((uri) => { if (uri) refImageUris.push(uri); })
+        );
+      }
+    }
+
+    if (uploadPromises.length > 0) {
+      await Promise.all(uploadPromises);
+    }
+
     // === Build instance ===
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
@@ -46,34 +123,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       instance.video = { uri: req.previousVideoUri };
     }
 
-    // First Frame (Image-to-Video)
-    if (req.firstFrameBase64) {
+    // First Frame (Image-to-Video) — URI 방식
+    if (firstFrameUri) {
       instance.image = {
-        inlineData: {
-          mimeType: "image/png",
-          data: req.firstFrameBase64,
-        },
+        fileUri: firstFrameUri,
+        mimeType: "image/png",
       };
     }
 
-    // Last Frame
-    if (req.lastFrameBase64) {
+    // Last Frame — URI 방식
+    if (lastFrameUri) {
       instance.lastFrame = {
-        inlineData: {
-          mimeType: "image/png",
-          data: req.lastFrameBase64,
-        },
+        fileUri: lastFrameUri,
+        mimeType: "image/png",
       };
     }
 
-    // Reference Images (최대 3장) — Gemini API 형식
-    if (req.referenceImages && req.referenceImages.length > 0) {
-      instance.referenceImages = req.referenceImages.slice(0, 3).map((base64) => ({
+    // Reference Images — URI 방식
+    if (refImageUris.length > 0) {
+      instance.referenceImages = refImageUris.map((uri) => ({
         image: {
-          inlineData: {
-            mimeType: "image/png",
-            data: base64,
-          },
+          fileUri: uri,
+          mimeType: "image/png",
         },
         referenceType: "asset",
       }));
@@ -101,9 +172,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     console.log("Veo request:", JSON.stringify({
       model,
       hasVideo: !!req.previousVideoUri,
-      hasFirstFrame: !!req.firstFrameBase64,
-      hasLastFrame: !!req.lastFrameBase64,
-      refImageCount: req.referenceImages?.length || 0,
+      hasFirstFrame: !!firstFrameUri,
+      hasLastFrame: !!lastFrameUri,
+      refImageCount: refImageUris.length,
       parameters,
     }));
 
@@ -117,10 +188,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const errText = await res.text();
       console.error("Veo API error:", res.status, errText);
 
-      // 400 에러 시 inlineData 관련 필드를 모두 제거하고 재시도
-      // (Veo predictLongRunning은 inlineData를 지원하지 않음)
-      if (res.status === 400 && (req.firstFrameBase64 || req.lastFrameBase64 || req.referenceImages?.length)) {
-        console.log("Retrying without all inlineData fields (image/lastFrame/referenceImages)...");
+      // 400 에러 시 이미지 관련 필드를 모두 제거하고 재시도
+      if (res.status === 400 && (firstFrameUri || lastFrameUri || refImageUris.length)) {
+        console.log("Retrying without image fields (image/lastFrame/referenceImages)...");
         delete instance.image;
         delete instance.lastFrame;
         delete instance.referenceImages;
@@ -134,15 +204,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         if (retryRes.ok) {
           const retryData = await retryRes.json() as { name: string };
           const removedFeatures = [
-            req.firstFrameBase64 && "first frame",
-            req.lastFrameBase64 && "last frame",
-            req.referenceImages?.length && "reference images",
+            firstFrameUri && "first frame",
+            lastFrameUri && "last frame",
+            refImageUris.length && "reference images",
           ].filter(Boolean).join(", ");
           return Response.json({
             operationName: retryData.name,
             model,
             status: "RUNNING",
-            warning: `inlineData not supported by this model — generated without ${removedFeatures}`,
+            warning: `Image features not supported by this model — generated without ${removedFeatures}`,
           });
         }
 
