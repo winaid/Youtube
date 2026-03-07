@@ -146,8 +146,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         );
       }
 
+      // firstFrame 포함 시 한번 더 fallback (이미지가 너무 크거나 형식 오류)
+      if (res.status === 400 && req.firstFrameBase64) {
+        console.log("Retrying without firstFrame...");
+        delete instance.image;
+        const retryRes2 = await fetch(`${BASE_URL}/models/${model}:predictLongRunning?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instances: [instance], parameters }),
+        });
+        if (retryRes2.ok) {
+          const retryData2 = await retryRes2.json() as { name: string };
+          return Response.json({
+            operationName: retryData2.name,
+            model,
+            status: "RUNNING",
+            warning: "First frame not supported for this request — generated without it",
+          });
+        }
+      }
+
+      // Parse error details for user-friendly message
+      let errorDetail = errText.slice(0, 300);
+      try {
+        const parsed = JSON.parse(errText);
+        errorDetail = parsed?.error?.message || parsed?.error?.status || errorDetail;
+      } catch { /* use raw text */ }
+
       return Response.json(
-        { error: `Veo API error: ${res.status}`, details: errText },
+        { error: `Veo API error (${res.status}): ${errorDetail}`, details: errText.slice(0, 500) },
         { status: res.status }
       );
     }

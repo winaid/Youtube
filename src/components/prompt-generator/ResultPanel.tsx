@@ -740,6 +740,7 @@ export default function ResultPanel({
           <VideoSettingsPanel
             config={videoGen.config}
             onConfigChange={videoGen.updateConfig}
+            storyboardImages={storyboardImages}
           />
           <VideoGenerationPanel
             cuts={result.cuts}
