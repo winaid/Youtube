@@ -86,10 +86,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // === Build parameters ===
+    // Veo API 공식 지원 파라미터만 전송 (미지원 파라미터 → 400 에러)
     const parameters: Record<string, unknown> = {
       aspectRatio,
       personGeneration: req.personGeneration || "allow_all",
-      numberOfVideos: Math.min(4, Math.max(1, req.sampleCount || 1)),
+      numberOfVideos: 1,
     };
 
     // resolution: 720p (기본) / 1080p / 4k
@@ -97,16 +98,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       parameters.resolution = req.resolution;
     }
 
-    // durationSeconds: 5 또는 8
+    // durationSeconds: 문자열 "4", "6", "8" 만 유효 (숫자 아님!)
     const dur = req.durationSeconds || 8;
-    parameters.durationSeconds = dur <= 5 ? 5 : 8;
+    parameters.durationSeconds = dur <= 4 ? "4" : dur <= 6 ? "6" : "8";
 
-    if (req.negativePrompt) {
-      parameters.negativePrompt = req.negativePrompt;
-    }
-    if (req.seed !== undefined && req.seed !== null) {
-      parameters.seed = req.seed;
-    }
+    // negativePrompt, seed: Veo API 미지원 → 전송하면 400
 
     const hasImageFields = !!(instance.image || instance.lastFrame || instance.referenceImages);
 
