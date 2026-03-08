@@ -63,21 +63,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const data = await res.json() as {
-      done?: boolean;
-      response?: {
-        generateVideoResponse?: {
-          generatedSamples?: GeneratedSample[];
-        };
-      };
-      error?: { message?: string; code?: number };
-      metadata?: Record<string, unknown>;
-    };
+    const data = await res.json() as Record<string, unknown>;
 
     if (data.error) {
+      const err = data.error as { message?: string; code?: number };
       return Response.json({
         status: "FAILED",
-        error: data.error.message || "Unknown error",
+        error: err.message || "Unknown error",
       });
     }
 
@@ -87,14 +79,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     console.log("Veo poll response:", JSON.stringify(data).slice(0, 3000));
 
-    // Extract all samples — Veo 모델 버전에 따라 응답 경로가 다름
-    // 알려진 경로들을 모두 탐색
+    // RAI (Responsible AI) 필터 감지 — 안전 필터에 걸리면 영상이 삭제됨
     const resp = data.response as Record<string, unknown> | undefined;
+    const raiCount = resp?.raiMediaFilteredCount as number | undefined;
+    const raiReasons = resp?.raiMediaFilteredReasons as string[] | undefined;
+    if (raiCount && raiCount > 0) {
+      const reasonStr = raiReasons?.join(", ") || "안전 정책 위반";
+      console.error("Veo RAI filtered:", raiCount, "reasons:", reasonStr);
+      return Response.json({
+        status: "FAILED",
+        error: `Veo 안전 필터에 의해 영상이 차단되었습니다 (${reasonStr}). 프롬프트에서 폭력/성적/위험한 내용을 제거해주세요.`,
+        raiFiltered: true,
+        raiReasons,
+      });
+    }
+
+    // Extract all samples — Veo 모델 버전에 따라 응답 경로가 다름
+    const generateVideoResponse = resp?.generateVideoResponse as Record<string, unknown> | undefined;
     const samples: GeneratedSample[] =
-      data.response?.generateVideoResponse?.generatedSamples ??
-      (resp?.generateVideoResponse as Record<string, unknown>)?.generatedSamples as GeneratedSample[] | undefined ??
+      generateVideoResponse?.generatedSamples as GeneratedSample[] | undefined ??
       resp?.generatedSamples as GeneratedSample[] | undefined ??
-      (data as Record<string, unknown>).generatedSamples as GeneratedSample[] | undefined ??
+      data.generatedSamples as GeneratedSample[] | undefined ??
+      // predictions 형태 (Vertex AI 다른 버전)
+      data.predictions as GeneratedSample[] | undefined ??
       [];
 
     // Deep search: 위 경로에 없으면 응답 전체에서 video URI 패턴을 탐색
@@ -138,12 +145,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
-    console.error("No video URI found in response. Keys:", JSON.stringify(Object.keys(data)), "response keys:", resp ? JSON.stringify(Object.keys(resp)) : "N/A");
+    // 상세 디버그 정보 생성
+    const respKeys = resp ? Object.keys(resp) : [];
+    const gvrKeys = generateVideoResponse ? Object.keys(generateVideoResponse) : [];
+    console.error("No video URI found. data keys:", Object.keys(data), "response keys:", respKeys, "generateVideoResponse keys:", gvrKeys, "full:", JSON.stringify(data).slice(0, 2000));
     return Response.json({
       status: "FAILED",
-      error: "영상 생성은 완료되었으나 비디오 URI가 없습니다",
+      error: `영상 생성 완료되었으나 비디오 URI 없음. response keys: [${respKeys.join(", ")}], generateVideoResponse keys: [${gvrKeys.join(", ")}]`,
       responseKeys: Object.keys(data),
-      responseResponseKeys: resp ? Object.keys(resp) : [],
+      responseResponseKeys: respKeys,
+      generateVideoResponseKeys: gvrKeys,
       raw: data,
     });
   } catch (error) {
