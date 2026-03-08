@@ -149,7 +149,7 @@ function fetchWithKeyFallback(
   }
 
   const tryKey = async (i: number): Promise<Response> => {
-    const keyUrl = `${url}?key=${keys[i]}`;
+    const keyUrl = `${url}${url.includes("?") ? "&" : "?"}key=${keys[i]}`;
     const res = await fetch(keyUrl, init);
 
     if (i === keys.length - 1) return res;
