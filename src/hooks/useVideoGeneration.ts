@@ -355,6 +355,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         const data = await res.json();
 
         if (data.status === "COMPLETED") {
+          // videoUri가 없으면 실패 처리
+          const finalUri = data.variants?.[0]?.videoUri || data.videoUri;
+          if (!finalUri) {
+            updateClip(cutNumber, {
+              status: "failed",
+              error: "영상 생성 완료되었으나 비디오 URL이 없습니다",
+            });
+            pollTimers.current.delete(cutNumber);
+            return;
+          }
+
           const clipUpdate: Partial<VideoClip> = {
             status: "completed",
             videoUri: data.videoUri,

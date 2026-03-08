@@ -97,8 +97,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     return Response.json({
-      status: "COMPLETED",
-      videoUri: null,
+      status: "FAILED",
+      error: "영상 생성은 완료되었으나 비디오 URI가 없습니다",
       raw: data,
     });
   } catch (error) {
