@@ -66,6 +66,7 @@ export interface Cut {
   cameraDirection: string;
   moodLighting: string;
   imagePrompt: string;
+  endImagePrompt: string;
   videoPrompt: string;
   extendPrompt: string;
   transitionHint: string;

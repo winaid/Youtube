@@ -72,6 +72,7 @@ async function fetchGeminiCuts(
           cameraDirection: cut.cameraDirection ?? "",
           moodLighting: cut.moodLighting ?? "",
           imagePrompt: cut.imagePrompt ?? "",
+          endImagePrompt: cut.endImagePrompt ?? "",
           videoPrompt: cut.videoPrompt ?? "",
           extendPrompt: cut.extendPrompt ?? "",
           transitionHint: cut.transitionHint ?? "",
@@ -120,7 +121,8 @@ function generateFallbackCuts(
     sceneDescription: `[장면 ${i + 1}] ${storyWords} 기반 장면 (API 연결 후 AI가 생성합니다)`,
     cameraDirection: "slow push-in toward subject",
     moodLighting: "golden hour warm lighting, soft shadows",
-    imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1}, highly detailed, cinematic quality`,
+    imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} start frame, highly detailed, cinematic quality`,
+    endImagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} end frame, camera moved to final position, highly detailed, cinematic quality`,
     videoPrompt: `Cinematic 8-second clip. ${veoStyle}. Style: ${director.name}, ${directorStyle}. ${charDesc}. Smooth motion, no text, no watermark`,
     extendPrompt: i > 0
       ? `The scene continues from the previous moment. ${charDesc}. ${directorStyle} visual tone. ${veoStyle}. Maintain exact same character appearance. Smooth transition.`

@@ -18,6 +18,7 @@ const POLL_INTERVAL = 5000;
 interface UseVideoGenerationOptions {
   cuts: Cut[];
   storyboardImages?: Record<number, string>;
+  storyboardEndImages?: Record<number, string>;
   faceRefs?: CharacterFaceRef[];
   onSeedDetected?: (cutNumber: number, seed: string) => void;
 }
@@ -93,7 +94,7 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
   return extras ? `${original}, ${extras}` : original;
 }
 
-export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
+export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
     clips: [],
     isAutoMode: false,
@@ -446,13 +447,23 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
           console.warn(`Failed to capture last frame from CUT ${cutNumber - 1}`);
         }
       }
-      // Fallback to storyboard images if no last frame captured
-      if (!firstFrameBase64 && cfg.autoLinkFirstFrame && storyboardImages) {
-        if (cutNumber === 1 && !firstFrameBase64 && storyboardImages[1]) {
-          firstFrameBase64 = storyboardImages[1];
-        } else if (cutNumber > 1 && storyboardImages[cutNumber]) {
+      // Fallback chain for firstFrame:
+      // 1. Previous video's last frame (captured above)
+      // 2. Previous cut's END storyboard image (N-1's end = N's start)
+      // 3. Current cut's START storyboard image
+      if (!firstFrameBase64 && cfg.autoLinkFirstFrame) {
+        if (cutNumber > 1 && storyboardEndImages?.[cutNumber - 1]) {
+          // Use previous cut's end frame as this cut's start frame
+          firstFrameBase64 = storyboardEndImages[cutNumber - 1];
+        } else if (storyboardImages?.[cutNumber]) {
           firstFrameBase64 = storyboardImages[cutNumber];
         }
+      }
+
+      // Auto-link lastFrame from end storyboard image
+      let lastFrameBase64 = cutNumber === 1 ? cfg.lastFrameBase64 : undefined;
+      if (!lastFrameBase64 && cfg.autoLinkFirstFrame && storyboardEndImages?.[cutNumber]) {
+        lastFrameBase64 = storyboardEndImages[cutNumber];
       }
 
       // 캐릭터 얼굴 레퍼런스 자동 주입 (Set으로 O(1) 중복 검사)
@@ -485,9 +496,10 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
         seed: cfg.seed,
         // Scene Extension
         previousVideoUri: cutNumber > 1 ? prevClip?.videoUri : undefined,
-        // First Frame (Enhancement 4: auto-linked or manual)
+        // First Frame (auto-linked from prev cut's end or storyboard)
         firstFrameBase64: firstFrameBase64,
-        lastFrameBase64: cutNumber === 1 ? cfg.lastFrameBase64 : undefined,
+        // Last Frame (auto-linked from end storyboard or manual)
+        lastFrameBase64: lastFrameBase64,
         // Reference Images (캐릭터 얼굴 + 수동 레퍼런스)
         referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
       };
@@ -521,7 +533,7 @@ export function useVideoGeneration({ cuts, storyboardImages, faceRefs, onSeedDet
         error: err instanceof Error ? err.message : "요청 실패",
       });
     }
-  }, [cuts, state.clips, state.config, storyboardImages, faceRefs, updateClip, startPolling, verifyPrompt, refinePromptEnglish]);
+  }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt, refinePromptEnglish]);
 
   // 자동 모드
   useEffect(() => {

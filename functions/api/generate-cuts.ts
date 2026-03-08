@@ -349,6 +349,17 @@ ${regionSignature}
 - "same character" 등 참조 표현 절대 금지
 - 의상, 헤어, 체형, 피부톤 불변
 
+**시작/끝 프레임 이미지 (Start/End Frame — 핵심!):**
+- imagePrompt = 장면의 **첫 프레임** (8초의 시작 순간)
+- endImagePrompt = 장면의 **마지막 프레임** (8초의 끝 순간)
+- 두 이미지는 같은 장면이지만 카메라 위치, 캐릭터 포즈, 조명이 8초 동안 변화한 결과
+- **핵심 규칙: CUT N의 endImagePrompt ≈ CUT N+1의 imagePrompt**
+  - CUT 1 끝: "캐릭터가 문을 여는 순간, 문 너머 빛이 쏟아지는 클로즈업"
+  - CUT 2 시작: "문이 열리며 빛이 쏟아지는 역광, 캐릭터 실루엣이 문 앞에 서있는 와이드"
+  - 같은 순간을 다른 앵글/스케일로 묘사하여 자연스러운 컷 전환
+- endImagePrompt도 100% 영어, 캐릭터 외형 전체 반복, 조명/구도 포함
+- 마지막 장면의 endImagePrompt는 이야기의 감정적 결말을 시각화
+
 **Extend 프롬프트 (장면 연결):**
 - 장면 1: extendPrompt = ""
 - 장면 2+: 이전 장면의 마지막 프레임을 구체적으로 묘사하며 이어가기
@@ -371,7 +382,8 @@ ${regionSignature}
     "sceneDescription": "[한국어] 장면 내용 + 카메라 움직임 한줄 설명",
     "cameraDirection": "[영어] Lens: [렌즈mm]. Composition: [구도]. Camera: [앵글1]→[무빙1]→[앵글2]→[무빙2]→[앵글3]. ${directorNameKo} style.",
     "moodLighting": "[영어] [조명 기법 1~2개 구체 명시]. [색보정 톤]. [감독 스타일 조명]",
-    "imagePrompt": "[100% ENGLISH] [WHO is doing WHAT, WHERE — concrete scene description]. [캐릭터 전체 외형]. [specific setting/environment]. [조명 기법 — e.g. Rembrandt lighting]. [구도 — e.g. rule of thirds]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
+    "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
+    "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
     "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take. [WHO does WHAT, WHERE]. ${veoStyle}. Style: ${directorName}. Shot on [렌즈 e.g. 35mm anamorphic]. [구도 e.g. deep staging composition]. Camera: [앵글+무빙 시퀀스 2~3단계]. [캐릭터 전체 외형]. [8초 동작 시퀀스]. [조명: e.g. Rembrandt key with rim light]. [색보정: e.g. teal and orange grade]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text, no watermark",
     "extendPrompt": "",
     "transitionHint": "[한국어] 다음 장면 연결 방식",

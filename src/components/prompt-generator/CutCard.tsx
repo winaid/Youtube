@@ -24,6 +24,9 @@ interface CutCardProps {
   storyboardLoading?: boolean;
   onGenerateImage?: () => void;
   onSelectCandidate?: (base64: string) => void;
+  storyboardEndImage?: string;
+  storyboardEndLoading?: boolean;
+  onGenerateEndImage?: () => void;
   sceneTtsUrl?: string;
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
@@ -134,6 +137,7 @@ function EditableField({
 export default function CutCard({
   cut, characterSeeds, onUpdate,
   storyboardImage, storyboardCandidates, storyboardLoading, onGenerateImage, onSelectCandidate,
+  storyboardEndImage, storyboardEndLoading, onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
 }: CutCardProps) {
@@ -220,53 +224,106 @@ export default function CutCard({
         )}
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
-        {/* 스토리보드 이미지 + 장면 설명 */}
+        {/* 스토리보드 이미지 (시작/끝 프레임) + 장면 설명 */}
         <div className="flex gap-3">
           <div className="flex-1">
             <p className="text-sm">{cut.sceneDescription}</p>
           </div>
-          <div className="shrink-0 flex flex-col items-center gap-1">
-            {storyboardImage ? (
-              <div className="relative group">
-                <div className="w-24 h-24 rounded-lg overflow-hidden border" style={{ borderColor: isEven ? "#fff78740" : "#787fff40" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`data:image/png;base64,${storyboardImage}`} alt={`장면 ${cut.cutNumber}`} className="w-full h-full object-cover" />
+          <div className="shrink-0 flex items-center gap-1.5">
+            {/* 시작 프레임 */}
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[8px] font-medium" style={{ color: "#787fff" }}>시작</span>
+              {storyboardImage ? (
+                <div className="relative group">
+                  <div className="w-20 h-20 rounded-lg overflow-hidden border" style={{ borderColor: isEven ? "#fff78740" : "#787fff40" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`data:image/png;base64,${storyboardImage}`} alt={`장면 ${cut.cutNumber} 시작`} className="w-full h-full object-cover" />
+                  </div>
+                  {onGenerateImage && (
+                    <button
+                      onClick={onGenerateImage}
+                      disabled={storyboardLoading}
+                      className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] shadow-md transition-transform hover:scale-110"
+                      style={{ background: isEven ? "#c4b800" : "#787fff" }}
+                      title="시작 이미지 재생성"
+                    >
+                      {storyboardLoading ? (
+                        <span className="h-2.5 w-2.5 animate-spin rounded-full border border-t-transparent border-white" />
+                      ) : "↻"}
+                    </button>
+                  )}
                 </div>
-                {onGenerateImage && (
-                  <button
-                    onClick={onGenerateImage}
-                    disabled={storyboardLoading}
-                    className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] shadow-md transition-transform hover:scale-110"
-                    style={{ background: isEven ? "#c4b800" : "#787fff" }}
-                    title="다른 이미지 생성"
-                  >
-                    {storyboardLoading ? (
-                      <span className="h-3 w-3 animate-spin rounded-full border border-t-transparent border-white" />
-                    ) : "↻"}
-                  </button>
-                )}
-              </div>
-            ) : onGenerateImage ? (
-              <button
-                onClick={onGenerateImage}
-                disabled={storyboardLoading}
-                className="w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors hover:bg-gray-50/5"
-                style={{ borderColor: "#787fff30" }}
-              >
-                {storyboardLoading ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-                      <circle cx="9" cy="9" r="2"/>
-                      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-                    </svg>
-                    <span className="text-[9px]" style={{ color: "#787fff" }}>이미지</span>
-                  </>
-                )}
-              </button>
-            ) : null}
+              ) : onGenerateImage ? (
+                <button
+                  onClick={onGenerateImage}
+                  disabled={storyboardLoading}
+                  className="w-20 h-20 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-0.5 transition-colors hover:bg-gray-50/5"
+                  style={{ borderColor: "#787fff30" }}
+                >
+                  {storyboardLoading ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#787fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                        <circle cx="9" cy="9" r="2"/>
+                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                      </svg>
+                      <span className="text-[8px]" style={{ color: "#787fff" }}>시작</span>
+                    </>
+                  )}
+                </button>
+              ) : null}
+            </div>
+
+            {/* 화살표 */}
+            <span className="text-[10px] text-muted-foreground mt-3">→</span>
+
+            {/* 끝 프레임 */}
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[8px] font-medium" style={{ color: "#22c55e" }}>끝</span>
+              {storyboardEndImage ? (
+                <div className="relative group">
+                  <div className="w-20 h-20 rounded-lg overflow-hidden border" style={{ borderColor: "#22c55e40" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`data:image/png;base64,${storyboardEndImage}`} alt={`장면 ${cut.cutNumber} 끝`} className="w-full h-full object-cover" />
+                  </div>
+                  {onGenerateEndImage && (
+                    <button
+                      onClick={onGenerateEndImage}
+                      disabled={storyboardEndLoading}
+                      className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] shadow-md transition-transform hover:scale-110"
+                      style={{ background: "#22c55e" }}
+                      title="끝 이미지 재생성"
+                    >
+                      {storyboardEndLoading ? (
+                        <span className="h-2.5 w-2.5 animate-spin rounded-full border border-t-transparent border-white" />
+                      ) : "↻"}
+                    </button>
+                  )}
+                </div>
+              ) : onGenerateEndImage ? (
+                <button
+                  onClick={onGenerateEndImage}
+                  disabled={storyboardEndLoading}
+                  className="w-20 h-20 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-0.5 transition-colors hover:bg-gray-50/5"
+                  style={{ borderColor: "#22c55e30" }}
+                >
+                  {storyboardEndLoading ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#22c55e", borderTopColor: "transparent" }} />
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                        <circle cx="9" cy="9" r="2"/>
+                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                      </svg>
+                      <span className="text-[8px]" style={{ color: "#22c55e" }}>끝</span>
+                    </>
+                  )}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -488,11 +545,18 @@ export default function CutCard({
             </AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
               <EditableField
-                label="Image Prompt (Veo 참조)"
+                label="시작 프레임 Image Prompt"
                 value={cut.imagePrompt}
                 color="#787fff"
                 bgColor="#787fff10"
                 onSave={(v) => handleFieldSave("imagePrompt", v)}
+              />
+              <EditableField
+                label="끝 프레임 End Image Prompt"
+                value={cut.endImagePrompt || ""}
+                color="#22c55e"
+                bgColor="#22c55e10"
+                onSave={(v) => handleFieldSave("endImagePrompt", v)}
               />
               <EditableField
                 label="Veo Video Prompt (8초)"

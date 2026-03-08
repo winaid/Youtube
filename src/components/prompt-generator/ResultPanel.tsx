@@ -57,10 +57,13 @@ export default function ResultPanel({
   const [ttsRate, setTtsRate] = useState(1.0);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragItemRef = useRef<number | null>(null);
-  // 스토리보드 이미지
+  // 스토리보드 이미지 (시작 프레임)
   const [storyboardImages, setStoryboardImages] = useState<Record<number, string>>({});
   const [storyboardCandidates, setStoryboardCandidates] = useState<Record<number, string[]>>({});
   const [storyboardLoading, setStoryboardLoading] = useState<Record<number, boolean>>({});
+  // 스토리보드 끝 프레임
+  const [storyboardEndImages, setStoryboardEndImages] = useState<Record<number, string>>({});
+  const [storyboardEndLoading, setStoryboardEndLoading] = useState<Record<number, boolean>>({});
   // 장면별 TTS
   const [sceneTtsUrls, setSceneTtsUrls] = useState<Record<number, string>>({});
   const [sceneTtsLoading, setSceneTtsLoading] = useState<Record<number, boolean>>({});
@@ -78,6 +81,7 @@ export default function ResultPanel({
   const videoGen = useVideoGeneration({
     cuts: result?.cuts ?? [],
     storyboardImages,
+    storyboardEndImages,
     faceRefs,
     onSeedDetected: (cutNumber, seed) => {
       console.log(`CUT ${cutNumber} seed: ${seed}`);
@@ -603,38 +607,70 @@ export default function ResultPanel({
                   onClick={async () => {
                     let failCount = 0;
                     for (const cut of result.cuts) {
-                      if (storyboardImages[cut.cutNumber]) continue;
-                      setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
-                      try {
-                        const res = await fetch("/api/generate-image", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
-                        });
-                        const data = await res.json();
-                        if (res.ok && data.images?.[0]?.base64) {
-                          const newImage = data.images[0].base64;
-                          setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: newImage }));
-                          setStoryboardCandidates((prev) => ({
-                            ...prev,
-                            [cut.cutNumber]: [...(prev[cut.cutNumber] ?? []), newImage],
-                          }));
-                        } else {
-                          console.error(`CUT ${cut.cutNumber} 실패:`, data.error);
+                      // 시작 프레임 생성
+                      if (!storyboardImages[cut.cutNumber]) {
+                        setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                        try {
+                          const res = await fetch("/api/generate-image", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.images?.[0]?.base64) {
+                            const newImage = data.images[0].base64;
+                            setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: newImage }));
+                            setStoryboardCandidates((prev) => ({
+                              ...prev,
+                              [cut.cutNumber]: [...(prev[cut.cutNumber] ?? []), newImage],
+                            }));
+                          } else {
+                            console.error(`CUT ${cut.cutNumber} 시작 프레임 실패:`, data.error);
+                            failCount++;
+                          }
+                        } catch (err) {
+                          console.error(`CUT ${cut.cutNumber} 에러:`, err);
                           failCount++;
                         }
-                      } catch (err) {
-                        console.error(`CUT ${cut.cutNumber} 에러:`, err);
-                        failCount++;
+                        setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
                       }
-                      setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                      // 끝 프레임 생성
+                      if (!storyboardEndImages[cut.cutNumber]) {
+                        const endPrompt = cut.endImagePrompt || cut.imagePrompt;
+                        setStoryboardEndLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                        try {
+                          const res = await fetch("/api/generate-image", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}` }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.images?.[0]?.base64) {
+                            const endImg = data.images[0].base64;
+                            setStoryboardEndImages((prev) => ({ ...prev, [cut.cutNumber]: endImg }));
+                            // Auto-link: N의 끝 = N+1의 시작
+                            const nextCut = cut.cutNumber + 1;
+                            const nextExists = result.cuts.some((c) => c.cutNumber === nextCut);
+                            if (nextExists && !storyboardImages[nextCut]) {
+                              setStoryboardImages((prev) => ({ ...prev, [nextCut]: endImg }));
+                              setStoryboardCandidates((prev) => ({
+                                ...prev,
+                                [nextCut]: [...(prev[nextCut] ?? []), endImg],
+                              }));
+                            }
+                          } else {
+                            console.error(`CUT ${cut.cutNumber} 끝 프레임 실패:`, data.error);
+                          }
+                        } catch { /* end frame optional */ }
+                        setStoryboardEndLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
+                      }
                     }
                     if (failCount > 0) {
                       alert(`${failCount}개 장면 이미지 생성 실패. 콘솔에서 상세 에러를 확인하세요.`);
                     }
                   }}
                 >
-                  전체 스토리보드 생성
+                  전체 스토리보드 생성 (시작+끝)
                 </Button>
                 <Button
                   size="sm"
@@ -734,6 +770,39 @@ export default function ResultPanel({
                   }}
                   onSelectCandidate={(base64) => {
                     setStoryboardImages((prev) => ({ ...prev, [cut.cutNumber]: base64 }));
+                  }}
+                  storyboardEndImage={storyboardEndImages[cut.cutNumber]}
+                  storyboardEndLoading={storyboardEndLoading[cut.cutNumber]}
+                  onGenerateEndImage={async () => {
+                    setStoryboardEndLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
+                    try {
+                      const endPrompt = cut.endImagePrompt || cut.imagePrompt;
+                      const res = await fetch("/api/generate-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}` }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.images?.[0]?.base64) {
+                        const endImg = data.images[0].base64;
+                        setStoryboardEndImages((prev) => ({ ...prev, [cut.cutNumber]: endImg }));
+                        // Auto-link: this cut's end = next cut's start
+                        const nextCutNumber = cut.cutNumber + 1;
+                        const nextCutExists = result.cuts.some((c) => c.cutNumber === nextCutNumber);
+                        if (nextCutExists && !storyboardImages[nextCutNumber]) {
+                          setStoryboardImages((prev) => ({ ...prev, [nextCutNumber]: endImg }));
+                          setStoryboardCandidates((prev) => ({
+                            ...prev,
+                            [nextCutNumber]: [...(prev[nextCutNumber] ?? []), endImg],
+                          }));
+                        }
+                      } else {
+                        alert(`CUT ${cut.cutNumber} 끝 프레임 생성 실패: ${data.error || "알 수 없는 오류"}`);
+                      }
+                    } catch (err) {
+                      alert(`끝 프레임 생성 실패: ${err instanceof Error ? err.message : "네트워크 오류"}`);
+                    }
+                    setStoryboardEndLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
                   }}
                   sceneTtsUrl={sceneTtsUrls[cut.cutNumber]}
                   sceneTtsLoading={sceneTtsLoading[cut.cutNumber]}
