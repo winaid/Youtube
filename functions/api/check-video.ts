@@ -2,7 +2,8 @@ import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
-const BASE_URL = "https://aiplatform.googleapis.com/v1";
+/** Veo operation 폴링 — v1beta1 필요 (v1, v1beta 모두 404) */
+const BASE_URL = "https://aiplatform.googleapis.com/v1beta1";
 
 interface GeneratedSample {
   video?: { uri?: string };
