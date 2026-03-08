@@ -202,7 +202,7 @@ export default function ResultPanel({
           onUpdateResult({ ...result, cuts: newCuts });
         }
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.error("[refine-prompt feedback]", err); }
   }, [result, onUpdateResult]);
 
   // Enhancement 3: English native correction (manual trigger)
@@ -230,7 +230,7 @@ export default function ResultPanel({
           onUpdateResult({ ...result, cuts: newCuts });
         }
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.error("[refine-prompt english]", err); }
   }, [result, onUpdateResult]);
 
   // Drag & Drop 장면 재배치 — hooks must be before early returns
@@ -557,7 +557,7 @@ export default function ResultPanel({
                           setAltDirector("");
                         }
                       }
-                    } catch { /* ignore */ }
+                    } catch (err) { console.error("[generate-cuts alt]", err); }
                     setAltGenerating(false);
                   }}
                 >
@@ -712,7 +712,7 @@ export default function ResultPanel({
                           URL.revokeObjectURL(url);
                         }
                       }
-                    } catch { /* ignore */ }
+                    } catch (err) { console.error("[generate-srt]", err); }
                     setSrtLoading(false);
                   }}
                 >
@@ -836,7 +836,7 @@ export default function ResultPanel({
                           setSceneTtsUrls((prev) => ({ ...prev, [cut.cutNumber]: URL.createObjectURL(blob) }));
                         }
                       }
-                    } catch { /* ignore */ }
+                    } catch (err) { console.error("[tts scene]", err); }
                     setSceneTtsLoading((prev) => ({ ...prev, [cut.cutNumber]: false }));
                   }}
                   onFeedbackRefine={handleFeedbackRefine}
@@ -1077,7 +1077,7 @@ export default function ResultPanel({
                       }),
                     });
                     if (res.ok) setBgmResult(await res.json());
-                  } catch { /* ignore */ }
+                  } catch (err) { console.error("[recommend-bgm]", err); }
                   setBgmLoading(false);
                 }}
                 disabled={bgmLoading}
@@ -1189,7 +1189,7 @@ export default function ResultPanel({
                           setTtsAudioUrl(URL.createObjectURL(audioBlob));
                         }
                       }
-                    } catch { /* ignore */ }
+                    } catch (err) { console.error("[tts main]", err); }
                     setTtsLoading(false);
                   }}
                   disabled={ttsLoading}

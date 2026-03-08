@@ -368,6 +368,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         body: JSON.stringify({ storyText }),
       });
       if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.error("[analyze-cuts] HTTP", res.status, errText);
         setAiCutRecommendation(null);
         return;
       }
@@ -377,7 +379,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         reason: data.reason ?? "",
         scenes: data.scenes ?? [],
       });
-    } catch {
+    } catch (err) {
+      console.error("[analyze-cuts]", err);
       setAiCutRecommendation(null);
     } finally {
       setIsAnalyzing(false);
