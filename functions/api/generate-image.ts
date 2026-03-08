@@ -37,7 +37,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? `\n\nScene context (the image MUST depict this): ${sceneDescription}`
       : "";
 
-    const imagePrompt = `Generate a storyboard illustration that accurately depicts the described scene. Focus on showing the actual situation, characters, and setting described — NOT generic cinematic imagery. IMPORTANT: Do NOT include any visible text, letters, words, signs, papers, documents, or written content in the image. Characters must NOT hold papers, signs, books with visible text, or any objects displaying readable text. Keep the image purely visual with no typography. ${aspectLabel}${sceneContext}\n\n${prompt}`;
+    const imagePrompt = `Generate a storyboard illustration that accurately depicts the described scene. Focus on showing the actual situation, characters, and setting described — NOT generic cinematic imagery.
+
+CAMERA & COMPOSITION RULES:
+- Use natural, cinematic camera angles. Think like a cinematographer.
+- When a character is looking at or using an object (smartphone, tablet, laptop, book, etc.), position the camera BEHIND or OVER THE SHOULDER of the character. Show the BACK of the object, NOT the screen or front face. The viewer should understand the character is using the object from context and body language alone — the object's content is irrelevant.
+- Do NOT show screens, displays, or readable surfaces facing the camera.
+- Prioritize the character's emotion and body language over showing objects in detail.
+
+Do NOT include any visible text, letters, words, signs, papers, documents, or written content in the image. Keep the image purely visual with no typography. ${aspectLabel}${sceneContext}\n\n${prompt}`;
 
     const requestBody = {
       contents: [{
