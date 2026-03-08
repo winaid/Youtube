@@ -79,7 +79,7 @@ ${cutDescriptions}
 }`,
     });
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-flash-preview"), {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

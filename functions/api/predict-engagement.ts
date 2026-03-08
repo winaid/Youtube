@@ -47,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const urlTemplate = buildVertexUrl(context.env, "gemini-3-flash-preview");
+    const urlTemplate = buildVertexUrl(context.env, "gemini-3-pro-preview");
 
     const sceneList = (input.scenes || [])
       .map((s, i) => `Scene ${i + 1}: ${s.sceneDescription}`)

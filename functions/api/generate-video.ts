@@ -32,7 +32,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // Veo 3.1 모델
-    const model = "veo-3.1-generate-001";
+    const model = "veo-3.1-fast-generate-001";
 
     // Veo 3.1 지원: "16:9", "9:16" 만 유효
     const VALID_RATIOS = ["16:9", "9:16"];
