@@ -4,11 +4,11 @@ type Env = GeminiEnv;
 
 // 나노바나나 프로 (Nano Banana Pro) = Gemini 3 Pro Image
 const NANO_BANANA_PRO_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent";
+  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3-pro-image-preview:generateContent";
 
 // 나노바나나 2 (Nano Banana 2) = Gemini 3.1 Flash Image (폴백)
 const NANO_BANANA_2_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
+  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-flash-image-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {

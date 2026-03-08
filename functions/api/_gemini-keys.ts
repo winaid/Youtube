@@ -29,7 +29,7 @@ function isRetryableError(status: number, body?: string): boolean {
 /**
  * Gemini API fetch with automatic key fallback.
  * urlTemplate: API key 자리를 `{KEY}` 로 표기.
- * 예: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={KEY}"
+ * 예: "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro-preview:generateContent?key={KEY}"
  */
 export async function fetchWithKeyFallback(
   keys: string[],

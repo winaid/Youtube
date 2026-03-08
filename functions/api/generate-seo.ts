@@ -51,7 +51,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
     const MODEL = "gemini-3.1-pro-preview";
-    const urlTemplate = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key={KEY}`;
+    const urlTemplate = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${MODEL}:generateContent?key={KEY}`;
 
     const sceneList = (input.scenes || [])
       .map((s, i) => `Scene ${i + 1}: ${s.sceneDescription}`)

@@ -156,8 +156,7 @@ export default function CutCard({
     }
   };
 
-  // fast 모드 고정
-  const isQuality = false;
+
 
   // 이 장면에 등장하는 캐릭터들
   const charsInScene = characterSeeds?.filter(
@@ -185,11 +184,11 @@ export default function CutCard({
               variant="outline"
               className="text-xs"
               style={{
-                borderColor: isQuality ? "#e09900" : "#22c55e",
-                color: isQuality ? "#e09900" : "#22c55e",
+                borderColor: "#22c55e",
+                color: "#22c55e",
               }}
             >
-              {isQuality ? "Quality" : "Fast"}
+              Fast
             </Badge>
             {cut.cutNumber === 1 ? (
               <Badge className="text-xs" style={{ background: "#787fff30", color: "#5a5ecc" }}>

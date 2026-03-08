@@ -39,7 +39,7 @@ JSON으로만 응답:
 
     const res = await fetchWithKeyFallback(
       keys,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key={KEY}`,
+      `https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent?key={KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

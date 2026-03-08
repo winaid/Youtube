@@ -3,7 +3,7 @@ import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
 type Env = GeminiEnv;
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent";
+  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {

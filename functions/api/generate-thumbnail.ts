@@ -50,7 +50,7 @@ Make it eye-catching, high contrast, and optimized for small display sizes. Use 
 
     for (const model of models) {
       try {
-        const urlTemplate = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key={KEY}`;
+        const urlTemplate = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${model}:generateContent?key={KEY}`;
 
         const requestBody = {
           contents: [

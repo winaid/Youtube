@@ -65,7 +65,6 @@ export default function VideoGenerationPanel({
   onResetClip,
   onSelectVariant,
 }: VideoGenerationPanelProps) {
-  const hasTextPattern = /text|title|caption|subtitle|letter|sign|hangeul|자막|글씨|텍스트|타이틀/i;
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#22c55e40" }}>
@@ -126,9 +125,6 @@ export default function VideoGenerationPanel({
             const clip = clips.find((c) => c.cutNumber === cut.cutNumber);
             if (!clip) return null;
 
-            const isQuality = hasTextPattern.test(
-              cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
-            );
             const prevClip = clips.find((c) => c.cutNumber === cut.cutNumber - 1);
             const canGenerate =
               clip.status === "idle" &&
@@ -167,8 +163,8 @@ export default function VideoGenerationPanel({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-sm font-medium">CUT {cut.cutNumber}</span>
-                      <Badge className="text-[10px] text-white" style={{ background: isQuality ? "#e09900" : "#22c55e" }}>
-                        {isQuality ? "Quality" : "Fast"}
+                      <Badge className="text-[10px] text-white" style={{ background: "#22c55e" }}>
+                        Fast
                       </Badge>
                       <Badge variant="outline" className="text-[10px]" style={{
                         borderColor: cut.cutNumber === 1 ? "#787fff" : "#6b5ce7",

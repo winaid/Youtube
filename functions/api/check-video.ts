@@ -2,7 +2,7 @@ import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
-const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const BASE_URL = "https://aiplatform.googleapis.com/v1beta";
 
 interface GeneratedSample {
   video?: { uri?: string };
