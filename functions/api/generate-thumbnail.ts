@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -45,7 +45,7 @@ Make it eye-catching, high contrast, and optimized for small display sizes. Use 
 
     for (const model of models) {
       try {
-        const url = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${model}:generateContent`;
+        const url = buildVertexUrl(context.env, model);
 
         const requestBody = {
           contents: [

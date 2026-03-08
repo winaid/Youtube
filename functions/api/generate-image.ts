@@ -1,14 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-// 나노바나나 프로 (Nano Banana Pro) = Gemini 3 Pro Image
-const NANO_BANANA_PRO_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3-pro-image-preview:generateContent";
-
-// 나노바나나 2 (Nano Banana 2) = Gemini 3.1 Flash Image (폴백)
-const NANO_BANANA_2_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-flash-image-preview:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -66,7 +58,7 @@ ${prompt}`;
 
     // 1차: 나노바나나 2 (Gemini 3.1 Flash Image) — 7.5배 빠르고 4K 지원, 가성비 최고
     try {
-      const res = await fetchWithAuth(context.env, NANO_BANANA_2_URL, {
+      const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-flash-image-preview"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -87,7 +79,7 @@ ${prompt}`;
     }
 
     // 2차: 나노바나나 프로 (Gemini 3 Pro Image) — 고품질 폴백
-    const fallbackRes = await fetchWithAuth(context.env, NANO_BANANA_PRO_URL, {
+    const fallbackRes = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-pro-image-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
