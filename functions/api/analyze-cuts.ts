@@ -42,7 +42,7 @@ JSON으로만 응답:
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 500,
+            maxOutputTokens: 2048,
             responseMimeType: "application/json",
           },
         }),
