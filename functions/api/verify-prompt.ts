@@ -87,8 +87,34 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
       return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
     }
 
-    const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+    const data = await res.json() as {
+      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string; safetyRatings?: unknown[] }[];
+      promptFeedback?: { blockReason?: string };
+    };
+
+    // Check for blocked or empty responses
+    const blockReason = data?.promptFeedback?.blockReason;
+    const finishReason = data?.candidates?.[0]?.finishReason;
+    if (blockReason) {
+      console.error("Verify prompt blocked:", blockReason);
+      return Response.json({
+        overallScore: 0,
+        issues: [`AI 응답이 차단됨: ${blockReason}. 프롬프트에서 부적절한 내용을 제거해주세요.`],
+        scores: { characterDescription: 0, cameraMovement: 0, actionSequence: 0, lightingMood: 0, veoCompatibility: 0 },
+        suggestions: [],
+      });
+    }
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+    if (!text) {
+      console.error("Verify prompt empty response. finishReason:", finishReason, "data:", JSON.stringify(data).slice(0, 500));
+      return Response.json({
+        overallScore: 0,
+        issues: [`AI 응답이 비어있음 (finishReason: ${finishReason || "unknown"}). 프롬프트를 단순화해서 다시 시도하세요.`],
+        scores: { characterDescription: 0, cameraMovement: 0, actionSequence: 0, lightingMood: 0, veoCompatibility: 0 },
+        suggestions: [],
+      });
+    }
 
     let parsed;
     try {
@@ -96,9 +122,18 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
     } catch {
       try {
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { overallScore: 0, issues: ["Failed to parse response"] };
+        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
       } catch {
-        parsed = { overallScore: 0, issues: ["Failed to parse AI response"], rawPreview: text.slice(0, 200) };
+        parsed = null;
+      }
+      if (!parsed) {
+        console.error("Verify prompt parse failed. Raw:", text.slice(0, 300));
+        parsed = {
+          overallScore: 0,
+          issues: [`AI 응답 파싱 실패. 프롬프트를 단순화해서 다시 시도하세요.`],
+          scores: { characterDescription: 0, cameraMovement: 0, actionSequence: 0, lightingMood: 0, veoCompatibility: 0 },
+          suggestions: [],
+        };
       }
     }
 
