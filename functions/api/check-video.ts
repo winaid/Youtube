@@ -69,8 +69,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ status: "RUNNING" });
     }
 
+    console.log("Veo poll response:", JSON.stringify(data).slice(0, 2000));
+
     // Extract all samples (sampleCount > 1 일 때 여러 개)
-    const samples = data.response?.generateVideoResponse?.generatedSamples;
+    // Veo 모델 버전에 따라 응답 경로가 다를 수 있음
+    const samples =
+      data.response?.generateVideoResponse?.generatedSamples ??
+      (data as Record<string, unknown>).generatedSamples as GeneratedSample[] | undefined ??
+      ((data.response as Record<string, unknown>)?.generatedSamples as GeneratedSample[] | undefined);
     if (samples && samples.length > 0) {
       // Veo videoUri는 API 키가 필요 → 프록시 URL로 변환
       const toProxyUrl = (uri: string) =>
