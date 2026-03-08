@@ -134,7 +134,28 @@ export interface VeoGenerationConfig {
   // Enhancement: Auto verify & refine prompts
   autoVerifyPrompts: boolean;
   autoEnglishRefine: boolean;
+  // Cinematography: 선택된 촬영 용어들
+  cinematography: CinematographySelection;
 }
+
+// ===== 시네마토그래피 용어 =====
+export interface CinematographySelection {
+  lighting: string[];     // 조명 기법
+  composition: string[];  // 구도/프레이밍
+  lens: string[];         // 렌즈 선택
+  cameraMove: string[];   // 카메라 무빙
+  countryStyle: string[]; // 국가별 연출 스타일
+  colorGrade: string[];   // 색보정/톤
+}
+
+export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
+  lighting: [],
+  composition: [],
+  lens: [],
+  cameraMove: [],
+  countryStyle: [],
+  colorGrade: [],
+};
 
 export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   mode: "fast",
@@ -152,6 +173,7 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   maxRetryCount: 2,
   autoVerifyPrompts: true,
   autoEnglishRefine: true,
+  cinematography: { lighting: [], composition: [], lens: [], cameraMove: [], countryStyle: [], colorGrade: [] },
 };
 
 // ===== 영상 생성 상태 =====
