@@ -72,7 +72,7 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
   "improvedExtendPrompt": "ONLY if score < 80 and extend prompt exists: rewritten extend prompt"
 }`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-2.5-flash-preview-05-20"), {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-flash-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
