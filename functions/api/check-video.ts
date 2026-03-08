@@ -85,15 +85,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ status: "RUNNING" });
     }
 
-    console.log("Veo poll response:", JSON.stringify(data).slice(0, 2000));
+    console.log("Veo poll response:", JSON.stringify(data).slice(0, 3000));
 
-    // Extract all samples (sampleCount > 1 일 때 여러 개)
-    // Veo 모델 버전에 따라 응답 경로가 다를 수 있음
-    const samples =
+    // Extract all samples — Veo 모델 버전에 따라 응답 경로가 다름
+    // 알려진 경로들을 모두 탐색
+    const resp = data.response as Record<string, unknown> | undefined;
+    const samples: GeneratedSample[] =
       data.response?.generateVideoResponse?.generatedSamples ??
+      (resp?.generateVideoResponse as Record<string, unknown>)?.generatedSamples as GeneratedSample[] | undefined ??
+      resp?.generatedSamples as GeneratedSample[] | undefined ??
       (data as Record<string, unknown>).generatedSamples as GeneratedSample[] | undefined ??
-      ((data.response as Record<string, unknown>)?.generatedSamples as GeneratedSample[] | undefined);
-    if (samples && samples.length > 0) {
+      [];
+
+    // Deep search: 위 경로에 없으면 응답 전체에서 video URI 패턴을 탐색
+    if (samples.length === 0) {
+      const jsonStr = JSON.stringify(data);
+      // Veo video URIs typically look like "gs://..." or "https://..."
+      const uriMatches = jsonStr.match(/"uri"\s*:\s*"((?:gs|https?):\/\/[^"]+)"/g);
+      if (uriMatches) {
+        for (const match of uriMatches) {
+          const uriMatch = match.match(/"uri"\s*:\s*"([^"]+)"/);
+          if (uriMatch) {
+            samples.push({ video: { uri: uriMatch[1] } });
+          }
+        }
+        console.log("Deep search found URIs:", samples.map(s => s.video?.uri));
+      }
+    }
+
+    if (samples.length > 0) {
       // Veo videoUri는 API 키가 필요 → 프록시 URL로 변환
       const toProxyUrl = (uri: string) =>
         `/api/proxy-video?uri=${encodeURIComponent(uri)}`;
@@ -118,9 +138,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
+    console.error("No video URI found in response. Keys:", JSON.stringify(Object.keys(data)), "response keys:", resp ? JSON.stringify(Object.keys(resp)) : "N/A");
     return Response.json({
       status: "FAILED",
       error: "영상 생성은 완료되었으나 비디오 URI가 없습니다",
+      responseKeys: Object.keys(data),
+      responseResponseKeys: resp ? Object.keys(resp) : [],
       raw: data,
     });
   } catch (error) {
