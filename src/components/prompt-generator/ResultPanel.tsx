@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, SceneSfx } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import OneClickPipeline from "./OneClickPipeline";
 import EnvironmentPanel from "./EnvironmentPanel";
 import EmotionCurveEditor from "./EmotionCurveEditor";
 import YouTubeSEOPanel from "./YouTubeSEOPanel";
+import VideoHistoryPanel, { addToHistory } from "./VideoHistoryPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 import { EmotionPoint } from "@/types";
 
@@ -87,6 +88,39 @@ export default function ResultPanel({
       console.log(`CUT ${cutNumber} seed: ${seed}`);
     },
   });
+
+  // 모든 영상 완료 시 히스토리에 자동 저장
+  const historySavedRef = useRef(false);
+  useEffect(() => {
+    if (!result || videoGen.totalCount === 0) return;
+    if (videoGen.completedCount < videoGen.totalCount) {
+      historySavedRef.current = false;
+      return;
+    }
+    if (historySavedRef.current) return;
+    historySavedRef.current = true;
+
+    const completedCuts = result.cuts
+      .map((cut) => {
+        const clip = videoGen.clips.find((c) => c.cutNumber === cut.cutNumber);
+        if (!clip?.videoUri) return null;
+        return {
+          cutNumber: cut.cutNumber,
+          sceneDescription: cut.sceneDescription,
+          videoUri: clip.videoUri,
+          seed: clip.seed,
+          durationSec: cut.durationSec,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+
+    if (completedCuts.length > 0) {
+      addToHistory({
+        storyTitle: result.cuts[0]?.sceneDescription?.slice(0, 50) || "영상",
+        cuts: completedCuts,
+      });
+    }
+  }, [result, videoGen.completedCount, videoGen.totalCount, videoGen.clips]);
 
   // Enhancement 2: Feedback-based prompt refinement
   const handleFeedbackRefine = useCallback(async (cutNumber: number, feedback: string) => {
@@ -821,6 +855,9 @@ export default function ResultPanel({
             onResetClip={videoGen.resetClip}
             onSelectVariant={videoGen.selectVariant}
           />
+
+          {/* 영상 히스토리 */}
+          <VideoHistoryPanel />
 
           {/* 원클릭 파이프라인 */}
           <OneClickPipeline
