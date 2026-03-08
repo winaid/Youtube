@@ -74,8 +74,8 @@ JSON으로만 응답:
   } catch (error) {
     console.error("Analyze cuts error:", error);
     return Response.json(
-      { recommendedCuts: 8, reason: "분석 실패 - 기본값 8장면", scenes: [] },
-      { status: 200 }
+      { error: "분석 실패", recommendedCuts: 8, reason: "분석 실패 - 기본값 8장면", scenes: [] },
+      { status: 500 }
     );
   }
 };

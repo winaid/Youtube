@@ -360,6 +360,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   // AI 컷 수 분석
   const analyzeStory = useCallback(async () => {
     if (!storyText.trim() || storyText.length < 20) return;
+    console.log("[analyze-cuts] 분석 시작, 텍스트 길이:", storyText.length);
     setIsAnalyzing(true);
     try {
       const res = await fetch("/api/analyze-cuts", {
@@ -367,20 +368,27 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyText }),
       });
+      console.log("[analyze-cuts] 응답:", res.status, res.statusText);
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
-        console.error("[analyze-cuts] HTTP", res.status, errText);
+        console.error("[analyze-cuts] 실패:", res.status, errText);
         setAiCutRecommendation(null);
         return;
       }
       const data = await res.json();
+      console.log("[analyze-cuts] 결과:", data);
+      if (data.error) {
+        console.error("[analyze-cuts] API 에러:", data.error, data.detail);
+        setAiCutRecommendation(null);
+        return;
+      }
       setAiCutRecommendation({
         recommendedCuts: data.recommendedCuts ?? 8,
         reason: data.reason ?? "",
         scenes: data.scenes ?? [],
       });
     } catch (err) {
-      console.error("[analyze-cuts]", err);
+      console.error("[analyze-cuts] fetch 실패:", err);
       setAiCutRecommendation(null);
     } finally {
       setIsAnalyzing(false);
