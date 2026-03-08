@@ -31,8 +31,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    // Veo 3.1 모델: fast only
-    const model = "veo-3.1-fast-generate-preview";
+    // Veo 3.1 모델
+    const model = "veo-3.1-generate-001";
 
     // Veo 3.1 지원: "16:9", "9:16" 만 유효
     const VALID_RATIOS = ["16:9", "9:16"];
