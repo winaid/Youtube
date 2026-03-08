@@ -178,6 +178,7 @@ const durations: { value: Duration; label: string }[] = [
 const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
 
 function loadCustomDirectors(): DirectorPersona[] {
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(CUSTOM_DIRECTORS_KEY);
     return raw ? JSON.parse(raw) : [];

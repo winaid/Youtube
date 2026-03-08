@@ -45,6 +45,7 @@ function persistHistory(entries: VideoHistoryEntry[]) {
 // 현재 세션 ID — 같은 세션의 영상은 덮어쓰기
 let currentSessionId: string | null = null;
 function getSessionId(): string {
+  if (typeof window === "undefined") return "";
   if (!currentSessionId) {
     currentSessionId = sessionStorage.getItem(SESSION_KEY);
     if (!currentSessionId) {
@@ -156,7 +157,7 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
       </CardHeader>
       <CardContent className="space-y-2 pt-2 max-h-[400px] overflow-y-auto">
         {history.map((entry) => {
-          const isCurrentSession = entry.id === (currentSessionId || sessionStorage.getItem(SESSION_KEY));
+          const isCurrentSession = entry.id === currentSessionId;
           return (
             <div
               key={entry.id}
