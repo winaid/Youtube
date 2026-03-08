@@ -7,7 +7,7 @@ const GEMINI_API_URL =
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { videoPrompt, extendPrompt, imagePrompt, sceneDescription, cutNumber } =
+    const { videoPrompt, extendPrompt, imagePrompt, sceneDescription, cutNumber, durationSeconds } =
       await context.request.json() as Record<string, string | number>;
 
     if (!videoPrompt) {
@@ -19,22 +19,50 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
-    const prompt = `You are a Veo video generation prompt QA expert. Review the following video generation prompt and provide structured feedback.
+    const duration = Number(durationSeconds) || 8;
+    const wordCount = String(videoPrompt).split(/\s+/).length;
+
+    const prompt = `You are a Veo 3.1 video generation prompt QA expert. Review the following prompt for issues that cause Veo to deviate from user intent.
 
 ## Prompt to Review
 - Scene: CUT ${cutNumber || 1}
+- Duration: ${duration} seconds
+- Word count: ~${wordCount} words
 - Video Prompt: ${String(videoPrompt)}
 ${extendPrompt ? `- Extend Prompt: ${String(extendPrompt)}` : ""}
 ${imagePrompt ? `- Image Prompt: ${String(imagePrompt)}` : ""}
 ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
 
-## Review Criteria
-1. **Character Description Completeness** (0-10): Is the character's appearance fully described (hair, outfit, skin, body type)?
-2. **Camera Movement Quality** (0-10): Are there at least 2-3 camera movements described in sequence?
-3. **Action Sequence Clarity** (0-10): Is the 8-second action sequence clearly described with temporal flow?
-4. **Lighting/Mood Specificity** (0-10): Are lighting and mood described concretely?
-5. **Veo Compatibility** (0-10): Does the prompt use Veo-friendly language and structure?
-6. **Negative Issues**: Any problematic patterns (e.g., "same character", vague references, non-English words)?
+## Review Criteria (STRICT — focus on what makes Veo follow or ignore prompts)
+
+1. **Character Description Completeness** (0-10):
+   - MUST have: hair style+color, outfit details, approximate age, skin tone
+   - DEDUCTION: vague references like "the character", "same person", "he/she" without redescription
+
+2. **Camera Movement Quality** (0-10):
+   - MUST use Veo-recognized terms: "dolly", "tracking", "crane", "pan", "tilt", "steadicam", "handheld"
+   - DEDUCTION: abstract camera ("cinematic angle") without specific movement type
+   - BONUS: 2-3 camera transitions described in sequence
+
+3. **Temporal Structure** (0-10): *** THE MOST CRITICAL FOR VEO ADHERENCE ***
+   - MUST have clear time-based progression for ${duration} seconds
+   - BEST: explicit "0s-2s: ..., 2s-5s: ..., 5s-${duration}s: ..." format
+   - ACCEPTABLE: clear "first... then... finally..." progression
+   - DEDUCTION: no temporal markers = Veo picks random moment (score ≤ 4)
+   - DEDUCTION: too many actions for ${duration}s (max 2 concurrent per segment)
+
+4. **Lighting/Mood Specificity** (0-10):
+   - MUST name light sources and direction: "warm key light from upper left"
+   - DEDUCTION: just "dramatic lighting" without specifics
+
+5. **Veo Compatibility** (0-10):
+   - DEDUCTION: requests for readable text/writing on screen (Veo cannot do this)
+   - DEDUCTION: exact numbers of objects ("three birds" — use "a few birds")
+   - DEDUCTION: complex multi-person choreography
+   - DEDUCTION: abstract emotions without physical manifestation
+   - DEDUCTION: prompt over 350 words (Veo starts ignoring)
+   - DEDUCTION: prompt under 80 words (not enough detail for Veo)
+   - BONUS: active voice, present tense, concrete actions
 
 ## Output JSON only (no markdown fences):
 {
@@ -46,10 +74,10 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
     "lightingMood": 0-10,
     "veoCompatibility": 0-10
   },
-  "issues": ["list of specific problems found"],
-  "suggestions": ["list of concrete improvement suggestions"],
-  "improvedVideoPrompt": "the improved version of the video prompt (only if score < 80)",
-  "improvedExtendPrompt": "the improved version of the extend prompt if applicable (only if score < 80)"
+  "issues": ["list of specific problems that will cause Veo to deviate from intent"],
+  "suggestions": ["concrete actionable improvements"],
+  "improvedVideoPrompt": "ONLY if score < 80: fully rewritten prompt with temporal beats, proper structure, embedded negative guidance, no text/watermark clause. Must be 180-280 words.",
+  "improvedExtendPrompt": "ONLY if score < 80 and extend prompt exists: rewritten extend prompt"
 }`;
 
     const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {

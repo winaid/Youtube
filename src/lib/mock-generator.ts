@@ -123,9 +123,9 @@ function generateFallbackCuts(
     moodLighting: "golden hour warm lighting, soft shadows",
     imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} start frame, highly detailed, cinematic quality`,
     endImagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} end frame, camera moved to final position, highly detailed, cinematic quality`,
-    videoPrompt: `Cinematic 8-second clip. ${veoStyle}. Style: ${director.name}, ${directorStyle}. ${charDesc}. Smooth motion, no text, no watermark`,
+    videoPrompt: `Medium shot, slow dolly in. ${charDesc}. 0s-2s: establishing the scene, character visible in ${veoStyle} environment. 2s-5s: subtle movement, ${directorStyle} visual tone. 5s-8s: emotional beat, slight camera push. Warm key light from left, soft fill from right. Style: ${director.name}, cinematic, film grain, shallow depth of field. No text, no watermark, no readable writing on screen`,
     extendPrompt: i > 0
-      ? `The scene continues from the previous moment. ${charDesc}. ${directorStyle} visual tone. ${veoStyle}. Maintain exact same character appearance. Smooth transition.`
+      ? `Continue from previous scene. ${charDesc}. 0s-2s: transition, maintaining momentum from last cut. 2s-5s: main action develops, ${directorStyle} visual tone, ${veoStyle}. 5s-8s: beat resolves, preparing for next transition. Same character appearance maintained throughout. No text, no watermark`
       : "",
     transitionHint: i < cutCount - 1 ? "디졸브 - 다음 장면으로 자연스럽게 전환" : "페이드 아웃 - 마무리",
     characterConsistency: `캐릭터 시드 char-1 고정: ${characterSeeds[0].appearanceKo}. 모든 장면에서 동일한 외형 유지. ${directorStyle} 톤 일관성 유지.`,

@@ -335,15 +335,21 @@ ${regionSignature}
 - CRITICAL: NEVER include any text, titles, captions, subtitles, watermarks, logos, stamps, calligraphy, written characters, signage text, or typographic elements in ANY prompt. The only exception is when the story explicitly requires a character to write/read something — even then, minimize text visibility. Always end every imagePrompt, endImagePrompt, videoPrompt, and extendPrompt with: "no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos"
 
 각 장면의 videoPrompt에는 반드시 다음을 모두 포함:
+
+**★★★ TEMPORAL BEATS — 가장 중요! Veo가 프롬프트를 따르려면 시간 구조 필수 ★★★**
+- 반드시 "0s-2s: [시작], 2s-5s: [전개], 5s-8s: [클라이맥스]" 형식의 시간 비트 포함
+- 각 시간대에 최대 2개의 동시 동작만 (과하면 Veo가 무시함)
+- 예시: "0s-2s: Wide establishing shot, character stands alone in rain. 2s-5s: Slow dolly in as character raises hand to face, rain intensifies. 5s-8s: Close-up, eyes narrow with determination, lightning flash from behind."
+
 - **조명 1~2개**: 위 조명 레퍼런스에서 장면에 맞는 것 선택 (예: "Rembrandt lighting with warm practical lamp light")
 - **구도 1개**: 위 구도 레퍼런스에서 선택 (예: "rule of thirds composition", "frame within frame through doorway")
 - **렌즈 1개**: 촬영 의도에 맞는 렌즈 (예: "shot on 35mm lens", "anamorphic lens flare")
-- **카메라 시퀀스 2~3개**: 8초 안에서 시간순 무빙 조합
-  "Camera starts with [앵글+렌즈], [무빙1] into [앵글2], [무빙2] settling on [앵글3]"
+- **카메라 시퀀스 2~3개**: temporal beats 안에 자연스럽게 포함
 - **색보정 톤 1개**: (예: "teal and orange grade", "warm desaturated tone")
-- **동작 시퀀스**: 캐릭터/배경이 8초 동안 어떻게 변화하는지 시간순 기술
 - **감독 시그니처**: ${directorNameKo}의 특징적 기법 1~2개
 - **지역 특화**: ${region || "한국"} 특유의 연출 기법 적용 (위 지역 특화 연출 참조)
+- **추상적 감정 금지**: "feeling sad" → "shoulders slumped, gaze downward" (물리적 표현으로 변환)
+- **정확한 숫자 금지**: "three birds" → "a small flock of birds" (Veo는 정확한 수를 못 셈)
 
 **캐릭터 일관성:**
 - 모든 프롬프트에 캐릭터 전체 외형 묘사를 매번 100% 반복
@@ -393,8 +399,8 @@ ${regionSignature}
     "moodLighting": "[영어] [조명 기법 1~2개 구체 명시]. [색보정 톤]. [감독 스타일 조명]",
     "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
     "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
-    "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take. [WHO does WHAT, WHERE]. ${veoStyle}. Style: ${directorName}. Shot on [렌즈 e.g. 35mm anamorphic]. [구도 e.g. deep staging composition]. Camera: [앵글+무빙 시퀀스 2~3단계]. [캐릭터 전체 외형]. [8초 동작 시퀀스]. [조명: e.g. Rembrandt key with rim light]. [색보정: e.g. teal and orange grade]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
-    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — 3단계 구조] [1. 이전 장면 마지막 화면 상태 구체 묘사] [2. 전환 기법: match cut / push through / whip pan 등] [3. 새 장면 8초 동작 시퀀스 + 캐릭터 전체 외형 + 카메라 워크 + 조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, smooth continuous motion, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
+    "videoPrompt": "[100% ENGLISH] [Shot type], [camera movement]. [캐릭터 전체 외형]. 0s-2s: [establishing action + camera start position]. 2s-5s: [development + camera transition]. 5s-8s: [climax + final camera position]. [조명: e.g. warm key light from upper left, cool fill]. [색보정: e.g. teal and orange grade]. ${veoStyle}, Style: ${directorName}, shot on [렌즈], [구도], cinematic, film grain, shallow depth of field. No text, no watermark, no readable writing on screen",
+    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — temporal beats 필수] [Shot type], [camera]. [캐릭터 전체 외형]. 0s-2s: [transition from previous scene's last moment]. 2s-5s: [new scene develops, main action]. 5s-8s: [scene climax, camera settles]. [조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, cinematic, no text, no watermark, no readable writing",
     "transitionHint": "[한국어] 다음 장면 연결 방식",
     "characterConsistency": "[한국어] 캐릭터 유지 지침",
     "charactersInScene": ["char-1"]

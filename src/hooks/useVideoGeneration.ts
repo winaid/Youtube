@@ -135,6 +135,46 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
  * 주인공이 뭔가를 읽거나 들고 있는 것은 OK지만, 그 내용물이 화면에 보이지 않도록 함.
  * "scroll reads: ..." / "letter that says ..." / "text on paper showing ..." 등을 치환.
  */
+/**
+ * 프롬프트에 temporal beats (시간 구조)가 없으면 자동 추가.
+ * Veo는 시간 구조가 있을 때 프롬프트를 훨씬 잘 따름.
+ */
+function ensureTemporalBeats(prompt: string, durationSec: number): string {
+  // 이미 temporal beats가 있으면 skip
+  if (/\d+s[-–]\d+s/.test(prompt) || /first\s+\d+\s*seconds?/i.test(prompt)) {
+    return prompt;
+  }
+
+  // "first... then... finally..." 패턴도 OK
+  if (/\bfirst\b[\s\S]*\bthen\b[\s\S]*\bfinally\b/i.test(prompt)) {
+    return prompt;
+  }
+
+  // Temporal beats 추가: 프롬프트의 핵심 내용을 시간대로 분배
+  const dur = durationSec || 8;
+  const mid = Math.floor(dur * 0.3);   // ~2s
+  const mid2 = Math.floor(dur * 0.65); // ~5s
+
+  // 프롬프트를 문장 단위로 분리
+  const sentences = prompt.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (sentences.length < 2) return prompt;
+
+  // 첫 문장(보통 카메라/캐릭터 설정)은 그대로 두고, 나머지를 시간대에 배치
+  const header = sentences[0];
+  const rest = sentences.slice(1);
+
+  if (rest.length >= 3) {
+    const third = Math.ceil(rest.length / 3);
+    const part1 = rest.slice(0, third).join(" ");
+    const part2 = rest.slice(third, third * 2).join(" ");
+    const part3 = rest.slice(third * 2).join(" ");
+    return `${header} 0s-${mid}s: ${part1} ${mid}s-${mid2}s: ${part2} ${mid2}s-${dur}s: ${part3}`;
+  }
+
+  // 2문장이면 2-beat 구조
+  return `${header} 0s-${mid2}s: ${rest[0]} ${mid2}s-${dur}s: ${rest.slice(1).join(" ") || rest[0]}`;
+}
+
 function sanitizeTextContent(prompt: string): string {
   // 문서 내용을 직접 보여주려는 패턴 제거
   let sanitized = prompt
@@ -242,6 +282,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   // Enhancement 3: English native correction
   const refinePromptEnglish = useCallback(async (cut: Cut): Promise<{ refinedVideoPrompt?: string; refinedExtendPrompt?: string } | null> => {
     try {
+      const cfg = state.config;
+      const prevCut = cuts.find((c) => c.cutNumber === cut.cutNumber - 1);
       const res = await fetch("/api/refine-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -250,6 +292,10 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           extendPrompt: cut.extendPrompt,
           cutNumber: cut.cutNumber,
           mode: "english-native",
+          sceneDescription: cut.sceneDescription,
+          negativePrompt: cfg.negativePrompt,
+          durationSeconds: cfg.durationSeconds,
+          previousCutPrompt: prevCut?.videoPrompt || "",
         }),
       });
       if (res.ok) {
@@ -259,7 +305,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       console.warn("English refinement failed:", err);
     }
     return null;
-  }, []);
+  }, [state.config, cuts]);
 
   // 폴링 시작
   const startPolling = useCallback((cutNumber: number, operationName: string) => {
@@ -441,15 +487,66 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     });
 
     try {
+      // Enhancement 8: Smart negative prompt auto-generation (do BEFORE refinement so it can be embedded)
+      let negativePrompt = cfg.negativePrompt;
+      if (retryCount === 0) {
+        try {
+          const negRes = await fetch("/api/auto-negative", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              videoPrompt: prompt,
+              sceneDescription: cut.sceneDescription,
+              animationMode: "cinematic",
+              useAI: false,
+            }),
+          });
+          if (negRes.ok) {
+            const negData = await negRes.json();
+            if (negData.negativePrompt) {
+              negativePrompt = negData.negativePrompt;
+            }
+          }
+        } catch { /* Fallback to default */ }
+      }
+
+      // Enhancement 6: Strengthen negative prompt on retry
+      if (retryCount > 0) {
+        negativePrompt = strengthenNegativePrompt(negativePrompt || "", retryCount);
+      }
+
       // Enhancement 1 & 3: Auto verify and refine prompts (only on first attempt)
       if (retryCount === 0) {
-        // Enhancement 3: English native correction
+        // 이전 컷 프롬프트 (연속성)
+        const prevCut = cuts.find((c) => c.cutNumber === cutNumber - 1);
+
+        // Enhancement 3: English native correction + temporal structure + negative embedding
         if (cfg.autoEnglishRefine) {
-          const refined = await refinePromptEnglish(cut);
-          if (refined?.refinedVideoPrompt) {
-            prompt = cutNumber === 1
-              ? refined.refinedVideoPrompt
-              : (refined.refinedExtendPrompt || prompt);
+          try {
+            const refRes = await fetch("/api/refine-prompt", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                videoPrompt: prompt,
+                extendPrompt: cutNumber > 1 ? cut.extendPrompt : undefined,
+                cutNumber,
+                mode: "english-native",
+                sceneDescription: cut.sceneDescription,
+                negativePrompt,
+                durationSeconds: cfg.durationSeconds,
+                previousCutPrompt: prevCut?.videoPrompt || "",
+              }),
+            });
+            if (refRes.ok) {
+              const refined = await refRes.json();
+              if (refined?.refinedVideoPrompt) {
+                prompt = cutNumber === 1
+                  ? refined.refinedVideoPrompt
+                  : (refined.refinedExtendPrompt || prompt);
+              }
+            }
+          } catch (err) {
+            console.warn("English refinement failed:", err);
           }
         }
 
@@ -458,7 +555,6 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           const verification = await verifyPrompt(cut);
           if (verification) {
             updateClip(cutNumber, { verification });
-            // If score is low and improved prompt is available, use it
             if (verification.overallScore < 80 && verification.improvedVideoPrompt) {
               prompt = cutNumber === 1
                 ? verification.improvedVideoPrompt
@@ -474,43 +570,23 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = `${prompt}. ${styleSuffix}`;
       }
 
+      // Temporal beats 보장 (Veo 프롬프트 준수율 핵심)
+      prompt = ensureTemporalBeats(prompt, cfg.durationSeconds);
+
       // 프롬프트에서 문서/편지/두루마리 내용 텍스트 제거
       prompt = sanitizeTextContent(prompt);
+
+      // Veo는 negativePrompt 파라미터를 지원하지 않으므로 프롬프트에 직접 삽입
+      if (negativePrompt && !prompt.includes("Avoid:")) {
+        // 핵심 negative 항목만 프롬프트 끝에 임베드
+        const negItems = negativePrompt.split(",").map(s => s.trim()).filter(Boolean).slice(0, 5);
+        prompt = `${prompt}. Avoid: ${negItems.join(", ")}`;
+      }
 
       // 영상에 텍스트 렌더링이 필요한 경우만 quality 모드 (videoPrompt만 검사)
       const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text)\b/i.test(
         cut.videoPrompt
       );
-
-      // Enhancement 8: Smart negative prompt auto-generation
-      let negativePrompt = cfg.negativePrompt;
-      if (retryCount === 0) {
-        try {
-          const negRes = await fetch("/api/auto-negative", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              videoPrompt: prompt,
-              sceneDescription: cut.sceneDescription,
-              animationMode: "cinematic",
-              useAI: false, // local mode for speed, no API call
-            }),
-          });
-          if (negRes.ok) {
-            const negData = await negRes.json();
-            if (negData.negativePrompt) {
-              negativePrompt = negData.negativePrompt;
-            }
-          }
-        } catch {
-          // Fallback to default negative prompt
-        }
-      }
-
-      // Enhancement 6: Strengthen negative prompt on retry
-      if (retryCount > 0) {
-        negativePrompt = strengthenNegativePrompt(negativePrompt || "", retryCount);
-      }
 
       // Enhancement 4: Auto-link storyboard as firstFrame
       // Enhancement 7: Scene continuity auto-chain — use previous scene's last frame
