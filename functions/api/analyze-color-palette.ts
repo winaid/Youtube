@@ -42,7 +42,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const MODEL = "gemini-3-pro-preview";
+    const MODEL = "gemini-3.1-pro-preview";
     const urlTemplate = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${MODEL}:generateContent`;
 
     const requestBody = {

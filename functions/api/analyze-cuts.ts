@@ -34,7 +34,7 @@ JSON으로만 응답:
 
     const res = await fetchWithAuth(
       context.env,
-      `https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3-pro-preview:generateContent`,
+      `https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro-preview:generateContent`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
