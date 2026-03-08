@@ -146,6 +146,40 @@ function fetchWithKeyFallback(
  * Vertex AI 서비스 계정 OAuth2 우선, API Key fallback.
  * URL에 ?key={KEY} 없이 전달 — 인증은 내부에서 처리.
  */
+/**
+ * Express(global) URL → Vertex AI 리전 URL 변환.
+ * 처리 패턴:
+ * 1) .../v1beta/publishers/google/... → 리전 URL + project/location 삽입
+ * 2) .../v1beta/projects/{p}/locations/{l}/... → 리전 엔드포인트로 변환
+ * 3) .../v1beta/{operationName} (projects/로 시작) → 리전 엔드포인트로 변환
+ */
+function toVertexRegionalUrl(url: string, projectId: string, location = "us-central1"): string {
+  const globalHost = "https://aiplatform.googleapis.com";
+  if (!url.startsWith(globalHost)) return url;
+
+  const path = url.slice(globalHost.length); // e.g. "/v1beta/publishers/google/models/..."
+  const regionalHost = `https://${location}-aiplatform.googleapis.com`;
+
+  // 패턴 1: /v1beta/publishers/google/... → 프로젝트/리전 삽입
+  const expressPrefix = "/v1beta/publishers/google/";
+  if (path.startsWith(expressPrefix)) {
+    const suffix = path.slice(expressPrefix.length);
+    return `${regionalHost}/v1beta1/projects/${projectId}/locations/${location}/publishers/google/${suffix}`;
+  }
+
+  // 패턴 2,3: /v1beta/projects/... → 이미 프로젝트 경로 포함, 호스트만 리전으로 변경
+  if (path.startsWith("/v1beta/projects/")) {
+    // 리전을 URL 경로에서 추출
+    const locMatch = path.match(/\/locations\/([^/]+)\//);
+    const urlLocation = locMatch ? locMatch[1] : location;
+    const host = `https://${urlLocation}-aiplatform.googleapis.com`;
+    return `${host}${path.replace("/v1beta/", "/v1beta1/")}`;
+  }
+
+  // 기타: 그대로 반환
+  return url;
+}
+
 export async function fetchWithAuth(
   env: GeminiEnv,
   url: string,
@@ -154,10 +188,12 @@ export async function fetchWithAuth(
   // 1) 서비스 계정 OAuth2
   if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     try {
+      const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON) as { project_id: string };
+      const vertexUrl = toVertexRegionalUrl(url, sa.project_id);
       const token = await getAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
       const headers = new Headers(init.headers);
       headers.set("Authorization", `Bearer ${token}`);
-      return fetch(url, { ...init, headers });
+      return fetch(vertexUrl, { ...init, headers });
     } catch (err) {
       console.error("Service account auth failed:", err);
       // fallback to API keys
