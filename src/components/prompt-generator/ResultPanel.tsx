@@ -90,6 +90,13 @@ export default function ResultPanel({
     },
   });
 
+  // animationMode를 videoGen config에 동기화
+  useEffect(() => {
+    if (animationMode && videoGen.config.animationMode !== animationMode) {
+      videoGen.updateConfig({ animationMode });
+    }
+  }, [animationMode, videoGen]);
+
   // 프롬프트 결과 생성 시 감정 곡선 자동 초기화
   useEffect(() => {
     if (!result || result.cuts.length === 0) return;

@@ -135,6 +135,8 @@ export interface VeoGenerationConfig {
   // Enhancement: Auto verify & refine prompts
   autoVerifyPrompts: boolean;
   autoEnglishRefine: boolean;
+  // Animation mode: 영상 스타일
+  animationMode?: string;
   // Cinematography: 선택된 촬영 용어들
   cinematography: CinematographySelection;
 }

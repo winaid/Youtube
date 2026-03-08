@@ -107,17 +107,38 @@ function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
   });
 }
 
-// Style intensity keywords at different levels
-const STYLE_KEYWORDS_BY_INTENSITY: Record<string, string[]> = {
-  low: [],
-  medium: ["cinematic", "film grain"],
-  high: ["cinematic masterpiece", "film grain", "depth of field", "anamorphic lens", "professional color grading", "dramatic composition"],
+// animationMode → Veo 프롬프트 스타일 프리픽스
+const VEO_STYLE_PREFIX: Record<string, string> = {
+  "실사": "Photorealistic live-action footage.",
+  "2D 애니": "2D anime animation style, clean cel-shaded lines, vibrant flat colors.",
+  "수채화 애니": "Watercolor anime painting style, soft translucent washes, hand-painted textures.",
+  "하이브리드": "Semi-realistic digital art blending anime and photorealism.",
+  "로토스코핑": "Rotoscoped animation style, hand-traced over live action, visible brush strokes.",
+  "스톱모션": "Stop-motion claymation style, tactile clay textures, miniature set.",
+  "픽셀아트": "Pixel art retro 16-bit game aesthetic, clean pixel edges.",
+  "잉크워시": "East Asian ink wash painting style (수묵화/水墨画), black ink on rice paper, minimalist brush strokes, flowing ink gradients, traditional sumi-e aesthetic.",
+  "클레이": "Claymation animation, smooth clay figures, soft studio lighting.",
+  "빈티지 필름": "Vintage 35mm film look, warm grain, faded colors, 1970s cinema.",
+  "네온 사이버펑크": "Neon cyberpunk aesthetic, glowing neon lights, vivid pink/blue/purple palette.",
+  "미니어처": "Tilt-shift miniature photography, tiny diorama look, shallow depth of field.",
 };
 
-function getStyleSuffix(intensity: number): string {
+// Style intensity keywords at different levels (animationMode별 분기)
+function getStyleSuffix(intensity: number, animationMode?: string): string {
   if (intensity <= 20) return "";
-  if (intensity <= 50) return STYLE_KEYWORDS_BY_INTENSITY.medium.join(", ");
-  return STYLE_KEYWORDS_BY_INTENSITY.high.join(", ");
+
+  // animationMode가 실사/cinematic이 아닌 경우 → cinematic 키워드 대신 스타일 강화
+  const isNonRealistic = animationMode && !["실사", "cinematic"].includes(animationMode);
+
+  if (isNonRealistic) {
+    // 비실사 스타일은 cinematic 키워드가 스타일을 오염시킴 → 스타일 일관성 키워드로 대체
+    if (intensity <= 50) return "consistent art style, high detail";
+    return "consistent art style throughout, high detail, masterful composition, rich color palette";
+  }
+
+  // 실사/cinematic
+  if (intensity <= 50) return "cinematic, film grain";
+  return "cinematic masterpiece, film grain, depth of field, anamorphic lens, professional color grading, dramatic composition";
 }
 
 function strengthenNegativePrompt(original: string, retryCount: number): string {
@@ -252,8 +273,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   }, []);
 
   // config 업데이트
-  const updateConfig = useCallback((config: VeoGenerationConfig) => {
-    setState((prev) => ({ ...prev, config }));
+  const updateConfig = useCallback((config: Partial<VeoGenerationConfig>) => {
+    setState((prev) => ({ ...prev, config: { ...prev.config, ...config } }));
   }, []);
 
   // Enhancement 1: Prompt quality verification
@@ -497,7 +518,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             body: JSON.stringify({
               videoPrompt: prompt,
               sceneDescription: cut.sceneDescription,
-              animationMode: "cinematic",
+              animationMode: cfg.animationMode || "cinematic",
               useAI: false,
             }),
           });
@@ -576,8 +597,14 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
       }
 
-      // Enhancement 5: Apply style intensity
-      const styleSuffix = getStyleSuffix(cfg.styleIntensity);
+      // animationMode 스타일 프리픽스 삽입 (프롬프트 맨 앞에 배치 → Veo가 스타일을 가장 먼저 인식)
+      const stylePrefix = cfg.animationMode ? VEO_STYLE_PREFIX[cfg.animationMode] : undefined;
+      if (stylePrefix && !prompt.includes(stylePrefix.split(",")[0].trim())) {
+        prompt = `${stylePrefix} ${prompt}`;
+      }
+
+      // Enhancement 5: Apply style intensity (animationMode에 따라 적절한 키워드 사용)
+      const styleSuffix = getStyleSuffix(cfg.styleIntensity, cfg.animationMode);
       if (styleSuffix && !prompt.includes(styleSuffix.split(",")[0])) {
         prompt = `${prompt}. ${styleSuffix}`;
       }
