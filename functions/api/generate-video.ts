@@ -44,7 +44,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? "veo-3.1-fast-generate-preview"
       : "veo-3.1-generate-preview";
 
-    const aspectRatio = req.aspectRatio || "9:16";
+    // Veo 3.1 지원: "16:9", "9:16" 만 유효
+    const VALID_RATIOS = ["16:9", "9:16"];
+    const aspectRatio = VALID_RATIOS.includes(req.aspectRatio || "") ? req.aspectRatio! : "9:16";
     const hasFirstOrLastFrame = !!(req.firstFrameBase64 || req.lastFrameBase64);
     const warnings: string[] = [];
 

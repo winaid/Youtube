@@ -213,7 +213,7 @@ export default function VideoSettingsPanel({
           <div className="space-y-1.5">
             <Label className="text-xs">화면 비율</Label>
             <div className="flex gap-2">
-              {(["9:16", "16:9", "1:1"] as AspectRatio[]).map((ar) => (
+              {(["9:16", "16:9"] as AspectRatio[]).map((ar) => (
                 <Button
                   key={ar}
                   size="sm"

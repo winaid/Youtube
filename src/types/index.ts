@@ -14,7 +14,7 @@ export type AnimationMode =
   | "네온 사이버펑크"
   | "미니어처";
 export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
-export type AspectRatio = "1:1" | "9:16" | "16:9";
+export type AspectRatio = "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
 export type VeoClipDuration = 4 | 6 | 8;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";

@@ -816,11 +816,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           {/* 화면 비율 */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>화면 비율</Label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {([
                 { value: "9:16" as AspectRatio, label: "세로 (쇼츠)", ratio: "aspect-[9/16]" },
                 { value: "16:9" as AspectRatio, label: "가로 (유튜브)", ratio: "aspect-[16/9]" },
-                { value: "1:1" as AspectRatio, label: "정사각형", ratio: "aspect-square" },
               ]).map((ar) => (
                 <button
                   key={ar.value}
@@ -835,8 +834,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   <span
                     className="rounded-sm"
                     style={{
-                      width: ar.value === "16:9" ? 28 : ar.value === "1:1" ? 18 : 12,
-                      height: ar.value === "16:9" ? 16 : ar.value === "1:1" ? 18 : 22,
+                      width: ar.value === "16:9" ? 28 : 12,
+                      height: ar.value === "16:9" ? 16 : 22,
                       border: `1.5px solid ${aspectRatio === ar.value ? "white" : "#94a3b8"}`,
                     }}
                   />
