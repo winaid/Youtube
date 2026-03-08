@@ -3,7 +3,7 @@ import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 type Env = GeminiEnv;
 
 const GEMINI_API_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent";
+  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3-pro-preview:generateContent";
 
 // Scene content → smart negative prompts to prevent common Veo artifacts
 const SCENE_PATTERN_NEGATIVES: Record<string, string[]> = {
