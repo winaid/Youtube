@@ -38,11 +38,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
-    // Veo 3.1 모델: standard / fast
-    const isFast = req.mode !== "quality";
-    const model = isFast
-      ? "veo-3.1-fast-generate-preview"
-      : "veo-3.1-generate-preview";
+    // Veo 3.1 모델: fast only
+    const model = "veo-3.1-fast-generate-preview";
 
     // Veo 3.1 지원: "16:9", "9:16" 만 유효
     const VALID_RATIOS = ["16:9", "9:16"];
@@ -79,8 +76,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (req.referenceImages && req.referenceImages.length > 0) {
       if (aspectRatio !== "16:9") {
         warnings.push("referenceImages는 16:9에서만 지원 — 제외됨");
-      } else if (isFast) {
-        warnings.push("Fast 모델은 referenceImages 미지원 — 제외됨");
       } else if (hasFirstOrLastFrame) {
         warnings.push("referenceImages는 first/last frame과 동시 사용 불가 — 제외됨");
       } else {

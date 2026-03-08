@@ -111,7 +111,7 @@ export interface StoryAIPersona {
 
 // ===== Veo 3.1 영상 생성 설정 =====
 export interface VeoGenerationConfig {
-  mode: "fast" | "quality";
+  mode: "fast";
   durationSeconds: VeoClipDuration;
   resolution: VeoResolution;
   aspectRatio: AspectRatio;

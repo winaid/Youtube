@@ -120,8 +120,8 @@ export default function VideoSettingsPanel({
     update({ referenceImages: newImages });
   };
 
-  // 예상 비용 계산
-  const pricePerSec = config.mode === "quality" ? 0.40 : 0.15;
+  // 예상 비용 계산 (fast 모드 고정)
+  const pricePerSec = 0.15;
   const estimatedCost = pricePerSec * config.durationSeconds * config.sampleCount;
 
   return (
@@ -136,8 +136,8 @@ export default function VideoSettingsPanel({
             Veo 3.1 고급 설정
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge className="text-[10px] text-white" style={{ background: config.mode === "quality" ? "#e09900" : "#22c55e" }}>
-              {config.mode === "quality" ? "Quality" : "Fast"}
+            <Badge className="text-[10px] text-white" style={{ background: "#22c55e" }}>
+              Fast
             </Badge>
             <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#c4b800" }}>
               {config.durationSeconds}s | {config.resolution} | {config.aspectRatio}
@@ -152,25 +152,6 @@ export default function VideoSettingsPanel({
 
       {expanded && (
         <CardContent className="space-y-4 pt-4">
-          {/* 모드 선택 */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">생성 모드</Label>
-            <div className="flex gap-2">
-              {(["fast", "quality"] as const).map((m) => (
-                <Button
-                  key={m}
-                  size="sm"
-                  variant={config.mode === m ? "default" : "outline"}
-                  className="flex-1 text-xs"
-                  style={config.mode === m ? { background: m === "quality" ? "#e09900" : "#22c55e", color: "white" } : {}}
-                  onClick={() => update({ mode: m })}
-                >
-                  {m === "fast" ? "Fast ($0.15/s)" : "Quality ($0.40/s)"}
-                </Button>
-              ))}
-            </div>
-          </div>
-
           {/* 클립 길이 */}
           <div className="space-y-1.5">
             <Label className="text-xs">클립 길이</Label>
@@ -598,7 +579,7 @@ export default function VideoSettingsPanel({
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              {config.mode === "quality" ? "$0.40" : "$0.15"}/초 x {config.durationSeconds}초 x {config.sampleCount}변형
+              $0.15/초 x {config.durationSeconds}초 x {config.sampleCount}변형
             </p>
           </div>
         </CardContent>

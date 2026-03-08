@@ -28,7 +28,7 @@ interface CutCardProps {
   storyboardEndLoading?: boolean;
   onGenerateEndImage?: () => void;
   sceneTtsUrl?: string;
-  userVeoMode?: "fast" | "quality";
+  userVeoMode?: "fast";
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
   onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
@@ -156,9 +156,8 @@ export default function CutCard({
     }
   };
 
-  // 사용자 설정 모드 그대로 표시 (fast 선택 시 무조건 fast)
-  const effectiveMode = userVeoMode ?? "fast";
-  const isQuality = effectiveMode === "quality";
+  // fast 모드 고정
+  const isQuality = false;
 
   // 이 장면에 등장하는 캐릭터들
   const charsInScene = characterSeeds?.filter(

@@ -319,13 +319,8 @@ export default function ResultPanel({
     onUpdateResult({ ...result, cuts: newCuts });
   };
 
-  const hasTextPattern = /\b(text overlay|title card|caption|subtitle|written text|hangeul text|visible text|on-screen text)\b|자막|글씨|텍스트|타이틀/i;
-  const getEffectiveMode = (cut: typeof result.cuts[0]) => {
-    const hasText = hasTextPattern.test(cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription);
-    return hasText ? "quality" : videoGen.config.mode;
-  };
-  const qualityCuts = result.cuts.filter((c) => getEffectiveMode(c) === "quality");
-  const fastCuts = result.cuts.filter((c) => getEffectiveMode(c) === "fast");
+  const getEffectiveMode = () => "fast" as const;
+  const fastCuts = result.cuts;
 
   const veoJson = {
     project: result.projectTitle,
@@ -348,8 +343,7 @@ export default function ResultPanel({
       cut: cut.cutNumber,
       duration: `${cut.durationSec}s`,
       method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND",
-      veoMode: hasTextPattern.test(cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription)
-        ? "quality" : "fast",
+      veoMode: "fast",
       scene: cut.sceneDescription,
       camera: cut.cameraDirection,
       lighting: cut.moodLighting,
@@ -487,7 +481,6 @@ export default function ResultPanel({
           <div className="flex items-center gap-2 flex-wrap">
             <Badge style={{ background: "#787fff", color: "white" }}>총 {result.totalCuts}장면</Badge>
             <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}장면</Badge>
-            <Badge style={{ background: "#e09900", color: "white" }}>Quality: {qualityCuts.length}장면</Badge>
             <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
               총 {result.cuts.length * 8}초 ({Math.floor((result.cuts.length * 8) / 60)}분 {(result.cuts.length * 8) % 60 > 0 ? `${(result.cuts.length * 8) % 60}초` : ""})
             </Badge>
