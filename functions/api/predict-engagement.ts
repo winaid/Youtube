@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -47,12 +47,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), { status: 500, headers: { "Content-Type": "application/json" } });
-    }
     const MODEL = "gemini-3.1-pro-preview";
-    const urlTemplate = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${MODEL}:generateContent?key={KEY}`;
+    const urlTemplate = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${MODEL}:generateContent`;
 
     const sceneList = (input.scenes || [])
       .map((s, i) => `Scene ${i + 1}: ${s.sceneDescription}`)
@@ -105,7 +101,7 @@ Consider:
       },
     };
 
-    const response = await fetchWithKeyFallback(keys, urlTemplate, {
+    const response = await fetchWithAuth(context.env, urlTemplate, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),

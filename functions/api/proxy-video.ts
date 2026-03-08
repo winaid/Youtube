@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -11,18 +11,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       return new Response("uri parameter is required", { status: 400 });
     }
 
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return new Response("GEMINI_API_KEY not configured", { status: 500 });
-    }
-
-    // videoUri에 이미 key가 있으면 그대로, 없으면 추가
-    const apiKey = keys[0];
-    const fetchUrl = videoUri.includes("key=")
-      ? videoUri
-      : `${videoUri}${videoUri.includes("?") ? "&" : "?"}key=${apiKey}`;
-
-    const res = await fetch(fetchUrl);
+    const res = await fetchWithAuth(context.env, videoUri, {
+      method: "GET",
+    });
 
     if (!res.ok) {
       const errText = await res.text();

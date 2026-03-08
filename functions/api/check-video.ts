@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -17,12 +17,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "operationName is required" }, { status: 400 });
     }
 
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
-
-    const res = await fetchWithKeyFallback(keys, `${BASE_URL}/${operationName}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, `${BASE_URL}/${operationName}`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });

@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -31,11 +31,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!req.prompt) {
       return Response.json({ error: "prompt is required" }, { status: 400 });
-    }
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
     // Veo 3.1 모델: fast only
@@ -115,11 +110,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       parameters,
     }));
 
-    // === API 호출 (key fallback 지원) ===
+    // === API 호출 (OAuth2 인증) ===
     const callVeo = async (inst: Record<string, unknown>, params: Record<string, unknown>) => {
-      return fetchWithKeyFallback(
-        keys,
-        `${BASE_URL}/models/${model}:predictLongRunning?key={KEY}`,
+      return fetchWithAuth(
+        context.env,
+        `${BASE_URL}/models/${model}:predictLongRunning`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -71,11 +71,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "message is required" }, { status: 400 });
     }
 
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
-
     // 캐시 확인
     const cacheKey = `${personaId}:${message}`;
     const cached = responseCache.get(cacheKey);
@@ -92,7 +87,7 @@ ${personaPrompt || ""}
 
 사용자 요청: "${message}"`;
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

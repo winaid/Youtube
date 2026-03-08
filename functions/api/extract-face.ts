@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -21,11 +21,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // MIME 타입 추출
     const mimeMatch = rawBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
 
     const charInfo = characterSeeds && characterSeeds.length > 0
       ? characterSeeds.map((c) => `- ${c.id} (${c.label}): ${c.appearance}`).join("\n")
@@ -58,7 +53,7 @@ JSON으로만 응답:
 
 얼굴이 없으면 빈 배열을 반환: { "faces": [] }`;
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_VISION_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_VISION_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

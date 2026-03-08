@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -12,11 +12,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!frameBase64) {
       return Response.json({ error: "frameBase64 is required" }, { status: 400 });
-    }
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
     const prompt = `You are a video quality assessment AI. Analyze this frame captured from a generated video and score it.
@@ -49,7 +44,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   "suggestion": "one-sentence suggestion for improvement if score < 70"
 }`;
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -8,11 +8,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!storyText?.trim()) {
       return Response.json({ error: "storyText is required" }, { status: 400 });
-    }
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
     const prompt = `다음 시나리오를 분석하여 YouTube 쇼츠 영상으로 만들 때 적절한 장면 수를 추천해주세요.
@@ -37,9 +32,9 @@ JSON으로만 응답:
   "scenes": ["장면1 요약", "장면2 요약", ...]
 }`;
 
-    const res = await fetchWithKeyFallback(
-      keys,
-      `https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent?key={KEY}`,
+    const res = await fetchWithAuth(
+      context.env,
+      `https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-flash-lite-preview:generateContent`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

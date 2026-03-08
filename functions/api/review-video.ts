@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -21,11 +21,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!cuts?.length) {
       return Response.json({ error: "cuts array is required" }, { status: 400 });
-    }
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
     // 각 컷의 프레임을 모아서 한 번에 리뷰
@@ -87,7 +82,7 @@ ${cutDescriptions}
 }`,
     });
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

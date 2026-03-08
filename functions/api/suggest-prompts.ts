@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -9,11 +9,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const { personaId, personaName, personaDescription } =
       await context.request.json() as Record<string, string>;
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
 
     const prompt = `너는 병의원 마케팅 쇼츠 시나리오 AI의 "${personaName}" 페르소나야.
 설명: ${personaDescription}
@@ -45,7 +40,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 JSON 배열로만 응답해. 다른 텍스트 없이.
 예시: [{"title": "중국 화타가 전설적 의사가 된 브랜딩 비결", "hook": "병원 가면 1분 첫 진료에 약만 덜렁 받고 나올 때 많음"}, {"title": "일본 에도시대 의원의 입소문 마케팅", "hook": "성형외과나 피부과 갈 때 다들 후기부터 찾아봄 비포 애프터"}]`;
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

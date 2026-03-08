@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -18,11 +18,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!scenes || scenes.length === 0) {
       return Response.json({ error: "scenes are required" }, { status: 400 });
-    }
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
     const sceneList = scenes
@@ -82,7 +77,7 @@ action: sfx-punch, sfx-explosion, sfx-sword-slash
 emotional: sfx-sparkle, sfx-piano-hit, sfx-clock-ticking
 viral: sfx-ding, sfx-wrong-buzzer, sfx-record-scratch, sfx-tik-tok-oh-no`;
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

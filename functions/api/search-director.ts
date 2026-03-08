@@ -1,4 +1,4 @@
-import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -10,14 +10,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const { query } = await context.request.json() as Record<string, string>;
     if (!query || typeof query !== "string") {
       return Response.json({ error: "query is required" }, { status: 400 });
-    }
-
-    const keys = getApiKeys(context.env);
-    if (keys.length === 0) {
-      return Response.json(
-        { error: "GEMINI_API_KEY not configured", directors: [] },
-        { status: 500 }
-      );
     }
 
     const prompt = `You are a world-class film/animation encyclopedia. The user searched for: "${query}"
@@ -46,7 +38,7 @@ If the query is a movie/anime title, find the director of that work AND suggest 
 Return ONLY valid JSON array, no markdown fences, no explanation.
 If no match, return empty array [].`;
 
-    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
+    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
