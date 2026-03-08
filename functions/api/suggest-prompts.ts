@@ -56,7 +56,11 @@ JSON 배열로만 응답해. 다른 텍스트 없이.
     if (!res.ok) {
       const errText = await res.text();
       console.error("Gemini API error:", res.status, errText);
-      return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
+      return Response.json({
+        error: `Gemini API error: ${res.status}`,
+        detail: errText.slice(0, 500),
+        authMode: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "service-account" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : context.env.GEMINI_API_KEY ? "gemini-api-key" : "none",
+      }, { status: 500 });
     }
 
     const data = await res.json() as {
@@ -85,6 +89,10 @@ JSON 배열로만 응답해. 다른 텍스트 없이.
     return Response.json({ cards: cards.slice(0, 4), prompts: prompts.slice(0, 4) });
   } catch (error) {
     console.error("Suggest prompts error:", error);
-    return Response.json({ error: "Failed to generate prompts" }, { status: 500 });
+    return Response.json({
+      error: "Failed to generate prompts",
+      detail: error instanceof Error ? error.message : String(error),
+      authMode: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "service-account" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : context.env.GEMINI_API_KEY ? "gemini-api-key" : "none",
+    }, { status: 500 });
   }
 };
