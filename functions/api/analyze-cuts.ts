@@ -51,8 +51,12 @@ JSON으로만 응답:
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini error:", errText);
-      return Response.json({ error: "AI 분석 실패" }, { status: 500 });
+      console.error("Gemini error:", res.status, errText);
+      return Response.json({
+        error: `AI 분석 실패: ${res.status}`,
+        detail: errText.slice(0, 500),
+        authMode: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "service-account" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : "none",
+      }, { status: 500 });
     }
 
     const data = await res.json() as {
