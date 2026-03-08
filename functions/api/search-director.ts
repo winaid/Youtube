@@ -1,9 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-const GEMINI_API_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -38,7 +35,7 @@ If the query is a movie/anime title, find the director of that work AND suggest 
 Return ONLY valid JSON array, no markdown fences, no explanation.
 If no match, return empty array [].`;
 
-    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

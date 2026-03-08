@@ -1,6 +1,6 @@
 /**
  * Vertex AI 서비스 계정 OAuth2 인증 + API Key fallback 유틸리티.
- * 우선순위: GOOGLE_SERVICE_ACCOUNT_JSON (OAuth2) → GEMINI_API_KEY (API Key)
+ * 우선순위: GOOGLE_SERVICE_ACCOUNT_JSON (OAuth2) → GOOGLE_CLOUD_API_KEY (API Key)
  */
 
 export interface GeminiEnv {
@@ -34,6 +34,20 @@ function base64url(data: ArrayBuffer | Uint8Array | string): string {
 /** 캐시된 액세스 토큰 (Workers isolate 내에서 재사용) */
 let cachedToken: { token: string; expiry: number } | null = null;
 
+interface ServiceAccount {
+  client_email: string;
+  private_key: string;
+  project_id: string;
+}
+
+let cachedSa: ServiceAccount | null = null;
+
+function parseServiceAccount(json: string): ServiceAccount {
+  if (cachedSa) return cachedSa;
+  cachedSa = JSON.parse(json) as ServiceAccount;
+  return cachedSa;
+}
+
 async function getAccessToken(serviceAccountJson: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
 
@@ -41,10 +55,7 @@ async function getAccessToken(serviceAccountJson: string): Promise<string> {
     return cachedToken.token;
   }
 
-  const sa = JSON.parse(serviceAccountJson) as {
-    client_email: string;
-    private_key: string;
-  };
+  const sa = parseServiceAccount(serviceAccountJson);
 
   const header = JSON.stringify({ alg: "RS256", typ: "JWT" });
   const payload = JSON.stringify({
@@ -87,6 +98,21 @@ async function getAccessToken(serviceAccountJson: string): Promise<string> {
   const tokenData = (await tokenRes.json()) as { access_token: string; expires_in?: number };
   cachedToken = { token: tokenData.access_token, expiry: now + (tokenData.expires_in || 3600) };
   return tokenData.access_token;
+}
+
+// === 모델 URL 빌더 ===
+
+/**
+ * 모델 이름으로 Vertex AI 전체 URL을 생성.
+ * 서비스 계정 JSON에서 project_id를 추출하고 location=global 사용.
+ */
+export function buildVertexUrl(env: GeminiEnv, model: string, method = "generateContent"): string {
+  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    const sa = parseServiceAccount(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    return `https://aiplatform.googleapis.com/v1/projects/${sa.project_id}/locations/global/publishers/google/models/${model}:${method}`;
+  }
+  // API Key fallback은 Express 엔드포인트 사용
+  return `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${model}:${method}`;
 }
 
 // === API Key fallback ===
@@ -145,15 +171,16 @@ function fetchWithKeyFallback(
 // === 메인 인증 함수 ===
 
 /**
- * Vertex AI Express 엔드포인트 + 서비스 계정 OAuth2 Bearer 토큰.
- * Express URL은 그대로 사용하고 Authorization 헤더만 추가.
+ * Vertex AI 엔드포인트 호출.
+ * 서비스 계정: projects/{id}/locations/global/... + Bearer token
+ * API Key fallback: Express URL + ?key=
  */
 export async function fetchWithAuth(
   env: GeminiEnv,
   url: string,
   init: RequestInit,
 ): Promise<Response> {
-  // 1) 서비스 계정 OAuth2 — Express URL + Bearer token
+  // 1) 서비스 계정 OAuth2
   if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     try {
       const token = await getAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
@@ -170,7 +197,7 @@ export async function fetchWithAuth(
   const keys = getApiKeys(env);
   if (keys.length === 0) {
     return new Response(
-      JSON.stringify({ error: "No auth configured. Set GOOGLE_SERVICE_ACCOUNT_JSON or GEMINI_API_KEY." }),
+      JSON.stringify({ error: "No auth configured. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CLOUD_API_KEY." }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

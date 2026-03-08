@@ -1,9 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-const GEMINI_VISION_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -53,7 +50,7 @@ JSON으로만 응답:
 
 얼굴이 없으면 빈 배열을 반환: { "faces": [] }`;
 
-    const res = await fetchWithAuth(context.env, GEMINI_VISION_URL, {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

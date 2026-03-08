@@ -1,8 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-const BASE_URL = "https://aiplatform.googleapis.com/v1beta/publishers/google";
 
 interface GenerateVideoRequest {
   prompt: string;
@@ -114,7 +112,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const callVeo = async (inst: Record<string, unknown>, params: Record<string, unknown>) => {
       return fetchWithAuth(
         context.env,
-        `${BASE_URL}/models/${model}:predictLongRunning`,
+        buildVertexUrl(context.env, model, "predictLongRunning"),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

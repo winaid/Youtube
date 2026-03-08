@@ -1,9 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-const GEMINI_API_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -40,7 +37,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 JSON 배열로만 응답해. 다른 텍스트 없이.
 예시: [{"title": "중국 화타가 전설적 의사가 된 브랜딩 비결", "hook": "병원 가면 1분 첫 진료에 약만 덜렁 받고 나올 때 많음"}, {"title": "일본 에도시대 의원의 입소문 마케팅", "hook": "성형외과나 피부과 갈 때 다들 후기부터 찾아봄 비포 애프터"}]`;
 
-    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

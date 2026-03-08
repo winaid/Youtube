@@ -1,9 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-const GEMINI_API_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent";
 
 // Scene content → smart negative prompts to prevent common Veo artifacts
 const SCENE_PATTERN_NEGATIVES: Record<string, string[]> = {
@@ -108,7 +105,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 ## Output:
 Return ONLY the negative prompt string, nothing else.`;
 
-    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

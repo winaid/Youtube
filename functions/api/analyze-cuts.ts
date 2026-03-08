@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -34,7 +34,7 @@ JSON으로만 응답:
 
     const res = await fetchWithAuth(
       context.env,
-      `https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent`,
+      buildVertexUrl(context.env, "gemini-3.1-pro-preview"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

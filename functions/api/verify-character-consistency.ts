@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -57,8 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const MODEL = "gemini-3.1-pro";
-    const urlTemplate = `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${MODEL}:generateContent`;
+    const urlTemplate = buildVertexUrl(context.env, "gemini-3.1-pro-preview");
 
     const imageParts = frames.map((frame) => ({
       inlineData: {

@@ -1,9 +1,6 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-const GEMINI_API_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -77,7 +74,7 @@ action: sfx-punch, sfx-explosion, sfx-sword-slash
 emotional: sfx-sparkle, sfx-piano-hit, sfx-clock-ticking
 viral: sfx-ding, sfx-wrong-buzzer, sfx-record-scratch, sfx-tik-tok-oh-no`;
 
-    const res = await fetchWithAuth(context.env, GEMINI_API_URL, {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
