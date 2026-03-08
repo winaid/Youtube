@@ -489,7 +489,7 @@ export default function ResultPanel({
             <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}장면</Badge>
             <Badge style={{ background: "#e09900", color: "white" }}>Quality: {qualityCuts.length}장면</Badge>
             <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
-              총 {result.cuts.length * 8}초 ({Math.round((result.cuts.length * 8) / 60)}분)
+              총 {result.cuts.length * 8}초 ({Math.floor((result.cuts.length * 8) / 60)}분 {(result.cuts.length * 8) % 60 > 0 ? `${(result.cuts.length * 8) % 60}초` : ""})
             </Badge>
             <Badge variant="outline" style={{ borderColor: "#e09900" }}>
               캐릭터 {result.characterSeeds.length}명 시드 고정
