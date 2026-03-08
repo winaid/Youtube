@@ -46,6 +46,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{
+          role: "user",
           parts: [
             { text: prompt },
             {

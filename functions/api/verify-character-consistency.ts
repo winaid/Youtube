@@ -98,6 +98,7 @@ Compare every unique pair of cuts. Be specific about differences in facial featu
     const requestBody = {
       contents: [
         {
+          role: "user",
           parts: [textPart, ...imageParts],
         },
       ],

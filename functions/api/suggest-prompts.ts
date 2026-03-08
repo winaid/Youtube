@@ -41,7 +41,7 @@ JSON 배열로만 응답해. 다른 텍스트 없이.
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 1.0,
           maxOutputTokens: 512,

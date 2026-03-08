@@ -55,6 +55,7 @@ JSON으로만 응답:
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{
+          role: "user",
           parts: [
             {
               inlineData: {

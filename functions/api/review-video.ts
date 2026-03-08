@@ -83,7 +83,7 @@ ${cutDescriptions}
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts }],
+        contents: [{ role: "user", parts }],
         generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
       }),
     });

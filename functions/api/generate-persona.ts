@@ -54,7 +54,7 @@ ${techniques ? "5. 위 '시그니처 기법' 분석 결과를 반드시 반영�
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.8, maxOutputTokens: 1024 },
       }),
     });

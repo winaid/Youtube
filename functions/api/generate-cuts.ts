@@ -405,7 +405,7 @@ JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 16384 },
       }),
     });

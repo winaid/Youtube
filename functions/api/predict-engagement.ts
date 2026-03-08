@@ -56,6 +56,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const requestBody = {
       contents: [
         {
+          role: "user",
           parts: [
             {
               text: `You are a YouTube analytics expert specializing in animated content engagement prediction. Analyze the following video project and predict its performance.

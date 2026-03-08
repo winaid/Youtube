@@ -55,6 +55,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const requestBody = {
       contents: [
         {
+          role: "user",
           parts: [
             {
               text: `You are a YouTube SEO expert specializing in animated content. Generate optimized SEO metadata for the following video project.

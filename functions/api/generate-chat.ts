@@ -88,8 +88,8 @@ ${personaPrompt || ""}
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents: [{ parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
         tools: [{ google_search: {} }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
       }),

@@ -76,7 +76,7 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
       }),
     });

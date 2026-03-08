@@ -138,7 +138,7 @@ ${String(feedback || "Make it better")}
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: systemPrompt }] }],
+        contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
         generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
       }),
     });

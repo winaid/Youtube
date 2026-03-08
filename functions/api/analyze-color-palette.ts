@@ -47,6 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const requestBody = {
       contents: [
         {
+          role: "user",
           parts: [
             {
               text: `You are a color palette analyzer for animation production.
