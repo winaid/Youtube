@@ -29,23 +29,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     const aspectLabel = aspectRatio === "16:9" ? "Landscape 16:9 format."
-      : aspectRatio === "1:1" ? "Square 1:1 format."
       : "Portrait 9:16 format.";
 
     // 장면 설명이 있으면 이미지 프롬프트에 포함하여 내용 일치도 향상
     const sceneContext = sceneDescription
-      ? `\n\nScene context (the image MUST depict this): ${sceneDescription}`
+      ? `\nScene context: ${sceneDescription}`
       : "";
 
-    const imagePrompt = `Generate a storyboard illustration that accurately depicts the described scene. Focus on showing the actual situation, characters, and setting described — NOT generic cinematic imagery.
+    const imagePrompt = `Create a single cinematic film still for a storyboard. ${aspectLabel}
+Style: Clean, professional cinematography. One clear composition per image. Natural lighting.${sceneContext}
 
-CAMERA & COMPOSITION RULES:
-- Use natural, cinematic camera angles. Think like a cinematographer.
-- When a character is looking at or using an object (smartphone, tablet, laptop, book, etc.), position the camera BEHIND or OVER THE SHOULDER of the character. Show the BACK of the object, NOT the screen or front face. The viewer should understand the character is using the object from context and body language alone — the object's content is irrelevant.
-- Do NOT show screens, displays, or readable surfaces facing the camera.
-- Prioritize the character's emotion and body language over showing objects in detail.
-
-Do NOT include any visible text, letters, words, signs, papers, documents, or written content in the image. Keep the image purely visual with no typography. ${aspectLabel}${sceneContext}\n\n${prompt}`;
+${prompt}`;
 
     const requestBody = {
       contents: [{
