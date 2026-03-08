@@ -401,7 +401,7 @@ ${regionSignature}
 
 JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
 
-    const result = await streamingGenerate(context.env, "gemini-3.1-pro-preview", {
+    const result = await streamingGenerate(context.env, "gemini-3-flash-preview", {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7, maxOutputTokens: 16384 },
     });

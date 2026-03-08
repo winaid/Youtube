@@ -41,7 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   "suggestion": "one-sentence suggestion for improvement if score < 70"
 }`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-flash-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

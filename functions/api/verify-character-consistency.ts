@@ -57,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const urlTemplate = buildVertexUrl(context.env, "gemini-3.1-pro-preview");
+    const urlTemplate = buildVertexUrl(context.env, "gemini-3-flash-preview");
 
     const imageParts = frames.map((frame) => ({
       inlineData: {
