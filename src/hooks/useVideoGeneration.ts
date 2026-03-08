@@ -450,6 +450,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
 
         if (data.status === "FAILED") {
+          console.error(`[CUT ${cutNumber}] Veo 생성 실패:`, data.error || "unknown error", data);
           // Enhancement 6: Auto-retry on failure
           setState((prev) => {
             const clip = prev.clips.find((c) => c.cutNumber === cutNumber);
@@ -457,6 +458,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             const cfg = prev.config;
 
             if (cfg.autoRetryOnFailure && retryCount < cfg.maxRetryCount) {
+              console.warn(`[CUT ${cutNumber}] 자동 재시도 ${retryCount + 1}/${cfg.maxRetryCount}`);
               // Will trigger retry via effect
               return {
                 ...prev,
