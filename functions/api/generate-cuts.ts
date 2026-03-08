@@ -371,6 +371,7 @@ ${regionSignature}
 - "Continue from previous scene" 같은 모호한 표현 절대 금지
 - 이전 장면의 마지막 시각 요소(색감, 구도, 캐릭터 위치)를 정확히 참조
 - 캐릭터 전체 외형을 다시 100% 반복 기술
+- **감독 스타일 유지**: "directed by ${directorName}" + 해당 감독의 시그니처 기법(조명, 색감, 구도)을 extendPrompt에도 반드시 포함
 
 ---
 
@@ -392,7 +393,7 @@ ${regionSignature}
     "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
     "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
     "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take. [WHO does WHAT, WHERE]. ${veoStyle}. Style: ${directorName}. Shot on [렌즈 e.g. 35mm anamorphic]. [구도 e.g. deep staging composition]. Camera: [앵글+무빙 시퀀스 2~3단계]. [캐릭터 전체 외형]. [8초 동작 시퀀스]. [조명: e.g. Rembrandt key with rim light]. [색보정: e.g. teal and orange grade]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text, no watermark",
-    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — 3단계 구조] [1. 이전 장면 마지막 화면 상태 구체 묘사] [2. 전환 기법: match cut / push through / whip pan 등] [3. 새 장면 8초 동작 시퀀스 + 캐릭터 전체 외형 + 카메라 워크 + 조명]. ${veoStyle}, smooth continuous motion, no text, no watermark",
+    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — 3단계 구조] [1. 이전 장면 마지막 화면 상태 구체 묘사] [2. 전환 기법: match cut / push through / whip pan 등] [3. 새 장면 8초 동작 시퀀스 + 캐릭터 전체 외형 + 카메라 워크 + 조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, smooth continuous motion, no text, no watermark",
     "transitionHint": "[한국어] 다음 장면 연결 방식",
     "characterConsistency": "[한국어] 캐릭터 유지 지침",
     "charactersInScene": ["char-1"]
