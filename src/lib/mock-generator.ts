@@ -52,7 +52,10 @@ async function fetchGeminiCuts(
       }),
     });
 
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(`API error: ${res.status} — ${(errBody as Record<string, string>).detail || "unknown"}`);
+    }
 
     const data = await res.json();
     const characterSeeds: CharacterSeed[] = Array.isArray(data.characterSeeds)

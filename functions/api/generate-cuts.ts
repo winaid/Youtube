@@ -421,7 +421,18 @@ JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
     if (!res.ok) {
       const errText = await res.text();
       console.error("Gemini API error:", res.status, errText);
-      return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
+      // Parse Gemini error for useful detail
+      let detail = "";
+      try {
+        const errJson = JSON.parse(errText);
+        detail = errJson?.error?.message || errText.slice(0, 200);
+      } catch {
+        detail = errText.slice(0, 200);
+      }
+      return Response.json(
+        { error: `Gemini API error: ${res.status}`, detail },
+        { status: 502 },
+      );
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
