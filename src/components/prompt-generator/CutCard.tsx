@@ -28,6 +28,7 @@ interface CutCardProps {
   storyboardEndLoading?: boolean;
   onGenerateEndImage?: () => void;
   sceneTtsUrl?: string;
+  userVeoMode?: "fast" | "quality";
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
   onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
@@ -140,6 +141,7 @@ export default function CutCard({
   storyboardEndImage, storyboardEndLoading, onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
+  userVeoMode,
 }: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
   const [feedbackText, setFeedbackText] = useState("");
@@ -157,6 +159,9 @@ export default function CutCard({
   const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text|자막|글씨|텍스트|타이틀)\b/i.test(
     cut.videoPrompt
   );
+  // 텍스트 있으면 quality 강제, 아니면 사용자 설정 따름
+  const effectiveMode = hasText ? "quality" : (userVeoMode ?? "fast");
+  const isQuality = effectiveMode === "quality";
 
   // 이 장면에 등장하는 캐릭터들
   const charsInScene = characterSeeds?.filter(
@@ -184,11 +189,11 @@ export default function CutCard({
               variant="outline"
               className="text-xs"
               style={{
-                borderColor: hasText ? "#e09900" : "#22c55e",
-                color: hasText ? "#e09900" : "#22c55e",
+                borderColor: isQuality ? "#e09900" : "#22c55e",
+                color: isQuality ? "#e09900" : "#22c55e",
               }}
             >
-              {hasText ? "Veo 3.1 Quality" : "Veo 3.1 Fast"}
+              {isQuality ? "Quality" : "Fast"}
             </Badge>
             {cut.cutNumber === 1 ? (
               <Badge className="text-xs" style={{ background: "#787fff30", color: "#5a5ecc" }}>

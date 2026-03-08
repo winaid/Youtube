@@ -332,6 +332,7 @@ ${String(storyText).slice(0, 3000)}
 ${regionSignature}
 
 - NEVER use Korean in imagePrompt, videoPrompt, or extendPrompt — 100% English only
+- CRITICAL: NEVER include any text, titles, captions, subtitles, watermarks, logos, stamps, calligraphy, written characters, signage text, or typographic elements in ANY prompt. The only exception is when the story explicitly requires a character to write/read something — even then, minimize text visibility. Always end every imagePrompt, endImagePrompt, videoPrompt, and extendPrompt with: "no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos"
 
 각 장면의 videoPrompt에는 반드시 다음을 모두 포함:
 - **조명 1~2개**: 위 조명 레퍼런스에서 장면에 맞는 것 선택 (예: "Rembrandt lighting with warm practical lamp light")
@@ -390,10 +391,10 @@ ${regionSignature}
     "sceneDescription": "[한국어] 장면 내용 + 카메라 움직임 한줄 설명",
     "cameraDirection": "[영어] Lens: [렌즈mm]. Composition: [구도]. Camera: [앵글1]→[무빙1]→[앵글2]→[무빙2]→[앵글3]. ${directorNameKo} style.",
     "moodLighting": "[영어] [조명 기법 1~2개 구체 명시]. [색보정 톤]. [감독 스타일 조명]",
-    "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
-    "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
-    "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take. [WHO does WHAT, WHERE]. ${veoStyle}. Style: ${directorName}. Shot on [렌즈 e.g. 35mm anamorphic]. [구도 e.g. deep staging composition]. Camera: [앵글+무빙 시퀀스 2~3단계]. [캐릭터 전체 외형]. [8초 동작 시퀀스]. [조명: e.g. Rembrandt key with rim light]. [색보정: e.g. teal and orange grade]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text, no watermark",
-    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — 3단계 구조] [1. 이전 장면 마지막 화면 상태 구체 묘사] [2. 전환 기법: match cut / push through / whip pan 등] [3. 새 장면 8초 동작 시퀀스 + 캐릭터 전체 외형 + 카메라 워크 + 조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, smooth continuous motion, no text, no watermark",
+    "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
+    "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
+    "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take. [WHO does WHAT, WHERE]. ${veoStyle}. Style: ${directorName}. Shot on [렌즈 e.g. 35mm anamorphic]. [구도 e.g. deep staging composition]. Camera: [앵글+무빙 시퀀스 2~3단계]. [캐릭터 전체 외형]. [8초 동작 시퀀스]. [조명: e.g. Rembrandt key with rim light]. [색보정: e.g. teal and orange grade]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
+    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — 3단계 구조] [1. 이전 장면 마지막 화면 상태 구체 묘사] [2. 전환 기법: match cut / push through / whip pan 등] [3. 새 장면 8초 동작 시퀀스 + 캐릭터 전체 외형 + 카메라 워크 + 조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, smooth continuous motion, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
     "transitionHint": "[한국어] 다음 장면 연결 방식",
     "characterConsistency": "[한국어] 캐릭터 유지 지침",
     "charactersInScene": ["char-1"]
