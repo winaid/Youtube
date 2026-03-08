@@ -367,8 +367,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyText }),
       });
+      if (!res.ok) {
+        setAiCutRecommendation(null);
+        return;
+      }
       const data = await res.json();
-      setAiCutRecommendation(data);
+      setAiCutRecommendation({
+        recommendedCuts: data.recommendedCuts ?? 8,
+        reason: data.reason ?? "",
+        scenes: data.scenes ?? [],
+      });
     } catch {
       setAiCutRecommendation(null);
     } finally {
