@@ -18,6 +18,7 @@ export function getApiKeys(env: GeminiEnv): string[] {
 
 /** Rate limit / quota / resource exhausted 에러인지 판별 */
 function isRetryableError(status: number, body?: string): boolean {
+  if (status === 401) return true;
   if (status === 429) return true;
   if (status === 403 && body && /quota|rate|RESOURCE_EXHAUSTED|exhausted/i.test(body)) return true;
   if ((status === 500 || status === 502) && body && /RESOURCE_EXHAUSTED|quota|overloaded|exhausted/i.test(body)) return true;
