@@ -319,7 +319,7 @@ export default function ResultPanel({
     onUpdateResult({ ...result, cuts: newCuts });
   };
 
-  const getEffectiveMode = () => "fast" as const;
+  const getEffectiveMode = (_cut?: unknown) => "fast" as const;
   const fastCuts = result.cuts;
 
   const veoJson = {
