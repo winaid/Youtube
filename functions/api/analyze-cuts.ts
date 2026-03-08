@@ -64,7 +64,31 @@ JSON으로만 응답:
     };
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const parsed = JSON.parse(text);
+
+    if (!text) {
+      console.error("Gemini returned empty text. Full response:", JSON.stringify(data).slice(0, 500));
+      return Response.json({
+        error: "AI가 빈 응답을 반환",
+        detail: JSON.stringify(data).slice(0, 300),
+        recommendedCuts: 8,
+        reason: "분석 실패 - 기본값 8장면",
+        scenes: [],
+      }, { status: 500 });
+    }
+
+    let parsed: { recommendedCuts?: number; reason?: string; scenes?: string[] };
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      console.error("JSON parse failed. Raw text:", text.slice(0, 500));
+      return Response.json({
+        error: "AI 응답 파싱 실패",
+        detail: text.slice(0, 300),
+        recommendedCuts: 8,
+        reason: "분석 실패 - 기본값 8장면",
+        scenes: [],
+      }, { status: 500 });
+    }
 
     return Response.json({
       recommendedCuts: parsed.recommendedCuts ?? 8,
@@ -72,9 +96,16 @@ JSON으로만 응답:
       scenes: parsed.scenes ?? [],
     });
   } catch (error) {
-    console.error("Analyze cuts error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error("Analyze cuts error:", errMsg);
     return Response.json(
-      { error: "분석 실패", recommendedCuts: 8, reason: "분석 실패 - 기본값 8장면", scenes: [] },
+      {
+        error: "분석 실패",
+        detail: errMsg,
+        recommendedCuts: 8,
+        reason: "분석 실패 - 기본값 8장면",
+        scenes: [],
+      },
       { status: 500 }
     );
   }
