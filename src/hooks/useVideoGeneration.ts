@@ -512,9 +512,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: "API 오류" }));
+        const errMsg = errData.error || `HTTP ${res.status}`;
+        console.error(`CUT ${cutNumber} 영상 생성 실패:`, errMsg, errData.details || "", errData.warning || "");
         updateClip(cutNumber, {
           status: "failed",
-          error: errData.error || `HTTP ${res.status}`,
+          error: errMsg,
         });
         return;
       }

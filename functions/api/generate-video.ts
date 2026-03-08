@@ -52,18 +52,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
     // Scene Extension (이전 영상 이어 생성)
+    // video + image 동시 사용 불가 → video 우선
     if (req.previousVideoUri) {
       instance.video = { uri: req.previousVideoUri };
-    }
-
-    // First Frame (Image-to-Video) — 공식 inlineData 포맷
-    if (req.firstFrameBase64) {
+      if (req.firstFrameBase64 || req.lastFrameBase64) {
+        warnings.push("Scene Extension 모드에서는 image(firstFrame) 사용 불가 — video만 사용");
+      }
+    } else if (req.firstFrameBase64) {
+      // Image-to-Video: firstFrame으로 시작
       instance.image = inlineImage(req.firstFrameBase64);
-    }
-
-    // Last Frame (Interpolation)
-    if (req.lastFrameBase64) {
-      instance.lastFrame = inlineImage(req.lastFrameBase64);
+      if (req.lastFrameBase64) {
+        warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
+      }
+    } else if (req.lastFrameBase64) {
+      // lastFrame만 있으면 → image 필드로 변환
+      instance.image = inlineImage(req.lastFrameBase64);
+      warnings.push("lastFrame만 전송 — image 필드로 변환");
     }
 
     // Reference Images — 제약 조건 체크
@@ -90,7 +94,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const parameters: Record<string, unknown> = {
       aspectRatio,
       personGeneration: req.personGeneration || "allow_all",
-      numberOfVideos: 1,
+      numberOfVideos: Math.min(req.sampleCount || 1, 4),
     };
 
     // resolution: 720p (기본) / 1080p / 4k
@@ -98,19 +102,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       parameters.resolution = req.resolution;
     }
 
-    // durationSeconds: 문자열 "4", "6", "8" 만 유효 (숫자 아님!)
+    // durationSeconds: 숫자 5 또는 8 (Veo 3.1 지원 값)
     const dur = req.durationSeconds || 8;
-    parameters.durationSeconds = dur <= 4 ? "4" : dur <= 6 ? "6" : "8";
+    parameters.durationSeconds = dur <= 5 ? 5 : 8;
 
     // negativePrompt, seed: Veo API 미지원 → 전송하면 400
 
-    const hasImageFields = !!(instance.image || instance.lastFrame || instance.referenceImages);
+    const hasImageFields = !!(instance.image || instance.referenceImages);
 
     console.log("Veo request:", JSON.stringify({
       model,
       hasVideo: !!req.previousVideoUri,
-      hasFirstFrame: !!instance.image,
-      hasLastFrame: !!instance.lastFrame,
+      hasImage: !!instance.image,
       hasRefImages: !!instance.referenceImages,
       warnings,
       parameters,
@@ -134,7 +137,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       warnings.push("이미지 입력으로 400 에러 — 프롬프트만으로 재시도");
 
       delete instance.image;
-      delete instance.lastFrame;
       delete instance.referenceImages;
 
       res = await callVeo(instance, parameters);
