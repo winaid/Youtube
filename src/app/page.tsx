@@ -1,4 +1,9 @@
-import PromptGenerator from "@/components/prompt-generator/PromptGenerator";
+import dynamic from "next/dynamic";
+
+const PromptGenerator = dynamic(
+  () => import("@/components/prompt-generator/PromptGenerator"),
+  { ssr: false }
+);
 
 export default function Home() {
   return (
