@@ -94,6 +94,43 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
   return extras ? `${original}, ${extras}` : original;
 }
 
+/**
+ * 프롬프트에서 "문서/두루마리/편지/책의 내용을 보여주려는" 텍스트 표현을 제거.
+ * 주인공이 뭔가를 읽거나 들고 있는 것은 OK지만, 그 내용물이 화면에 보이지 않도록 함.
+ * "scroll reads: ..." / "letter that says ..." / "text on paper showing ..." 등을 치환.
+ */
+function sanitizeTextContent(prompt: string): string {
+  // 문서 내용을 직접 보여주려는 패턴 제거
+  let sanitized = prompt
+    // "scroll/letter/paper/book reads: ..." or "that reads ..."
+    .replace(/\b(that\s+)?(reads?|saying|says|written|writes?|displaying|shows?)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
+    // "with text: ..." / "with the words ..." / "with inscription ..."
+    .replace(/\bwith\s+(the\s+)?(text|words?|inscription|message|content|writing|characters?|letters?|script)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
+    // "containing text ..." / "bearing text ..."
+    .replace(/\b(containing|bearing|carrying|featuring|displaying)\s+(text|words?|inscription|writing|characters?|script)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
+    // "text visible: ..." / "readable text ..."
+    .replace(/\b(visible|readable|legible|clear)\s+(text|writing|characters?|script|inscription)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
+    // "calligraphy/kanji/hangul/Chinese characters reading ..."
+    .replace(/\b(calligraphy|kanji|hangul|chinese characters?|japanese characters?|korean text|hanzi)\s*(reading|saying|that|of|:)\s*["']?[^.,"']{3,}["']?/gi, (match) => {
+      // 서예/한자 자체는 유지하되 내용만 제거
+      return match.split(/reading|saying|that|of|:/i)[0].trim();
+    });
+
+  // 연속 공백/쉼표 정리
+  sanitized = sanitized
+    .replace(/,\s*,/g, ",")
+    .replace(/\.\s*\./g, ".")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  // 프롬프트 끝에 텍스트 금지 보강 (이미 있으면 skip)
+  if (!/no text overlay/i.test(sanitized)) {
+    sanitized += ". Do not render any readable text, letters, characters, or writing on screen. No text overlay, no titles, no captions, no watermark";
+  }
+
+  return sanitized;
+}
+
 export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
     clips: [],
@@ -400,6 +437,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       if (styleSuffix && !prompt.includes(styleSuffix.split(",")[0])) {
         prompt = `${prompt}. ${styleSuffix}`;
       }
+
+      // 프롬프트에서 문서/편지/두루마리 내용 텍스트 제거
+      prompt = sanitizeTextContent(prompt);
 
       // 영상에 텍스트 렌더링이 필요한 경우만 quality 모드 (videoPrompt만 검사)
       const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text)\b/i.test(

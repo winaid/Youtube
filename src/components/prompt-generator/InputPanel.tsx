@@ -203,7 +203,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [isSearching, setIsSearching] = useState(false);
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>(loadCustomDirectors);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
     reason: string;
@@ -894,8 +894,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>화면 비율</Label>
             <div className="grid grid-cols-2 gap-1.5">
               {([
-                { value: "9:16" as AspectRatio, label: "세로 (쇼츠)", ratio: "aspect-[9/16]" },
                 { value: "16:9" as AspectRatio, label: "가로 (유튜브)", ratio: "aspect-[16/9]" },
+                { value: "9:16" as AspectRatio, label: "세로 (쇼츠)", ratio: "aspect-[9/16]" },
               ]).map((ar) => (
                 <button
                   key={ar.value}

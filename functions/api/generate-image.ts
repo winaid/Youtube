@@ -56,6 +56,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const imagePrompt = `Create a single storyboard frame. ${aspectLabel}
 Style: ${styleDirective} One clear composition per image.${sceneContext}
+IMPORTANT: Do NOT render any readable text, letters, writing, characters, calligraphy, stamps, or inscriptions on the image. If the scene involves a document, scroll, letter, or book, show it as a prop but keep its surface blank or illegibly blurred — never show actual readable content.
 
 ${prompt}`;
 
