@@ -616,7 +616,7 @@ export default function ResultPanel({
                           fetch("/api/generate-image", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
+                            body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode }),
                           })
                             .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
                             .then(({ ok, data }) => {
@@ -644,7 +644,7 @@ export default function ResultPanel({
                           fetch("/api/generate-image", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}` }),
+                            body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}`, animationMode }),
                           })
                             .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
                             .then(({ ok, data }) => {
@@ -754,7 +754,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
+                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
@@ -786,7 +786,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}` }),
+                        body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}`, animationMode }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
@@ -917,7 +917,7 @@ export default function ResultPanel({
                   return fetch("/api/generate-image", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription }),
+                    body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode }),
                   })
                     .then((res) => res.json().then((data) => ({ ok: res.ok, data, cutNumber: cut.cutNumber })))
                     .then(({ ok, data, cutNumber }) => {

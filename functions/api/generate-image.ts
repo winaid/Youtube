@@ -12,11 +12,12 @@ const NANO_BANANA_2_URL =
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { prompt, aspectRatio, numberOfImages, sceneDescription } = await context.request.json() as {
+    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode } = await context.request.json() as {
       prompt: string;
       aspectRatio?: string;
       numberOfImages?: number;
       sceneDescription?: string;
+      animationMode?: string;
     };
 
     if (!prompt?.trim()) {
@@ -36,8 +37,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? `\nScene context: ${sceneDescription}`
       : "";
 
-    const imagePrompt = `Create a single cinematic film still for a storyboard. ${aspectLabel}
-Style: Clean, professional cinematography. One clear composition per image. Natural lighting.${sceneContext}
+    // animationMode → 이미지 스타일 매핑
+    const styleMap: Record<string, string> = {
+      "실사": "Photorealistic photography. Natural lighting, real-world textures.",
+      "2D 애니": "Japanese anime style illustration. Clean lines, vibrant colors, cel-shaded.",
+      "수채화 애니": "Watercolor anime painting. Soft edges, translucent color washes, hand-painted feel.",
+      "하이브리드": "Semi-realistic digital art. Blend of anime and photorealism.",
+      "로토스코핑": "Rotoscoped animation frame. Hand-traced over live action, visible brush strokes.",
+      "스톱모션": "Stop-motion puppet style. Clay/felt textures, miniature set, visible handcraft.",
+      "픽셀아트": "Pixel art style. Retro 16-bit game aesthetic, clean pixel edges.",
+      "잉크워시": "East Asian ink wash painting. Black ink on rice paper, minimalist brush strokes.",
+      "클레이": "Claymation style. Smooth clay figures, soft studio lighting, miniature world.",
+      "빈티지 필름": "Vintage 35mm film look. Warm grain, faded colors, 1970s cinema aesthetic.",
+      "네온 사이버펑크": "Neon cyberpunk style. Glowing neon lights, dark city, vivid pink/blue/purple palette.",
+      "미니어처": "Tilt-shift miniature photography. Tiny diorama look, shallow depth of field.",
+    };
+    const styleDirective = styleMap[animationMode || ""] || "Cinematic photography. Professional lighting.";
+
+    const imagePrompt = `Create a single storyboard frame. ${aspectLabel}
+Style: ${styleDirective} One clear composition per image.${sceneContext}
 
 ${prompt}`;
 
