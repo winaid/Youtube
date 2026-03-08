@@ -16,10 +16,12 @@ export function getApiKeys(env: GeminiEnv): string[] {
   return keys;
 }
 
-/** Rate limit / quota 에러인지 판별 */
-function isRateLimitError(status: number, body?: string): boolean {
+/** Rate limit / quota / resource exhausted 에러인지 판별 */
+function isRetryableError(status: number, body?: string): boolean {
   if (status === 429) return true;
-  if (status === 403 && body && /quota|rate/i.test(body)) return true;
+  if (status === 403 && body && /quota|rate|RESOURCE_EXHAUSTED/i.test(body)) return true;
+  if (status === 500 && body && /RESOURCE_EXHAUSTED|quota|overloaded/i.test(body)) return true;
+  if (status === 503) return true;
   return false;
 }
 
@@ -50,8 +52,8 @@ export async function fetchWithKeyFallback(
     // rate limit이면 다음 키로
     if (!res.ok) {
       const body = await res.text();
-      if (isRateLimitError(res.status, body)) {
-        console.warn(`API key ${i + 1} rate limited (${res.status}), trying key ${i + 2}...`);
+      if (isRetryableError(res.status, body)) {
+        console.warn(`API key ${i + 1} failed (${res.status}), trying key ${i + 2}...`);
         continue;
       }
       // rate limit이 아닌 에러면 그대로 반환
