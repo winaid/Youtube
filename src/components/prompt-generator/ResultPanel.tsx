@@ -15,7 +15,6 @@ import SfxPanel from "./SfxPanel";
 import SeriesManager from "./SeriesManager";
 import OneClickPipeline from "./OneClickPipeline";
 import EnvironmentPanel from "./EnvironmentPanel";
-import ABTestPanel from "./ABTestPanel";
 import EmotionCurveEditor from "./EmotionCurveEditor";
 import YouTubeSEOPanel from "./YouTubeSEOPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
@@ -72,6 +71,9 @@ export default function ResultPanel({
   const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
   // 효과음 매칭
   const [sceneSfxList, setSceneSfxList] = useState<SceneSfx[]>([]);
+  // 인라인 감독 변경 재생성
+  const [altDirector, setAltDirector] = useState("");
+  const [altGenerating, setAltGenerating] = useState(false);
 
   const videoGen = useVideoGeneration({
     cuts: result?.cuts ?? [],
@@ -412,6 +414,74 @@ export default function ResultPanel({
               </Badge>
             )}
           </div>
+
+          {/* 인라인 감독 변경 재생성 */}
+          {onUpdateResult && (
+            <div className="flex items-center gap-2 pt-1">
+              <select
+                value={altDirector}
+                onChange={(e) => setAltDirector(e.target.value)}
+                className="h-7 rounded-md border text-[11px] px-2 max-w-[160px]"
+              >
+                <option value="">다른 감독으로 재생성...</option>
+                {[
+                  { id: "wong-kar-wai", name: "왕가위" },
+                  { id: "bong-joon-ho", name: "봉준호" },
+                  { id: "park-chan-wook", name: "박찬욱" },
+                  { id: "wes-anderson", name: "웨스 앤더슨" },
+                  { id: "david-fincher", name: "데이비드 핀처" },
+                  { id: "christopher-nolan", name: "크리스토퍼 놀란" },
+                  { id: "hayao-miyazaki", name: "미야자키 하야오" },
+                  { id: "quentin-tarantino", name: "쿠엔틴 타란티노" },
+                  { id: "denis-villeneuve", name: "드니 빌뇌브" },
+                  { id: "greta-gerwig", name: "그레타 거윅" },
+                ].map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+              {altDirector && (
+                <Button
+                  size="sm"
+                  className="h-7 text-[11px] text-white"
+                  style={{ background: "#7c3aed" }}
+                  disabled={altGenerating}
+                  onClick={async () => {
+                    setAltGenerating(true);
+                    try {
+                      const res = await fetch("/api/generate-cuts", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          storyText: storyText || result.conceptSummary,
+                          directorName: altDirector,
+                          directorNameKo: altDirector,
+                          animationMode: animationMode || "2D 애니",
+                          aspectRatio: "9:16",
+                          region: region || "한국",
+                          cutCount: result.cuts.length,
+                        }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.cuts) {
+                          onUpdateResult({
+                            ...result,
+                            cuts: data.cuts,
+                            characterSeeds: data.characterSeeds || result.characterSeeds,
+                            totalCuts: data.cuts.length,
+                          });
+                          setAltDirector("");
+                        }
+                      }
+                    } catch { /* ignore */ }
+                    setAltGenerating(false);
+                  }}
+                >
+                  {altGenerating ? "재생성 중..." : "이 감독으로 전환"}
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -849,36 +919,6 @@ export default function ResultPanel({
                 moodLighting: `${cut.moodLighting}, ${suffix.split(",").slice(0, 2).join(",")}`,
               }));
               onUpdateResult({ ...result, cuts: newCuts });
-            }}
-          />
-
-          {/* A/B 테스트 */}
-          <ABTestPanel
-            currentCuts={result.cuts}
-            currentCharacterSeeds={result.characterSeeds}
-            currentDirectorName={directorName || "현재 감독"}
-            storyText={storyText || result.conceptSummary}
-            onGenerateVariant={async (directorId) => {
-              const res = await fetch("/api/generate-cuts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  storyText: storyText || result.conceptSummary,
-                  directorName: directorId,
-                  directorNameKo: directorId,
-                  animationMode: animationMode || "2D 애니",
-                  aspectRatio: "9:16",
-                  region: region || "한국",
-                  cutCount: result.cuts.length,
-                }),
-              });
-              if (res.ok) return await res.json();
-              return null;
-            }}
-            onSelectWinner={(cuts, characterSeeds) => {
-              if (onUpdateResult) {
-                onUpdateResult({ ...result, cuts, characterSeeds, totalCuts: cuts.length });
-              }
             }}
           />
 

@@ -27,11 +27,6 @@ export default function PromptGenerator() {
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
 
-  // A/B 테스트
-  const [abResult, setAbResult] = useState<PromptOutput | null>(null);
-  const [abStatus, setAbStatus] = useState<GeneratorStatus>("idle");
-  const [abMode, setAbMode] = useState(false);
-
   // 대시보드
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [records, setRecords] = useState<ProjectRecord[]>([]);
@@ -66,18 +61,6 @@ export default function PromptGenerator() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "프롬프트 생성에 실패했습니다.");
       setStatus("error");
-    }
-  };
-
-  // A/B 생성 (두 번째 결과)
-  const handleGenerateAB = async (input: PromptInput) => {
-    setAbStatus("loading");
-    try {
-      const output = await generatePrompt(input);
-      setAbResult(output);
-      setAbStatus("success");
-    } catch {
-      setAbStatus("error");
     }
   };
 
@@ -126,80 +109,19 @@ export default function PromptGenerator() {
       </div>
 
       {activeTab === "prompt" ? (
-        <>
-          {/* A/B 토글 */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAbMode(!abMode)}
-              className="text-[11px] px-3 py-1 rounded-full transition-all"
-              style={
-                abMode
-                  ? { background: "#7c3aed", color: "white" }
-                  : { background: "#7c3aed15", color: "#7c3aed", border: "1px solid #7c3aed30" }
-              }
-            >
-              A/B 비교 모드 {abMode ? "ON" : "OFF"}
-            </button>
-            {abMode && (
-              <span className="text-[10px] text-muted-foreground">
-                동일 시나리오를 다른 감독 스타일로 동시 생성하여 비교합니다
-              </span>
-            )}
+        <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6">
+          <div className="lg:sticky lg:top-6 lg:self-start">
+            <InputPanel
+              onGenerate={handleGenerate}
+              isLoading={status === "loading"}
+              prefillScenario={prefillScenario}
+              onPrefillConsumed={() => setPrefillScenario("")}
+            />
           </div>
-
-          <div className={abMode ? "grid grid-cols-1 xl:grid-cols-2 gap-6" : ""}>
-            {/* 메인 결과 */}
-            <div className={abMode ? "" : "grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6"}>
-              {!abMode && (
-                <div className="lg:sticky lg:top-6 lg:self-start">
-                  <InputPanel
-                    onGenerate={handleGenerate}
-                    isLoading={status === "loading"}
-                    prefillScenario={prefillScenario}
-                    onPrefillConsumed={() => setPrefillScenario("")}
-                  />
-                </div>
-              )}
-              {abMode && (
-                <div>
-                  <Badge className="mb-2 text-xs" style={{ background: "#787fff" }}>A 버전</Badge>
-                  <InputPanel
-                    onGenerate={handleGenerate}
-                    isLoading={status === "loading"}
-                    prefillScenario={prefillScenario}
-                    onPrefillConsumed={() => setPrefillScenario("")}
-                  />
-                </div>
-              )}
-              <div className="min-w-0">
-                {!abMode && (
-                  <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} />
-                )}
-                {abMode && result && (
-                  <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} />
-                )}
-              </div>
-            </div>
-
-            {/* A/B 두 번째 결과 */}
-            {abMode && (
-              <div>
-                <Badge className="mb-2 text-xs" style={{ background: "#7c3aed" }}>B 버전</Badge>
-                <InputPanel
-                  onGenerate={handleGenerateAB}
-                  isLoading={abStatus === "loading"}
-                  prefillScenario={prefillScenario}
-                  onPrefillConsumed={() => {}}
-                />
-                {abResult && (
-                  <div className="mt-4">
-                    <ResultPanel result={abResult} status={abStatus} error={null} onUpdateResult={setAbResult} />
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="min-w-0">
+            <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} />
           </div>
-        </>
+        </div>
       ) : activeTab === "story" ? (
         <StoryChat onUseAsScenario={handleUseAsScenario} />
       ) : (
