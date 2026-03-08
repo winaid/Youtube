@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -401,34 +401,27 @@ ${regionSignature}
 
 JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 16384 },
-      }),
+    const result = await streamingGenerate(context.env, "gemini-3.1-pro-preview", {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 16384 },
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("Gemini API error:", res.status, errText);
-      // Parse Gemini error for useful detail
+    if (result.error) {
+      console.error("Gemini API error:", result.status, result.error);
       let detail = "";
       try {
-        const errJson = JSON.parse(errText);
-        detail = errJson?.error?.message || errText.slice(0, 200);
+        const errJson = JSON.parse(result.error);
+        detail = errJson?.error?.message || result.error.slice(0, 200);
       } catch {
-        detail = errText.slice(0, 200);
+        detail = result.error.slice(0, 200);
       }
       return Response.json(
-        { error: `Gemini API error: ${res.status}`, detail },
+        { error: `Gemini API error: ${result.status}`, detail },
         { status: 502 },
       );
     }
 
-    const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+    const text = result.text.trim() || "{}";
 
     let parsed;
     try {

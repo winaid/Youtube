@@ -203,3 +203,88 @@ export async function fetchWithAuth(
   }
   return fetchWithKeyFallback(keys, url, init);
 }
+
+// === 스트리밍 수집 함수 ===
+
+/**
+ * streamGenerateContent로 호출하고 모든 청크를 수집하여 텍스트를 반환.
+ * 긴 프롬프트/출력에 사용하면 Cloudflare 타임아웃을 피할 수 있음.
+ */
+export async function streamingGenerate(
+  env: GeminiEnv,
+  model: string,
+  requestBody: Record<string, unknown>,
+): Promise<{ text: string; error?: string; status?: number }> {
+  const url = buildVertexUrl(env, model, "streamGenerateContent") + "?alt=sse";
+
+  const init: RequestInit = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  };
+
+  let res: Response;
+
+  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const token = await getAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const headers = new Headers(init.headers);
+      headers.set("Authorization", `Bearer ${token}`);
+      res = await fetch(url, { ...init, headers });
+    } catch (err) {
+      // fallback to API keys
+      const keys = getApiKeys(env);
+      if (keys.length === 0) {
+        return { text: "", error: "No auth configured", status: 500 };
+      }
+      res = await fetch(`${url}&key=${keys[0]}`, init);
+    }
+  } else {
+    const keys = getApiKeys(env);
+    if (keys.length === 0) {
+      return { text: "", error: "No auth configured", status: 500 };
+    }
+    res = await fetch(`${url}&key=${keys[0]}`, init);
+  }
+
+  if (!res.ok) {
+    const errText = await res.text();
+    return { text: "", error: errText, status: res.status };
+  }
+
+  // SSE 스트림에서 텍스트 청크 수집
+  const reader = res.body?.getReader();
+  if (!reader) {
+    return { text: "", error: "No response body", status: 500 };
+  }
+
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr || jsonStr === "[DONE]") continue;
+      try {
+        const chunk = JSON.parse(jsonStr) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+        };
+        const text = chunk?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) parts.push(text);
+      } catch {
+        // skip malformed chunks
+      }
+    }
+  }
+
+  return { text: parts.join("") };
+}
