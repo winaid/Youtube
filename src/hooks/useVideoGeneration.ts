@@ -602,10 +602,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = words.slice(0, 280).join(" ") + ". No text overlay, no watermark.";
       }
 
-      // 영상에 텍스트 렌더링이 필요한 경우만 quality 모드 (videoPrompt만 검사)
-      const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text)\b/i.test(
-        cut.videoPrompt
-      );
+      // 사용자가 선택한 모드 그대로 사용 (fast 선택 시 무조건 fast)
 
       // Enhancement 4: Auto-link storyboard as firstFrame
       // Enhancement 7: Scene continuity auto-chain — use previous scene's last frame
@@ -659,7 +656,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       const body: Record<string, unknown> = {
         prompt,
-        mode: hasText ? "quality" : cfg.mode,
+        mode: cfg.mode,
         durationSeconds: cfg.durationSeconds,
         resolution: cfg.resolution,
         aspectRatio: cfg.aspectRatio,

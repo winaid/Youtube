@@ -156,11 +156,8 @@ export default function CutCard({
     }
   };
 
-  const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text|자막|글씨|텍스트|타이틀)\b/i.test(
-    cut.videoPrompt
-  );
-  // 텍스트 있으면 quality 강제, 아니면 사용자 설정 따름
-  const effectiveMode = hasText ? "quality" : (userVeoMode ?? "fast");
+  // 사용자 설정 모드 그대로 표시 (fast 선택 시 무조건 fast)
+  const effectiveMode = userVeoMode ?? "fast";
   const isQuality = effectiveMode === "quality";
 
   // 이 장면에 등장하는 캐릭터들
