@@ -1,13 +1,19 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
-
-/** Veo operation 폴링 — v1beta1 필요 (v1, v1beta 모두 404) */
-const BASE_URL = "https://aiplatform.googleapis.com/v1beta1";
 
 interface GeneratedSample {
   video?: { uri?: string };
   seed?: number;
+}
+
+/**
+ * operationName에서 모델명을 추출.
+ * 예: "projects/.../models/veo-3.1-fast-generate-preview/operations/..." → "veo-3.1-fast-generate-preview"
+ */
+function extractModel(operationName: string): string | null {
+  const m = operationName.match(/models\/([^/]+)\/operations\//);
+  return m ? m[1] : null;
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
@@ -18,9 +24,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "operationName is required" }, { status: 400 });
     }
 
-    const res = await fetchWithAuth(context.env, `${BASE_URL}/${operationName}`, {
-      method: "GET",
+    // Veo operations는 GET /{operationName}이 아닌
+    // POST :fetchPredictOperation 으로 폴링해야 함
+    const model = extractModel(operationName);
+    if (!model) {
+      return Response.json({ error: "Could not extract model from operationName" }, { status: 400 });
+    }
+
+    const url = buildVertexUrl(context.env, model, "fetchPredictOperation");
+    const res = await fetchWithAuth(context.env, url, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operationName }),
     });
 
     if (!res.ok) {
