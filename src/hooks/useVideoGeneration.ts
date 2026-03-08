@@ -399,8 +399,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = `${prompt}. ${styleSuffix}`;
       }
 
-      const hasText = /text|title|caption|subtitle|letter|sign|hangeul/i.test(
-        cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
+      // 영상에 텍스트 렌더링이 필요한 경우만 quality 모드 (videoPrompt만 검사)
+      const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text)\b/i.test(
+        cut.videoPrompt
       );
 
       // Enhancement 8: Smart negative prompt auto-generation

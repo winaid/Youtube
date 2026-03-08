@@ -61,10 +61,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // Extract all samples (sampleCount > 1 일 때 여러 개)
     const samples = data.response?.generateVideoResponse?.generatedSamples;
     if (samples && samples.length > 0) {
+      // Veo videoUri는 API 키가 필요 → 프록시 URL로 변환
+      const toProxyUrl = (uri: string) =>
+        `/api/proxy-video?uri=${encodeURIComponent(uri)}`;
+
       const variants = samples
         .filter((s) => s.video?.uri)
         .map((s) => ({
-          videoUri: s.video!.uri!,
+          videoUri: toProxyUrl(s.video!.uri!),
           seed: s.seed !== undefined ? String(s.seed) : undefined,
         }));
 
