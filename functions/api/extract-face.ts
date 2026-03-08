@@ -3,7 +3,7 @@ import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 type Env = GeminiEnv;
 
 const GEMINI_VISION_URL =
-  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro-preview:generateContent";
+  "https://aiplatform.googleapis.com/v1beta/publishers/google/models/gemini-3.1-pro:generateContent";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
