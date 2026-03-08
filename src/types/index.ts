@@ -162,7 +162,7 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   mode: "fast",
   durationSeconds: 8,
   resolution: "720p",
-  aspectRatio: "9:16",
+  aspectRatio: "16:9",
   generateAudio: true,
   negativePrompt: "text overlay, watermark, logo, blurry, distorted face",
   personGeneration: "allow_all",
