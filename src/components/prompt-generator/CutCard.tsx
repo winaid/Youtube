@@ -154,8 +154,8 @@ export default function CutCard({
     }
   };
 
-  const hasText = /text|title|caption|subtitle|letter|sign|hangeul|자막|글씨|텍스트|타이틀/i.test(
-    cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription
+  const hasText = /\b(text overlay|title card|caption|subtitle|on-screen text|hangeul text|자막|글씨|텍스트|타이틀)\b/i.test(
+    cut.videoPrompt
   );
 
   // 이 장면에 등장하는 캐릭터들
