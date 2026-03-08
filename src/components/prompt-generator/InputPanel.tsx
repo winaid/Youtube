@@ -175,6 +175,23 @@ const durations: { value: Duration; label: string }[] = [
   { value: 180, label: "3분" },
 ];
 
+const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
+
+function loadCustomDirectors(): DirectorPersona[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_DIRECTORS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomDirectors(dirs: DirectorPersona[]) {
+  try {
+    localStorage.setItem(CUSTOM_DIRECTORS_KEY, JSON.stringify(dirs));
+  } catch { /* storage full */ }
+}
+
 export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
@@ -184,7 +201,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [directorSearch, setDirectorSearch] = useState("");
   const [webResults, setWebResults] = useState<WebDirectorResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>([]);
+  const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>(loadCustomDirectors);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
@@ -318,12 +335,25 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     };
     setCustomDirectors((prev) => {
       if (prev.some((d) => d.id === newDirector.id)) return prev;
-      return [...prev, newDirector];
+      const updated = [...prev, newDirector];
+      persistCustomDirectors(updated);
+      return updated;
     });
     setRegion(webDir.region);
     setDirectorPersona(webDir.id);
     setDirectorSearch("");
     setWebResults([]);
+  };
+
+  const handleDeleteCustomDirector = (directorId: string) => {
+    setCustomDirectors((prev) => {
+      const updated = prev.filter((d) => d.id !== directorId);
+      persistCustomDirectors(updated);
+      return updated;
+    });
+    if (directorPersona === directorId) {
+      setDirectorPersona("");
+    }
   };
 
   // AI 컷 수 분석
@@ -528,6 +558,52 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             </SelectContent>
           </Select>
         </div>
+
+        {/* 저장된 커스텀 감독 */}
+        {customDirectors.length > 0 && (
+          <div className="space-y-1.5 p-2.5 rounded-lg" style={{ background: "#787fff08", border: "1px solid #787fff15" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold" style={{ color: "#787fff" }}>
+                저장된 감독 ({customDirectors.length})
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {customDirectors.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] transition-all"
+                  style={{
+                    background: directorPersona === d.id ? "#787fff" : "white",
+                    color: directorPersona === d.id ? "white" : "#5a5ecc",
+                    border: `1px solid ${directorPersona === d.id ? "#787fff" : "#787fff30"}`,
+                    cursor: "pointer",
+                  }}
+                >
+                  <button
+                    className="hover:opacity-80"
+                    onClick={() => {
+                      setRegion(d.region);
+                      setDirectorPersona(d.id);
+                    }}
+                  >
+                    {d.nameKo}
+                  </button>
+                  <button
+                    className="ml-0.5 hover:text-red-400 transition-colors"
+                    style={{ opacity: 0.6 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteCustomDirector(d.id);
+                    }}
+                    title="삭제"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 감독 블렌딩 */}
         {directorPersona && (
