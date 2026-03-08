@@ -2,19 +2,298 @@ import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
-interface GeneratedSample {
-  video?: { uri?: string };
-  seed?: number;
+// === 비디오 결과 타입 ===
+
+interface VideoResultUri {
+  kind: "uri";
+  uri: string;
+  seed?: string;
 }
 
-/**
- * operationName에서 모델명을 추출.
- * 예: "projects/.../models/veo-3.1-fast-generate-preview/operations/..." → "veo-3.1-fast-generate-preview"
- */
+interface VideoResultBase64 {
+  kind: "base64";
+  data: string;
+  mimeType: string;
+  seed?: string;
+}
+
+interface VideoResultFileObject {
+  kind: "file-object";
+  uri?: string;
+  mimeType?: string;
+  state?: string;
+  seed?: string;
+}
+
+type VideoResult = VideoResultUri | VideoResultBase64 | VideoResultFileObject;
+
+// === 타입 가드 ===
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function isArray(v: unknown): v is unknown[] {
+  return Array.isArray(v);
+}
+
+function isString(v: unknown): v is string {
+  return typeof v === "string";
+}
+
+// === 비디오 결과 추출 함수 ===
+
+function extractVideoResults(raw: Record<string, unknown>): VideoResult[] {
+  const results: VideoResult[] = [];
+  const resp = isRecord(raw.response) ? raw.response : undefined;
+
+  // 1) response.generateVideoResponse.generatedSamples[].video.uri
+  const gvr = resp && isRecord(resp.generateVideoResponse) ? resp.generateVideoResponse : undefined;
+  extractFromSamples(gvr?.generatedSamples, results);
+
+  // 2) response.generatedSamples[].video.uri
+  if (results.length === 0 && resp) {
+    extractFromSamples(resp.generatedSamples, results);
+  }
+
+  // 3) data.generatedSamples[].video.uri (최상위)
+  if (results.length === 0) {
+    extractFromSamples(raw.generatedSamples, results);
+  }
+
+  // 4) response.generatedVideos[].video (file object 형태)
+  if (results.length === 0 && resp) {
+    extractFromGeneratedVideos(resp.generatedVideos, results);
+  }
+
+  // 5) data.generatedVideos[].video (최상위)
+  if (results.length === 0) {
+    extractFromGeneratedVideos(raw.generatedVideos, results);
+  }
+
+  // 6) response.predictions[].bytesBase64Encoded (base64 형태)
+  if (results.length === 0 && resp) {
+    extractFromPredictions(resp.predictions, results);
+  }
+
+  // 7) data.predictions[].bytesBase64Encoded (최상위)
+  if (results.length === 0) {
+    extractFromPredictions(raw.predictions, results);
+  }
+
+  // 8) Deep search — 위 모든 경로에 없으면 JSON 전체에서 URI/base64 탐색
+  if (results.length === 0) {
+    deepSearchVideoData(raw, results);
+  }
+
+  return results;
+}
+
+function extractFromSamples(samples: unknown, results: VideoResult[]): void {
+  if (!isArray(samples)) return;
+  for (const sample of samples) {
+    if (!isRecord(sample)) continue;
+    const video = isRecord(sample.video) ? sample.video : undefined;
+    const seed = sample.seed !== undefined ? String(sample.seed) : undefined;
+
+    // video.uri
+    if (video && isString(video.uri) && video.uri.length > 0) {
+      results.push({ kind: "uri", uri: video.uri, seed });
+      continue;
+    }
+
+    // video가 file object인 경우 (uri, mimeType, state 등)
+    if (video && (isString(video.uri) || isString(video.name) || isString(video.mimeType))) {
+      results.push({
+        kind: "file-object",
+        uri: isString(video.uri) ? video.uri : isString(video.name) ? video.name : undefined,
+        mimeType: isString(video.mimeType) ? video.mimeType : undefined,
+        state: isString(video.state) ? video.state : undefined,
+        seed,
+      });
+      continue;
+    }
+
+    // sample 자체에 uri가 있는 경우
+    if (isString(sample.uri) && sample.uri.length > 0) {
+      results.push({ kind: "uri", uri: sample.uri, seed });
+      continue;
+    }
+
+    // sample에 bytesBase64Encoded가 있는 경우
+    if (isString(sample.bytesBase64Encoded) && sample.bytesBase64Encoded.length > 100) {
+      results.push({
+        kind: "base64",
+        data: sample.bytesBase64Encoded,
+        mimeType: isString(sample.mimeType) ? sample.mimeType : "video/mp4",
+        seed,
+      });
+    }
+  }
+}
+
+function extractFromGeneratedVideos(videos: unknown, results: VideoResult[]): void {
+  if (!isArray(videos)) return;
+  for (const item of videos) {
+    if (!isRecord(item)) continue;
+    const seed = item.seed !== undefined ? String(item.seed) : undefined;
+    const video = isRecord(item.video) ? item.video : undefined;
+
+    if (video) {
+      if (isString(video.uri) && video.uri.length > 0) {
+        results.push({ kind: "uri", uri: video.uri, seed });
+      } else {
+        results.push({
+          kind: "file-object",
+          uri: isString(video.uri) ? video.uri : isString(video.name) ? video.name : undefined,
+          mimeType: isString(video.mimeType) ? video.mimeType : undefined,
+          state: isString(video.state) ? video.state : undefined,
+          seed,
+        });
+      }
+    } else if (isString(item.uri) && item.uri.length > 0) {
+      results.push({ kind: "uri", uri: item.uri, seed });
+    }
+  }
+}
+
+function extractFromPredictions(predictions: unknown, results: VideoResult[]): void {
+  if (!isArray(predictions)) return;
+  for (const pred of predictions) {
+    if (!isRecord(pred)) continue;
+    const seed = pred.seed !== undefined ? String(pred.seed) : undefined;
+
+    // bytesBase64Encoded
+    if (isString(pred.bytesBase64Encoded) && pred.bytesBase64Encoded.length > 100) {
+      results.push({
+        kind: "base64",
+        data: pred.bytesBase64Encoded,
+        mimeType: isString(pred.mimeType) ? pred.mimeType : "video/mp4",
+        seed,
+      });
+      continue;
+    }
+
+    // prediction에 video 객체
+    const video = isRecord(pred.video) ? pred.video : undefined;
+    if (video && isString(video.uri) && video.uri.length > 0) {
+      results.push({ kind: "uri", uri: video.uri, seed });
+      continue;
+    }
+
+    // prediction 자체에 uri
+    if (isString(pred.uri) && pred.uri.length > 0) {
+      results.push({ kind: "uri", uri: pred.uri, seed });
+    }
+  }
+}
+
+function deepSearchVideoData(raw: Record<string, unknown>, results: VideoResult[]): void {
+  const jsonStr = JSON.stringify(raw);
+
+  // URI 패턴 탐색 (gs://, https://)
+  const uriRegex = /"uri"\s*:\s*"((?:gs|https?):\/\/[^"]+(?:\.mp4|video|generate)[^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = uriRegex.exec(jsonStr)) !== null) {
+    results.push({ kind: "uri", uri: match[1] });
+  }
+
+  // URI를 못 찾았으면 더 넓은 패턴
+  if (results.length === 0) {
+    const broadUriRegex = /"uri"\s*:\s*"((?:gs|https?):\/\/[^"]+)"/g;
+    while ((match = broadUriRegex.exec(jsonStr)) !== null) {
+      // oauth/token 등 API 관련 URI 제외
+      if (!/oauth|googleapis\.com\/token|aiplatform/.test(match[1])) {
+        results.push({ kind: "uri", uri: match[1] });
+      }
+    }
+  }
+
+  // base64 데이터 탐색
+  if (results.length === 0) {
+    const b64Regex = /"bytesBase64Encoded"\s*:\s*"([A-Za-z0-9+/=]{200,})"/;
+    const b64Match = jsonStr.match(b64Regex);
+    if (b64Match) {
+      results.push({ kind: "base64", data: b64Match[1], mimeType: "video/mp4" });
+    }
+  }
+
+  if (results.length > 0) {
+    console.log("Deep search found results:", results.map(r => r.kind));
+  }
+}
+
+// === RAI 필터 감지 ===
+
+interface RaiInfo {
+  filtered: boolean;
+  count?: number;
+  reasons?: string[];
+}
+
+function detectRaiFiltering(raw: Record<string, unknown>): RaiInfo {
+  const resp = isRecord(raw.response) ? raw.response : undefined;
+  const targets = [resp, raw];
+
+  for (const obj of targets) {
+    if (!obj) continue;
+    const count = obj.raiMediaFilteredCount as number | undefined;
+    const reasons = isArray(obj.raiMediaFilteredReasons) ? obj.raiMediaFilteredReasons as string[] : undefined;
+
+    if (count && count > 0) {
+      return { filtered: true, count, reasons };
+    }
+  }
+
+  // generateVideoResponse 내부에도 있을 수 있음
+  const gvr = resp && isRecord(resp.generateVideoResponse) ? resp.generateVideoResponse : undefined;
+  if (gvr) {
+    const count = gvr.raiMediaFilteredCount as number | undefined;
+    const reasons = isArray(gvr.raiMediaFilteredReasons) ? gvr.raiMediaFilteredReasons as string[] : undefined;
+    if (count && count > 0) {
+      return { filtered: true, count, reasons };
+    }
+  }
+
+  return { filtered: false };
+}
+
+// === 응답 구조 로깅 ===
+
+function logResponseStructure(raw: Record<string, unknown>): {
+  dataKeys: string[];
+  responseKeys: string[];
+  gvrKeys: string[];
+  deepKeys: Record<string, string[]>;
+} {
+  const dataKeys = Object.keys(raw);
+  const resp = isRecord(raw.response) ? raw.response : undefined;
+  const responseKeys = resp ? Object.keys(resp) : [];
+  const gvr = resp && isRecord(resp.generateVideoResponse) ? resp.generateVideoResponse : undefined;
+  const gvrKeys = gvr ? Object.keys(gvr) : [];
+
+  // 2단계 깊이까지 키 수집
+  const deepKeys: Record<string, string[]> = {};
+  if (resp) {
+    const respEntries = Object.keys(resp);
+    for (const k of respEntries) {
+      const v = resp[k];
+      if (isRecord(v)) deepKeys[`response.${k}`] = Object.keys(v);
+      if (isArray(v) && v.length > 0 && isRecord(v[0])) deepKeys[`response.${k}[0]`] = Object.keys(v[0] as Record<string, unknown>);
+    }
+  }
+
+  return { dataKeys, responseKeys, gvrKeys, deepKeys };
+}
+
+// === operationName에서 모델명 추출 ===
+
 function extractModel(operationName: string): string | null {
   const m = operationName.match(/models\/([^/]+)\/operations\//);
   return m ? m[1] : null;
 }
+
+// === 메인 핸들러 ===
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -24,8 +303,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "operationName is required" }, { status: 400 });
     }
 
-    // Veo operations는 GET /{operationName}이 아닌
-    // POST :fetchPredictOperation 으로 폴링해야 함
     const model = extractModel(operationName);
     if (!model) {
       return Response.json({ error: "Could not extract model from operationName" }, { status: 400 });
@@ -35,7 +312,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // Cloudflare Pages 타임아웃(100s) 전에 자체 타임아웃 설정
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000); // 25초
+    const timeout = setTimeout(() => controller.abort(), 25000);
 
     let res: Response;
     try {
@@ -47,7 +324,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        return Response.json({ status: "RUNNING" }); // 타임아웃 → 아직 처리중으로 반환
+        return Response.json({ status: "RUNNING" });
       }
       throw err;
     } finally {
@@ -77,85 +354,100 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ status: "RUNNING" });
     }
 
-    console.log("Veo poll response:", JSON.stringify(data).slice(0, 3000));
+    // 응답 구조 로그 (디버깅용)
+    const structure = logResponseStructure(data);
+    console.log("Veo poll response structure:", JSON.stringify(structure));
+    console.log("Veo poll response raw:", JSON.stringify(data).slice(0, 3000));
 
-    // RAI (Responsible AI) 필터 감지 — 안전 필터에 걸리면 영상이 삭제됨
-    const resp = data.response as Record<string, unknown> | undefined;
-    const raiCount = resp?.raiMediaFilteredCount as number | undefined;
-    const raiReasons = resp?.raiMediaFilteredReasons as string[] | undefined;
-    if (raiCount && raiCount > 0) {
-      const reasonStr = raiReasons?.join(", ") || "안전 정책 위반";
-      console.error("Veo RAI filtered:", raiCount, "reasons:", reasonStr);
+    // RAI 필터 체크
+    const rai = detectRaiFiltering(data);
+    if (rai.filtered) {
+      const reasonStr = rai.reasons?.join(", ") || "안전 정책 위반";
+      console.error("Veo RAI filtered:", rai.count, "reasons:", reasonStr);
       return Response.json({
         status: "FAILED",
         error: `Veo 안전 필터에 의해 영상이 차단되었습니다 (${reasonStr}). 프롬프트에서 폭력/성적/위험한 내용을 제거해주세요.`,
         raiFiltered: true,
-        raiReasons,
+        raiReasons: rai.reasons,
       });
     }
 
-    // Extract all samples — Veo 모델 버전에 따라 응답 경로가 다름
-    const generateVideoResponse = resp?.generateVideoResponse as Record<string, unknown> | undefined;
-    const samples: GeneratedSample[] =
-      generateVideoResponse?.generatedSamples as GeneratedSample[] | undefined ??
-      resp?.generatedSamples as GeneratedSample[] | undefined ??
-      data.generatedSamples as GeneratedSample[] | undefined ??
-      // predictions 형태 (Vertex AI 다른 버전)
-      data.predictions as GeneratedSample[] | undefined ??
-      [];
+    // 비디오 결과 추출
+    const videoResults = extractVideoResults(data);
 
-    // Deep search: 위 경로에 없으면 응답 전체에서 video URI 패턴을 탐색
-    if (samples.length === 0) {
-      const jsonStr = JSON.stringify(data);
-      // Veo video URIs typically look like "gs://..." or "https://..."
-      const uriMatches = jsonStr.match(/"uri"\s*:\s*"((?:gs|https?):\/\/[^"]+)"/g);
-      if (uriMatches) {
-        for (const match of uriMatches) {
-          const uriMatch = match.match(/"uri"\s*:\s*"([^"]+)"/);
-          if (uriMatch) {
-            samples.push({ video: { uri: uriMatch[1] } });
-          }
+    if (videoResults.length === 0) {
+      console.error("No video result found.", JSON.stringify(structure), "raw:", JSON.stringify(data).slice(0, 2000));
+      return Response.json({
+        status: "FAILED",
+        error: `영상 결과를 찾을 수 없습니다. response 구조: ${JSON.stringify(structure.deepKeys)}`,
+        structure,
+        raw: data,
+      });
+    }
+
+    // 결과를 클라이언트용 variants로 변환
+    const toProxyUrl = (uri: string) =>
+      `/api/proxy-video?uri=${encodeURIComponent(uri)}`;
+
+    const variants: { videoUri: string; rawVideoUri: string; seed?: string; resultKind: string }[] = [];
+
+    for (const result of videoResults) {
+      switch (result.kind) {
+        case "uri": {
+          variants.push({
+            videoUri: toProxyUrl(result.uri),
+            rawVideoUri: result.uri,
+            seed: result.seed,
+            resultKind: "uri",
+          });
+          break;
         }
-        console.log("Deep search found URIs:", samples.map(s => s.video?.uri));
+        case "file-object": {
+          // file-object에 URI가 있으면 사용
+          if (result.uri && result.uri.length > 0) {
+            variants.push({
+              videoUri: toProxyUrl(result.uri),
+              rawVideoUri: result.uri,
+              seed: result.seed,
+              resultKind: "file-object",
+            });
+          }
+          break;
+        }
+        case "base64": {
+          // base64 → data URI로 변환 (클라이언트에서 직접 재생 가능)
+          const dataUri = `data:${result.mimeType};base64,${result.data}`;
+          variants.push({
+            videoUri: dataUri,
+            rawVideoUri: dataUri,
+            seed: result.seed,
+            resultKind: "base64",
+          });
+          break;
+        }
       }
     }
 
-    if (samples.length > 0) {
-      // Veo videoUri는 API 키가 필요 → 프록시 URL로 변환
-      const toProxyUrl = (uri: string) =>
-        `/api/proxy-video?uri=${encodeURIComponent(uri)}`;
-
-      const variants = samples
-        .filter((s) => s.video?.uri)
-        .map((s) => ({
-          videoUri: toProxyUrl(s.video!.uri!),
-          rawVideoUri: s.video!.uri!,
-          seed: s.seed !== undefined ? String(s.seed) : undefined,
-        }));
-
-      if (variants.length > 0) {
-        return Response.json({
-          status: "COMPLETED",
-          videoUri: variants[0].videoUri,
-          rawVideoUri: variants[0].rawVideoUri,
-          seed: variants[0].seed,
-          variants,
-          sampleCount: variants.length,
-        });
-      }
+    if (variants.length === 0) {
+      console.error("Video results found but no playable variants.", JSON.stringify(videoResults.map(r => ({ kind: r.kind }))));
+      return Response.json({
+        status: "FAILED",
+        error: "비디오 결과는 있으나 재생 가능한 형태가 아닙니다",
+        resultKinds: videoResults.map(r => r.kind),
+        structure,
+        raw: data,
+      });
     }
 
-    // 상세 디버그 정보 생성
-    const respKeys = resp ? Object.keys(resp) : [];
-    const gvrKeys = generateVideoResponse ? Object.keys(generateVideoResponse) : [];
-    console.error("No video URI found. data keys:", Object.keys(data), "response keys:", respKeys, "generateVideoResponse keys:", gvrKeys, "full:", JSON.stringify(data).slice(0, 2000));
+    console.log("Video result:", variants.length, "variants,", "kinds:", variants.map(v => v.resultKind));
+
     return Response.json({
-      status: "FAILED",
-      error: `영상 생성 완료되었으나 비디오 URI 없음. response keys: [${respKeys.join(", ")}], generateVideoResponse keys: [${gvrKeys.join(", ")}]`,
-      responseKeys: Object.keys(data),
-      responseResponseKeys: respKeys,
-      generateVideoResponseKeys: gvrKeys,
-      raw: data,
+      status: "COMPLETED",
+      videoUri: variants[0].videoUri,
+      rawVideoUri: variants[0].rawVideoUri,
+      seed: variants[0].seed,
+      variants,
+      sampleCount: variants.length,
     });
   } catch (error) {
     console.error("Check video error:", error);
