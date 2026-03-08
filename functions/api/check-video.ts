@@ -2,7 +2,7 @@ import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
-const BASE_URL = "https://aiplatform.googleapis.com/v1beta";
+const BASE_URL = "https://aiplatform.googleapis.com/v1";
 
 interface GeneratedSample {
   video?: { uri?: string };
