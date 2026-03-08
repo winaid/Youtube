@@ -199,9 +199,9 @@ function sanitizeTextContent(prompt: string): string {
     .replace(/\s{2,}/g, " ")
     .trim();
 
-  // 프롬프트 끝에 텍스트 금지 보강 (이미 있으면 skip)
-  if (!/no text overlay/i.test(sanitized)) {
-    sanitized += ". Do not render any readable text, letters, characters, or writing on screen. No text overlay, no titles, no captions, no watermark";
+  // 프롬프트 끝에 텍스트 금지 보강 (이미 있으면 skip, 최소한으로)
+  if (!/no text overlay/i.test(sanitized) && !/no text[,.]?\s*no watermark/i.test(sanitized)) {
+    sanitized += ". No text overlay, no watermark";
   }
 
   return sanitized;
@@ -582,17 +582,24 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = `${prompt}. ${styleSuffix}`;
       }
 
-      // Temporal beats 보장 (Veo 프롬프트 준수율 핵심)
+      // Temporal beats: refine-prompt가 이미 삽입했으면 skip
       prompt = ensureTemporalBeats(prompt, cfg.durationSeconds);
 
-      // 프롬프트에서 문서/편지/두루마리 내용 텍스트 제거
+      // 프롬프트에서 문서/편지/두루마리 내용 텍스트 제거 (금지 문구는 중복 방지)
       prompt = sanitizeTextContent(prompt);
 
       // Veo는 negativePrompt 파라미터를 지원하지 않으므로 프롬프트에 직접 삽입
-      if (negativePrompt && !prompt.includes("Avoid:")) {
-        // 핵심 negative 항목만 프롬프트 끝에 임베드
-        const negItems = negativePrompt.split(",").map(s => s.trim()).filter(Boolean).slice(0, 5);
+      // refine-prompt가 이미 "no X, no Y"를 포함했으면 Avoid: 블록 생략
+      if (negativePrompt && !prompt.includes("Avoid:") && !/\bno text[,.]?\s*no watermark\b/i.test(prompt)) {
+        const negItems = negativePrompt.split(",").map(s => s.trim()).filter(Boolean).slice(0, 3);
         prompt = `${prompt}. Avoid: ${negItems.join(", ")}`;
+      }
+
+      // 최종 프롬프트 길이 제한: Veo 최적 280단어, 초과 시 끝부분 잘라냄
+      const words = prompt.split(/\s+/);
+      if (words.length > 300) {
+        // 핵심 내용(앞부분)을 보존하고, 부가 지시(뒷부분)를 축소
+        prompt = words.slice(0, 280).join(" ") + ". No text overlay, no watermark.";
       }
 
       // 영상에 텍스트 렌더링이 필요한 경우만 quality 모드 (videoPrompt만 검사)
