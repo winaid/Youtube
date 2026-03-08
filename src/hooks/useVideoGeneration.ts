@@ -433,14 +433,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
           pollTimers.current.delete(cutNumber);
 
-          // 자동 모드면 다음 장면 시작
+          // 자동 모드: 모든 클립이 완료/실패이면 자동 모드 종료
           if (autoModeRef.current) {
             setState((prev) => {
-              const nextIdx = prev.currentAutoIndex + 1;
-              if (nextIdx < prev.clips.length) {
-                return { ...prev, currentAutoIndex: nextIdx };
+              const allDone = prev.clips.every(
+                (c) => c.status === "completed" || c.status === "failed"
+              );
+              if (allDone) {
+                autoModeRef.current = false;
+                return { ...prev, isAutoMode: false, currentAutoIndex: -1 };
               }
-              return { ...prev, isAutoMode: false, currentAutoIndex: -1 };
+              return prev;
             });
           }
           return;
@@ -472,9 +475,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
                 : c
             );
 
-            if (autoModeRef.current) {
+            // 모든 클립이 완료/실패이면 자동 모드 종료
+            const allDone = newClips.every(
+              (c) => c.status === "completed" || c.status === "failed"
+            );
+            if (allDone && autoModeRef.current) {
               autoModeRef.current = false;
-              return { ...prev, clips: newClips, isAutoMode: false };
+              return { ...prev, clips: newClips, isAutoMode: false, currentAutoIndex: -1 };
             }
             return { ...prev, clips: newClips };
           });
@@ -761,14 +768,19 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     }
   }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt, refinePromptEnglish]);
 
-  // 자동 모드
+  // 자동 모드 (병렬 생성) — idle인 모든 클립을 동시에 시작
+  const autoTriggeredRef = useRef(false);
   useEffect(() => {
-    if (!state.isAutoMode || state.currentAutoIndex < 0) return;
-    const clip = state.clips[state.currentAutoIndex];
-    if (!clip || clip.status !== "idle") return;
-
-    generateCut(clip.cutNumber);
-  }, [state.isAutoMode, state.currentAutoIndex, state.clips, generateCut]);
+    if (!state.isAutoMode) {
+      autoTriggeredRef.current = false;
+      return;
+    }
+    if (autoTriggeredRef.current) return; // 이미 트리거됨
+    const idleClips = state.clips.filter((c) => c.status === "idle");
+    if (idleClips.length === 0) return;
+    autoTriggeredRef.current = true;
+    idleClips.forEach((clip) => generateCut(clip.cutNumber));
+  }, [state.isAutoMode, state.clips, generateCut]);
 
   const startAutoGeneration = useCallback(() => {
     autoModeRef.current = true;
