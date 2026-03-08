@@ -360,10 +360,17 @@ ${regionSignature}
 - endImagePrompt도 100% 영어, 캐릭터 외형 전체 반복, 조명/구도 포함
 - 마지막 장면의 endImagePrompt는 이야기의 감정적 결말을 시각화
 
-**Extend 프롬프트 (장면 연결):**
+**Extend 프롬프트 (장면 연결 — 가장 중요!):**
 - 장면 1: extendPrompt = ""
-- 장면 2+: 이전 장면의 마지막 프레임을 구체적으로 묘사하며 이어가기
-- "Continue" 같은 모호한 표현 금지
+- 장면 2+: Veo Scene Extension API에서 사용됨. 이전 영상의 마지막 프레임부터 이어서 생성됨.
+- **핵심**: extendPrompt는 "이전 장면의 마지막 순간 묘사 → 자연스러운 전환 → 새 장면" 3단계 구조로 작성
+  - 1단계: 이전 장면 마지막 2초의 화면 상태를 구체적으로 묘사 (카메라 위치, 캐릭터 포즈, 조명)
+  - 2단계: 전환 기법 명시 (예: "the camera pushes through the eye into", "match cut from X to Y", "whip pan reveals")
+  - 3단계: 새 장면의 8초 동작 시퀀스
+- 예시: CUT 1이 "눈 클로즈업으로 끝"이면 → CUT 2 extendPrompt: "Extreme close-up of the woman's eye fills the frame, [캐릭터 외형]. The camera pushes forward into the dark pupil — a match cut dissolves into an establishing wide shot of Edo-period Kyoto streets at dawn. [새 장면 8초 묘사]"
+- "Continue from previous scene" 같은 모호한 표현 절대 금지
+- 이전 장면의 마지막 시각 요소(색감, 구도, 캐릭터 위치)를 정확히 참조
+- 캐릭터 전체 외형을 다시 100% 반복 기술
 
 ---
 
@@ -385,7 +392,7 @@ ${regionSignature}
     "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark",
     "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text, no watermark. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
     "videoPrompt": "[100% ENGLISH] Cinematic 8-second single-take. [WHO does WHAT, WHERE]. ${veoStyle}. Style: ${directorName}. Shot on [렌즈 e.g. 35mm anamorphic]. [구도 e.g. deep staging composition]. Camera: [앵글+무빙 시퀀스 2~3단계]. [캐릭터 전체 외형]. [8초 동작 시퀀스]. [조명: e.g. Rembrandt key with rim light]. [색보정: e.g. teal and orange grade]. Smooth continuous motion, ${aspectRatio || "1:1"}, no text, no watermark",
-    "extendPrompt": "",
+    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — 3단계 구조] [1. 이전 장면 마지막 화면 상태 구체 묘사] [2. 전환 기법: match cut / push through / whip pan 등] [3. 새 장면 8초 동작 시퀀스 + 캐릭터 전체 외형 + 카메라 워크 + 조명]. ${veoStyle}, smooth continuous motion, no text, no watermark",
     "transitionHint": "[한국어] 다음 장면 연결 방식",
     "characterConsistency": "[한국어] 캐릭터 유지 지침",
     "charactersInScene": ["char-1"]

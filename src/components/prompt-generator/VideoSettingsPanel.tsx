@@ -364,37 +364,7 @@ export default function VideoSettingsPanel({
             <p className="text-[10px] text-muted-foreground">
               같은 캐릭터/인물의 다른 각도 사진을 올리면 외형 일관성이 높아집니다
             </p>
-            {/* 스토리보드에서 참조이미지 가져오기 */}
-            {storyboardImages && Object.keys(storyboardImages).length > 0 && (
-              <div className="space-y-1 pt-1">
-                <p className="text-[10px] font-medium" style={{ color: "#787fff" }}>스토리보드에서 가져오기:</p>
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  {Object.entries(storyboardImages).map(([cutNum, base64]) => (
-                    <button
-                      key={cutNum}
-                      onClick={() => {
-                        const currentRefs = config.referenceImages || [];
-                        if (currentRefs.length >= 3) {
-                          alert("참조 이미지는 최대 3장까지입니다. 기존 이미지를 삭제 후 추가하세요.");
-                          return;
-                        }
-                        if (currentRefs.includes(base64)) return;
-                        update({ referenceImages: [...currentRefs, base64] });
-                      }}
-                      className="shrink-0 w-12 h-12 rounded-md overflow-hidden border transition-all hover:scale-105 hover:border-[#787fff] relative group"
-                      style={{ borderColor: config.referenceImages?.includes(base64) ? "#22c55e" : "#333" }}
-                      title={`CUT ${cutNum} → 참조이미지로 추가`}
-                    >
-                      <img src={`data:image/png;base64,${base64}`} alt={`CUT ${cutNum}`} className="w-full h-full object-cover" />
-                      <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-white text-center">#{cutNum}</span>
-                      {config.referenceImages?.includes(base64) && (
-                        <span className="absolute inset-0 bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold">✓</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* 스토리보드 참조이미지 섹션 제거됨 */}
           </div>
 
           {/* First / Last Frame */}

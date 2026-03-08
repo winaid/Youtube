@@ -14,12 +14,13 @@ interface PipelineStep {
 
 interface OneClickPipelineProps {
   hasCuts: boolean;
-  hasStoryboard: boolean;
   hasVideo: boolean;
   hasSrt: boolean;
   hasBgm: boolean;
   hasSeo: boolean;
-  onRunStoryboard: () => Promise<void>;
+  // Keep old props optional for backward compatibility
+  hasStoryboard?: boolean;
+  onRunStoryboard?: () => Promise<void>;
   onRunVideoGeneration: () => void;
   onRunSrt: () => Promise<void>;
   onRunBgm: () => Promise<void>;
@@ -28,12 +29,11 @@ interface OneClickPipelineProps {
 }
 
 export default function OneClickPipeline({
-  hasCuts, hasStoryboard, hasVideo, hasSrt, hasBgm, hasSeo,
-  onRunStoryboard, onRunVideoGeneration, onRunSrt, onRunBgm, onRunSeo, onRunThumbnail,
+  hasCuts, hasVideo, hasSrt, hasBgm, hasSeo,
+  onRunVideoGeneration, onRunSrt, onRunBgm, onRunSeo, onRunThumbnail,
 }: OneClickPipelineProps) {
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<PipelineStep[]>([
-    { id: "storyboard", label: "스토리보드 생성", status: "pending" },
     { id: "video", label: "영상 자동 생성", status: "pending" },
     { id: "srt", label: "SRT 자막 생성", status: "pending" },
     { id: "bgm", label: "BGM 추천", status: "pending" },
@@ -49,20 +49,7 @@ export default function OneClickPipeline({
     setRunning(true);
     setSteps((prev) => prev.map((s) => ({ ...s, status: "pending", error: undefined })));
 
-    // Step 1: Storyboard
-    if (!hasStoryboard) {
-      updateStep("storyboard", "running");
-      try {
-        await onRunStoryboard();
-        updateStep("storyboard", "done");
-      } catch (e) {
-        updateStep("storyboard", "error", e instanceof Error ? e.message : "실패");
-      }
-    } else {
-      updateStep("storyboard", "done");
-    }
-
-    // Step 2: Video (non-blocking — starts auto mode)
+    // Step 1: Video (non-blocking — starts auto mode)
     updateStep("video", "running");
     try {
       onRunVideoGeneration();
@@ -71,7 +58,7 @@ export default function OneClickPipeline({
       updateStep("video", "error", "자동 생성 시작 실패");
     }
 
-    // Step 3-6: Run in parallel
+    // Step 2-5: Run in parallel
     const parallelTasks = [
       { id: "srt", skip: hasSrt, fn: onRunSrt },
       { id: "bgm", skip: hasBgm, fn: onRunBgm },
@@ -124,7 +111,7 @@ export default function OneClickPipeline({
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
         <p className="text-[10px] text-muted-foreground">
-          스토리보드 → 영상 생성 → 자막 → BGM → SEO → 썸네일까지 한 번에 실행합니다.
+          영상 생성 → 자막 → BGM → SEO → 썸네일까지 한 번에 실행합니다.
         </p>
 
         {/* 파이프라인 스텝 시각화 */}
