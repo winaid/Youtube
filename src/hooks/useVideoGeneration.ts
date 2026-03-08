@@ -555,10 +555,22 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           const verification = await verifyPrompt(cut);
           if (verification) {
             updateClip(cutNumber, { verification });
+
             if (verification.overallScore < 80 && verification.improvedVideoPrompt) {
+              // 개선된 프롬프트로 교체
               prompt = cutNumber === 1
                 ? verification.improvedVideoPrompt
                 : (verification.improvedExtendPrompt || prompt);
+            }
+
+            // 점수 30 미만 + 개선 프롬프트도 없으면 → Veo 호출 차단 (quota 낭비 방지)
+            if (verification.overallScore < 30 && !verification.improvedVideoPrompt) {
+              const issues = verification.issues?.join(", ") || "프롬프트 품질 부족";
+              updateClip(cutNumber, {
+                status: "failed",
+                error: `프롬프트 품질 점수 ${verification.overallScore}/100 — 생성 차단. 문제: ${issues}. 프롬프트를 수정 후 다시 시도하세요.`,
+              });
+              return;
             }
           }
         }
