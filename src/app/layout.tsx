@@ -7,6 +7,7 @@ const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-sans",
   weight: "100 900",
+  preload: false,
 });
 
 export const metadata: Metadata = {
