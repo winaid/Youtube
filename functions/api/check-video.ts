@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -17,12 +17,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "operationName is required" }, { status: 400 });
     }
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
-    const res = await fetch(`${BASE_URL}/${operationName}?key=${apiKey}`, {
+    const res = await fetchWithKeyFallback(keys, `${BASE_URL}/${operationName}?key={KEY}`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });

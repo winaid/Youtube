@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent";
@@ -20,8 +20,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "characters required" }, { status: 400 });
     }
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
@@ -53,7 +53,7 @@ ${dialogues ? `## Existing Dialogues:\n${dialogues.map((d) => `${d.characterId}:
   "backgroundAudio": "ambient city noise, distant traffic"
 }`;
 
-    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -33,8 +33,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
@@ -120,13 +120,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       parameters,
     }));
 
-    // === API 호출 ===
+    // === API 호출 (key fallback 지원) ===
     const callVeo = async (inst: Record<string, unknown>, params: Record<string, unknown>) => {
-      return fetch(`${BASE_URL}/models/${model}:predictLongRunning?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instances: [inst], parameters: params }),
-      });
+      return fetchWithKeyFallback(
+        keys,
+        `${BASE_URL}/models/${model}:predictLongRunning?key={KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instances: [inst], parameters: params }),
+        },
+      );
     };
 
     let res = await callVeo(instance, parameters);

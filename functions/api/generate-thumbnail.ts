@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 interface ThumbnailInput {
   projectTitle: string;
@@ -39,13 +39,18 @@ IMPORTANT composition & camera rules:
 
 Make it eye-catching, high contrast, and optimized for small display sizes. Use bold colors and clear focal points.`;
 
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
+      return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+
     const models = ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"];
 
     let lastError: string | null = null;
 
     for (const model of models) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${context.env.GEMINI_API_KEY}`;
+        const urlTemplate = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key={KEY}`;
 
         const requestBody = {
           contents: [
@@ -63,7 +68,7 @@ Make it eye-catching, high contrast, and optimized for small display sizes. Use 
           },
         };
 
-        const response = await fetch(url, {
+        const response = await fetchWithKeyFallback(keys, urlTemplate, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),

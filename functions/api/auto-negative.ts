@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
@@ -90,8 +90,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ negativePrompt, mode: "local" });
     }
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       // Fallback to local if no API key
       const negativePrompt = generateLocalNegative(
         String(videoPrompt),
@@ -118,7 +118,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 ## Output:
 Return ONLY the negative prompt string, nothing else.`;
 
-    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

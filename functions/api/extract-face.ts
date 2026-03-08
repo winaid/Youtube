@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 const GEMINI_VISION_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
@@ -22,8 +22,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const mimeMatch = rawBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
@@ -58,7 +58,7 @@ JSON으로만 응답:
 
 얼굴이 없으면 빈 배열을 반환: { "faces": [] }`;
 
-    const res = await fetch(`${GEMINI_VISION_URL}?key=${apiKey}`, {
+    const res = await fetchWithKeyFallback(keys, `${GEMINI_VISION_URL}?key={KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

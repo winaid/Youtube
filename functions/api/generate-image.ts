@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 // 나노바나나 프로 (Nano Banana Pro) = Gemini 3 Pro Image
 const NANO_BANANA_PRO_URL =
@@ -24,8 +24,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       return Response.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
@@ -71,7 +71,7 @@ ${prompt}`;
 
     // 1차: 나노바나나 2 (Gemini 3.1 Flash Image) — 7.5배 빠르고 4K 지원, 가성비 최고
     try {
-      const res = await fetch(`${NANO_BANANA_2_URL}?key=${apiKey}`, {
+      const res = await fetchWithKeyFallback(keys, `${NANO_BANANA_2_URL}?key={KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -92,7 +92,7 @@ ${prompt}`;
     }
 
     // 2차: 나노바나나 프로 (Gemini 3 Pro Image) — 고품질 폴백
-    const fallbackRes = await fetch(`${NANO_BANANA_PRO_URL}?key=${apiKey}`, {
+    const fallbackRes = await fetchWithKeyFallback(keys, `${NANO_BANANA_PRO_URL}?key={KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),

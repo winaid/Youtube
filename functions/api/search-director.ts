@@ -1,6 +1,6 @@
-interface Env {
-  GEMINI_API_KEY: string;
-}
+import { GeminiEnv, getApiKeys, fetchWithKeyFallback } from "./_gemini-keys";
+
+type Env = GeminiEnv;
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent";
@@ -12,8 +12,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "query is required" }, { status: 400 });
     }
 
-    const apiKey = context.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const keys = getApiKeys(context.env);
+    if (keys.length === 0) {
       return Response.json(
         { error: "GEMINI_API_KEY not configured", directors: [] },
         { status: 500 }
@@ -46,7 +46,7 @@ If the query is a movie/anime title, find the director of that work AND suggest 
 Return ONLY valid JSON array, no markdown fences, no explanation.
 If no match, return empty array [].`;
 
-    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const res = await fetchWithKeyFallback(keys, `${GEMINI_API_URL}?key={KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
