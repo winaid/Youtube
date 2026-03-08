@@ -182,6 +182,7 @@ export type VideoGenStatus = "idle" | "generating" | "polling" | "completed" | "
 
 export interface VideoVariant {
   videoUri: string;
+  rawVideoUri?: string;
   seed?: string;
 }
 
@@ -205,6 +206,7 @@ export interface VideoClip {
   status: VideoGenStatus;
   operationName?: string;
   videoUri?: string;
+  rawVideoUri?: string; // Veo 원본 URI (Scene Extension용)
   seed?: string;
   error?: string;
   startedAt?: number;

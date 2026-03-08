@@ -69,6 +69,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         .filter((s) => s.video?.uri)
         .map((s) => ({
           videoUri: toProxyUrl(s.video!.uri!),
+          rawVideoUri: s.video!.uri!,
           seed: s.seed !== undefined ? String(s.seed) : undefined,
         }));
 
@@ -76,6 +77,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         return Response.json({
           status: "COMPLETED",
           videoUri: variants[0].videoUri,
+          rawVideoUri: variants[0].rawVideoUri,
           seed: variants[0].seed,
           variants,
           sampleCount: variants.length,

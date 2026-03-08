@@ -203,6 +203,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           const clipUpdate: Partial<VideoClip> = {
             status: "completed",
             videoUri: data.videoUri,
+            rawVideoUri: data.rawVideoUri,
             seed: data.seed || undefined,
             completedAt: Date.now(),
           };
@@ -212,6 +213,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             clipUpdate.variants = data.variants as VideoVariant[];
             clipUpdate.selectedVariant = 0;
             clipUpdate.videoUri = data.variants[0].videoUri;
+            clipUpdate.rawVideoUri = data.variants[0].rawVideoUri;
             clipUpdate.seed = data.variants[0].seed;
           }
 
@@ -495,8 +497,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,
         seed: cfg.seed,
-        // Scene Extension
-        previousVideoUri: cutNumber > 1 ? prevClip?.videoUri : undefined,
+        // Scene Extension — Veo 원본 URI 사용 (프록시 URL은 Veo가 인식 못함)
+        previousVideoUri: cutNumber > 1 ? prevClip?.rawVideoUri : undefined,
         // First Frame (auto-linked from prev cut's end or storyboard)
         firstFrameBase64: firstFrameBase64,
         // Last Frame (auto-linked from end storyboard or manual)
