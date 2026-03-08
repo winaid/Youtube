@@ -5,6 +5,7 @@
 
 export interface GeminiEnv {
   GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+  GOOGLE_CLOUD_API_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_API_KEY_2?: string;
 }
@@ -92,6 +93,7 @@ async function getAccessToken(serviceAccountJson: string): Promise<string> {
 
 export function getApiKeys(env: GeminiEnv): string[] {
   const keys: string[] = [];
+  if (env.GOOGLE_CLOUD_API_KEY) keys.push(env.GOOGLE_CLOUD_API_KEY);
   if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY);
   if (env.GEMINI_API_KEY_2) keys.push(env.GEMINI_API_KEY_2);
   return keys;
@@ -159,7 +161,7 @@ export async function fetchWithAuth(
       headers.set("Authorization", `Bearer ${token}`);
       return fetch(url, { ...init, headers });
     } catch (err) {
-      console.error("Service account auth failed:", err);
+      console.error("Service account auth failed:", err instanceof Error ? err.message : err);
       // fallback to API keys
     }
   }
