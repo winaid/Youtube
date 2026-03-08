@@ -18,6 +18,7 @@ import EnvironmentPanel from "./EnvironmentPanel";
 import EmotionCurveEditor from "./EmotionCurveEditor";
 import YouTubeSEOPanel from "./YouTubeSEOPanel";
 import VideoHistoryPanel, { saveToHistory } from "./VideoHistoryPanel";
+import VideoReviewPanel from "./VideoReviewPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 import { EmotionPoint } from "@/types";
 
@@ -901,6 +902,17 @@ export default function ResultPanel({
             onResetClip={videoGen.resetClip}
             onSelectVariant={videoGen.selectVariant}
           />
+
+          {/* AI 리뷰 패널 */}
+          {videoGen.review && (
+            <VideoReviewPanel
+              review={videoGen.review}
+              onRegenerateCut={videoGen.regenerateFromFeedback}
+              onRegenerateAll={videoGen.regenerateAllFromFeedback}
+              onDismiss={videoGen.dismissReview}
+              onReReview={videoGen.reviewAllClips}
+            />
+          )}
 
           {/* 영상 히스토리 */}
           <VideoHistoryPanel />

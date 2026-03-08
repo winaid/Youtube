@@ -10,6 +10,8 @@ import {
   VideoVariant,
   PromptVerification,
   CharacterFaceRef,
+  VideoReview,
+  CutFeedback,
   DEFAULT_VEO_CONFIG,
 } from "@/types";
 
@@ -67,6 +69,40 @@ function captureVideoLastFrame(videoUri: string): Promise<string | null> {
       resolve(null);
     };
 
+    video.src = videoUri;
+  });
+}
+
+// Capture a middle frame for AI review
+function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.preload = "auto";
+
+    const timeout = setTimeout(() => { video.remove(); resolve(null); }, 10000);
+
+    video.onloadedmetadata = () => {
+      video.currentTime = video.duration / 2;
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(video, 0, 0);
+        const base64 = canvas.toDataURL("image/jpeg", 0.8).replace(/^data:image\/\w+;base64,/, "");
+        clearTimeout(timeout);
+        video.remove();
+        resolve(base64.length > 100 ? base64 : null);
+      } catch { clearTimeout(timeout); video.remove(); resolve(null); }
+    };
+
+    video.onerror = () => { clearTimeout(timeout); video.remove(); resolve(null); };
     video.src = videoUri;
   });
 }
@@ -659,6 +695,215 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   const totalCount = state.clips.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
+  // ===== 브라우저 알림 =====
+  const sendNotification = useCallback((title: string, body: string) => {
+    // 브라우저 Notification API
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body, icon: "/favicon.ico" });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((perm) => {
+          if (perm === "granted") new Notification(title, { body, icon: "/favicon.ico" });
+        });
+      }
+    }
+    // 오디오 알림 (짧은 비프)
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.value = 0.3;
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+      setTimeout(() => {
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.frequency.value = 1320;
+        gain2.gain.value = 0.3;
+        osc2.start();
+        osc2.stop(ctx.currentTime + 0.2);
+      }, 200);
+    } catch { /* audio not available */ }
+  }, []);
+
+  // ===== AI 전체 리뷰 =====
+  const reviewAllClips = useCallback(async () => {
+    const completed = state.clips.filter((c) => c.status === "completed" && c.videoUri);
+    if (completed.length === 0) return;
+
+    setState((prev) => ({
+      ...prev,
+      review: {
+        overallScore: 0,
+        overallComment: "",
+        cutFeedbacks: [],
+        status: "reviewing",
+        regeneratedCuts: [],
+      },
+    }));
+
+    try {
+      // 각 클립에서 중간 프레임 캡처
+      const cutInputs: { cutNumber: number; frameBase64: string; videoPrompt: string; sceneDescription: string }[] = [];
+      for (const clip of completed) {
+        const cut = cuts.find((c) => c.cutNumber === clip.cutNumber);
+        let frame: string | null = null;
+        try {
+          frame = await captureVideoMiddleFrame(clip.videoUri!);
+        } catch { /* skip */ }
+        cutInputs.push({
+          cutNumber: clip.cutNumber,
+          frameBase64: frame || "",
+          videoPrompt: cut?.videoPrompt || "",
+          sceneDescription: cut?.sceneDescription || "",
+        });
+      }
+
+      const res = await fetch("/api/review-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cuts: cutInputs, totalCuts: totalCount }),
+      });
+
+      if (!res.ok) throw new Error(`Review API ${res.status}`);
+      const data = await res.json() as {
+        overallScore: number;
+        overallComment: string;
+        cutFeedbacks: CutFeedback[];
+      };
+
+      setState((prev) => ({
+        ...prev,
+        review: {
+          overallScore: data.overallScore || 50,
+          overallComment: data.overallComment || "리뷰 완료",
+          cutFeedbacks: data.cutFeedbacks || [],
+          status: "done",
+          regeneratedCuts: [],
+        },
+      }));
+    } catch (err) {
+      console.error("Review failed:", err);
+      setState((prev) => ({
+        ...prev,
+        review: {
+          overallScore: 0,
+          overallComment: "리뷰 실패 — 수동으로 확인해주세요",
+          cutFeedbacks: [],
+          status: "done",
+          regeneratedCuts: [],
+        },
+      }));
+    }
+  }, [state.clips, cuts, totalCount]);
+
+  // ===== 피드백 기반 재생성 =====
+  const regenerateFromFeedback = useCallback(async (cutNumber: number, improvedPrompt?: string) => {
+    // 피드백의 개선된 프롬프트로 업데이트 후 재생성
+    if (improvedPrompt) {
+      const cut = cuts.find((c) => c.cutNumber === cutNumber);
+      if (cut) {
+        // 프롬프트를 직접 업데이트 (부모 컴포넌트에서 관리하므로 videoPrompt만 활용)
+        cut.videoPrompt = improvedPrompt;
+      }
+    }
+
+    setState((prev) => ({
+      ...prev,
+      review: prev.review ? { ...prev.review, status: "regenerating" } : undefined,
+    }));
+
+    // 클립 리셋 후 재생성
+    resetClip(cutNumber);
+    // 짧은 딜레이 후 생성 시작 (상태 업데이트 반영 대기)
+    setTimeout(() => generateCut(cutNumber), 300);
+  }, [cuts, resetClip, generateCut]);
+
+  // ===== 피드백 기반 전체 재생성 (needsRegeneration인 컷만) =====
+  const regenerateAllFromFeedback = useCallback(async () => {
+    if (!state.review?.cutFeedbacks) return;
+
+    const toRegenerate = state.review.cutFeedbacks
+      .filter((f) => f.needsRegeneration)
+      .map((f) => f.cutNumber);
+
+    if (toRegenerate.length === 0) return;
+
+    setState((prev) => ({
+      ...prev,
+      review: prev.review ? { ...prev.review, status: "regenerating", regeneratedCuts: [] } : undefined,
+    }));
+
+    // 순차적으로 재생성 (Scene Extension 의존 때문)
+    for (const cutNum of toRegenerate) {
+      const feedback = state.review.cutFeedbacks.find((f) => f.cutNumber === cutNum);
+      if (feedback?.improvedPrompt) {
+        const cut = cuts.find((c) => c.cutNumber === cutNum);
+        if (cut) cut.videoPrompt = feedback.improvedPrompt;
+      }
+      resetClip(cutNum);
+    }
+
+    // 첫 번째 컷 생성 시작 (나머지는 autoMode로)
+    autoModeRef.current = true;
+    const firstIdx = state.clips.findIndex((c) => toRegenerate.includes(c.cutNumber));
+    setState((prev) => ({
+      ...prev,
+      isAutoMode: true,
+      currentAutoIndex: firstIdx >= 0 ? firstIdx : 0,
+    }));
+  }, [state.review, state.clips, cuts, resetClip]);
+
+  // ===== 전체 완료 감지 → 자동 리뷰 + 알림 =====
+  const prevCompletedRef = useRef(0);
+  useEffect(() => {
+    if (totalCount > 0 && completedCount === totalCount && prevCompletedRef.current < totalCount) {
+      prevCompletedRef.current = completedCount;
+
+      // 리뷰가 재생성 중이면 → 재생성 완료 알림
+      if (state.review?.status === "regenerating") {
+        setState((prev) => ({
+          ...prev,
+          review: prev.review ? { ...prev.review, status: "complete" } : undefined,
+        }));
+        sendNotification(
+          "재생성 완료!",
+          "AI 피드백 기반 재생성이 완료되었습니다. 결과를 확인하세요."
+        );
+        return;
+      }
+
+      // 첫 완료 → 자동 리뷰 시작
+      if (!state.review || state.review.status === "idle") {
+        sendNotification(
+          "전체 영상 생성 완료!",
+          `${totalCount}개 컷 생성 완료. AI 리뷰를 시작합니다...`
+        );
+        reviewAllClips();
+      }
+    }
+    // completedCount가 줄었으면 (재생성 중) ref 업데이트
+    if (completedCount < prevCompletedRef.current) {
+      prevCompletedRef.current = completedCount;
+    }
+  }, [completedCount, totalCount, state.review, reviewAllClips, sendNotification]);
+
+  // 알림 권한 미리 요청
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  const dismissReview = useCallback(() => {
+    setState((prev) => ({ ...prev, review: undefined }));
+  }, []);
+
   return {
     ...state,
     updateConfig,
@@ -671,6 +916,10 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     resetClip,
     verifyPrompt,
     refinePromptEnglish,
+    reviewAllClips,
+    regenerateFromFeedback,
+    regenerateAllFromFeedback,
+    dismissReview,
     completedCount,
     totalCount,
     progress,

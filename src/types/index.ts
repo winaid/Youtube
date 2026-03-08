@@ -220,11 +220,30 @@ export interface VideoClip {
   verification?: PromptVerification; // Enhancement: prompt quality score
 }
 
+// ===== AI 피드백 리뷰 =====
+export interface CutFeedback {
+  cutNumber: number;
+  score: number; // 0-100
+  issues: string[]; // 구체적 문제점
+  suggestion: string; // 개선 제안
+  needsRegeneration: boolean; // 재생성 필요 여부
+  improvedPrompt?: string; // 개선된 프롬프트
+}
+
+export interface VideoReview {
+  overallScore: number; // 0-100
+  overallComment: string; // 전체 평가 한마디
+  cutFeedbacks: CutFeedback[];
+  status: "idle" | "reviewing" | "done" | "regenerating" | "complete";
+  regeneratedCuts: number[]; // 재생성 완료된 컷 번호
+}
+
 export interface VideoGenerationState {
   clips: VideoClip[];
   isAutoMode: boolean;
   currentAutoIndex: number;
   config: VeoGenerationConfig;
+  review?: VideoReview;
 }
 
 // ===== 캐릭터 얼굴 레퍼런스 =====
