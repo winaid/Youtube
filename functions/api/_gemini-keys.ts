@@ -20,7 +20,7 @@ export function getApiKeys(env: GeminiEnv): string[] {
 function isRetryableError(status: number, body?: string): boolean {
   if (status === 429) return true;
   if (status === 403 && body && /quota|rate|RESOURCE_EXHAUSTED|exhausted/i.test(body)) return true;
-  if (status === 500 && body && /RESOURCE_EXHAUSTED|quota|overloaded/i.test(body)) return true;
+  if ((status === 500 || status === 502) && body && /RESOURCE_EXHAUSTED|quota|overloaded|exhausted/i.test(body)) return true;
   if (status === 503) return true;
   return false;
 }
