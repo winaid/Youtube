@@ -77,7 +77,7 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
+        generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
       }),
     });
 
@@ -94,8 +94,12 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
     try {
       parsed = JSON.parse(text);
     } catch {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { overallScore: 0, issues: ["Failed to parse response"] };
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { overallScore: 0, issues: ["Failed to parse response"] };
+      } catch {
+        parsed = { overallScore: 0, issues: ["Failed to parse AI response"], rawPreview: text.slice(0, 200) };
+      }
     }
 
     return Response.json(parsed);
