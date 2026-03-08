@@ -319,7 +319,7 @@ export default function ResultPanel({
     onUpdateResult({ ...result, cuts: newCuts });
   };
 
-  const hasTextPattern = /text|title|caption|subtitle|letter|sign|hangeul|자막|글씨|텍스트|타이틀/i;
+  const hasTextPattern = /\b(text overlay|title card|caption|subtitle|written text|hangeul text|visible text|on-screen text)\b|자막|글씨|텍스트|타이틀/i;
   const getEffectiveMode = (cut: typeof result.cuts[0]) => {
     const hasText = hasTextPattern.test(cut.videoPrompt + " " + cut.imagePrompt + " " + cut.sceneDescription);
     return hasText ? "quality" : videoGen.config.mode;
@@ -333,7 +333,7 @@ export default function ResultPanel({
     directorPersona: result.directorPersonaPrompt,
     characterSeeds: result.characterSeeds,
     continuityRules: result.continuityRules,
-    totalDuration: `${result.cuts.length * 8}초 (${Math.round((result.cuts.length * 8) / 60)}분)`,
+    totalDuration: `${result.cuts.length * 8}초 (${Math.floor((result.cuts.length * 8) / 60)}분${(result.cuts.length * 8) % 60 > 0 ? ` ${(result.cuts.length * 8) % 60}초` : ""})`,
     extendStrategy: {
       description: "CUT 1은 Video Prompt로 최초 생성. CUT 2부터는 이전 클립의 마지막 프레임을 참조 이미지로 사용하여 Extend Prompt로 연장.",
       steps: result.cuts.map((cut) => ({
