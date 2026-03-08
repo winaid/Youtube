@@ -32,11 +32,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     const url = buildVertexUrl(context.env, model, "fetchPredictOperation");
-    const res = await fetchWithAuth(context.env, url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operationName }),
-    });
+
+    // Cloudflare Pages 타임아웃(100s) 전에 자체 타임아웃 설정
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25초
+
+    let res: Response;
+    try {
+      res = await fetchWithAuth(context.env, url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operationName }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return Response.json({ status: "RUNNING" }); // 타임아웃 → 아직 처리중으로 반환
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       const errText = await res.text();
