@@ -19,6 +19,7 @@ export interface VideoHistoryEntry {
 }
 
 const STORAGE_KEY = "veo-video-history";
+const SESSION_KEY = "veo-current-session-id";
 
 function loadHistory(): VideoHistoryEntry[] {
   try {
@@ -29,13 +30,11 @@ function loadHistory(): VideoHistoryEntry[] {
   }
 }
 
-function saveHistory(entries: VideoHistoryEntry[]) {
+function persistHistory(entries: VideoHistoryEntry[]) {
   try {
-    // 최대 20개 보관
     const trimmed = entries.slice(0, 20);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
   } catch {
-    // storage full — remove oldest
     try {
       const trimmed = entries.slice(0, 10);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
@@ -43,14 +42,42 @@ function saveHistory(entries: VideoHistoryEntry[]) {
   }
 }
 
-export function addToHistory(entry: Omit<VideoHistoryEntry, "id" | "timestamp">) {
+// 현재 세션 ID — 같은 세션의 영상은 덮어쓰기
+let currentSessionId: string | null = null;
+function getSessionId(): string {
+  if (!currentSessionId) {
+    currentSessionId = sessionStorage.getItem(SESSION_KEY);
+    if (!currentSessionId) {
+      currentSessionId = `vh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      sessionStorage.setItem(SESSION_KEY, currentSessionId);
+    }
+  }
+  return currentSessionId;
+}
+
+/**
+ * 영상 저장 — 같은 세션이면 업데이트, 새 세션이면 추가
+ * 컷이 1개라도 완료되면 호출됨
+ */
+export function saveToHistory(entry: Omit<VideoHistoryEntry, "id" | "timestamp">) {
+  const sessionId = getSessionId();
   const history = loadHistory();
+  const existingIdx = history.findIndex((h) => h.id === sessionId);
+
   const newEntry: VideoHistoryEntry = {
     ...entry,
-    id: `vh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: sessionId,
     timestamp: Date.now(),
   };
-  saveHistory([newEntry, ...history]);
+
+  if (existingIdx >= 0) {
+    // 같은 세션 — 업데이트 (더 많은 컷이 완료됐으면 덮어쓰기)
+    history[existingIdx] = newEntry;
+    persistHistory(history);
+  } else {
+    // 새 세션 — 맨 앞에 추가
+    persistHistory([newEntry, ...history]);
+  }
 }
 
 interface VideoHistoryPanelProps {
@@ -63,6 +90,22 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
 
   useEffect(() => {
     setHistory(loadHistory());
+
+    // 다른 탭에서 저장했을 때도 반영
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) setHistory(loadHistory());
+    };
+    window.addEventListener("storage", onStorage);
+
+    // 현재 세션 저장 시에도 반영 (같은 탭)
+    const interval = setInterval(() => {
+      setHistory(loadHistory());
+    }, 5000);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      clearInterval(interval);
+    };
   }, []);
 
   if (history.length === 0) {
@@ -80,13 +123,13 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
 
   const handleDelete = (id: string) => {
     const updated = history.filter((h) => h.id !== id);
-    saveHistory(updated);
+    persistHistory(updated);
     setHistory(updated);
   };
 
   const handleClearAll = () => {
     if (confirm("전체 히스토리를 삭제하시겠습니까?")) {
-      saveHistory([]);
+      persistHistory([]);
       setHistory([]);
     }
   };
@@ -112,73 +155,87 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
         </div>
       </CardHeader>
       <CardContent className="space-y-2 pt-2 max-h-[400px] overflow-y-auto">
-        {history.map((entry) => (
-          <div
-            key={entry.id}
-            className="rounded-lg border transition-all"
-            style={{ borderColor: expanded === entry.id ? "#787fff40" : "#e5e5e520" }}
-          >
-            <button
-              className="w-full text-left p-2.5 flex items-center gap-2"
-              onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
+        {history.map((entry) => {
+          const isCurrentSession = entry.id === (currentSessionId || sessionStorage.getItem(SESSION_KEY));
+          return (
+            <div
+              key={entry.id}
+              className="rounded-lg border transition-all"
+              style={{
+                borderColor: expanded === entry.id
+                  ? "#787fff40"
+                  : isCurrentSession
+                  ? "#22c55e30"
+                  : "#e5e5e520",
+              }}
             >
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{entry.storyTitle || "제목 없음"}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {formatDate(entry.timestamp)} · {entry.cuts.length}컷
-                </p>
-              </div>
-              <span className="text-[10px] text-muted-foreground">
-                {expanded === entry.id ? "▲" : "▼"}
-              </span>
-            </button>
-
-            {expanded === entry.id && (
-              <div className="px-2.5 pb-2.5 space-y-2">
-                {entry.cuts.map((cut) => (
-                  <div key={cut.cutNumber} className="space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <Badge className="text-[9px] text-white" style={{ background: "#787fff" }}>
-                        CUT {cut.cutNumber}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground truncate">
-                        {cut.sceneDescription}
-                      </span>
-                    </div>
-                    <video
-                      src={cut.videoUri}
-                      controls
-                      className="w-full rounded-md"
-                      style={{ maxHeight: "150px" }}
-                    />
+              <button
+                className="w-full text-left p-2.5 flex items-center gap-2"
+                onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-medium truncate">{entry.storyTitle || "제목 없음"}</p>
+                    {isCurrentSession && (
+                      <Badge className="text-[8px] text-white" style={{ background: "#22c55e" }}>현재</Badge>
+                    )}
                   </div>
-                ))}
+                  <p className="text-[10px] text-muted-foreground">
+                    {formatDate(entry.timestamp)} · {entry.cuts.length}컷
+                  </p>
+                </div>
+                <span className="text-[10px] text-muted-foreground">
+                  {expanded === entry.id ? "▲" : "▼"}
+                </span>
+              </button>
 
-                <div className="flex gap-1.5 pt-1">
-                  {onLoadHistory && (
+              {expanded === entry.id && (
+                <div className="px-2.5 pb-2.5 space-y-2">
+                  {entry.cuts.map((cut) => (
+                    <div key={cut.cutNumber} className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Badge className="text-[9px] text-white" style={{ background: "#787fff" }}>
+                          CUT {cut.cutNumber}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground truncate">
+                          {cut.sceneDescription}
+                        </span>
+                      </div>
+                      <video
+                        src={cut.videoUri}
+                        controls
+                        className="w-full rounded-md"
+                        style={{ maxHeight: "150px" }}
+                      />
+                    </div>
+                  ))}
+
+                  <div className="flex gap-1.5 pt-1">
+                    {onLoadHistory && (
+                      <Button
+                        size="sm"
+                        className="h-6 text-[10px] text-white"
+                        style={{ background: "#787fff" }}
+                        onClick={() => onLoadHistory(entry)}
+                      >
+                        이 영상 불러오기
+                      </Button>
+                    )}
                     <Button
                       size="sm"
-                      className="h-6 text-[10px] text-white"
-                      style={{ background: "#787fff" }}
-                      onClick={() => onLoadHistory(entry)}
+                      variant="outline"
+                      className="h-6 text-[10px]"
+                      style={{ borderColor: "#ef444430", color: "#dc2626" }}
+                      onClick={() => handleDelete(entry.id)}
                     >
-                      이 영상 불러오기
+                      삭제
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-[10px]"
-                    style={{ borderColor: "#ef444430", color: "#dc2626" }}
-                    onClick={() => handleDelete(entry.id)}
-                  >
-                    삭제
-                  </Button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );
