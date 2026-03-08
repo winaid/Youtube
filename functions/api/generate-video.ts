@@ -96,7 +96,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const parameters: Record<string, unknown> = {
       aspectRatio,
       personGeneration: req.personGeneration || "allow_all",
-      numberOfVideos: Math.min(req.sampleCount || 1, 4),
     };
 
     // resolution: 720p (기본) / 1080p / 4k
