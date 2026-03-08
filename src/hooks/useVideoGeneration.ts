@@ -337,6 +337,21 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ operationName }),
         });
+
+        if (!res.ok) {
+          // 403 등 HTTP 에러 → 폴링 중단
+          updateClip(cutNumber, {
+            status: "failed",
+            error: `API 오류 (${res.status})`,
+          });
+          pollTimers.current.delete(cutNumber);
+          if (autoModeRef.current) {
+            autoModeRef.current = false;
+            setState((prev) => ({ ...prev, isAutoMode: false }));
+          }
+          return;
+        }
+
         const data = await res.json();
 
         if (data.status === "COMPLETED") {
