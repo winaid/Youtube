@@ -214,11 +214,26 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [blendDirector, setBlendDirector] = useState("");
   const [blendRatio, setBlendRatio] = useState(70); // 메인 감독 비율
 
+  // 감독 추천 상태
+  const [directorRecommendation, setDirectorRecommendation] = useState<{
+    analysis: string;
+    localMatches: { id: string; fitScore: number; reason: string }[];
+    webSuggestions: {
+      id: string; name: string; nameKo: string; region: Region; style: string;
+      description: string; reason: string; fitScore: number;
+      signatureTechniques?: SignatureTechniques; notableWorks?: string[];
+    }[];
+  } | null>(null);
+  const [isRecommending, setIsRecommending] = useState(false);
+  const [showRecommendation, setShowRecommendation] = useState(false);
+
   // 시나리오 프리필
   useEffect(() => {
     if (prefillScenario) {
       setStoryText(prefillScenario);
       onPrefillConsumed?.();
+      // 시나리오 채팅에서 넘어온 경우 자동으로 감독 추천 표시
+      setShowRecommendation(true);
     }
   }, [prefillScenario, onPrefillConsumed]);
 
@@ -405,6 +420,35 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     return () => clearTimeout(timer);
   }, [storyText, analyzeStory]);
 
+  // 감독 추천 함수
+  const recommendDirector = useCallback(async () => {
+    if (!storyText.trim() || storyText.length < 30 || isRecommending) return;
+    setIsRecommending(true);
+    setShowRecommendation(true);
+    try {
+      const localDirectorList = allDirectors.map((d) => ({
+        id: d.id,
+        name: d.name,
+        nameKo: d.nameKo,
+        region: d.region,
+        style: d.style,
+      }));
+      const res = await fetch("/api/recommend-director", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyText, localDirectors: localDirectorList }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      setDirectorRecommendation(data);
+    } catch (err) {
+      console.error("[recommend-director] 실패:", err);
+      setDirectorRecommendation(null);
+    } finally {
+      setIsRecommending(false);
+    }
+  }, [storyText, allDirectors, isRecommending]);
+
   const handleSubmit = () => {
     if (!storyText.trim() || !directorPersona) return;
     const selectedDir = allDirectors.find((d) => d.id === directorPersona);
@@ -455,6 +499,160 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             className="resize-none focus-visible:ring-[#787fff]"
           />
         </div>
+
+        {/* AI 감독 추천 버튼 */}
+        {storyText.trim().length >= 30 && (
+          <div className="space-y-2">
+            <button
+              onClick={recommendDirector}
+              disabled={isRecommending}
+              className="w-full py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{
+                background: isRecommending
+                  ? "#787fff20"
+                  : "linear-gradient(135deg, #787fff20, #fff78720)",
+                border: "1px solid #787fff40",
+                color: "#5a5ecc",
+              }}
+            >
+              {isRecommending ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+                  AI가 시나리오를 분석해 감독을 찾는 중...
+                </>
+              ) : (
+                <>✨ 이 시나리오에 어울리는 감독 AI 추천</>
+              )}
+            </button>
+
+            {/* 추천 결과 */}
+            {showRecommendation && directorRecommendation && (
+              <div className="rounded-xl border p-3 space-y-3" style={{ background: "#fafbff", borderColor: "#787fff30" }}>
+                {/* 분석 요약 */}
+                {directorRecommendation.analysis && (
+                  <p className="text-[10px] leading-relaxed" style={{ color: "#5a5ecc" }}>
+                    {directorRecommendation.analysis}
+                  </p>
+                )}
+
+                {/* 로컬 감독 매칭 */}
+                {directorRecommendation.localMatches.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-semibold" style={{ color: "#787fff" }}>
+                      보유 감독 중 추천
+                    </span>
+                    <div className="space-y-1.5">
+                      {directorRecommendation.localMatches.map((match) => {
+                        const dir = allDirectors.find((d) => d.id === match.id);
+                        if (!dir) return null;
+                        const isSelected = directorPersona === match.id;
+                        return (
+                          <button
+                            key={match.id}
+                            onClick={() => setDirectorPersona(match.id)}
+                            className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
+                            style={{
+                              background: isSelected ? "#787fff15" : "white",
+                              border: `1px solid ${isSelected ? "#787fff" : "#787fff20"}`,
+                            }}
+                          >
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-xs font-semibold" style={{ color: "#333" }}>
+                                {dir.nameKo}
+                                {isSelected && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff", color: "white" }}>선택됨</span>}
+                              </span>
+                              <span
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{ background: match.fitScore >= 85 ? "#22c55e15" : "#fff78715", color: match.fitScore >= 85 ? "#16a34a" : "#7a7000" }}
+                              >
+                                {match.fitScore}%
+                              </span>
+                            </div>
+                            <p className="text-[10px] leading-relaxed" style={{ color: "#666" }}>{match.reason}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 웹 추천 감독 */}
+                {directorRecommendation.webSuggestions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
+                      웹 검색 추천 감독 (새로 추가)
+                    </span>
+                    <div className="space-y-1.5">
+                      {directorRecommendation.webSuggestions.map((sug) => {
+                        const alreadyAdded = customDirectors.some((d) => d.id === sug.id);
+                        const isSelected = directorPersona === sug.id;
+                        return (
+                          <button
+                            key={sug.id}
+                            onClick={() => {
+                              if (!alreadyAdded) {
+                                const newDir = {
+                                  id: sug.id,
+                                  name: sug.name,
+                                  nameKo: sug.nameKo,
+                                  region: sug.region,
+                                  style: sug.style,
+                                  description: sug.description,
+                                  persona: "",
+                                  signatureTechniques: sug.signatureTechniques,
+                                  notableWorks: sug.notableWorks,
+                                };
+                                setCustomDirectors((prev) => {
+                                  if (prev.some((d) => d.id === newDir.id)) return prev;
+                                  const updated = [...prev, newDir];
+                                  persistCustomDirectors(updated);
+                                  return updated;
+                                });
+                              }
+                              setDirectorPersona(sug.id);
+                            }}
+                            className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
+                            style={{
+                              background: isSelected ? "#22c55e15" : "white",
+                              border: `1px solid ${isSelected ? "#22c55e" : "#22c55e30"}`,
+                            }}
+                          >
+                            <div className="flex items-center justify-between mb-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold" style={{ color: "#333" }}>{sug.nameKo}</span>
+                                <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "#787fff10", color: "#787fff" }}>{sug.region}</span>
+                                {isSelected && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e", color: "white" }}>선택됨</span>}
+                              </div>
+                              <span
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{ background: sug.fitScore >= 85 ? "#22c55e15" : "#fff78715", color: sug.fitScore >= 85 ? "#16a34a" : "#7a7000" }}
+                              >
+                                {sug.fitScore}%
+                              </span>
+                            </div>
+                            <p className="text-[10px]" style={{ color: "#888" }}>{sug.style}</p>
+                            <p className="text-[10px] leading-relaxed mt-0.5" style={{ color: "#666" }}>{sug.reason}</p>
+                            {!alreadyAdded && (
+                              <p className="text-[9px] mt-1" style={{ color: "#22c55e" }}>+ 클릭하면 자동으로 저장됩니다</p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setShowRecommendation(false)}
+                  className="w-full text-[10px] py-1 rounded text-center transition-colors hover:bg-gray-100"
+                  style={{ color: "#999" }}
+                >
+                  접기 ▲
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 감독 검색 */}
         <div className="space-y-2">
