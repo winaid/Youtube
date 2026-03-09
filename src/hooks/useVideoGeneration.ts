@@ -34,7 +34,11 @@ interface UseVideoGenerationOptions {
 function captureVideoLastFrame(videoUri: string): Promise<string | null> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
+    // data: URI는 CORS origin이 null → crossOrigin="anonymous" 설정 시 canvas tainted → toDataURL 실패
+    // 프록시 URL (동일 출처) 및 gs://, https:// 는 crossOrigin 설정 필요
+    if (!videoUri.startsWith("data:")) {
+      video.crossOrigin = "anonymous";
+    }
     video.muted = true;
     video.preload = "auto";
 
@@ -82,7 +86,9 @@ function captureVideoLastFrame(videoUri: string): Promise<string | null> {
 function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
+    if (!videoUri.startsWith("data:")) {
+      video.crossOrigin = "anonymous";
+    }
     video.muted = true;
     video.preload = "auto";
 
