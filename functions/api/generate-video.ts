@@ -45,11 +45,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // Scene Extension (이전 영상 이어 생성)
     // video + image 동시 사용 불가 → video 우선
-    if (req.previousVideoUri) {
+    // data URI(base64)는 Veo가 "video is empty"를 반환하므로 GCS/HTTPS URI만 허용
+    const isValidVideoUri = (uri: string) =>
+      uri.startsWith("gs://") || uri.startsWith("https://");
+    if (req.previousVideoUri && isValidVideoUri(req.previousVideoUri)) {
       instance.video = { uri: req.previousVideoUri };
       if (req.firstFrameBase64 || req.lastFrameBase64) {
         warnings.push("Scene Extension 모드에서는 image(firstFrame) 사용 불가 — video만 사용");
       }
+    } else if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
+      // data URI 등 Veo가 지원하지 않는 URI → Scene Extension 스킵, text-to-video로 폴백
+      warnings.push("previousVideoUri가 GCS/HTTPS URI가 아니어서 Scene Extension 생략 (text-to-video로 생성)");
     } else if (req.firstFrameBase64) {
       // Image-to-Video: firstFrame으로 시작
       instance.image = inlineImage(req.firstFrameBase64);
