@@ -50,7 +50,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     //   - us-central1 리전 엔드포인트 → GCS URI 반환 → 다음 컷 Scene Extension 가능
     // veo-3.1-fast-generate-001 / veo-3.0-fast-generate-001:
     //   - image/video input 미지원 → Scene Extension 불가 → 사용 안 함
-    const model = "veo-3.0-generate-001";
+    const model = "veo-3.1-generate-001";
 
     // GCS/HTTPS URI 유효성 검사 (base64 data URI 는 Veo 영상 입력 불가)
     const isValidVideoUri = (uri: string) =>
