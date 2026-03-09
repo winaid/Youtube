@@ -12,9 +12,11 @@ import {
   ProjectRecord,
   AnalyticsSummary,
 } from "@/lib/analytics";
+import { savePromptHistory } from "@/lib/prompt-history";
 import InputPanel from "./InputPanel";
 import ResultPanel from "./ResultPanel";
 import StoryChat from "./StoryChat";
+import PromptHistoryPanel from "./PromptHistoryPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,7 @@ export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "dashboard">("prompt");
+  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "history" | "dashboard">("prompt");
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
 
@@ -49,7 +51,10 @@ export default function PromptGenerator() {
       setResult(output);
       setStatus("success");
 
-      // 프로젝트 기록 저장
+      // 프롬프트 히스토리 저장 (input + output 전체)
+      savePromptHistory(input, output);
+
+      // 프로젝트 기록 저장 (성과 대시보드용 메타데이터)
       saveProjectRecord({
         title: output.projectTitle,
         directorStyle: input.directorPersona,
@@ -66,6 +71,15 @@ export default function PromptGenerator() {
 
   const handleUseAsScenario = useCallback((scenarioText: string) => {
     setPrefillScenario(scenarioText);
+    setActiveTab("prompt");
+  }, []);
+
+  // 히스토리에서 불러오기 → 분석 없이 바로 결과 복원
+  const handleRestoreHistory = useCallback((input: PromptInput, output: PromptOutput) => {
+    setLastInput(input);
+    setResult(output);
+    setStatus("success");
+    setError(null);
     setActiveTab("prompt");
   }, []);
 
@@ -96,6 +110,17 @@ export default function PromptGenerator() {
           시나리오 AI 생성
         </button>
         <button
+          onClick={() => setActiveTab("history")}
+          className="px-4 py-2 rounded-full text-sm font-medium transition-all"
+          style={
+            activeTab === "history"
+              ? { background: "#f97316", color: "white", boxShadow: "0 2px 8px #f9731640" }
+              : { background: "#f9731615", color: "#ea580c" }
+          }
+        >
+          프롬프트 히스토리
+        </button>
+        <button
           onClick={() => setActiveTab("dashboard")}
           className="px-4 py-2 rounded-full text-sm font-medium transition-all"
           style={
@@ -124,6 +149,16 @@ export default function PromptGenerator() {
         </div>
       ) : activeTab === "story" ? (
         <StoryChat onUseAsScenario={handleUseAsScenario} />
+      ) : activeTab === "history" ? (
+        <div className="max-w-2xl mx-auto">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold" style={{ color: "#222" }}>프롬프트 히스토리</h2>
+            <p className="text-xs mt-0.5" style={{ color: "#999" }}>
+              이전에 분석한 프롬프트를 불러와 바로 영상 생성에 사용하세요. 재분석 없이 즉시 복원됩니다.
+            </p>
+          </div>
+          <PromptHistoryPanel onRestore={handleRestoreHistory} />
+        </div>
       ) : (
         /* 성과 대시보드 */
         <div className="space-y-4">
