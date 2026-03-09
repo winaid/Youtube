@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, SceneSfx } from "@/types";
+import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import VideoGenerationPanel from "./VideoGenerationPanel";
 import VideoSettingsPanel from "./VideoSettingsPanel";
 import TimelineEditor from "./TimelineEditor";
 import CharacterFaceManager from "./CharacterFaceManager";
-import SfxPanel from "./SfxPanel";
 import SeriesManager from "./SeriesManager";
 import OneClickPipeline from "./OneClickPipeline";
 import EnvironmentPanel from "./EnvironmentPanel";
@@ -46,17 +45,10 @@ export default function ResultPanel({
   const [jsonCopied, setJsonCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [showJson, setShowJson] = useState(false);
-  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline" | "audio">("prompts");
+  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline">("prompts");
   const [emotionPoints, setEmotionPoints] = useState<EmotionPoint[]>([]);
-  interface BgmMainResult { mood: string; genre: string; tempo: string; searchKeywords: string[]; suggestions: string[]; source: string; }
-  interface BgmSceneResult { forScenes: string; mood: string; searchKeywords: string[]; suggestion: string; }
-  interface BgmData { mainBgm?: BgmMainResult; sceneBgm?: BgmSceneResult[]; }
-  const [bgmResult, setBgmResult] = useState<BgmData | null>(null);
-  const [bgmLoading, setBgmLoading] = useState(false);
-  const [ttsLoading, setTtsLoading] = useState(false);
-  const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
-  const [ttsVoice, setTtsVoice] = useState("ko-KR-Wavenet-A");
-  const [ttsRate, setTtsRate] = useState(1.0);
+  const [ttsVoice] = useState("ko-KR-Wavenet-A");
+  const [ttsRate] = useState(1.0);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragItemRef = useRef<number | null>(null);
   // 스토리보드 이미지 (시작 프레임)
@@ -74,8 +66,6 @@ export default function ResultPanel({
   const [srtLoading, setSrtLoading] = useState(false);
   // 캐릭터 얼굴 레퍼런스
   const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
-  // 효과음 매칭
-  const [sceneSfxList, setSceneSfxList] = useState<SceneSfx[]>([]);
   // 인라인 감독 변경 재생성
   const [altDirector, setAltDirector] = useState("");
   const [altGenerating, setAltGenerating] = useState(false);
@@ -492,11 +482,6 @@ export default function ResultPanel({
                 얼굴 {faceRefs.length}명 REF 고정
               </Badge>
             )}
-            {sceneSfxList.length > 0 && (
-              <Badge style={{ background: "#e64436", color: "white" }}>
-                SFX {sceneSfxList.reduce((a, s) => a + s.sfxMatches.length, 0)}개
-              </Badge>
-            )}
           </div>
 
           {/* 인라인 감독 변경 재생성 */}
@@ -575,7 +560,6 @@ export default function ResultPanel({
           { key: "prompts", label: "프롬프트", color: "#787fff" },
           { key: "generate", label: "영상 생성", color: "#22c55e" },
           { key: "timeline", label: "타임라인", color: "#c4b800" },
-          { key: "audio", label: "BGM/TTS/SFX", color: "#e09900" },
         ] as const).map((tab) => (
           <button
             key={tab.key}
@@ -923,7 +907,7 @@ export default function ResultPanel({
             hasStoryboard={Object.keys(storyboardImages).length >= result.cuts.length}
             hasVideo={videoGen.completedCount >= result.cuts.length}
             hasSrt={!!srtContent}
-            hasBgm={!!bgmResult}
+            hasBgm={false}
             hasSeo={false}
             onRunStoryboard={async () => {
               const tasks = result.cuts
@@ -969,19 +953,7 @@ export default function ResultPanel({
                 if (data.srt) setSrtContent(data.srt);
               }
             }}
-            onRunBgm={async () => {
-              const res = await fetch("/api/recommend-bgm", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  scenes: result.cuts.map((c) => ({
-                    sceneDescription: c.sceneDescription,
-                    moodLighting: c.moodLighting,
-                  })),
-                }),
-              });
-              if (res.ok) setBgmResult(await res.json());
-            }}
+            onRunBgm={async () => { /* BGM removed */ }}
             onRunSeo={async () => { /* handled by YouTubeSEOPanel */ }}
             onRunThumbnail={async () => { /* handled by YouTubeSEOPanel */ }}
           />
@@ -1042,187 +1014,6 @@ export default function ResultPanel({
         />
       )}
 
-      {/* BGM / TTS / SFX 섹션 */}
-      {activeSection === "audio" && (
-        <div className="space-y-4">
-          {/* 효과음 자동 매칭 */}
-          <SfxPanel
-            cuts={result.cuts}
-            sceneSfxList={sceneSfxList}
-            onSceneSfxChange={setSceneSfxList}
-          />
-
-          {/* BGM 추천 */}
-          <Card className="overflow-hidden border-2" style={{ borderColor: "#e0990040" }}>
-            <CardHeader className="pb-2" style={{ background: "linear-gradient(135deg, #e0990015, #fff78715)" }}>
-              <CardTitle className="text-sm" style={{ color: "#b37700" }}>BGM 추천</CardTitle>
-              <p className="text-[10px] text-muted-foreground">
-                장면 분위기를 분석하여 로열티 프리 BGM을 추천합니다
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-3">
-              <Button
-                size="sm"
-                onClick={async () => {
-                  setBgmLoading(true);
-                  try {
-                    const res = await fetch("/api/recommend-bgm", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        scenes: result.cuts.map((c) => ({
-                          sceneDescription: c.sceneDescription,
-                          moodLighting: c.moodLighting,
-                        })),
-                      }),
-                    });
-                    if (res.ok) setBgmResult(await res.json());
-                  } catch (err) { console.error("[recommend-bgm]", err); }
-                  setBgmLoading(false);
-                }}
-                disabled={bgmLoading}
-                style={{ background: "#e09900", color: "white" }}
-              >
-                {bgmLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    분석 중...
-                  </span>
-                ) : bgmResult ? "다시 추천받기" : "BGM 추천받기"}
-              </Button>
-
-              {bgmResult && (
-                <div className="space-y-3">
-                  {bgmResult.mainBgm && (
-                    <div className="p-3 rounded-lg" style={{ background: "#fff8e1", border: "1px solid #e0990020" }}>
-                      <p className="text-xs font-semibold mb-1" style={{ color: "#b37700" }}>메인 BGM</p>
-                      <div className="text-[11px] space-y-1">
-                        <p>분위기: {bgmResult.mainBgm.mood}</p>
-                        <p>장르: {bgmResult.mainBgm.genre} | 템포: {bgmResult.mainBgm.tempo}</p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {bgmResult.mainBgm.searchKeywords?.map((kw, i) => (
-                            <Badge key={i} variant="outline" className="text-[9px]" style={{ borderColor: "#e0990040" }}>{kw}</Badge>
-                          ))}
-                        </div>
-                        <p className="text-muted-foreground mt-1">추천: {bgmResult.mainBgm.suggestions?.join(", ")}</p>
-                        <p className="text-[9px] text-muted-foreground">소스: {bgmResult.mainBgm.source}</p>
-                      </div>
-                    </div>
-                  )}
-                  {bgmResult.sceneBgm && bgmResult.sceneBgm.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold" style={{ color: "#b37700" }}>장면별 BGM</p>
-                      {bgmResult.sceneBgm.map((sb, i) => (
-                        <div key={i} className="p-2 rounded-lg text-[11px]" style={{ background: "#fefce8", border: "1px solid #e0990015" }}>
-                          <span className="font-medium">{sb.forScenes}</span> — {sb.mood}
-                          <br />
-                          <span className="text-muted-foreground">추천: {sb.suggestion}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* 나레이션 TTS */}
-          <Card className="overflow-hidden border-2" style={{ borderColor: "#7c3aed40" }}>
-            <CardHeader className="pb-2" style={{ background: "linear-gradient(135deg, #7c3aed15, #787fff10)" }}>
-              <CardTitle className="text-sm" style={{ color: "#7c3aed" }}>나레이션 TTS</CardTitle>
-              <p className="text-[10px] text-muted-foreground">
-                시나리오 텍스트를 Google Cloud TTS로 음성 변환합니다
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-3">
-              <div className="flex gap-3 items-end">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-muted-foreground">음성</label>
-                  <select
-                    value={ttsVoice}
-                    onChange={(e) => setTtsVoice(e.target.value)}
-                    className="block h-8 rounded-md border text-xs px-2"
-                  >
-                    <option value="ko-KR-Wavenet-A">여성 (Wavenet A)</option>
-                    <option value="ko-KR-Wavenet-B">여성 (Wavenet B)</option>
-                    <option value="ko-KR-Wavenet-C">남성 (Wavenet C)</option>
-                    <option value="ko-KR-Wavenet-D">남성 (Wavenet D)</option>
-                    <option value="ko-KR-Neural2-A">여성 (Neural2 A)</option>
-                    <option value="ko-KR-Neural2-B">여성 (Neural2 B)</option>
-                    <option value="ko-KR-Neural2-C">남성 (Neural2 C)</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-muted-foreground">속도 ({ttsRate}x)</label>
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={2.0}
-                    step={0.1}
-                    value={ttsRate}
-                    onChange={(e) => setTtsRate(parseFloat(e.target.value))}
-                    className="w-24 h-1.5"
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    setTtsLoading(true);
-                    try {
-                      const narration = result.cuts.map((c) => c.sceneDescription).join("\n\n");
-                      const res = await fetch("/api/tts", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          text: narration,
-                          voiceName: ttsVoice,
-                          speakingRate: ttsRate,
-                        }),
-                      });
-                      if (res.ok) {
-                        const data = await res.json();
-                        if (data.audioBase64) {
-                          const audioBlob = new Blob(
-                            [Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0))],
-                            { type: "audio/mp3" }
-                          );
-                          setTtsAudioUrl(URL.createObjectURL(audioBlob));
-                        }
-                      }
-                    } catch (err) { console.error("[tts main]", err); }
-                    setTtsLoading(false);
-                  }}
-                  disabled={ttsLoading}
-                  style={{ background: "#7c3aed", color: "white" }}
-                >
-                  {ttsLoading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      생성 중...
-                    </span>
-                  ) : "음성 생성"}
-                </Button>
-              </div>
-
-              {ttsAudioUrl && (
-                <div className="space-y-2">
-                  <audio controls src={ttsAudioUrl} className="w-full h-10" />
-                  <a
-                    href={ttsAudioUrl}
-                    download={`narration-${Date.now()}.mp3`}
-                    className="inline-block text-xs px-3 py-1 rounded-lg font-medium"
-                    style={{ background: "#7c3aed15", color: "#7c3aed", border: "1px solid #7c3aed30" }}
-                  >
-                    MP3 다운로드
-                  </a>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* 고도화 도구 → 영상 생성 탭에 통합됨 */}
     </div>
   );
 }

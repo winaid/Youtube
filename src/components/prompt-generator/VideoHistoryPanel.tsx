@@ -79,6 +79,10 @@ export function saveToHistory(entry: Omit<VideoHistoryEntry, "id" | "timestamp">
     // 새 세션 — 맨 앞에 추가
     persistHistory([newEntry, ...history]);
   }
+  // 같은 탭 내 VideoHistoryPanel 즉시 갱신
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("veo-history-updated"));
+  }
 }
 
 interface VideoHistoryPanelProps {
@@ -98,13 +102,18 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
     };
     window.addEventListener("storage", onStorage);
 
-    // 현재 세션 저장 시에도 반영 (같은 탭)
+    // 같은 탭에서 saveToHistory 호출 시 즉시 반영
+    const onHistoryUpdated = () => setHistory(loadHistory());
+    window.addEventListener("veo-history-updated", onHistoryUpdated);
+
+    // 폴백 폴링 (1초 주기)
     const interval = setInterval(() => {
       setHistory(loadHistory());
-    }, 5000);
+    }, 1000);
 
     return () => {
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("veo-history-updated", onHistoryUpdated);
       clearInterval(interval);
     };
   }, []);
