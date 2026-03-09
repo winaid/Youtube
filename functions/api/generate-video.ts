@@ -43,29 +43,38 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // === Build instance ===
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
-    // Scene Extension (이전 영상 이어 생성)
-    // video + image 동시 사용 불가 → video 우선
+    // Scene Extension / Image-to-Video 연결 로직
+    // 우선순위: gs://|https:// URI → firstFrameBase64 → lastFrameBase64 → text-to-video
     // data URI(base64)는 Veo가 "video is empty"를 반환하므로 GCS/HTTPS URI만 허용
     const isValidVideoUri = (uri: string) =>
       uri.startsWith("gs://") || uri.startsWith("https://");
+
     if (req.previousVideoUri && isValidVideoUri(req.previousVideoUri)) {
+      // ── Scene Extension: 이전 영상 URI가 유효한 경우
       instance.video = { uri: req.previousVideoUri };
       if (req.firstFrameBase64 || req.lastFrameBase64) {
-        warnings.push("Scene Extension 모드에서는 image(firstFrame) 사용 불가 — video만 사용");
+        warnings.push("Scene Extension 모드 — firstFrame/lastFrame 무시 (video 우선)");
       }
-    } else if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
-      // data URI 등 Veo가 지원하지 않는 URI → Scene Extension 스킵, text-to-video로 폴백
-      warnings.push("previousVideoUri가 GCS/HTTPS URI가 아니어서 Scene Extension 생략 (text-to-video로 생성)");
-    } else if (req.firstFrameBase64) {
-      // Image-to-Video: firstFrame으로 시작
-      instance.image = inlineImage(req.firstFrameBase64);
-      if (req.lastFrameBase64) {
-        warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
+    } else {
+      // ── Scene Extension 불가 → firstFrame(lastFrame) image-to-video fallback
+      if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
+        // data URI / blob URL 등 → 무시하고 firstFrame으로 이어받기
+        warnings.push(
+          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — firstFrame fallback으로 연속 생성`
+        );
       }
-    } else if (req.lastFrameBase64) {
-      // lastFrame만 있으면 → image 필드로 변환
-      instance.image = inlineImage(req.lastFrameBase64);
-      warnings.push("lastFrame만 전송 — image 필드로 변환");
+      if (req.firstFrameBase64) {
+        // Image-to-Video: 이전 컷 마지막 프레임을 시작 프레임으로
+        instance.image = inlineImage(req.firstFrameBase64);
+        if (req.lastFrameBase64) {
+          warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
+        }
+      } else if (req.lastFrameBase64) {
+        // lastFrame만 있으면 → image 필드로 변환
+        instance.image = inlineImage(req.lastFrameBase64);
+        warnings.push("lastFrame만 전송됨 — image 필드로 변환");
+      }
+      // 둘 다 없으면 text-to-video (프롬프트에서 연속성 표현 필요)
     }
 
     // Reference Images — 제약 조건 체크

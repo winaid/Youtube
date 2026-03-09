@@ -463,11 +463,16 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             onSeedDetected(cutNumber, data.seed);
           }
 
-          // Enhancement 9: Auto video quality verification via Gemini Vision
+          // 마지막 프레임 캡처 — (a) 다음 컷 continuity 저장, (b) 품질 검증
           if (clipUpdate.videoUri) {
             try {
               const lastFrame = await captureVideoLastFrame(clipUpdate.videoUri);
               if (lastFrame) {
+                // (a) 다음 컷 Scene Extension / image-to-video fallback용으로 저장
+                updateClip(cutNumber, { lastFrameBase64: lastFrame });
+                console.log(`[CUT ${cutNumber}] lastFrame 저장 완료 — 다음 컷 continuity 준비됨`);
+
+                // (b) 품질 검증 (fire-and-forget, 선택적)
                 const cut = cuts.find((c) => c.cutNumber === cutNumber);
                 fetch("/api/verify-video-quality", {
                   method: "POST",
@@ -732,36 +737,54 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       // 사용자가 선택한 모드 그대로 사용 (fast 선택 시 무조건 fast)
 
-      // Enhancement 4: Auto-link storyboard as firstFrame
-      // Enhancement 7: Scene continuity auto-chain — use previous scene's last frame
+      // ── Continuity firstFrame 취득 (우선순위 순)
+      // CUT 1: 사용자 설정값 / CUT N>1: 이전 컷과의 연결 필수
       let firstFrameBase64 = cutNumber === 1 ? cfg.firstFrameBase64 : undefined;
-      if (cutNumber > 1 && cfg.autoLinkFirstFrame && prevClip?.videoUri) {
-        // Try to capture last frame from previous completed video
-        try {
-          const lastFrame = await captureVideoLastFrame(prevClip.videoUri);
-          if (lastFrame) {
-            firstFrameBase64 = lastFrame;
+
+      if (cutNumber > 1 && prevClip) {
+        // 1순위: 완료 시 저장된 lastFrameBase64 (재캡처 없이 즉시 사용)
+        if (prevClip.lastFrameBase64) {
+          firstFrameBase64 = prevClip.lastFrameBase64;
+          console.log(`[CUT ${cutNumber}] continuity: 저장된 lastFrame 사용 (CUT ${cutNumber - 1})`);
+        } else if (prevClip.videoUri) {
+          // 2순위: 이전 컷 비디오에서 직접 캡처
+          try {
+            const captured = await captureVideoLastFrame(prevClip.videoUri);
+            if (captured) {
+              firstFrameBase64 = captured;
+              // 이후 재사용을 위해 저장
+              updateClip(cutNumber - 1, { lastFrameBase64: captured });
+              console.log(`[CUT ${cutNumber}] continuity: lastFrame 캡처 성공 (CUT ${cutNumber - 1})`);
+            } else {
+              console.warn(`[CUT ${cutNumber}] continuity: captureVideoLastFrame null 반환 — storyboard fallback`);
+            }
+          } catch {
+            console.warn(`[CUT ${cutNumber}] continuity: lastFrame 캡처 실패 — storyboard fallback`);
           }
-        } catch {
-          console.warn(`Failed to capture last frame from CUT ${cutNumber - 1}`);
         }
-      }
-      // Fallback chain for firstFrame:
-      // 1. Previous video's last frame (captured above)
-      // 2. Previous cut's END storyboard image (N-1's end = N's start)
-      // 3. Current cut's START storyboard image
-      if (!firstFrameBase64 && cfg.autoLinkFirstFrame) {
-        if (cutNumber > 1 && storyboardEndImages?.[cutNumber - 1]) {
-          // Use previous cut's end frame as this cut's start frame
+
+        // 3순위: 이전 컷의 END 스토리보드
+        if (!firstFrameBase64 && storyboardEndImages?.[cutNumber - 1]) {
           firstFrameBase64 = storyboardEndImages[cutNumber - 1];
-        } else if (storyboardImages?.[cutNumber]) {
-          firstFrameBase64 = storyboardImages[cutNumber];
+          console.log(`[CUT ${cutNumber}] continuity: storyboard end image 사용 (CUT ${cutNumber - 1})`);
         }
+
+        // 4순위: 현재 컷의 START 스토리보드
+        if (!firstFrameBase64 && storyboardImages?.[cutNumber]) {
+          firstFrameBase64 = storyboardImages[cutNumber];
+          console.log(`[CUT ${cutNumber}] continuity: storyboard start image 사용 (CUT ${cutNumber})`);
+        }
+
+        if (!firstFrameBase64) {
+          console.warn(`[CUT ${cutNumber}] continuity: firstFrame 없음 — text-to-video로 생성 (프롬프트에 연속성 포함)`);
+        }
+      } else if (cutNumber === 1 && !firstFrameBase64 && storyboardImages?.[1]) {
+        firstFrameBase64 = storyboardImages[1];
       }
 
       // Auto-link lastFrame from end storyboard image
       let lastFrameBase64 = cutNumber === 1 ? cfg.lastFrameBase64 : undefined;
-      if (!lastFrameBase64 && cfg.autoLinkFirstFrame && storyboardEndImages?.[cutNumber]) {
+      if (!lastFrameBase64 && storyboardEndImages?.[cutNumber]) {
         lastFrameBase64 = storyboardEndImages[cutNumber];
       }
 
@@ -793,7 +816,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,
         seed: cfg.seed,
-        // Scene Extension — Veo 원본 URI 사용 (프록시 URL은 Veo가 인식 못함)
+        // Scene Extension — gs:// 또는 https:// URI만 유효 (data:/blob:/proxy URL은 서버에서 무시됨)
         previousVideoUri: cutNumber > 1 ? prevClip?.rawVideoUri : undefined,
         // First Frame (auto-linked from prev cut's end or storyboard)
         firstFrameBase64: firstFrameBase64,
