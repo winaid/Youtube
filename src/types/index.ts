@@ -201,6 +201,7 @@ export interface PromptVerification {
   suggestions: string[];
   improvedVideoPrompt?: string;
   improvedExtendPrompt?: string;
+  scoringFailure?: boolean; // AI 응답 파싱 실패 — overallScore를 생성 차단 판단에 사용하지 말 것
 }
 
 export interface VideoClip {
