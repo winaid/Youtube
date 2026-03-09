@@ -10,7 +10,6 @@ import {
   VideoVariant,
   PromptVerification,
   CharacterFaceRef,
-  VideoReview,
   CutFeedback,
   DEFAULT_VEO_CONFIG,
 } from "@/types";
@@ -768,7 +767,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         error: err instanceof Error ? err.message : "요청 실패",
       });
     }
-  }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt, refinePromptEnglish]);
+  }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt]);
 
   // 자동 모드 (병렬 생성) — idle인 모든 클립을 동시에 시작
   const autoTriggeredRef = useRef(false);

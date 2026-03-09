@@ -91,9 +91,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       parameters.resolution = req.resolution;
     }
 
-    // durationSeconds: 숫자 5 또는 8 (Veo 3.1 지원 값)
+    // durationSeconds: Veo 3.1은 5초 또는 8초만 지원
     const dur = req.durationSeconds || 8;
     parameters.durationSeconds = dur <= 5 ? 5 : 8;
+
+    // sampleCount: 1~4개 변형 생성 (기본 1)
+    const sampleCount = req.sampleCount && req.sampleCount >= 1 ? Math.min(req.sampleCount, 4) : 1;
+    parameters.sampleCount = sampleCount;
+
+    // generateAudio: 네이티브 오디오 생성 (기본 true)
+    parameters.generateAudio = req.generateAudio !== false;
 
     // negativePrompt, seed: Veo API 미지원 → 전송하면 400
 

@@ -191,19 +191,27 @@ function extractFromPredictions(predictions: unknown, results: VideoResult[]): v
 function deepSearchVideoData(raw: Record<string, unknown>, results: VideoResult[]): void {
   const jsonStr = JSON.stringify(raw);
 
-  // URI 패턴 탐색 (gs://, https://)
-  const uriRegex = /"uri"\s*:\s*"((?:gs|https?):\/\/[^"]+(?:\.mp4|video|generate)[^"]*)"/g;
+  // 1차: gs:// URI는 무조건 영상 (GCS = Veo 기본 출력 위치)
+  const gsUriRegex = /"uri"\s*:\s*"(gs:\/\/[^"]+)"/g;
   let match: RegExpExecArray | null;
-  while ((match = uriRegex.exec(jsonStr)) !== null) {
+  while ((match = gsUriRegex.exec(jsonStr)) !== null) {
     results.push({ kind: "uri", uri: match[1] });
+  }
+
+  // 2차: https:// 중 영상 관련 경로 (.mp4, /video/, /output/, /sample_)
+  if (results.length === 0) {
+    const httpsVideoRegex = /"uri"\s*:\s*"(https?:\/\/[^"]+(?:\.mp4|\/video\/|\/output\/|\/sample_)[^"]*)"/g;
+    while ((match = httpsVideoRegex.exec(jsonStr)) !== null) {
+      results.push({ kind: "uri", uri: match[1] });
+    }
   }
 
   // URI를 못 찾았으면 더 넓은 패턴
   if (results.length === 0) {
     const broadUriRegex = /"uri"\s*:\s*"((?:gs|https?):\/\/[^"]+)"/g;
     while ((match = broadUriRegex.exec(jsonStr)) !== null) {
-      // oauth/token 등 API 관련 URI 제외
-      if (!/oauth|googleapis\.com\/token|aiplatform/.test(match[1])) {
+      // OAuth 토큰 교환 URL만 제외 (영상 다운로드 URL은 aiplatform 도메인도 유효할 수 있음)
+      if (!/oauth2\.googleapis\.com\/token|accounts\.google\.com/.test(match[1])) {
         results.push({ kind: "uri", uri: match[1] });
       }
     }
