@@ -20,6 +20,11 @@ const DISSOLVE_SECS = DISSOLVE_MS / 1000;
 // 클립 길이가 이것보다 짧으면 크로스페이드 스킵 (짧은 클립 보호)
 const MIN_CLIP_FOR_DISSOLVE_SECS = DISSOLVE_SECS * 2.5;
 
+// ── Trim 자동 보정 ─────────────────────────────────────────────────────────────
+// Veo 클립은 첫/끝 프레임에 정지/흔들림이 있는 경우가 많아 자동으로 살짝 잘라냄
+const HEAD_TRIM_SECS = 0.10; // 클립 시작 0.1s 자동 제거
+const TAIL_TRIM_SECS = 0.15; // 클립 끝 0.15s 자동 제거
+
 interface TimelineEditorProps {
   clips: VideoClip[];
   onReorder: (fromIndex: number, toIndex: number) => void;
@@ -34,8 +39,8 @@ function TrimSlider({
   onTrimChange: (trimStart: number, trimEnd: number) => void;
 }) {
   const duration = clip.durationSec;
-  const trimStart = clip.trimStart ?? 0;
-  const trimEnd = clip.trimEnd ?? duration;
+  const trimStart = clip.trimStart ?? Math.min(HEAD_TRIM_SECS, duration * 0.05);
+  const trimEnd   = clip.trimEnd   ?? Math.max(duration - TAIL_TRIM_SECS, trimStart + 0.5);
 
   return (
     <div className="space-y-1.5">
@@ -135,7 +140,9 @@ export default function TimelineEditor({
   const getInactiveVid = useCallback(() => activeSlotRef.current === "a" ? vidB.current : vidA.current, []);
 
   const totalDuration = completedClips.reduce((sum, c) => {
-    return sum + ((c.trimEnd ?? c.durationSec) - (c.trimStart ?? 0));
+    const s = c.trimStart ?? Math.min(HEAD_TRIM_SECS, c.durationSec * 0.05);
+    const e = c.trimEnd   ?? Math.max(c.durationSec - TAIL_TRIM_SECS, s + 0.5);
+    return sum + (e - s);
   }, 0);
 
   // ── 정지 ───────────────────────────────────────────────────────────────────
