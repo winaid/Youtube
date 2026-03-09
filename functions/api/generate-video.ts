@@ -91,9 +91,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       parameters.resolution = req.resolution;
     }
 
-    // durationSeconds: Veo 3.1은 5초 또는 8초만 지원
+    // durationSeconds: text_to_video 지원값은 [4, 6, 8]초뿐
+    // 입력값을 가장 가까운 유효값으로 스냅
+    const VALID_DURATIONS = [4, 6, 8];
     const dur = req.durationSeconds || 8;
-    parameters.durationSeconds = dur <= 5 ? 5 : 8;
+    parameters.durationSeconds = VALID_DURATIONS.reduce((prev, cur) =>
+      Math.abs(cur - dur) < Math.abs(prev - dur) ? cur : prev
+    );
 
     // sampleCount: 1~4개 변형 생성 (기본 1)
     const sampleCount = req.sampleCount && req.sampleCount >= 1 ? Math.min(req.sampleCount, 4) : 1;

@@ -156,7 +156,7 @@ export default function VideoSettingsPanel({
           <div className="space-y-1.5">
             <Label className="text-xs">클립 길이</Label>
             <div className="flex gap-2">
-              {([5, 8] as VeoClipDuration[]).map((d) => (
+              {([4, 6, 8] as VeoClipDuration[]).map((d) => (
                 <Button
                   key={d}
                   size="sm"

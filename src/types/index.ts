@@ -16,7 +16,7 @@ export type AnimationMode =
 export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
-export type VeoClipDuration = 5 | 8;
+export type VeoClipDuration = 4 | 6 | 8;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
 export interface SignatureTechniques {
@@ -162,7 +162,7 @@ export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
 
 export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   mode: "fast",
-  durationSeconds: 5,
+  durationSeconds: 8,
   resolution: "720p",
   aspectRatio: "16:9",
   generateAudio: true,
