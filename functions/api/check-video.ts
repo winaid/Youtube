@@ -188,8 +188,25 @@ function extractFromPredictions(predictions: unknown, results: VideoResult[]): v
   }
 }
 
+// === 안전한 JSON 직렬화 (순환 참조/스택 오버플로 방지) ===
+
+function safeStringify(val: unknown, maxLen = 4000): string {
+  try {
+    const s = JSON.stringify(val);
+    return s.length > maxLen ? s.slice(0, maxLen) + "…(truncated)" : s;
+  } catch (e) {
+    return `[safeStringify failed: ${e instanceof Error ? e.message : String(e)}]`;
+  }
+}
+
 function deepSearchVideoData(raw: Record<string, unknown>, results: VideoResult[]): void {
-  const jsonStr = JSON.stringify(raw);
+  let jsonStr: string;
+  try {
+    jsonStr = JSON.stringify(raw);
+  } catch (e) {
+    console.error("[check-video] deepSearch: JSON.stringify(raw) threw:", e instanceof Error ? e.message : String(e));
+    return;
+  }
 
   // 1차: gs:// URI는 무조건 영상 (GCS = Veo 기본 출력 위치)
   const gsUriRegex = /"uri"\s*:\s*"(gs:\/\/[^"]+)"/g;
@@ -411,8 +428,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // 응답 구조 로그 (디버깅용)
     const structure = logResponseStructure(data);
-    console.log("Veo poll response structure:", JSON.stringify(structure));
-    console.log("Veo poll response raw:", JSON.stringify(data).slice(0, 3000));
+    console.log("[check-video] Veo poll response structure:", safeStringify(structure));
+    console.log("[check-video] Veo poll response raw (first 3000):", safeStringify(data, 3000));
 
     // RAI 필터 체크
     const rai = detectRaiFiltering(data);
@@ -431,12 +448,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const videoResults = extractVideoResults(data);
 
     if (videoResults.length === 0) {
-      console.error("No video result found.", JSON.stringify(structure), "raw:", JSON.stringify(data).slice(0, 2000));
+      console.error("[check-video] No video result found. structure:", safeStringify(structure), "raw:", safeStringify(data, 2000));
       return Response.json({
         status: "FAILED",
-        error: `영상 결과를 찾을 수 없습니다. response 구조: ${JSON.stringify(structure.deepKeys)}`,
+        error: `영상 결과를 찾을 수 없습니다. response 구조: ${safeStringify(structure.deepKeys)}`,
         structure,
-        raw: data,
+        rawKeys: Object.keys(data),
       });
     }
 
@@ -484,13 +501,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     if (variants.length === 0) {
-      console.error("Video results found but no playable variants.", JSON.stringify(videoResults.map(r => ({ kind: r.kind }))));
+      console.error("[check-video] Video results found but no playable variants. kinds:", videoResults.map(r => r.kind));
       return Response.json({
         status: "FAILED",
         error: "비디오 결과는 있으나 재생 가능한 형태가 아닙니다",
         resultKinds: videoResults.map(r => r.kind),
         structure,
-        raw: data,
+        rawKeys: Object.keys(data),
       });
     }
 
@@ -505,11 +522,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sampleCount: variants.length,
     });
   } catch (error) {
+    const errType = error instanceof Error ? error.constructor.name : typeof error;
     const errMsg = error instanceof Error ? error.message : String(error);
-    const errStack = error instanceof Error ? error.stack : "";
-    console.error("[check-video] Unhandled error:", errMsg, "\nstack:", errStack);
+    // stack overflow 시 error.stack 자체가 비어 있을 수 있음 — 안전하게 처리
+    let errStack = "";
+    try { errStack = (error instanceof Error && error.stack) ? error.stack.slice(0, 1500) : ""; } catch { /* ignore */ }
+    console.error(`[check-video] UNHANDLED ${errType}: ${errMsg}\nstack: ${errStack}`);
     return Response.json(
-      { error: `Failed to check video: ${errMsg}` },
+      { error: `Failed to check video: ${errMsg}`, errorType: errType },
       { status: 500 }
     );
   }
