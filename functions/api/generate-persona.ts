@@ -50,7 +50,7 @@ ${techniques ? "5. 위 '시그니처 기법' 분석 결과를 반드시 반영�
 
 페르소나 프롬프트만 출력하세요. 설명이나 제목 없이 순수 텍스트만.`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-pro-preview"), {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -34,7 +34,7 @@ JSON으로만 응답:
 
     const res = await fetchWithAuth(
       context.env,
-      buildVertexUrl(context.env, "gemini-3-flash-preview"),
+      buildVertexUrl(context.env, "gemini-3.1-flash-lite-preview"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

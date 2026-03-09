@@ -84,7 +84,7 @@ ${personaPrompt || ""}
 
 사용자 요청: "${message}"`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3-pro-preview"), {
+    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

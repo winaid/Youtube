@@ -42,7 +42,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const urlTemplate = buildVertexUrl(context.env, "gemini-3-flash-preview");
+    const urlTemplate = buildVertexUrl(context.env, "gemini-3.1-flash-lite-preview");
 
     const requestBody = {
       contents: [
