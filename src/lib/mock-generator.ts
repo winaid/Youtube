@@ -32,7 +32,8 @@ async function fetchGeminiCuts(
   input: PromptInput,
   director: DirectorPersona,
   directorPersonaText: string,
-  cutCount: number
+  cutCount: number,
+  cutDuration: number
 ): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string }> {
   try {
     const res = await fetch("/api/generate-cuts", {
@@ -49,6 +50,7 @@ async function fetchGeminiCuts(
         aspectRatio: input.aspectRatio,
         region: input.region,
         cutCount,
+        cutDuration,
       }),
     });
 
@@ -70,7 +72,7 @@ async function fetchGeminiCuts(
     const cuts: Cut[] = Array.isArray(data.cuts) && data.cuts.length > 0
       ? data.cuts.map((cut: Partial<Cut>, i: number) => ({
           cutNumber: cut.cutNumber ?? i + 1,
-          durationSec: cut.durationSec ?? 8,
+          durationSec: cut.durationSec ?? cutDuration,
           sceneDescription: cut.sceneDescription ?? "",
           cameraDirection: cut.cameraDirection ?? "",
           moodLighting: cut.moodLighting ?? "",
@@ -89,7 +91,7 @@ async function fetchGeminiCuts(
     return { characterSeeds, cuts };
   } catch (error) {
     console.error("Cuts API error, using fallback:", error);
-    const fallback = generateFallbackCuts(input, director, cutCount);
+    const fallback = generateFallbackCuts(input, director, cutCount, cutDuration);
     return { ...fallback, usedFallback: true, fallbackReason: String(error) };
   }
 }
@@ -97,7 +99,8 @@ async function fetchGeminiCuts(
 function generateFallbackCuts(
   input: PromptInput,
   director: DirectorPersona,
-  cutCount: number
+  cutCount: number,
+  cutDuration = 8
 ): { characterSeeds: CharacterSeed[]; cuts: Cut[] } {
   const storyWords = input.storyText.slice(0, 30);
   const directorStyle = director.style;
@@ -120,7 +123,7 @@ function generateFallbackCuts(
 
   const cuts = Array.from({ length: cutCount }, (_, i) => ({
     cutNumber: i + 1,
-    durationSec: 8,
+    durationSec: cutDuration,
     sceneDescription: `[장면 ${i + 1}] ${storyWords} 기반 장면 (API 연결 후 AI가 생성합니다)`,
     cameraDirection: "slow push-in toward subject",
     moodLighting: "golden hour warm lighting, soft shadows",
@@ -150,7 +153,8 @@ export async function generatePrompt(
       ? Math.min(180, Math.max(60, Math.round(input.storyText.length / 2)))
       : input.duration;
 
-  const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / 8));
+  const cutDuration = input.cutDuration ?? 8;
+  const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / cutDuration));
   const storyWords = input.storyText.slice(0, 30);
 
   // 1. 감독 페르소나 먼저 생성 (장면 생성에 필요)
@@ -160,8 +164,8 @@ export async function generatePrompt(
 
   // 2. 페르소나를 포함하여 장면 생성 (캐릭터 시드 + 감독 스타일 주입)
   const cutsResult = director
-    ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount)
-    : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount), usedFallback: true, fallbackReason: "감독 정보 없음" };
+    ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration)
+    : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
   const { characterSeeds, cuts, usedFallback, fallbackReason } = cutsResult;
 
   const veoStyle =

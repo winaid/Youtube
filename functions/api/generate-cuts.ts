@@ -15,7 +15,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       aspectRatio,
       region,
       cutCount,
+      cutDuration,
     } = await context.request.json() as Record<string, string | number | object>;
+
+    const secPerCut = Number(cutDuration) || 8; // 장면당 초 (4 | 6 | 8)
 
     if (!storyText || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });
@@ -169,8 +172,33 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       || techniques?.editingStyle?.toLowerCase().includes("quick")
       || techniques?.editingStyle?.toLowerCase().includes("montage");
 
+    // 장면당 초 기반 temporal beat 패턴 생성
+    const beatPattern = secPerCut === 4
+      ? `0s-1s: [시작], 1s-3s: [전개], 3s-4s: [클라이맥스]`
+      : secPerCut === 6
+        ? `0s-2s: [시작], 2s-4s: [전개], 4s-6s: [클라이맥스]`
+        : `0s-2s: [시작], 2s-5s: [전개], 5s-8s: [클라이맥스]`;
+
+    const beatExample = secPerCut === 4
+      ? `0s-1s: Wide establishing shot, character stands alone in rain. 1s-3s: Dolly in as character raises hand to face. 3s-4s: Close-up, eyes narrow with determination.`
+      : secPerCut === 6
+        ? `0s-2s: Wide establishing shot, character stands alone in rain. 2s-4s: Slow dolly in as character raises hand. 4s-6s: Close-up, eyes narrow with determination, lightning flash.`
+        : `0s-2s: Wide establishing shot, character stands alone in rain. 2s-5s: Slow dolly in as character raises hand to face, rain intensifies. 5s-8s: Close-up, eyes narrow with determination, lightning flash from behind.`;
+
+    const videoBeatTemplate = secPerCut === 4
+      ? `0s-1s: [establishing action + camera start position]. 1s-3s: [development + camera transition]. 3s-4s: [climax + final camera position]`
+      : secPerCut === 6
+        ? `0s-2s: [establishing action + camera start position]. 2s-4s: [development + camera transition]. 4s-6s: [climax + final camera position]`
+        : `0s-2s: [establishing action + camera start position]. 2s-5s: [development + camera transition]. 5s-8s: [climax + final camera position]`;
+
+    const extendBeatTemplate = secPerCut === 4
+      ? `0s-1s: [transition from previous scene's last moment]. 1s-3s: [new scene develops, main action]. 3s-4s: [scene climax, camera settles]`
+      : secPerCut === 6
+        ? `0s-2s: [transition from previous scene's last moment]. 2s-4s: [new scene develops, main action]. 4s-6s: [scene climax, camera settles]`
+        : `0s-2s: [transition from previous scene's last moment]. 2s-5s: [new scene develops, main action]. 5s-8s: [scene climax, camera settles]`;
+
     const editingPhilosophy = isLongTakeDirector
-      ? `이 감독은 롱테이크의 대가입니다. 장면 수는 정확히 목표 수만큼 만들되, 각 장면 안에서 카메라가 끊김 없이 긴 호흡으로 움직이도록 하세요. 8초 전체를 하나의 연속 촬영처럼.`
+      ? `이 감독은 롱테이크의 대가입니다. 장면 수는 정확히 목표 수만큼 만들되, 각 장면 안에서 카메라가 끊김 없이 긴 호흡으로 움직이도록 하세요. ${secPerCut}초 전체를 하나의 연속 촬영처럼.`
       : isFastCutDirector
         ? `이 감독은 빠른 편집의 대가입니다. 장면 수는 정확히 목표 수만큼 만들되, 각 장면 안에서도 빠른 앵글 전환과 역동적 카메라 무빙을 넣으세요. 에너지!`
         : `이 감독의 편집 리듬에 맞춰 장면을 구성하세요.`;
@@ -186,17 +214,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       : "";
 
     const prompt = `당신은 **AI 영상 감독**입니다. 이름은 없지만, 당신만의 철학이 있습니다:
-"한 장면 안에서 카메라가 숨 쉬듯 움직여야 한다. 컷을 많이 나누는 건 게으른 연출이다. 하나의 8초 장면 안에 시작-전개-임팩트를 모두 담아야 진짜 영상이다."
+"한 장면 안에서 카메라가 숨 쉬듯 움직여야 한다. 컷을 많이 나누는 건 게으른 연출이다. 하나의 ${secPerCut}초 장면 안에 시작-전개-임팩트를 모두 담아야 진짜 영상이다."
 
 당신은 ${directorNameKo || directorName} 감독의 스타일을 깊이 연구하고 체화한 AI입니다.
 ${directorPersona ? `\n${directorNameKo}의 페르소나:\n${String(directorPersona).slice(0, 800)}` : ""}
 ${techniquesBlock}
 
 ## 당신의 연출 원칙
-1. **원 씬 원 스토리**: 8초 안에 하나의 완결된 이야기 비트(beat)를 담는다
+1. **원 씬 원 스토리**: ${secPerCut}초 안에 하나의 완결된 이야기 비트(beat)를 담는다
 2. **카메라는 살아있다**: 한 장면에서 반드시 2~3가지 카메라 무빙을 조합한다
-   - 예: "Wide establishing → slow dolly in → rack focus to hands" (하나의 8초 안에서)
-   - 예: "Low angle tracking → whip pan → settle on close-up" (하나의 8초 안에서)
+   - 예: "Wide establishing → slow dolly in → rack focus to hands" (하나의 ${secPerCut}초 안에서)
+   - 예: "Low angle tracking → whip pan → settle on close-up" (하나의 ${secPerCut}초 안에서)
 3. **정확한 장면 수, 높은 밀도**: 장면 수는 반드시 목표 수와 정확히 일치시키되, 각 장면의 정보 밀도를 극대화한다
 4. **감독 스타일 일체화**: ${directorNameKo}의 시그니처를 모든 장면에 녹인다
    - 스타일: ${directorStyle || "시네마틱"}
@@ -220,7 +248,7 @@ ${String(storyText).slice(0, 3000)}
 
 ## STEP 2: 장면 생성 (핵심!)
 
-**한 장면 = 8초 영상 클립. 이 안에서 카메라가 자유롭게 움직인다!**
+**한 장면 = ${secPerCut}초 영상 클립. 이 안에서 카메라가 자유롭게 움직인다!**
 
 **프롬프트 길이 최적화 (중요!):**
 - 각 videoPrompt는 반드시 150~300 단어 (영어 기준)
@@ -292,7 +320,7 @@ ${String(storyText).slice(0, 3000)}
 - macro lens (극접사 — 눈물, 손가락, 디테일)
 - fisheye (어안 — 극단적 왜곡, 서브컬처)
 
-### 카메라 무빙 Camera Movement (8초 안에 2~3개 조합 필수):
+### 카메라 무빙 Camera Movement (${secPerCut}초 안에 2~3개 조합 필수):
 - dolly in / dolly out (레일 전진/후진 — 감정 몰입/해방)
 - tracking shot / lateral dolly (옆으로 따라가기)
 - crane shot / jib up-down (수직 이동 — 로우→하이, 하이→로우)
@@ -329,9 +357,9 @@ ${regionSignature}
 각 장면의 videoPrompt에는 반드시 다음을 모두 포함:
 
 **★★★ TEMPORAL BEATS — 가장 중요! Veo가 프롬프트를 따르려면 시간 구조 필수 ★★★**
-- 반드시 "0s-2s: [시작], 2s-5s: [전개], 5s-8s: [클라이맥스]" 형식의 시간 비트 포함
+- 반드시 "${beatPattern}" 형식의 시간 비트 포함
 - 각 시간대에 최대 2개의 동시 동작만 (과하면 Veo가 무시함)
-- 예시: "0s-2s: Wide establishing shot, character stands alone in rain. 2s-5s: Slow dolly in as character raises hand to face, rain intensifies. 5s-8s: Close-up, eyes narrow with determination, lightning flash from behind."
+- 예시: "${beatExample}"
 
 - **조명 1~2개**: 위 조명 레퍼런스에서 장면에 맞는 것 선택 (예: "Rembrandt lighting with warm practical lamp light")
 - **구도 1개**: 위 구도 레퍼런스에서 선택 (예: "rule of thirds composition", "frame within frame through doorway")
@@ -349,9 +377,9 @@ ${regionSignature}
 - 의상, 헤어, 체형, 피부톤 불변
 
 **시작/끝 프레임 이미지 (Start/End Frame — 핵심!):**
-- imagePrompt = 장면의 **첫 프레임** (8초의 시작 순간)
-- endImagePrompt = 장면의 **마지막 프레임** (8초의 끝 순간)
-- 두 이미지는 같은 장면이지만 카메라 위치, 캐릭터 포즈, 조명이 8초 동안 변화한 결과
+- imagePrompt = 장면의 **첫 프레임** (${secPerCut}초의 시작 순간)
+- endImagePrompt = 장면의 **마지막 프레임** (${secPerCut}초의 끝 순간)
+- 두 이미지는 같은 장면이지만 카메라 위치, 캐릭터 포즈, 조명이 ${secPerCut}초 동안 변화한 결과
 - **핵심 규칙: CUT N의 endImagePrompt ≈ CUT N+1의 imagePrompt**
   - CUT 1 끝: "캐릭터가 문을 여는 순간, 문 너머 빛이 쏟아지는 클로즈업"
   - CUT 2 시작: "문이 열리며 빛이 쏟아지는 역광, 캐릭터 실루엣이 문 앞에 서있는 와이드"
@@ -365,8 +393,8 @@ ${regionSignature}
 - **핵심**: extendPrompt는 "이전 장면의 마지막 순간 묘사 → 자연스러운 전환 → 새 장면" 3단계 구조로 작성
   - 1단계: 이전 장면 마지막 2초의 화면 상태를 구체적으로 묘사 (카메라 위치, 캐릭터 포즈, 조명)
   - 2단계: 전환 기법 명시 (예: "the camera pushes through the eye into", "match cut from X to Y", "whip pan reveals")
-  - 3단계: 새 장면의 8초 동작 시퀀스
-- 예시: CUT 1이 "눈 클로즈업으로 끝"이면 → CUT 2 extendPrompt: "Extreme close-up of the woman's eye fills the frame, [캐릭터 외형]. The camera pushes forward into the dark pupil — a match cut dissolves into an establishing wide shot of Edo-period Kyoto streets at dawn. [새 장면 8초 묘사]"
+  - 3단계: 새 장면의 ${secPerCut}초 동작 시퀀스
+- 예시: CUT 1이 "눈 클로즈업으로 끝"이면 → CUT 2 extendPrompt: "Extreme close-up of the woman's eye fills the frame, [캐릭터 외형]. The camera pushes forward into the dark pupil — a match cut dissolves into an establishing wide shot of Edo-period Kyoto streets at dawn. [새 장면 ${secPerCut}초 묘사]"
 - "Continue from previous scene" 같은 모호한 표현 절대 금지
 - 이전 장면의 마지막 시각 요소(색감, 구도, 캐릭터 위치)를 정확히 참조
 - 캐릭터 전체 외형을 다시 100% 반복 기술
@@ -385,14 +413,14 @@ ${regionSignature}
   }],
   "cuts": [{
     "cutNumber": 1,
-    "durationSec": 8,
+    "durationSec": ${secPerCut},
     "sceneDescription": "[한국어] 장면 내용 + 카메라 움직임 한줄 설명",
     "cameraDirection": "[영어] Lens: [렌즈mm]. Composition: [구도]. Camera: [앵글1]→[무빙1]→[앵글2]→[무빙2]→[앵글3]. ${directorNameKo} style.",
     "moodLighting": "[영어] [조명 기법 1~2개 구체 명시]. [색보정 톤]. [감독 스타일 조명]",
     "imagePrompt": "[100% ENGLISH — 첫 프레임] [WHO is doing WHAT, WHERE at the START of the 8-second clip]. [캐릭터 전체 외형]. [starting camera angle + composition]. [조명]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos",
     "endImagePrompt": "[100% ENGLISH — 끝 프레임] [WHO is doing WHAT, WHERE at the END of the 8-second clip — after camera movement and action]. [캐릭터 전체 외형]. [ending camera angle + composition]. [조명 변화]. ${veoStyle}, ${regionFlavor}, directed by ${directorName}, cinematic quality, highly detailed, ${aspectRatio || "1:1"} aspect ratio, no text overlay, no titles, no captions, no watermark, no written characters, no calligraphy, no stamps, no logos. NOTE: This end frame must visually connect to the NEXT cut's start frame.",
-    "videoPrompt": "[100% ENGLISH] [Shot type], [camera movement]. [캐릭터 전체 외형]. 0s-2s: [establishing action + camera start position]. 2s-5s: [development + camera transition]. 5s-8s: [climax + final camera position]. [조명: e.g. warm key light from upper left, cool fill]. [색보정: e.g. teal and orange grade]. ${veoStyle}, Style: ${directorName}, shot on [렌즈], [구도], cinematic, film grain, shallow depth of field. No text, no watermark, no readable writing on screen",
-    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — temporal beats 필수] [Shot type], [camera]. [캐릭터 전체 외형]. 0s-2s: [transition from previous scene's last moment]. 2s-5s: [new scene develops, main action]. 5s-8s: [scene climax, camera settles]. [조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, cinematic, no text, no watermark, no readable writing",
+    "videoPrompt": "[100% ENGLISH] [Shot type], [camera movement]. [캐릭터 전체 외형]. ${videoBeatTemplate}. [조명: e.g. warm key light from upper left, cool fill]. [색보정: e.g. teal and orange grade]. ${veoStyle}, Style: ${directorName}, shot on [렌즈], [구도], cinematic, film grain, shallow depth of field. No text, no watermark, no readable writing on screen",
+    "extendPrompt": "[CUT 1만 빈 문자열. CUT 2+: 100% ENGLISH — temporal beats 필수] [Shot type], [camera]. [캐릭터 전체 외형]. ${extendBeatTemplate}. [조명]. ${veoStyle}, directed by ${directorName}, ${regionFlavor}, cinematic, no text, no watermark, no readable writing",
     "transitionHint": "[한국어] 다음 장면 연결 방식",
     "characterConsistency": "[한국어] 캐릭터 유지 지침",
     "charactersInScene": ["char-1"]

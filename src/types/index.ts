@@ -47,6 +47,7 @@ export interface PromptInput {
   duration: Duration;
   aspectRatio: AspectRatio;
   cutCount?: number; // 사용자 지정 장면 수 (없으면 자동 계산)
+  cutDuration?: number; // 장면당 초 (4 | 6 | 8, 기본 8)
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
 }
 

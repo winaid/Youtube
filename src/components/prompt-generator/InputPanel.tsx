@@ -204,6 +204,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [isSearching, setIsSearching] = useState(false);
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>(loadCustomDirectors);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
+  const [cutDuration, setCutDuration] = useState<number>(8);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
@@ -468,6 +469,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       duration,
       aspectRatio,
       cutCount: cutCount === "auto" ? undefined : cutCount,
+      cutDuration,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
         : undefined,
@@ -1072,7 +1074,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             )}
 
             <div className="grid grid-cols-4 gap-1.5">
-              {([{ value: "auto" as const, label: "자동" }, ...([4, 6, 8, 10, 12, 15, 20] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
+              {([{ value: "auto" as const, label: "자동" }, ...([4, 6, 8, 10, 12, 15] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
                 <button
                   key={String(item.value)}
                   className="h-8 rounded-lg text-xs font-medium transition-all"
@@ -1091,17 +1093,40 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               <input
                 type="number"
                 min={4}
-                max={25}
-                placeholder="직접 입력 (4~25)"
-                value={typeof cutCount === "number" && ![4, 6, 8, 10, 12, 15, 20].includes(cutCount) ? cutCount : ""}
+                max={15}
+                placeholder="직접 입력 (4~15)"
+                value={typeof cutCount === "number" && ![4, 6, 8, 10, 12, 15].includes(cutCount) ? cutCount : ""}
                 onChange={(e) => {
                   const v = parseInt(e.target.value);
-                  if (v >= 4 && v <= 25) setCutCount(v);
+                  if (v >= 4 && v <= 15) setCutCount(v);
                   else if (e.target.value === "") setCutCount("auto");
                 }}
                 className="flex h-8 w-full rounded-lg border bg-white px-3 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
                 style={{ borderColor: "#e2e8f0" }}
               />
+            </div>
+          </div>
+
+          <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
+
+          {/* 장면당 초 */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면당 초</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([4, 6, 8] as const).map((sec) => (
+                <button
+                  key={sec}
+                  className="h-8 rounded-lg text-xs font-medium transition-all"
+                  style={
+                    cutDuration === sec
+                      ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                      : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                  }
+                  onClick={() => setCutDuration(sec)}
+                >
+                  {sec}초
+                </button>
+              ))}
             </div>
           </div>
 
