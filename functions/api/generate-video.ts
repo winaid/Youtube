@@ -31,64 +31,71 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    // Veo 3.1 모델
-    const model = "veo-3.1-fast-generate-001";
+    // GCS/HTTPS URI 유효성 검사 — Scene Extension에만 사용 가능
+    const isValidVideoUri = (uri: string) =>
+      uri.startsWith("gs://") || uri.startsWith("https://");
 
-    // Veo 3.1 지원: "16:9", "9:16" 만 유효
+    // === 모델 자동 선택 ===
+    // veo-3.1-fast-generate-001: text-to-video ONLY (image input / video extension 미지원)
+    // veo-3.0-generate-001: text-to-video + image-to-video + Scene Extension 지원
+    //
+    // 연장 모드 감지:
+    //   - firstFrameBase64/lastFrameBase64 있으면 → image-to-video 필요 → standard
+    //   - previousVideoUri가 gs:// / https:// 이면 → Scene Extension 필요 → standard
+    const hasValidPrevUri = !!(req.previousVideoUri && isValidVideoUri(req.previousVideoUri));
+    const hasFirstOrLastFrame = !!(req.firstFrameBase64 || req.lastFrameBase64);
+    const needsExtensionModel = hasFirstOrLastFrame || hasValidPrevUri;
+
+    // 사용자가 "fast" 모드를 선택했어도 연장이 필요하면 standard 모델로 자동 전환
+    const model = needsExtensionModel
+      ? "veo-3.0-generate-001"
+      : "veo-3.1-fast-generate-001";
+
     const VALID_RATIOS = ["16:9", "9:16"];
     const aspectRatio = VALID_RATIOS.includes(req.aspectRatio || "") ? req.aspectRatio! : "9:16";
-    const hasFirstOrLastFrame = !!(req.firstFrameBase64 || req.lastFrameBase64);
     const warnings: string[] = [];
+
+    if (needsExtensionModel && req.mode === "fast") {
+      warnings.push(
+        `연장 모드 감지 — Fast 모델 미지원으로 ${model} 자동 전환`
+      );
+    }
 
     // === Build instance ===
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
     // Scene Extension / Image-to-Video 연결 로직
-    // 우선순위: gs://|https:// URI → firstFrameBase64 → lastFrameBase64 → text-to-video
-    // data URI(base64)는 Veo가 "video is empty"를 반환하므로 GCS/HTTPS URI만 허용
-    const isValidVideoUri = (uri: string) =>
-      uri.startsWith("gs://") || uri.startsWith("https://");
-
-    if (req.previousVideoUri && isValidVideoUri(req.previousVideoUri)) {
-      // ── Scene Extension: 이전 영상 URI가 유효한 경우
+    // 우선순위: gs://|https:// previousVideoUri → firstFrameBase64 → lastFrameBase64 → text-to-video
+    if (hasValidPrevUri) {
+      // ── Scene Extension: 이전 영상 URI로 직접 이어 생성
       instance.video = { uri: req.previousVideoUri };
-      if (req.firstFrameBase64 || req.lastFrameBase64) {
+      if (hasFirstOrLastFrame) {
         warnings.push("Scene Extension 모드 — firstFrame/lastFrame 무시 (video 우선)");
       }
     } else {
-      // ── Scene Extension 불가 → firstFrame(lastFrame) image-to-video fallback
+      // ── Scene Extension 불가 → image-to-video fallback
       if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
-        // data URI / blob URL 등 → 무시하고 firstFrame으로 이어받기
+        // data URI 등 → 무시하고 firstFrame으로 이어받기
         warnings.push(
-          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — firstFrame fallback 시도`
+          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — firstFrame image-to-video로 전환`
         );
       }
-
-      // veo-3.1-fast-generate-001 은 image input(image-to-video)을 미지원 → 400 에러 발생
-      // Fast 모델 감지: 모델명에 "fast" 포함
-      const isFastModel = model.toLowerCase().includes("fast");
-      if (isFastModel && (req.firstFrameBase64 || req.lastFrameBase64)) {
-        warnings.push(
-          "Fast 모델은 image-to-video 미지원 — text-to-video로 생성 (프롬프트에 연속성 컨텍스트 포함 필요)"
-        );
-      } else if (req.firstFrameBase64) {
-        // Image-to-Video: 이전 컷 마지막 프레임을 시작 프레임으로
+      // 모델이 이미 veo-3.0으로 선택됐으므로 image input 가능
+      if (req.firstFrameBase64) {
         instance.image = inlineImage(req.firstFrameBase64);
         if (req.lastFrameBase64) {
           warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
         }
       } else if (req.lastFrameBase64) {
-        // lastFrame만 있으면 → image 필드로 변환
         instance.image = inlineImage(req.lastFrameBase64);
         warnings.push("lastFrame만 전송됨 — image 필드로 변환");
       }
-      // 이미지도 없으면 text-to-video (프롬프트에서 연속성 표현 필요)
+      // 이미지도 없으면 text-to-video (프롬프트에서 연속성 표현)
     }
 
     // Reference Images — 제약 조건 체크
     // 1) 9:16에서는 referenceImages 미지원 (16:9만 지원)
-    // 2) Fast 모델에서는 referenceImages 미지원
-    // 3) first/last frame과 동시 사용 불가
+    // 2) first/last frame과 동시 사용 불가
     if (req.referenceImages && req.referenceImages.length > 0) {
       if (aspectRatio !== "16:9") {
         warnings.push("referenceImages는 16:9에서만 지원 — 제외됨");
