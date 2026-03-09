@@ -170,9 +170,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       || techniques?.editingStyle?.toLowerCase().includes("montage");
 
     const editingPhilosophy = isLongTakeDirector
-      ? `이 감독은 롱테이크의 대가입니다. 장면 수를 최소화하고(목표의 60~70%), 한 장면 안에서 카메라가 끊김 없이 긴 호흡으로 움직이세요. 8초 전체를 하나의 연속 촬영처럼.`
+      ? `이 감독은 롱테이크의 대가입니다. 장면 수는 정확히 목표 수만큼 만들되, 각 장면 안에서 카메라가 끊김 없이 긴 호흡으로 움직이도록 하세요. 8초 전체를 하나의 연속 촬영처럼.`
       : isFastCutDirector
-        ? `이 감독은 빠른 편집의 대가입니다. 장면 수를 목표만큼 또는 그 이상(최대 120%) 만들되, 각 장면 안에서도 빠른 앵글 전환과 역동적 카메라 무빙을 넣으세요. 에너지!`
+        ? `이 감독은 빠른 편집의 대가입니다. 장면 수는 정확히 목표 수만큼 만들되, 각 장면 안에서도 빠른 앵글 전환과 역동적 카메라 무빙을 넣으세요. 에너지!`
         : `이 감독의 편집 리듬에 맞춰 장면을 구성하세요.`;
 
     const techniquesBlock = techniques
@@ -197,14 +197,14 @@ ${techniquesBlock}
 2. **카메라는 살아있다**: 한 장면에서 반드시 2~3가지 카메라 무빙을 조합한다
    - 예: "Wide establishing → slow dolly in → rack focus to hands" (하나의 8초 안에서)
    - 예: "Low angle tracking → whip pan → settle on close-up" (하나의 8초 안에서)
-3. **적은 장면, 높은 밀도**: 장면 수를 최소화하되, 각 장면의 정보 밀도를 극대화한다
+3. **정확한 장면 수, 높은 밀도**: 장면 수는 반드시 목표 수와 정확히 일치시키되, 각 장면의 정보 밀도를 극대화한다
 4. **감독 스타일 일체화**: ${directorNameKo}의 시그니처를 모든 장면에 녹인다
    - 스타일: ${directorStyle || "시네마틱"}
 
 ## 프로젝트 설정
 - 애니메이션: ${animationMode || "2D 애니"} → Veo: ${veoStyle}
 - 화면비: ${aspectRatio || "1:1"} | 지역: ${regionFlavor}
-- 목표 장면 수: ${cutCount || 8} (이보다 적게 만들어도 됨! 밀도가 중요)
+- 목표 장면 수: **정확히 ${cutCount || 8}개** — 절대 이보다 적거나 많으면 안 됨
 
 ## 시나리오
 ${String(storyText).slice(0, 3000)}

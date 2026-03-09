@@ -314,7 +314,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const handleSearchSelect = (directorId: string) => {
     const director = allDirectors.find((d) => d.id === directorId);
     if (director) {
-      setRegion(director.region);
+      // region은 스토리 배경 설정 — 감독 국가로 덮어쓰지 않음
       setDirectorPersona(director.id);
       setDirectorSearch("");
       setWebResults([]);
@@ -340,7 +340,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       persistCustomDirectors(updated);
       return updated;
     });
-    setRegion(webDir.region);
+    // region은 스토리 배경 설정 — 감독 국가로 덮어쓰지 않음
     setDirectorPersona(webDir.id);
     setDirectorSearch("");
     setWebResults([]);
@@ -602,7 +602,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   <button
                     className="hover:opacity-80"
                     onClick={() => {
-                      setRegion(d.region);
+                      // region은 스토리 배경 설정 — 감독 국가로 덮어쓰지 않음
                       setDirectorPersona(d.id);
                     }}
                   >
@@ -793,7 +793,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       onClick={() => {
                         const found = allDirectors.find((dir) => dir.nameKo.includes(d));
                         if (found) {
-                          setRegion(found.region);
+                          // region은 스토리 배경 설정 — 감독 국가로 덮어쓰지 않음
                           setDirectorPersona(found.id);
                         }
                       }}
