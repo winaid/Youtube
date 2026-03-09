@@ -121,7 +121,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const res = await fetchWithAuth(
       context.env,
-      buildVertexUrl(context.env, "gemini-3-flash-preview"),
+      buildVertexUrl(context.env, "gemini-2.0-flash-001"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -108,6 +108,7 @@ async function getAccessToken(serviceAccountJson: string): Promise<string> {
 /**
  * 모델 이름으로 Vertex AI 전체 URL을 생성.
  * 서비스 계정 JSON에서 project_id를 추출하고 location=global 사용.
+ * Gemini 텍스트/멀티모달 모델 전용 — Veo는 buildVeoUrl() 사용.
  */
 export function buildVertexUrl(env: GeminiEnv, model: string, method = "generateContent"): string {
   if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
@@ -116,6 +117,50 @@ export function buildVertexUrl(env: GeminiEnv, model: string, method = "generate
   }
   // API Key fallback은 Express 엔드포인트 사용
   return `https://aiplatform.googleapis.com/v1beta/publishers/google/models/${model}:${method}`;
+}
+
+/**
+ * Veo 전용 Vertex AI URL 빌더 — us-central1 리전 엔드포인트 사용.
+ *
+ * 왜 별도 함수가 필요한가?
+ *  - Veo predictLongRunning은 리전 엔드포인트(us-central1)에서만 GCS URI 반환.
+ *    global 엔드포인트를 쓰면 base64 인라인으로 반환되어 Scene Extension 불가.
+ *  - fetchPredictOperation 도 동일한 리전 엔드포인트여야 operationName 매칭.
+ *    createVeoFetchUrl() 도 us-central1 고정.
+ */
+export function buildVeoUrl(env: GeminiEnv, model: string, method = "predictLongRunning"): string {
+  const location = "us-central1";
+  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    const sa = parseServiceAccount(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    return `https://${location}-aiplatform.googleapis.com/v1/projects/${sa.project_id}/locations/${location}/publishers/google/models/${model}:${method}`;
+  }
+  // API Key fallback — Service Account 없이 Veo 호출 시 GCS URI 미반환 가능
+  return `https://${location}-aiplatform.googleapis.com/v1beta/publishers/google/models/${model}:${method}`;
+}
+
+/**
+ * Veo 전용 fetchPredictOperation URL 빌더.
+ * operationName에서 리전을 추출하되, global이면 us-central1 로 대체.
+ * buildVeoUrl()과 동일 리전이어야 operation 조회 성공.
+ */
+export function buildVeoFetchUrl(env: GeminiEnv, operationName: string): string {
+  const locMatch = operationName.match(/locations\/([^/]+)\//);
+  const rawLoc = locMatch ? locMatch[1] : "us-central1";
+  const location = rawLoc === "global" ? "us-central1" : rawLoc;
+
+  const modelMatch = operationName.match(/models\/([^/]+)\/operations\//);
+  const model = modelMatch ? modelMatch[1] : "veo-3.0-generate-001";
+
+  let projectId = "unknown";
+  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON) as { project_id: string };
+      projectId = sa.project_id;
+    } catch { /* ignore */ }
+  }
+
+  const host = `${location}-aiplatform.googleapis.com`;
+  return `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:fetchPredictOperation`;
 }
 
 // === API Key fallback ===

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildVeoFetchUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -335,34 +335,11 @@ function logResponseStructure(raw: Record<string, unknown>): {
   return { dataKeys, responseKeys, gvrKeys, deepKeys };
 }
 
-// === operationName에서 모델명 / 리전 추출 ===
+// === operationName에서 모델명 추출 (로그용) ===
 
 function extractModel(operationName: string): string | null {
   const m = operationName.match(/models\/([^/]+)\/operations\//);
   return m ? m[1] : null;
-}
-
-function extractLocation(operationName: string): string {
-  const m = operationName.match(/locations\/([^/]+)\//);
-  const loc = m ? m[1] : "us-central1";
-  // fetchPredictOperation은 리전 엔드포인트만 지원 — global 불가
-  return loc === "global" ? "us-central1" : loc;
-}
-
-function buildFetchPredictUrl(env: GeminiEnv, model: string, location: string): string {
-  let projectId = "unknown";
-  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    try {
-      const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON) as { project_id: string };
-      projectId = sa.project_id;
-    } catch { /* ignore */ }
-  }
-  // Veo fetchPredictOperation은 반드시 리전 엔드포인트 사용
-  // e.g. https://us-central1-aiplatform.googleapis.com/v1/projects/.../models/...:fetchPredictOperation
-  const host = location === "global"
-    ? "aiplatform.googleapis.com"
-    : `${location}-aiplatform.googleapis.com`;
-  return `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:fetchPredictOperation`;
 }
 
 // === 메인 핸들러 ===
@@ -388,14 +365,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     const model = extractModel(operationName);
-    if (!model) {
-      console.error("[check-video] Cannot extract model from operationName:", operationName);
-      return Response.json({ error: "Could not extract model from operationName", operationName }, { status: 400 });
-    }
-
-    const location = extractLocation(operationName);
-    const url = buildFetchPredictUrl(context.env, model, location);
-    console.log(`[check-video] model=${model} location=${location} url=${url}`);
+    // buildVeoFetchUrl: operationName에서 리전 추출, global → us-central1 대체
+    // generate-video.ts 가 us-central1 buildVeoUrl 로 생성했으므로 리전 일치
+    const url = buildVeoFetchUrl(context.env, operationName);
+    console.log(`[check-video] model=${model ?? "unknown"} url=${url}`);
 
     // Cloudflare Pages 타임아웃(100s) 전에 자체 타임아웃 설정
     const controller = new AbortController();
@@ -410,10 +383,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         signal: controller.signal,
       });
     } catch (err) {
+      clearTimeout(timeout);
       if (err instanceof DOMException && err.name === "AbortError") {
+        // 자체 25s 타임아웃 — 아직 처리 중
         return Response.json({ status: "RUNNING" });
       }
-      throw err;
+      // fetch() 네트워크 레벨 오류 (DNS 실패, 연결 거부 등) — transient 에러로 취급
+      // re-throw 하면 외부 catch → 500 반환 → 클라이언트 폴링 중단 위험
+      // RUNNING 반환으로 클라이언트가 재시도하도록 유도
+      console.warn("[check-video] fetchWithAuth 네트워크 오류 — RUNNING으로 처리:", err instanceof Error ? err.message : String(err));
+      return Response.json({ status: "RUNNING" });
     } finally {
       clearTimeout(timeout);
     }
