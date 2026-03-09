@@ -155,9 +155,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     };
 
+    // 실제 어떤 모드로 Veo를 호출하는지 명시 (Scene Extension / image-to-video / text-to-video)
+    const veoMode = instance.video
+      ? "SCENE_EXTENSION"
+      : instance.image
+        ? "IMAGE_TO_VIDEO"
+        : "TEXT_TO_VIDEO";
+
     console.log("[generate-video] Veo request:", JSON.stringify({
       model,
+      mode: veoMode,
       endpoint: "us-central1",
+      previousVideoUri: req.previousVideoUri ? `${String(req.previousVideoUri).slice(0, 80)}…` : null,
+      hasValidPrevUri,
+      hasFirstFrame,
+      hasLastFrame,
       hasVideo: !!instance.video,
       hasImage: !!instance.image,
       hasRefImages: !!instance.referenceImages,

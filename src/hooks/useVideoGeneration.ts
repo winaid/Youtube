@@ -465,6 +465,30 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
           updateClip(cutNumber, clipUpdate);
 
+          // ── 완료 후 진단 로그 ───────────────────────────────────────────────
+          {
+            const ruri = clipUpdate.rawVideoUri ?? "";
+            const ruriType = ruri.startsWith("gs://") ? "GCS ✓"
+              : ruri.startsWith("https://") ? "HTTPS ✓"
+              : ruri === "" ? "EMPTY(base64) ✗"
+              : "DATA_URI ✗";
+            const willExtend = ruri.length > 0 && !ruri.startsWith("data:");
+            console.log(`[CUT ${cutNumber}] COMPLETED`, {
+              sourceCutId: cutNumber,
+              parentCutId: cutNumber - 1,
+              rawVideoUri: ruri ? `${ruri.slice(0, 80)}…` : "(empty)",
+              rawVideoUriType: ruriType,
+              nextCutWillExtend: willExtend ? "✓ Scene Extension 가능" : "✗ Scene Extension 불가 → image/text fallback",
+              seed: clipUpdate.seed,
+            });
+            if (!willExtend) {
+              console.warn(
+                `[CUT ${cutNumber}] rawVideoUri가 유효한 GCS/HTTPS URI가 아님 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
+                `rawVideoUri="${ruri.slice(0, 60)}"`
+              );
+            }
+          }
+
           if (data.seed && onSeedDetected) {
             onSeedDetected(cutNumber, data.seed);
           }
@@ -602,7 +626,18 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     if (!cut) return;
 
     const cfg = state.config;
-    let prompt = cutNumber === 1 ? cut.videoPrompt : cut.extendPrompt;
+    // extendPrompt가 "" 이면 videoPrompt를 fallback으로 사용 (generate-cuts 파싱 실패 대비)
+    // CUT 2+에서 extendPrompt=""이면 모든 컷이 동일한 generic 프롬프트로 생성되는 버그 방지
+    let prompt: string;
+    if (cutNumber === 1) {
+      prompt = cut.videoPrompt;
+    } else if (cut.extendPrompt && cut.extendPrompt.trim().length > 0) {
+      prompt = cut.extendPrompt;
+    } else {
+      // extendPrompt 누락 → videoPrompt를 extend 맥락으로 재활용 + 경고
+      console.warn(`[CUT ${cutNumber}] extendPrompt 없음(빈 문자열) — videoPrompt 사용. 장면 연속성이 약해질 수 있음.`);
+      prompt = cut.videoPrompt;
+    }
     const clip = state.clips.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
 
@@ -844,6 +879,44 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           ? rawPrevUri
           : undefined;
 
+      // ── 요청 직전 진단 로그 ─────────────────────────────────────────────────
+      // mode: 실제 어떤 방식으로 생성하는지 명시
+      const requestMode = previousVideoUri
+        ? "SCENE_EXTENSION"
+        : firstFrameBase64
+          ? "IMAGE_TO_VIDEO"
+          : "TEXT_TO_VIDEO";
+
+      if (cutNumber > 1 && requestMode === "TEXT_TO_VIDEO") {
+        // Scene Extension도 image-to-video도 없으면 이전 컷과 무관한 독립 생성 → 연속성 없음
+        console.warn(
+          `[CUT ${cutNumber}] ⚠️ TEXT_TO_VIDEO — 이전 컷과 연결 없음.`,
+          {
+            prevClipExists: !!prevClip,
+            prevClipStatus: prevClip?.status,
+            rawVideoUri: rawPrevUri ? `${rawPrevUri.slice(0, 60)}…` : "(없음)",
+            rawVideoUriType: rawPrevUri
+              ? (rawPrevUri.startsWith("gs://") ? "GCS ✓" : rawPrevUri.startsWith("https://") ? "HTTPS ✓" : rawPrevUri === "" ? "EMPTY (base64 응답) ✗" : "DATA_URI ✗")
+              : "(없음)",
+            firstFrameBase64: firstFrameBase64 ? `(${firstFrameBase64.length}자)` : "(없음)",
+          }
+        );
+      }
+
+      console.log(`[CUT ${cutNumber}] API 요청`, {
+        cutNumber,
+        sourceCutId: cutNumber,
+        parentCutId: cutNumber > 1 ? cutNumber - 1 : null,
+        mode: requestMode,
+        previousVideoUri: previousVideoUri ? `${previousVideoUri.slice(0, 60)}…` : null,
+        hasFirstFrame: !!firstFrameBase64,
+        hasLastFrame: !!lastFrameBase64,
+        promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),
+        promptLen: prompt.length,
+        promptPrefix: prompt.slice(0, 120),
+        model: "veo-3.1-fast-generate-001",
+      });
+
       const body: Record<string, unknown> = {
         prompt,
         mode: cfg.mode,
@@ -992,6 +1065,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           ...c,
           selectedVariant: variantIndex,
           videoUri: variant.videoUri,
+          rawVideoUri: variant.rawVideoUri, // FIX: variant 선택 시 rawVideoUri도 업데이트해야 다음 컷 Scene Extension에 올바른 URI 전달
           seed: variant.seed,
         };
       }),

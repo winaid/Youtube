@@ -398,7 +398,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         imagePrompt:      d?.imagePrompt      ?? `${mainChar.appearance}. Scene ${outline.cutNumber} start. ${noTextSuffix}`,
         endImagePrompt:   d?.endImagePrompt   ?? `${mainChar.appearance}. Scene ${outline.cutNumber} end. ${noTextSuffix}`,
         videoPrompt:      d?.videoPrompt      ?? `Medium shot. ${mainChar.appearance}. ${beatTemplate}. ${noTextSuffix}`,
-        extendPrompt:     i === 0 ? "" : (d?.extendPrompt ?? ""),
+        extendPrompt:     i === 0 ? "" : (d?.extendPrompt && d.extendPrompt.trim().length > 10
+          ? d.extendPrompt
+          : `Continuing seamlessly from previous shot. ${mainChar.appearance}. ${outline.sceneKo}. ${extendBeatTemplate}. ${noTextSuffix}`),
         transitionHint:   outline.transitionHint,
         characterConsistency: `캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`,
         charactersInScene: [mainChar.id],
