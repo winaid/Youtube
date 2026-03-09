@@ -349,8 +349,9 @@ export async function streamingGenerate(
 
   if (truncated) {
     const partial = parts.join("");
+    // partial 텍스트를 text에 포함하여 caller가 부분 복구 시도 가능하게 함
     return {
-      text: "",
+      text: partial,
       error: `MAX_TOKENS: 출력이 토큰 한도로 절단됨 (${partial.length}자). maxOutputTokens를 높이거나 요청을 분리하세요.`,
       status: 200,
       truncated: true,
