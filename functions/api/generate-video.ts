@@ -64,25 +64,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const warnings: string[] = [];
 
     // ── instance 구성 ────────────────────────────────────────────────────────
-    // 우선순위: firstFrameBase64 → gs://|https:// video → lastFrameBase64 → text-only
+    // 우선순위: gs://|https:// video(Scene Extension) → firstFrameBase64 → lastFrameBase64 → text-only
     //
-    // ⚠️ Scene Extension(video)은 이전 영상의 시각적 내용에 강하게 앵커링되어
-    //    프롬프트가 씬 전환/모핑을 지시해도 무시하는 문제가 있음.
-    //    firstFrameBase64가 있으면 Image-to-video를 우선 사용해 프롬프트 반영도를 높임.
+    // Scene Extension이 최우선: 사용자가 "이전 영상을 입력으로 넣어 이어서 생성"을 원하므로
+    // previousVideoUri(gs://) 가 있으면 반드시 video input으로 넣음.
+    // firstFrameBase64(프레임 기반 image-to-video)는 이전 영상이 없을 때 continuity 보조 수단.
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
-    if (hasFirstFrame) {
-      // Image-to-video: 마지막 프레임을 시작점으로, 프롬프트가 씬 진행을 주도
+    if (hasValidPrevUri) {
+      // Scene Extension: 이전 컷 비디오를 직접 입력 (true extend)
+      instance.video = { uri: req.previousVideoUri, mimeType: "video/mp4" };
+      if (hasFirstFrame) {
+        warnings.push("previousVideoUri 있음 — Scene Extension 우선. firstFrameBase64는 무시됨");
+      }
+    } else if (hasFirstFrame) {
+      // Image-to-video: 이전 비디오 없을 때 프레임 기반 continuity
       instance.image = inlineImage(req.firstFrameBase64!);
       if (hasLastFrame) {
         warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
       }
-      if (hasValidPrevUri) {
-        warnings.push("firstFrame 있음 — Scene Extension(video) 대신 image-to-video 사용 (프롬프트 반영도 우선)");
-      }
-    } else if (hasValidPrevUri) {
-      // Scene Extension: firstFrame 없을 때만 사용 (시각적 continuity 목적)
-      instance.video = { uri: req.previousVideoUri, mimeType: "video/mp4" };
     } else {
       if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
         warnings.push(
@@ -115,8 +115,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       personGeneration: req.personGeneration || "allow_all",
     };
 
+    // Veo 3.1 지원 해상도: 720p, 1080p (4k 미지원 — 400 에러 유발)
+    const VALID_RESOLUTIONS = ["720p", "1080p"];
     if (req.resolution) {
-      parameters.resolution = req.resolution;
+      if (VALID_RESOLUTIONS.includes(req.resolution)) {
+        parameters.resolution = req.resolution;
+      } else {
+        warnings.push(`해상도 "${req.resolution}"은 Veo 3.1 미지원 → 제외됨 (지원: ${VALID_RESOLUTIONS.join(", ")})`);
+      }
     }
 
     const VALID_DURATIONS = [4, 6, 8];
@@ -128,6 +134,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const sampleCount = req.sampleCount && req.sampleCount >= 1 ? Math.min(req.sampleCount, 4) : 1;
     parameters.sampleCount = sampleCount;
     parameters.generateAudio = req.generateAudio !== false;
+
+    // seed: 재현 가능한 생성 (동일 seed → 동일 영상)
+    if (req.seed !== undefined) {
+      parameters.seed = req.seed;
+    }
 
     // ── API 호출 헬퍼 ─────────────────────────────────────────────────────────
     // buildVeoUrl → us-central1 리전 엔드포인트:
@@ -157,14 +168,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── 1차 시도 ─────────────────────────────────────────────────────────────
     let res = await callVeo(instance, parameters);
 
-    // ── Fallback 1: Scene Extension(video) 400 → text-to-video 시도 ──────────
-    // video URI가 있는데 400으로 거절됐다면 (firstFrame은 이미 위에서 우선 처리됨)
+    // ── Fallback 1: Scene Extension(video) 400 → image-to-video → text-to-video ──
     if (!res.ok && res.status === 400 && instance.video) {
       const errText = await res.text();
-      warnings.push(`Scene Extension 400 — text-to-video 전환. 에러: ${errText.slice(0, 120)}`);
       console.warn("[generate-video] Scene Extension 400:", errText.slice(0, 500));
-
       delete instance.video;
+
+      if (hasFirstFrame) {
+        // firstFrameBase64 있으면 image-to-video로 fallback
+        warnings.push(`Scene Extension 400 → image-to-video fallback. 에러: ${errText.slice(0, 120)}`);
+        instance.image = inlineImage(req.firstFrameBase64!);
+      } else {
+        // 없으면 text-to-video
+        warnings.push(`Scene Extension 400 → text-to-video 전환. 에러: ${errText.slice(0, 120)}`);
+      }
       res = await callVeo(instance, parameters);
     }
 

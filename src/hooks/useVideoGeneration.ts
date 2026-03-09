@@ -606,8 +606,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     const clip = state.clips.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
 
-    // CUT N>1: 이전 컷 시각 상태를 프롬프트에 주입 (text-to-video fallback 시 continuity 필수)
-    // Fast 모델은 image-to-video 미지원이므로 프롬프트가 유일한 연속성 수단
+    // CUT N>1: 이전 컷 시각 상태를 프롬프트에 주입 (Scene Extension fallback 시 보조)
+    // veo-3.1-fast-generate-001은 Scene Extension + image-to-video 모두 지원
     if (cutNumber > 1) {
       const prevCutData = cuts.find((c) => c.cutNumber === cutNumber - 1);
       if (prevCutData && !prompt.toLowerCase().startsWith("continuing")) {

@@ -280,19 +280,19 @@ export async function streamingGenerate(
       headers.set("Authorization", `Bearer ${token}`);
       res = await fetch(url, { ...init, headers });
     } catch (err) {
-      // fallback to API keys
+      // fallback to API keys — keys[0] 고정이 아닌 전체 키 로테이션
       const keys = getApiKeys(env);
       if (keys.length === 0) {
         return { text: "", error: "No auth configured", status: 500 };
       }
-      res = await fetch(`${url}&key=${keys[0]}`, init);
+      res = await fetchWithKeyFallback(keys, url, init);
     }
   } else {
     const keys = getApiKeys(env);
     if (keys.length === 0) {
       return { text: "", error: "No auth configured", status: 500 };
     }
-    res = await fetch(`${url}&key=${keys[0]}`, init);
+    res = await fetchWithKeyFallback(keys, url, init);
   }
 
   if (!res.ok) {
