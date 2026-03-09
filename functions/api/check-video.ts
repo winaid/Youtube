@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -294,11 +294,32 @@ function logResponseStructure(raw: Record<string, unknown>): {
   return { dataKeys, responseKeys, gvrKeys, deepKeys };
 }
 
-// === operationName에서 모델명 추출 ===
+// === operationName에서 모델명 / 리전 추출 ===
 
 function extractModel(operationName: string): string | null {
   const m = operationName.match(/models\/([^/]+)\/operations\//);
   return m ? m[1] : null;
+}
+
+function extractLocation(operationName: string): string {
+  const m = operationName.match(/locations\/([^/]+)\//);
+  return m ? m[1] : "us-central1";
+}
+
+function buildFetchPredictUrl(env: GeminiEnv, model: string, location: string): string {
+  let projectId = "unknown";
+  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON) as { project_id: string };
+      projectId = sa.project_id;
+    } catch { /* ignore */ }
+  }
+  // Veo fetchPredictOperation은 반드시 리전 엔드포인트 사용
+  // e.g. https://us-central1-aiplatform.googleapis.com/v1/projects/.../models/...:fetchPredictOperation
+  const host = location === "global"
+    ? "aiplatform.googleapis.com"
+    : `${location}-aiplatform.googleapis.com`;
+  return `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:fetchPredictOperation`;
 }
 
 // === 메인 핸들러 ===
@@ -316,7 +337,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "Could not extract model from operationName" }, { status: 400 });
     }
 
-    const url = buildVertexUrl(context.env, model, "fetchPredictOperation");
+    const location = extractLocation(operationName);
+    const url = buildFetchPredictUrl(context.env, model, location);
+    console.log(`[check-video] model=${model} location=${location} url=${url}`);
 
     // Cloudflare Pages 타임아웃(100s) 전에 자체 타임아웃 설정
     const controller = new AbortController();

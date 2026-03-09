@@ -26,7 +26,10 @@ function base64url(data: ArrayBuffer | Uint8Array | string): string {
     str = data;
   } else {
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-    str = String.fromCharCode(...bytes);
+    // spread(...bytes) → 콜 스택 초과 가능, 루프로 대체
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    str = s;
   }
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
