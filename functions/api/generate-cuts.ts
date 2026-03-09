@@ -407,42 +407,83 @@ JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
     });
 
     if (result.error) {
-      console.error("Gemini API error:", result.status, result.error);
+      // Vertex AI / Gemini API 에러 — 원문 전체 로그
+      console.error("[generate-cuts] Gemini API 에러. status:", result.status);
+      console.error("[generate-cuts] 에러 원문:", result.error.slice(0, 1000));
       let detail = "";
+      let vertexCode = "";
       try {
         const errJson = JSON.parse(result.error);
-        detail = errJson?.error?.message || result.error.slice(0, 200);
+        detail = errJson?.error?.message || errJson?.message || result.error.slice(0, 400);
+        vertexCode = errJson?.error?.status || errJson?.error?.code || "";
       } catch {
-        detail = result.error.slice(0, 200);
+        detail = result.error.slice(0, 400);
       }
       return Response.json(
-        { error: `Gemini API error: ${result.status}`, detail },
+        { error: `Gemini API error: ${result.status}`, detail, vertexCode, raw: result.error.slice(0, 300) },
         { status: 502 },
       );
     }
 
     const text = result.text.trim() || "{}";
 
-    let parsed;
+    let parsed: { characterSeeds?: unknown; cuts?: unknown } | unknown[] | null = null;
+    let parseError = "";
+
+    // 1차: 직접 파싱
     try {
       parsed = JSON.parse(text);
-    } catch {
-      // Try extracting JSON from markdown fences or other wrapper
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      } else {
-        const arrayMatch = text.match(/\[[\s\S]*\]/);
-        parsed = arrayMatch ? { cuts: JSON.parse(arrayMatch[0]), characterSeeds: [] } : { cuts: [], characterSeeds: [] };
+    } catch (e1) {
+      parseError = `직접 파싱 실패: ${e1 instanceof Error ? e1.message : String(e1)}`;
+
+      // 2차: {} 블록 추출
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+          parseError = "";
+        }
+      } catch (e2) {
+        parseError += ` | {} 추출 실패: ${e2 instanceof Error ? e2.message : String(e2)}`;
+      }
+
+      // 3차: [] 배열 추출
+      if (!parsed) {
+        try {
+          const arrayMatch = text.match(/\[[\s\S]*\]/);
+          if (arrayMatch) {
+            parsed = { cuts: JSON.parse(arrayMatch[0]), characterSeeds: [] };
+            parseError = "";
+          }
+        } catch (e3) {
+          parseError += ` | [] 추출 실패: ${e3 instanceof Error ? e3.message : String(e3)}`;
+        }
       }
     }
 
-    const characterSeeds = Array.isArray(parsed.characterSeeds) ? parsed.characterSeeds : [];
-    const cuts = Array.isArray(parsed.cuts) ? parsed.cuts : (Array.isArray(parsed) ? parsed : []);
+    if (!parsed) {
+      // 파싱 완전 실패 → 원문 로그 + 상세 에러 반환
+      console.error("[generate-cuts] JSON 파싱 전체 실패. parseError:", parseError);
+      console.error("[generate-cuts] Gemini 응답 원문 (앞 500자):", text.slice(0, 500));
+      return Response.json(
+        { error: "Gemini 응답 파싱 실패", detail: parseError, rawPreview: text.slice(0, 300) },
+        { status: 502 },
+      );
+    }
+
+    const p = parsed as Record<string, unknown>;
+    const characterSeeds = Array.isArray(p.characterSeeds) ? p.characterSeeds : [];
+    const cuts = Array.isArray(p.cuts) ? p.cuts : (Array.isArray(parsed) ? parsed : []);
 
     return Response.json({ characterSeeds, cuts });
   } catch (error) {
-    console.error("Cuts generation error:", error);
-    return Response.json({ error: "Failed to generate cuts" }, { status: 500 });
+    // 원본 예외 전체를 응답에 포함 (Cloudflare 로그 + 클라이언트 양쪽 노출)
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? (error.stack || "").slice(0, 800) : "";
+    console.error("[generate-cuts] 예외 발생:", errMsg, "\n", errStack);
+    return Response.json(
+      { error: "Failed to generate cuts", detail: errMsg, stack: errStack },
+      { status: 500 },
+    );
   }
 };
