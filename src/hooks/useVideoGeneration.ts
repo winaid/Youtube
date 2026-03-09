@@ -942,7 +942,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
     // 현재 진행 중인 컷이 있으면 대기
     const hasActive = state.clips.some(
-      (c) => c.status === "generating" || c.status === "pending"
+      (c) => c.status === "generating" || c.status === "polling"
     );
     if (hasActive) return;
 
