@@ -114,8 +114,20 @@ ${storyText.slice(0, 1500)}
   가능 값: ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV
   권장 순서 (${cutCount}컷): ${shotGuide}
 - subjectAction: 피사체의 구체적 신체 동작 (영어 ≤15 words)
-  금지: "stands", "watches", "looks at camera", "faces forward"
-  필수: 구체적 동작 (예: "reaches for door handle with trembling hand", "spins abruptly toward the sound")
+  금지: "stands", "watches", "looks at camera", "faces forward", "feels anxious", "seems nervous", "appears sad"
+  금지: 감정 형용사를 동작처럼 쓰는 것 (예: "nervously stands" — "nervously"는 형용사, 금지)
+  필수: 행동 비트 — 시작·망설임·중단·충동·완수 중 하나를 포함한 구체적 동작
+  감정→행동 번역 예시 (subjectAction 작성 기준):
+    anxiety    → "types search term then deletes it before submitting"
+    hesitation → "extends hand toward button then pulls back"
+    resolve    → "pauses then grips handle and pushes door open fully"
+    guilt      → "opens mouth to speak then closes it, turns gaze away"
+    anger      → "clenches jaw, tightens fist, jerks head sharply to side"
+    relief     → "exhales slowly, shoulders drop, hands release grip"
+    anticipation→ "leans torso forward, eyes fix before body follows"
+    resignation → "reaches halfway then lowers hand and steps back"
+  예시: "reaches for door handle then stops, fingers hovering"
+  예시: "spins abruptly toward sound, freezes mid-step"
 - transitionHint: 최대 15자
 
 ## 샷 다양화 강제 규칙
@@ -238,8 +250,21 @@ ${batchDirectives}
 1. videoPrompt는 "스토리 설명"이 아니라 "카메라 지시"다
 2. 이전 컷과 shotType이 이미 다르게 설정되어 있음 — 이것을 반드시 반영
 3. subjectAction을 그대로 영상화하되, 구체적 신체 동작으로 묘사
-4. emotionalDelta를 시각적으로 표현 (표정, 자세, 조명 변화)
+4. 감정을 형용사/추상어로 절대 이름 붙이지 말 것. 그 감정이 유발하는 "신체 행동 + 망설임/중단/충동"으로만 표현.
+   감정→행동 번역 원칙:
+   - anxiety/fear   → fingers stop mid-motion, gaze darts between two points, body fails to settle
+   - hesitation     → hand extends toward target then recoils, weight shifts forward then back
+   - resolve        → after pause, gaze locks and action completes without stopping
+   - guilt          → eye contact broken, speech impulse swallowed, hand hidden or covered
+   - suppressed anger→ jaw sets, fist closes slowly, movement becomes short and cut-off
+   - relief         → shoulders lose tension on exhale, grip releases, breath elongates
+   - anticipation   → torso tilts forward, eyes arrive before the body moves
+   - resignation    → action begun then abandoned, hand lowered slowly, gaze drops
+   - jealousy       → quick side-glance immediately retracted, neutral mask reassembled
+   - embarrassment  → gaze redirected, micro-smile suppressed, body self-adjusted
 5. 각 컷에서 "이전 컷에 없던 시각 정보" 최소 1개 포함
+6. 동일 감정이 연속되면 다른 행동 양상으로 드러낼 것. 같은 행동 반복 금지.
+7. 감정 상태를 정지된 포즈가 아니라 "진행 중인 행동 비트"로 설계할 것
 
 ## STRICT 글자 제한
 
@@ -250,12 +275,13 @@ endImagePrompt (≤65 words English):
   Format: "[charRef]. Subject AT FRAME END: [end state of subjectAction]. [what changed visually from start]. [noTextSuffix]"
 
 videoPrompt (≤130 words English):
-  Format: "[SHOT_TYPE from directive], [camera move]. [charRef]. SUBJECT: [subjectAction — exact motion, not vague]. EMOTIONAL TONE: [visual expression of emotionalDelta]. NEWLY IN FRAME: [what wasn't visible in prev cut]. ${beatTemplate.replace("[start]", "[begin subjectAction]").replace("[develop]", "[midpoint of action]").replace("[climax]", "[peak moment]")}. VISUAL CONTRAST FROM PREV: [specific difference in framing/distance/angle]. [noTextSuffix]"
+  Format: "[SHOT_TYPE from directive], [camera move]. [charRef]. SUBJECT: [subjectAction — exact motion, not vague]. ACTION BEAT: [core physical action with hesitation, interruption, or follow-through]. BODY SIGNAL: [specific hand/gaze/posture/breath change — no abstract emotion labels]. NEWLY IN FRAME: [what wasn't visible in prev cut]. ${beatTemplate.replace("[start]", "[begin subjectAction]").replace("[develop]", "[midpoint of action]").replace("[climax]", "[peak moment or interruption]")}. VISUAL CONTRAST FROM PREV: [specific difference in framing/distance/angle]. [noTextSuffix]"
   BANNED: "continues", "still", "same as before", "watches quietly", "stands facing"
+  BANNED emotion labels in BODY SIGNAL: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — describe the body behavior, not the feeling
 
 extendPrompt (CUT${firstCutNum}=="" if CUT1 | others ≤110 words English):
-  Format: "PREV CUT ENDS: [shotType of prev] — subject was [prev subjectAction], emotion [prev emotion]. → TRANSITION. NEW SHOT: [this shotType], [camera repositioning]. [charRef]. NEW ACTION: [this subjectAction — must be different motion from prev]. EMOTIONAL SHIFT: [emotionalDelta]. NEWLY REVEALED: [information/element not seen before]. ${extendBeatTemplate}. [noTextSuffix]"
-  BANNED: "continuing", "similar to previous", "same pose"
+  Format: "PREV CUT ENDS: [shotType of prev] — subject was [prev subjectAction], body showed [prev body signal]. → TRANSITION. NEW SHOT: [this shotType], [camera repositioning]. [charRef]. NEW ACTION: [this subjectAction — must be different motion from prev]. BEHAVIORAL SHIFT: [how body behavior changes — hands/gaze/posture/breath, no emotion labels]. NEWLY REVEALED: [information/element not seen before]. ${extendBeatTemplate}. [noTextSuffix]"
+  BANNED: "continuing", "similar to previous", "same pose", emotion adjectives in BEHAVIORAL SHIFT
 
 cameraDirection (≤55 chars English):
   Format: "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
