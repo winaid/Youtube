@@ -510,7 +510,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             }
           }
 
-          // 자동 모드: 모든 클립이 완료/실패이면 자동 모드 종료
+          // 자동 모드 (직렬): 다음 idle 컷을 순차 트리거
           if (autoModeRef.current) {
             setState((prev) => {
               const allDone = prev.clips.every(
@@ -519,6 +519,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
               if (allDone) {
                 autoModeRef.current = false;
                 return { ...prev, isAutoMode: false, currentAutoIndex: -1 };
+              }
+              // 다음 idle 컷 찾아서 생성 시작
+              const nextIdle = prev.clips.find((c) => c.status === "idle");
+              if (nextIdle) {
+                setTimeout(() => generateCut(nextIdle.cutNumber), 200);
               }
               return prev;
             });
@@ -558,6 +563,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             if (allDone && autoModeRef.current) {
               autoModeRef.current = false;
               return { ...prev, clips: newClips, isAutoMode: false, currentAutoIndex: -1 };
+            }
+            // 직렬: 실패 후에도 다음 idle 컷 계속 진행
+            if (autoModeRef.current) {
+              const nextIdle = newClips.find((c) => c.status === "idle");
+              if (nextIdle) setTimeout(() => generateCut(nextIdle.cutNumber), 200);
             }
             return { ...prev, clips: newClips };
           });
@@ -934,7 +944,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     }
   }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt]);
 
-  // 자동 모드 (병렬 생성) — idle인 모든 클립을 동시에 시작
+  // 자동 모드 (직렬 생성) — 첫 번째 idle 컷만 시작, 이후 컷은 이전 컷 완료 후 순차 트리거
   const autoTriggeredRef = useRef(false);
   useEffect(() => {
     if (!state.isAutoMode) {
@@ -945,7 +955,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     const idleClips = state.clips.filter((c) => c.status === "idle");
     if (idleClips.length === 0) return;
     autoTriggeredRef.current = true;
-    idleClips.forEach((clip) => generateCut(clip.cutNumber));
+    // 첫 번째 컷만 시작 — 나머지는 COMPLETED 핸들러에서 순차 트리거
+    generateCut(idleClips[0].cutNumber);
   }, [state.isAutoMode, state.clips, generateCut]);
 
   const startAutoGeneration = useCallback(() => {
