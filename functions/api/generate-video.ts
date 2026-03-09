@@ -66,27 +66,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const warnings: string[] = [];
 
     // ── instance 구성 ────────────────────────────────────────────────────────
-    // 우선순위: gs://|https:// video → firstFrameBase64 → lastFrameBase64 → text-only
+    // 우선순위: firstFrameBase64 → gs://|https:// video → lastFrameBase64 → text-only
+    //
+    // ⚠️ Scene Extension(video)은 이전 영상의 시각적 내용에 강하게 앵커링되어
+    //    프롬프트가 씬 전환/모핑을 지시해도 무시하는 문제가 있음.
+    //    firstFrameBase64가 있으면 Image-to-video를 우선 사용해 프롬프트 반영도를 높임.
     const instance: Record<string, unknown> = { prompt: req.prompt };
 
-    if (hasValidPrevUri) {
-      // Scene Extension: 이전 영상 GCS/HTTPS URI → 연속 장면 생성
-      instance.video = { uri: req.previousVideoUri, mimeType: "video/mp4" };
-      if (hasFirstOrLastFrame) {
-        warnings.push("Scene Extension 모드 — firstFrame/lastFrame 무시 (video 우선)");
+    if (hasFirstFrame) {
+      // Image-to-video: 마지막 프레임을 시작점으로, 프롬프트가 씬 진행을 주도
+      instance.image = inlineImage(req.firstFrameBase64!);
+      if (hasLastFrame) {
+        warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
       }
+      if (hasValidPrevUri) {
+        warnings.push("firstFrame 있음 — Scene Extension(video) 대신 image-to-video 사용 (프롬프트 반영도 우선)");
+      }
+    } else if (hasValidPrevUri) {
+      // Scene Extension: firstFrame 없을 때만 사용 (시각적 continuity 목적)
+      instance.video = { uri: req.previousVideoUri, mimeType: "video/mp4" };
     } else {
       if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
         warnings.push(
-          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — firstFrame image-to-video로 전환`
+          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — text-to-video로 전환`
         );
       }
-      if (hasFirstFrame) {
-        instance.image = inlineImage(req.firstFrameBase64!);
-        if (hasLastFrame) {
-          warnings.push("firstFrame과 lastFrame 동시 전송 불가 — firstFrame만 사용");
-        }
-      } else if (hasLastFrame) {
+      if (hasLastFrame) {
         instance.image = inlineImage(req.lastFrameBase64!);
         warnings.push("lastFrame만 전송됨 — image 필드로 변환");
       }
@@ -154,23 +159,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── 1차 시도 ─────────────────────────────────────────────────────────────
     let res = await callVeo(instance, parameters);
 
-    // ── Fallback 1: Scene Extension(video) 400 → image-to-video 시도 ─────────
-    // video URI가 있는데 400으로 거절됐다면 firstFrame image-to-video로 전환.
+    // ── Fallback 1: Scene Extension(video) 400 → text-to-video 시도 ──────────
+    // video URI가 있는데 400으로 거절됐다면 (firstFrame은 이미 위에서 우선 처리됨)
     if (!res.ok && res.status === 400 && instance.video) {
       const errText = await res.text();
-      warnings.push(`Scene Extension 400 — image-to-video 전환. 에러: ${errText.slice(0, 120)}`);
+      warnings.push(`Scene Extension 400 — text-to-video 전환. 에러: ${errText.slice(0, 120)}`);
       console.warn("[generate-video] Scene Extension 400:", errText.slice(0, 500));
 
       delete instance.video;
-
-      // firstFrameBase64 이 있으면 image-to-video 재시도
-      if (hasFirstFrame) {
-        instance.image = inlineImage(req.firstFrameBase64!);
-        res = await callVeo(instance, parameters);
-      } else {
-        // firstFrame 없으면 바로 text-to-video
-        res = await callVeo(instance, parameters);
-      }
+      res = await callVeo(instance, parameters);
     }
 
     // ── Fallback 2: image-to-video 400 → prompt-only text-to-video ───────────
