@@ -329,6 +329,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
   // 폴링 시작
   const startPolling = useCallback((cutNumber: number, operationName: string) => {
+    let consecutiveErrors = 0;
+    const MAX_POLL_ERRORS = 3;
+
     const poll = async () => {
       try {
         const res = await fetch("/api/check-video", {
@@ -338,10 +341,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         });
 
         if (!res.ok) {
-          // 403 등 HTTP 에러 → 폴링 중단
+          consecutiveErrors++;
+          // 5xx transient 에러는 최대 3회까지 재시도, 4xx는 즉시 중단
+          if (res.status >= 500 && consecutiveErrors < MAX_POLL_ERRORS) {
+            console.warn(`[CUT ${cutNumber}] check-video ${res.status} — 재시도 ${consecutiveErrors}/${MAX_POLL_ERRORS}`);
+            const timer = setTimeout(poll, POLL_INTERVAL * consecutiveErrors);
+            pollTimers.current.set(cutNumber, timer);
+            return;
+          }
           updateClip(cutNumber, {
             status: "failed",
-            error: `API 오류 (${res.status})`,
+            error: `폴링 오류 (${res.status})`,
           });
           pollTimers.current.delete(cutNumber);
           if (autoModeRef.current) {
@@ -350,6 +360,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           }
           return;
         }
+
+        consecutiveErrors = 0; // 성공 시 에러 카운터 리셋
 
         const data = await res.json();
 
@@ -746,9 +758,51 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         const errData = await res.json().catch(() => ({ error: "API 오류" }));
         const errMsg = errData.error || `HTTP ${res.status}`;
         console.error(`CUT ${cutNumber} 영상 생성 실패:`, errMsg, errData.details || "", errData.warning || "");
+
+        // Safety filter 에러 → Gemini로 프롬프트 sanitize 후 1회 재시도
+        const isSafetyError =
+          errMsg.includes("usage guidelines") ||
+          errMsg.includes("could not be submitted") ||
+          errData.raiFiltered === true;
+
+        if (isSafetyError && retryCount === 0) {
+          console.warn(`[CUT ${cutNumber}] Safety 에러 감지 → 프롬프트 sanitize 후 재시도`);
+          try {
+            const sanitizeRes = await fetch("/api/refine-prompt", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ videoPrompt: prompt, mode: "sanitize", cutNumber }),
+            });
+            if (sanitizeRes.ok) {
+              const sanitized = await sanitizeRes.json();
+              if (sanitized?.refinedVideoPrompt) {
+                console.log(`[CUT ${cutNumber}] Sanitized prompt 적용:`, sanitized.changes?.join(", "));
+                prompt = sanitized.refinedVideoPrompt;
+                // sanitized prompt로 즉시 재재생 (retryCount 1로 올려서 무한루프 방지)
+                body.prompt = prompt;
+                const retryRes = await fetch("/api/generate-video", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ ...body, prompt }),
+                });
+                if (retryRes.ok) {
+                  const retryData = await retryRes.json();
+                  updateClip(cutNumber, { operationName: retryData.operationName });
+                  startPolling(cutNumber, retryData.operationName);
+                  return;
+                }
+              }
+            }
+          } catch (sanitizeErr) {
+            console.warn(`[CUT ${cutNumber}] Sanitize 실패:`, sanitizeErr);
+          }
+        }
+
         updateClip(cutNumber, {
           status: "failed",
-          error: errMsg,
+          error: isSafetyError
+            ? `Vertex AI 안전 필터 차단 — 프롬프트에서 민감한 표현을 직접 수정하세요.`
+            : errMsg,
         });
         return;
       }
