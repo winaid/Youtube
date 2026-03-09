@@ -1,45 +1,23 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
-import {
-  getAnalyticsSummary,
-  getProjectRecords,
-  saveProjectRecord,
-  updateProjectMetrics,
-  deleteProjectRecord,
-  ProjectRecord,
-  AnalyticsSummary,
-} from "@/lib/analytics";
+import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
 import InputPanel from "./InputPanel";
 import ResultPanel from "./ResultPanel";
 import StoryChat from "./StoryChat";
 import PromptHistoryPanel from "./PromptHistoryPanel";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import VideoHistoryPanel from "./VideoHistoryPanel";
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "history" | "dashboard">("prompt");
+  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "history" | "videos">("prompt");
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
-
-  // 대시보드
-  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
-  const [records, setRecords] = useState<ProjectRecord[]>([]);
-  const [editingMetrics, setEditingMetrics] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (activeTab === "dashboard") {
-      setSummary(getAnalyticsSummary());
-      setRecords(getProjectRecords());
-    }
-  }, [activeTab]);
 
   const handleGenerate = async (input: PromptInput) => {
     setStatus("loading");
@@ -121,15 +99,15 @@ export default function PromptGenerator() {
           프롬프트 히스토리
         </button>
         <button
-          onClick={() => setActiveTab("dashboard")}
+          onClick={() => setActiveTab("videos")}
           className="px-4 py-2 rounded-full text-sm font-medium transition-all"
           style={
-            activeTab === "dashboard"
+            activeTab === "videos"
               ? { background: "#22c55e", color: "white", boxShadow: "0 2px 8px #22c55e40" }
               : { background: "#22c55e15", color: "#16a34a" }
           }
         >
-          성과 대시보드
+          생성한 영상 히스토리
         </button>
       </div>
 
@@ -160,141 +138,15 @@ export default function PromptGenerator() {
           <PromptHistoryPanel onRestore={handleRestoreHistory} />
         </div>
       ) : (
-        /* 성과 대시보드 */
-        <div className="space-y-4">
-          {summary && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold" style={{ color: "#787fff" }}>{summary.totalProjects}</p>
-                  <p className="text-xs text-muted-foreground">총 프로젝트</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold" style={{ color: "#22c55e" }}>
-                    {summary.bestPerforming[0]?.views?.toLocaleString() || "-"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">최고 조회수</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-lg font-bold" style={{ color: "#e09900" }}>
-                    {summary.topDirectors[0]?.name || "-"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">가장 많이 사용한 감독</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-lg font-bold" style={{ color: "#7c3aed" }}>
-                    {summary.topRegions[0]?.region || "-"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">인기 지역</p>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* 감독별 통계 */}
-          {summary && summary.topDirectors.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm" style={{ color: "#787fff" }}>감독 스타일 통계</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {summary.topDirectors.map((d) => (
-                    <div key={d.name} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#787fff08" }}>
-                      <span className="text-xs font-medium">{d.name}</span>
-                      <div className="flex gap-2">
-                        <Badge variant="outline" className="text-[10px]">{d.count}회</Badge>
-                        {d.avgViews > 0 && (
-                          <Badge className="text-[10px]" style={{ background: "#22c55e15", color: "#16a34a" }}>
-                            평균 {d.avgViews.toLocaleString()}뷰
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* 프로젝트 목록 */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm" style={{ color: "#22c55e" }}>프로젝트 기록</CardTitle>
-              <p className="text-[10px] text-muted-foreground">조회수/좋아요를 입력하면 성과를 트래킹할 수 있습니다</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {records.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">아직 프로젝트가 없습니다</p>
-              ) : (
-                records.slice(0, 20).map((r) => (
-                  <div key={r.id} className="flex items-center gap-2 p-2 rounded-lg group hover:bg-gray-50">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{r.title}</p>
-                      <div className="flex gap-1 mt-0.5">
-                        <Badge variant="outline" className="text-[9px]">{r.region}</Badge>
-                        <Badge variant="outline" className="text-[9px]">{r.cutCount}장면</Badge>
-                        <span className="text-[9px] text-muted-foreground">
-                          {new Date(r.createdAt).toLocaleDateString("ko-KR")}
-                        </span>
-                      </div>
-                    </div>
-                    {editingMetrics === r.id ? (
-                      <form
-                        className="flex gap-1 items-center"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const fd = new FormData(e.currentTarget);
-                          updateProjectMetrics(r.id, {
-                            views: Number(fd.get("views")) || 0,
-                            likes: Number(fd.get("likes")) || 0,
-                          });
-                          setEditingMetrics(null);
-                          setRecords(getProjectRecords());
-                          setSummary(getAnalyticsSummary());
-                        }}
-                      >
-                        <input name="views" type="number" placeholder="조회수" defaultValue={r.views || ""} className="w-16 h-6 text-[10px] border rounded px-1" />
-                        <input name="likes" type="number" placeholder="좋아요" defaultValue={r.likes || ""} className="w-14 h-6 text-[10px] border rounded px-1" />
-                        <Button type="submit" size="sm" className="h-6 text-[10px]" style={{ background: "#22c55e", color: "white" }}>저장</Button>
-                      </form>
-                    ) : (
-                      <div className="flex gap-1 items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        {r.views !== undefined && (
-                          <Badge className="text-[9px]" style={{ background: "#22c55e15", color: "#16a34a" }}>
-                            {r.views.toLocaleString()}뷰
-                          </Badge>
-                        )}
-                        <button
-                          onClick={() => setEditingMetrics(r.id)}
-                          className="text-[9px] px-1.5 py-0.5 rounded"
-                          style={{ background: "#787fff10", color: "#787fff" }}
-                        >
-                          성과 입력
-                        </button>
-                        <button
-                          onClick={() => {
-                            deleteProjectRecord(r.id);
-                            setRecords(getProjectRecords());
-                            setSummary(getAnalyticsSummary());
-                          }}
-                          className="text-[9px] px-1.5 py-0.5 rounded text-red-400 hover:bg-red-50"
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+        /* 생성한 영상 히스토리 */
+        <div className="max-w-2xl mx-auto">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold" style={{ color: "#222" }}>생성한 영상 히스토리</h2>
+            <p className="text-xs mt-0.5" style={{ color: "#999" }}>
+              이전에 생성한 영상 컷을 다시 확인하고 재생할 수 있습니다.
+            </p>
+          </div>
+          <VideoHistoryPanel />
         </div>
       )}
     </div>
