@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callGemini } from "@/lib/vertex-auth";
+import { callGemini, safeParseJSON } from "@/lib/vertex-auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,7 +36,7 @@ JSON 형식만 출력:
 }`;
 
     const raw = await callGemini(prompt, { temperature: 0.3, json: true });
-    const data = JSON.parse(raw);
+    const data = safeParseJSON(raw);
     return NextResponse.json(data);
   } catch (err) {
     console.error("[verify-prompt]", err);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callGemini } from "@/lib/vertex-auth";
+import { callGemini, safeParseJSON } from "@/lib/vertex-auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -78,7 +78,7 @@ ${storyText}
 총 ${cutCount}개의 컷을 생성하세요. CUT 2부터 extendPrompt에 이전 장면과의 자연스러운 연결을 묘사하세요.`;
 
     const raw = await callGemini(prompt, { temperature: 0.8, maxTokens: 16384, json: true });
-    const data = JSON.parse(raw);
+    const data = safeParseJSON(raw);
     return NextResponse.json(data);
   } catch (err) {
     console.error("[generate-cuts]", err);

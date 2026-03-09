@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callGemini } from "@/lib/vertex-auth";
+import { callGemini, safeParseJSON } from "@/lib/vertex-auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,7 +44,7 @@ ${directorList}
 localMatches는 보유 감독 중 상위 3명, webSuggestions는 보유 목록에 없는 추가 추천 1-2명.`;
 
     const raw = await callGemini(prompt, { temperature: 0.5, json: true });
-    const data = JSON.parse(raw);
+    const data = safeParseJSON(raw);
     return NextResponse.json(data);
   } catch (err) {
     console.error("[recommend-director]", err);

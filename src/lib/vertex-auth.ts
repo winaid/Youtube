@@ -3,6 +3,10 @@ import { JWT } from "google-auth-library";
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 export async function getAccessToken(): Promise<string> {
+  if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY || !process.env.GOOGLE_PROJECT_ID) {
+    throw new Error("Missing required Google Cloud environment variables (GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY, GOOGLE_PROJECT_ID)");
+  }
+
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - now > 60_000) {
     return cachedToken.token;
@@ -54,5 +58,19 @@ export async function callGemini(
   }
 
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error(`Gemini returned empty response: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+  return text;
+}
+
+export function safeParseJSON(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error(`Failed to parse JSON from Gemini response: ${raw.slice(0, 200)}`);
+  }
 }
