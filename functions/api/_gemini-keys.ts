@@ -262,7 +262,7 @@ export async function streamingGenerate(
   env: GeminiEnv,
   model: string,
   requestBody: Record<string, unknown>,
-): Promise<{ text: string; error?: string; status?: number }> {
+): Promise<{ text: string; error?: string; status?: number; truncated?: boolean }> {
   const url = buildVertexUrl(env, model, "streamGenerateContent") + "?alt=sse";
 
   const init: RequestInit = {
@@ -309,6 +309,7 @@ export async function streamingGenerate(
   const decoder = new TextDecoder();
   const parts: string[] = [];
   let buffer = "";
+  let truncated = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -324,15 +325,37 @@ export async function streamingGenerate(
       if (!jsonStr || jsonStr === "[DONE]") continue;
       try {
         const chunk = JSON.parse(jsonStr) as {
-          candidates?: { content?: { parts?: { text?: string }[] } }[];
+          candidates?: {
+            content?: { parts?: { text?: string }[] };
+            finishReason?: string;
+          }[];
         };
-        const text = chunk?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const cand = chunk?.candidates?.[0];
+        const text = cand?.content?.parts?.[0]?.text;
         if (text) parts.push(text);
+        // MAX_TOKENS: 출력이 토큰 한도로 잘렸음 — 불완전한 JSON 반환 방지
+        if (cand?.finishReason === "MAX_TOKENS") {
+          truncated = true;
+          const charCount = parts.reduce((s, p) => s + p.length, 0);
+          console.warn(
+            `[streamingGenerate] finishReason=MAX_TOKENS — 출력 절단됨. 누적 ${charCount}자. 모델: ${model}`,
+          );
+        }
       } catch {
         // skip malformed chunks
       }
     }
   }
 
-  return { text: parts.join("") };
+  if (truncated) {
+    const partial = parts.join("");
+    return {
+      text: "",
+      error: `MAX_TOKENS: 출력이 토큰 한도로 절단됨 (${partial.length}자). maxOutputTokens를 높이거나 요청을 분리하세요.`,
+      status: 200,
+      truncated: true,
+    };
+  }
+
+  return { text: parts.join(""), truncated: false };
 }

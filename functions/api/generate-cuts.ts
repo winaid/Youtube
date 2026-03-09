@@ -401,9 +401,16 @@ ${regionSignature}
 
 JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
 
+    // maxOutputTokens: 8컷 × (videoPrompt+imagePrompt×2+extendPrompt) ≈ 8000~12000토큰
+    // 32768로 설정하여 절단 방지.
+    // responseMimeType: "application/json" → 모델이 마크다운 펜스 없이 순수 JSON 출력
     const result = await streamingGenerate(context.env, "gemini-3.1-pro-preview", {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 32768,
+        responseMimeType: "application/json",
+      },
     });
 
     if (result.error) {
@@ -462,11 +469,19 @@ JSON만 출력. 설명/마크다운 펜스/주석 없이.`;
     }
 
     if (!parsed) {
-      // 파싱 완전 실패 → 원문 로그 + 상세 에러 반환
+      // 파싱 완전 실패 → 원문 앞/뒤 로그 + 상세 에러 반환
       console.error("[generate-cuts] JSON 파싱 전체 실패. parseError:", parseError);
-      console.error("[generate-cuts] Gemini 응답 원문 (앞 500자):", text.slice(0, 500));
+      console.error("[generate-cuts] 응답 총 길이:", text.length, "자");
+      console.error("[generate-cuts] 응답 앞 500자:", text.slice(0, 500));
+      console.error("[generate-cuts] 응답 뒤 1000자 (절단 위치 확인):", text.slice(-1000));
       return Response.json(
-        { error: "Gemini 응답 파싱 실패", detail: parseError, rawPreview: text.slice(0, 300) },
+        {
+          error: "Gemini 응답 파싱 실패",
+          detail: parseError,
+          rawLength: text.length,
+          rawHead: text.slice(0, 300),
+          rawTail: text.slice(-300),
+        },
         { status: 502 },
       );
     }
