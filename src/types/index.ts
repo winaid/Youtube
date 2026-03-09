@@ -162,7 +162,7 @@ export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
 
 export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   mode: "fast",
-  durationSeconds: 8,
+  durationSeconds: 6,
   resolution: "720p",
   aspectRatio: "16:9",
   generateAudio: true,
