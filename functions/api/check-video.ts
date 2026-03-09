@@ -199,6 +199,30 @@ function safeStringify(val: unknown, maxLen = 4000): string {
   }
 }
 
+/**
+ * 로깅 전용 sanitizer — 큰 문자열(base64 영상 등)을 길이 표시로 대체.
+ * safeStringify(rawData) 호출 시 수십 MB 문자열을 JSON.stringify하면
+ * V8 rope-string flattening 과정에서 스택 오버플로가 발생할 수 있으므로
+ * 반드시 이 함수를 거쳐야 함.
+ */
+function sanitizeForLog(obj: unknown, depth = 0): unknown {
+  if (depth > 6) return "[maxDepth]";
+  if (typeof obj === "string") {
+    return obj.length > 120 ? `[string len=${obj.length}]` : obj;
+  }
+  if (isArray(obj)) {
+    return (obj as unknown[]).slice(0, 8).map((item) => sanitizeForLog(item, depth + 1));
+  }
+  if (isRecord(obj)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = sanitizeForLog(v, depth + 1);
+    }
+    return out;
+  }
+  return obj;
+}
+
 function deepSearchVideoData(raw: Record<string, unknown>, results: VideoResult[]): void {
   let jsonStr: string;
   try {
@@ -427,9 +451,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // 응답 구조 로그 (디버깅용)
+    // ⚠️ safeStringify(data) 직접 호출 금지 — base64 영상이 수 MB이면 V8 rope-string
+    //    flattening 도중 스택 오버플로(RangeError) 발생. sanitizeForLog 필수.
     const structure = logResponseStructure(data);
     console.log("[check-video] Veo poll response structure:", safeStringify(structure));
-    console.log("[check-video] Veo poll response raw (first 3000):", safeStringify(data, 3000));
+    console.log("[check-video] Veo poll response (sanitized):", safeStringify(sanitizeForLog(data)));
 
     // RAI 필터 체크
     const rai = detectRaiFiltering(data);
@@ -491,7 +517,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           const dataUri = `data:${result.mimeType};base64,${result.data}`;
           variants.push({
             videoUri: dataUri,
-            rawVideoUri: dataUri,
+            // rawVideoUri는 Scene Extension용 gs:// / https:// URI에만 사용.
+            // data URI를 그대로 저장하면:
+            //   1) 수 MB 문자열이 클라이언트 state에 2벌 (videoUri + rawVideoUri) 저장됨
+            //   2) 다음 컷 generateCut 시 body에 포함되어 수십 MB 요청 발생
+            //   3) generate-video.ts에서 invalid URI 판정 → Scene Extension 건너뜀 (어차피 불가)
+            // → 빈 문자열로 설정하여 Scene Extension 시도 자체를 차단
+            rawVideoUri: "",
             seed: result.seed,
             resultKind: "base64",
           });

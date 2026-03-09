@@ -600,6 +600,22 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     const clip = state.clips.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
 
+    // CUT N>1: 이전 컷 시각 상태를 프롬프트에 주입 (text-to-video fallback 시 continuity 필수)
+    // Fast 모델은 image-to-video 미지원이므로 프롬프트가 유일한 연속성 수단
+    if (cutNumber > 1) {
+      const prevCutData = cuts.find((c) => c.cutNumber === cutNumber - 1);
+      if (prevCutData && !prompt.toLowerCase().startsWith("continuing")) {
+        const ctx: string[] = [];
+        if (prevCutData.characterConsistency) ctx.push(prevCutData.characterConsistency);
+        if (prevCutData.moodLighting) ctx.push(prevCutData.moodLighting);
+        if (prevCutData.cameraDirection) ctx.push(prevCutData.cameraDirection);
+        if (ctx.length > 0) {
+          // 앞에 붙여서 Veo가 가장 먼저 인식하도록
+          prompt = `[Continuing from previous shot — ${ctx.slice(0, 2).join("; ")}] ${prompt}`;
+        }
+      }
+    }
+
     // 이전 장면의 videoUri (Scene Extension)
     const prevClip = state.clips.find(
       (c) => c.cutNumber === cutNumber - 1 && c.status === "completed"
@@ -805,6 +821,14 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       // Veo는 최대 3장 reference image 지원
       const finalRefImages = Array.from(refImageSet).slice(0, 3);
 
+      // Scene Extension URI 결정:
+      // rawVideoUri가 data: URI(base64 인라인)이면 Scene Extension 불가 + 수 MB 요청 낭비 → 제거
+      const rawPrevUri = cutNumber > 1 ? prevClip?.rawVideoUri : undefined;
+      const previousVideoUri =
+        rawPrevUri && !rawPrevUri.startsWith("data:") && rawPrevUri.length > 0
+          ? rawPrevUri
+          : undefined;
+
       const body: Record<string, unknown> = {
         prompt,
         mode: cfg.mode,
@@ -816,8 +840,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,
         seed: cfg.seed,
-        // Scene Extension — gs:// 또는 https:// URI만 유효 (data:/blob:/proxy URL은 서버에서 무시됨)
-        previousVideoUri: cutNumber > 1 ? prevClip?.rawVideoUri : undefined,
+        // Scene Extension — gs:// 또는 https:// URI만 (data:/blob: 필터링 완료)
+        previousVideoUri,
         // First Frame (auto-linked from prev cut's end or storyboard)
         firstFrameBase64: firstFrameBase64,
         // Last Frame (auto-linked from end storyboard or manual)

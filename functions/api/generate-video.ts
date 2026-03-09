@@ -60,10 +60,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (req.previousVideoUri && !isValidVideoUri(req.previousVideoUri)) {
         // data URI / blob URL 등 → 무시하고 firstFrame으로 이어받기
         warnings.push(
-          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — firstFrame fallback으로 연속 생성`
+          `previousVideoUri가 GCS/HTTPS URI가 아님 (${req.previousVideoUri.slice(0, 30)}…) — firstFrame fallback 시도`
         );
       }
-      if (req.firstFrameBase64) {
+
+      // veo-3.1-fast-generate-001 은 image input(image-to-video)을 미지원 → 400 에러 발생
+      // Fast 모델 감지: 모델명에 "fast" 포함
+      const isFastModel = model.toLowerCase().includes("fast");
+      if (isFastModel && (req.firstFrameBase64 || req.lastFrameBase64)) {
+        warnings.push(
+          "Fast 모델은 image-to-video 미지원 — text-to-video로 생성 (프롬프트에 연속성 컨텍스트 포함 필요)"
+        );
+      } else if (req.firstFrameBase64) {
         // Image-to-Video: 이전 컷 마지막 프레임을 시작 프레임으로
         instance.image = inlineImage(req.firstFrameBase64);
         if (req.lastFrameBase64) {
@@ -74,7 +82,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         instance.image = inlineImage(req.lastFrameBase64);
         warnings.push("lastFrame만 전송됨 — image 필드로 변환");
       }
-      // 둘 다 없으면 text-to-video (프롬프트에서 연속성 표현 필요)
+      // 이미지도 없으면 text-to-video (프롬프트에서 연속성 표현 필요)
     }
 
     // Reference Images — 제약 조건 체크
