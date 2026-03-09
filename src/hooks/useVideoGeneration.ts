@@ -422,6 +422,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         consecutiveErrors = 0; // 성공 시 리셋
 
         // ── 상태별 처리
+        // data.status가 없는데 data.error가 있으면 → 즉시 실패 (대기 루프 방지)
+        if (!data.status && data.error) {
+          console.error(`[CUT ${cutNumber}] status 없이 error 수신:`, data.error);
+          updateClip(cutNumber, { status: "failed", error: String(data.error) });
+          return;
+        }
+
         if (data.status === "PENDING" || data.status === "RUNNING" || !data.status) {
           // 아직 처리 중 → 다음 루프
           continue;
