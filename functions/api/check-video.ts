@@ -303,7 +303,9 @@ function extractModel(operationName: string): string | null {
 
 function extractLocation(operationName: string): string {
   const m = operationName.match(/locations\/([^/]+)\//);
-  return m ? m[1] : "us-central1";
+  const loc = m ? m[1] : "us-central1";
+  // fetchPredictOperation은 리전 엔드포인트만 지원 — global 불가
+  return loc === "global" ? "us-central1" : loc;
 }
 
 function buildFetchPredictUrl(env: GeminiEnv, model: string, location: string): string {
@@ -326,7 +328,19 @@ function buildFetchPredictUrl(env: GeminiEnv, model: string, location: string): 
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { operationName } = await context.request.json() as { operationName: string };
+    // ── 1. Request body 파싱 (실패 시 400 반환)
+    let bodyText = "";
+    let operationName = "";
+    try {
+      bodyText = await context.request.text();
+      const parsed = JSON.parse(bodyText) as { operationName?: string };
+      operationName = parsed.operationName || "";
+    } catch (parseErr) {
+      console.error("[check-video] JSON parse failed. body:", bodyText.slice(0, 500), "err:", parseErr);
+      return Response.json({ error: "Invalid JSON body", details: String(parseErr) }, { status: 400 });
+    }
+
+    console.log(`[check-video] operationName=${operationName}`);
 
     if (!operationName) {
       return Response.json({ error: "operationName is required" }, { status: 400 });
@@ -334,7 +348,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const model = extractModel(operationName);
     if (!model) {
-      return Response.json({ error: "Could not extract model from operationName" }, { status: 400 });
+      console.error("[check-video] Cannot extract model from operationName:", operationName);
+      return Response.json({ error: "Could not extract model from operationName", operationName }, { status: 400 });
     }
 
     const location = extractLocation(operationName);
@@ -364,14 +379,23 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Check video error:", res.status, errText);
+      console.error(`[check-video] fetchPredictOperation failed status=${res.status} url=${url} body=${errText.slice(0, 800)}`);
+      // 4xx는 클라이언트 문제, 5xx는 서버 문제로 구분
+      const clientStatus = res.status >= 400 && res.status < 500 ? res.status : 502;
       return Response.json(
-        { error: `API error: ${res.status}`, details: errText },
-        { status: res.status }
+        { error: `API error: ${res.status}`, details: errText.slice(0, 500) },
+        { status: clientStatus }
       );
     }
 
-    const data = await res.json() as Record<string, unknown>;
+    let data: Record<string, unknown>;
+    const rawText = await res.text();
+    try {
+      data = JSON.parse(rawText) as Record<string, unknown>;
+    } catch (jsonErr) {
+      console.error("[check-video] Response JSON parse failed:", jsonErr, "raw:", rawText.slice(0, 500));
+      return Response.json({ error: "Invalid JSON from Vertex AI", details: String(jsonErr) }, { status: 502 });
+    }
 
     if (data.error) {
       const err = data.error as { message?: string; code?: number };
@@ -481,9 +505,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sampleCount: variants.length,
     });
   } catch (error) {
-    console.error("Check video error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : "";
+    console.error("[check-video] Unhandled error:", errMsg, "\nstack:", errStack);
     return Response.json(
-      { error: `Failed to check video: ${error instanceof Error ? error.message : String(error)}` },
+      { error: `Failed to check video: ${errMsg}` },
       { status: 500 }
     );
   }

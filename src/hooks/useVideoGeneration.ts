@@ -15,6 +15,12 @@ import {
 } from "@/types";
 
 const POLL_INTERVAL = 5000;
+const POLL_MAX_ATTEMPTS = 72; // 최대 6분 (5s * 72)
+const POLL_BACKOFF = [5000, 7500, 10000, 15000, 20000]; // 에러 시 백오프
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
@@ -236,6 +242,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   });
 
   const pollTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
+  // 동일 cutNumber에 대한 중복 폴링 방지
+  const activePolls = useRef<Set<number>>(new Set());
   const autoModeRef = useRef(false);
 
   // cuts 변경 시 clips 초기화
@@ -257,8 +265,10 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   // cleanup on unmount
   useEffect(() => {
     const timers = pollTimers.current;
+    const polls = activePolls.current;
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
+      polls.clear();
     };
   }, []);
 
@@ -327,53 +337,100 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     return null;
   }, [state.config, cuts]);
 
-  // 폴링 시작
-  const startPolling = useCallback((cutNumber: number, operationName: string) => {
+  // 폴링 시작 — for-loop + sleep 방식, 중복 실행 방지
+  const startPolling = useCallback(async (cutNumber: number, operationName: string) => {
+    // ── 중복 폴링 방지: 이미 폴링 중이면 즉시 리턴
+    if (activePolls.current.has(cutNumber)) {
+      console.warn(`[CUT ${cutNumber}] 이미 폴링 중 — 중복 startPolling 무시`);
+      return;
+    }
+    activePolls.current.add(cutNumber);
+
+    // 기존 timer 정리
+    const prevTimer = pollTimers.current.get(cutNumber);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+      pollTimers.current.delete(cutNumber);
+    }
+
+    updateClip(cutNumber, { status: "polling" });
+
     let consecutiveErrors = 0;
-    const MAX_POLL_ERRORS = 3;
+    const MAX_CONSECUTIVE_ERRORS = 3;
 
-    const poll = async () => {
-      try {
-        const res = await fetch("/api/check-video", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ operationName }),
-        });
-
-        if (!res.ok) {
-          consecutiveErrors++;
-          // 5xx transient 에러는 최대 3회까지 재시도, 4xx는 즉시 중단
-          if (res.status >= 500 && consecutiveErrors < MAX_POLL_ERRORS) {
-            console.warn(`[CUT ${cutNumber}] check-video ${res.status} — 재시도 ${consecutiveErrors}/${MAX_POLL_ERRORS}`);
-            const timer = setTimeout(poll, POLL_INTERVAL * consecutiveErrors);
-            pollTimers.current.set(cutNumber, timer);
-            return;
-          }
-          updateClip(cutNumber, {
-            status: "failed",
-            error: `폴링 오류 (${res.status})`,
-          });
-          pollTimers.current.delete(cutNumber);
-          if (autoModeRef.current) {
-            autoModeRef.current = false;
-            setState((prev) => ({ ...prev, isAutoMode: false }));
-          }
-          return;
+    try {
+      for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+        // 첫 시도는 즉시, 이후엔 대기
+        if (attempt > 0) {
+          const waitMs = consecutiveErrors > 0
+            ? POLL_BACKOFF[Math.min(consecutiveErrors - 1, POLL_BACKOFF.length - 1)]
+            : POLL_INTERVAL;
+          await sleep(waitMs);
         }
 
-        consecutiveErrors = 0; // 성공 시 에러 카운터 리셋
+        // ── HTTP 요청
+        let res: Response;
+        try {
+          res = await fetch("/api/check-video", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ operationName }),
+          });
+        } catch (networkErr) {
+          consecutiveErrors++;
+          console.warn(`[CUT ${cutNumber}] 네트워크 에러 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, networkErr);
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            updateClip(cutNumber, { status: "failed", error: "네트워크 연결 실패 — 인터넷 연결을 확인하세요" });
+            return;
+          }
+          continue;
+        }
 
-        const data = await res.json();
+        // ── HTTP 상태 처리
+        if (!res.ok) {
+          // 4xx: 클라이언트 문제 → 즉시 중단
+          if (res.status >= 400 && res.status < 500) {
+            const errText = await res.text().catch(() => "");
+            console.error(`[CUT ${cutNumber}] check-video 클라이언트 에러 ${res.status}:`, errText.slice(0, 300));
+            updateClip(cutNumber, { status: "failed", error: `폴링 오류 (${res.status}) — 요청이 잘못되었습니다` });
+            return;
+          }
+          // 5xx: 서버 transient 에러 → 최대 3회 재시도
+          consecutiveErrors++;
+          console.warn(`[CUT ${cutNumber}] check-video 서버 에러 ${res.status} (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            updateClip(cutNumber, { status: "failed", error: `서버 오류 (${res.status}) — 잠시 후 다시 시도하세요` });
+            return;
+          }
+          continue;
+        }
+
+        // ── JSON 파싱 (실패해도 재시도)
+        let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; seed?: string; variants?: VideoVariant[] };
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          consecutiveErrors++;
+          console.warn(`[CUT ${cutNumber}] 응답 JSON 파싱 실패 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, parseErr);
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            updateClip(cutNumber, { status: "failed", error: "서버 응답 파싱 실패" });
+            return;
+          }
+          continue;
+        }
+
+        consecutiveErrors = 0; // 성공 시 리셋
+
+        // ── 상태별 처리
+        if (data.status === "PENDING" || data.status === "RUNNING" || !data.status) {
+          // 아직 처리 중 → 다음 루프
+          continue;
+        }
 
         if (data.status === "COMPLETED") {
-          // videoUri가 없으면 실패 처리
           const finalUri = data.variants?.[0]?.videoUri || data.videoUri;
           if (!finalUri) {
-            updateClip(cutNumber, {
-              status: "failed",
-              error: "영상 생성 완료되었으나 비디오 URL이 없습니다",
-            });
-            pollTimers.current.delete(cutNumber);
+            updateClip(cutNumber, { status: "failed", error: "영상 생성 완료되었으나 비디오 URL이 없습니다" });
             return;
           }
 
@@ -385,7 +442,6 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             completedAt: Date.now(),
           };
 
-          // 다중 변형 처리
           if (data.variants && data.variants.length > 0) {
             clipUpdate.variants = data.variants as VideoVariant[];
             clipUpdate.selectedVariant = 0;
@@ -442,8 +498,6 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             }
           }
 
-          pollTimers.current.delete(cutNumber);
-
           // 자동 모드: 모든 클립이 완료/실패이면 자동 모드 종료
           if (autoModeRef.current) {
             setState((prev) => {
@@ -457,11 +511,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
               return prev;
             });
           }
-          return;
+          return; // 완료 → 루프 종료
         }
 
         if (data.status === "FAILED") {
-          console.error(`[CUT ${cutNumber}] Veo 생성 실패:`, data.error || "unknown error", data);
+          console.error(`[CUT ${cutNumber}] Veo 생성 실패:`, data.error || "unknown error");
           // Enhancement 6: Auto-retry on failure
           setState((prev) => {
             const clip = prev.clips.find((c) => c.cutNumber === cutNumber);
@@ -470,7 +524,6 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
             if (cfg.autoRetryOnFailure && retryCount < cfg.maxRetryCount) {
               console.warn(`[CUT ${cutNumber}] 자동 재시도 ${retryCount + 1}/${cfg.maxRetryCount}`);
-              // Will trigger retry via effect
               return {
                 ...prev,
                 clips: prev.clips.map((c) =>
@@ -481,14 +534,12 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
               };
             }
 
-            // Max retries exceeded
             const newClips = prev.clips.map((c) =>
               c.cutNumber === cutNumber
                 ? { ...c, status: "failed" as VideoGenStatus, error: data.error || "생성 실패" }
                 : c
             );
 
-            // 모든 클립이 완료/실패이면 자동 모드 종료
             const allDone = newClips.every(
               (c) => c.status === "completed" || c.status === "failed"
             );
@@ -498,31 +549,28 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             }
             return { ...prev, clips: newClips };
           });
-
-          pollTimers.current.delete(cutNumber);
-          return;
+          return; // 실패 → 루프 종료
         }
 
-        // 아직 진행 중 → 다시 폴링
-        const timer = setTimeout(poll, POLL_INTERVAL);
-        pollTimers.current.set(cutNumber, timer);
-      } catch (err) {
-        updateClip(cutNumber, {
-          status: "failed",
-          error: err instanceof Error ? err.message : "폴링 실패",
-        });
-        pollTimers.current.delete(cutNumber);
+        // 알 수 없는 상태 → 계속 폴링
+        console.warn(`[CUT ${cutNumber}] 알 수 없는 status: ${data.status} — 계속 대기`);
       }
-    };
 
-    updateClip(cutNumber, { status: "polling" });
-    poll();
+      // 최대 시도 횟수 초과
+      console.error(`[CUT ${cutNumber}] 최대 폴링 횟수(${POLL_MAX_ATTEMPTS}) 초과`);
+      updateClip(cutNumber, { status: "failed", error: `영상 생성 타임아웃 (${Math.round(POLL_MAX_ATTEMPTS * POLL_INTERVAL / 60000)}분 초과)` });
+    } finally {
+      // 폴링 완료 시 반드시 activePolls에서 제거
+      activePolls.current.delete(cutNumber);
+      pollTimers.current.delete(cutNumber);
+    }
   }, [updateClip, onSeedDetected, cuts]);
 
   // Auto-retry effect: when a clip becomes "idle" with retryCount > 0, auto-generate
   useEffect(() => {
     const clipToRetry = state.clips.find(
       (c) => c.status === "idle" && c.retryCount && c.retryCount > 0
+        && !activePolls.current.has(c.cutNumber) // 이미 폴링 중인 컷 제외
     );
     if (clipToRetry) {
       generateCut(clipToRetry.cutNumber);
