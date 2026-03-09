@@ -70,8 +70,11 @@ export function extractFinalScenario(messages: ChatMessage[]): string {
   const assistantMsgs = messages.filter((m) => m.role === "assistant");
   if (assistantMsgs.length === 0) return "";
   let text = assistantMsgs[assistantMsgs.length - 1].content;
-  // 출처/참고 섹션 제거 (줄 끝에 붙는 패턴들)
-  text = text.replace(/\n*(?:출처|참고|참조|Source|Reference)[:\s].*/gi, "");
+  // --- 구분선 이하 모두 제거 (출처 섹션)
+  text = text.replace(/\n{1,}[-—]{2,}[\s\S]*$/, "");
+  // "출처:" 키워드 이하 모두 제거
+  text = text.replace(/\n*[-—]*\s*(?:출처|참고|참조|Source|Reference)[:\s][\s\S]*$/i, "");
+  // 단독 URL 라인 제거
   text = text.replace(/\n*\[?\d+\]?\s*https?:\/\/\S+/g, "");
   return text.trim();
 }

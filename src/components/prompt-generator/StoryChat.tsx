@@ -329,7 +329,14 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
                   }
                 >
                   {msg.role === "assistant"
-                    ? msg.content.replace(/\n*[-—]*\s*(?:출처|참고|참조|Source|Reference)[:\s].*/gi, "").replace(/\n*\[?\d+\]?\s*https?:\/\/\S+/g, "").trim()
+                    ? msg.content
+                        // --- 구분선 이하 모두 제거 (출처 섹션)
+                        .replace(/\n{1,}[-—]{2,}[\s\S]*$/, "")
+                        // "출처:" 키워드 이하 모두 제거 (--- 없이 바로 쓴 경우)
+                        .replace(/\n*[-—]*\s*(?:출처|참고|참조|Source|Reference)[:\s][\s\S]*$/i, "")
+                        // 단독 URL 라인 제거
+                        .replace(/\n*\[?\d+\]?\s*https?:\/\/\S+/g, "")
+                        .trim()
                     : msg.content}
                 </div>
 
