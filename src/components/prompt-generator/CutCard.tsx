@@ -436,7 +436,7 @@ export default function CutCard({
                 onSave={(v) => handleFieldSave("endImagePrompt", v)}
               />
               <EditableField
-                label="Veo Video Prompt (8초)"
+                label={`Video Prompt (${cut.durationSec}초)`}
                 value={cut.videoPrompt}
                 color="#c4b800"
                 bgColor="#fff78720"

@@ -621,13 +621,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? "0s-1s:[start]. 1s-3s:[develop]. 3s-4s:[climax]"
       : secPerCut === 6
         ? "0s-2s:[start]. 2s-4s:[develop]. 4s-6s:[climax]"
-        : "0s-2s:[start]. 2s-5s:[develop]. 5s-8s:[climax]";
+        : secPerCut === 10
+          ? "0s-3s:[start]. 3s-7s:[develop]. 7s-10s:[climax]"
+          : secPerCut === 15
+            ? "0s-4s:[start]. 4s-10s:[develop]. 10s-15s:[climax]"
+            : "0s-2s:[start]. 2s-5s:[develop]. 5s-8s:[climax]";
 
     const extendBeatTemplate = secPerCut === 4
       ? "0s-1s:[prev→trans]. 1s-3s:[new scene]. 3s-4s:[settle]"
       : secPerCut === 6
         ? "0s-2s:[prev→trans]. 2s-4s:[new scene]. 4s-6s:[settle]"
-        : "0s-2s:[prev→trans]. 2s-5s:[new scene]. 5s-8s:[settle]";
+        : secPerCut === 10
+          ? "0s-3s:[prev→trans]. 3s-7s:[new scene]. 7s-10s:[settle]"
+          : secPerCut === 15
+            ? "0s-4s:[prev→trans]. 4s-10s:[new scene]. 10s-15s:[settle]"
+            : "0s-2s:[prev→trans]. 2s-5s:[new scene]. 5s-8s:[settle]";
 
     const techniques = directorTechniques && typeof directorTechniques === "object"
       ? directorTechniques as Record<string, string>

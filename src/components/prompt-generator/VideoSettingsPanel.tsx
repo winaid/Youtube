@@ -223,19 +223,43 @@ export default function VideoSettingsPanel({
           <div className="space-y-1.5">
             <Label className="text-xs">클립 길이</Label>
             <div className="flex gap-2">
-              {([4, 6, 8] as VeoClipDuration[]).map((d) => (
-                <Button
-                  key={d}
-                  size="sm"
-                  variant={config.durationSeconds === d ? "default" : "outline"}
-                  className="flex-1 text-xs"
-                  style={config.durationSeconds === d ? { background: "#787fff", color: "white" } : {}}
-                  onClick={() => update({ durationSeconds: d })}
-                >
-                  {d}초
-                </Button>
-              ))}
+              {([4, 6, 8, 10, 15] as VeoClipDuration[]).map((d) => {
+                const isKlingOnly = d >= 10;
+                const isSelected = config.durationSeconds === d;
+                return (
+                  <Button
+                    key={d}
+                    size="sm"
+                    variant={isSelected ? "default" : "outline"}
+                    className="flex-1 text-xs relative"
+                    style={
+                      isSelected
+                        ? { background: "#787fff", color: "white" }
+                        : isKlingOnly
+                          ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
+                          : {}
+                    }
+                    onClick={() => update({ durationSeconds: d })}
+                    title={isKlingOnly ? "Kling 전용 (Veo 미지원)" : undefined}
+                  >
+                    {d}초
+                    {isKlingOnly && (
+                      <span
+                        className="absolute -top-1 -right-1 text-[7px] px-0.5 rounded leading-tight"
+                        style={{ background: "#f97316", color: "white" }}
+                      >
+                        K
+                      </span>
+                    )}
+                  </Button>
+                );
+              })}
             </div>
+            {(config.durationSeconds ?? 6) >= 10 && (
+              <p className="text-[10px]" style={{ color: "#f97316" }}>
+                ⚠ {config.durationSeconds}초는 Kling 전용 — 영상 생성 시 Kling 엔진이 자동 선택됩니다
+              </p>
+            )}
           </div>
 
           {/* 해상도 */}

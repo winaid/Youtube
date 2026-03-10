@@ -132,9 +132,25 @@ function generateFallbackCuts(
     moodLighting: "golden hour warm lighting, soft shadows",
     imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} start frame, highly detailed, cinematic quality`,
     endImagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} end frame, camera moved to final position, highly detailed, cinematic quality`,
-    videoPrompt: `Medium shot, slow dolly in. ${charDesc}. 0s-2s: establishing the scene, character visible in ${veoStyle} environment. 2s-5s: subtle movement, ${directorStyle} visual tone. 5s-8s: emotional beat, slight camera push. Warm key light from left, soft fill from right. Style: ${director.name}, cinematic, film grain, shallow depth of field. No text, no watermark, no readable writing on screen`,
+    videoPrompt: cutDuration === 4
+      ? `Medium shot, slow dolly in. ${charDesc}. 0s-1s: establishing scene, ${veoStyle}. 1s-3s: subtle movement, ${directorStyle} tone. 3s-4s: emotional beat. Warm key light. ${director.name} style, cinematic. No text, no watermark`
+      : cutDuration === 6
+        ? `Medium shot, slow dolly in. ${charDesc}. 0s-2s: establishing scene, ${veoStyle}. 2s-4s: subtle movement, ${directorStyle} tone. 4s-6s: emotional beat, camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`
+        : cutDuration === 10
+          ? `Medium shot, slow dolly in. ${charDesc}. 0s-3s: establishing scene, ${veoStyle}. 3s-7s: subtle movement, ${directorStyle} tone. 7s-10s: emotional beat, camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`
+          : cutDuration === 15
+            ? `Medium shot, slow dolly in. ${charDesc}. 0s-4s: establishing scene, ${veoStyle}. 4s-10s: subtle movement, ${directorStyle} tone. 10s-15s: emotional beat, camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`
+            : `Medium shot, slow dolly in. ${charDesc}. 0s-2s: establishing scene, ${veoStyle}. 2s-5s: subtle movement, ${directorStyle} tone. 5s-8s: emotional beat, slight camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`,
     extendPrompt: i > 0
-      ? `Continue from previous scene. ${charDesc}. 0s-2s: transition, maintaining momentum from last cut. 2s-5s: main action develops, ${directorStyle} visual tone, ${veoStyle}. 5s-8s: beat resolves, preparing for next transition. Same character appearance maintained throughout. No text, no watermark`
+      ? cutDuration === 4
+        ? `Continue from previous scene. ${charDesc}. 0s-1s: transition from last cut. 1s-3s: main action, ${directorStyle} tone, ${veoStyle}. 3s-4s: beat resolves. Same character maintained. No text, no watermark`
+        : cutDuration === 6
+          ? `Continue from previous scene. ${charDesc}. 0s-2s: transition from last cut. 2s-4s: main action, ${directorStyle} tone, ${veoStyle}. 4s-6s: beat resolves. Same character maintained. No text, no watermark`
+          : cutDuration === 10
+            ? `Continue from previous scene. ${charDesc}. 0s-3s: transition from last cut. 3s-7s: main action, ${directorStyle} tone, ${veoStyle}. 7s-10s: beat resolves. Same character maintained. No text, no watermark`
+            : cutDuration === 15
+              ? `Continue from previous scene. ${charDesc}. 0s-4s: transition from last cut. 4s-10s: main action, ${directorStyle} tone, ${veoStyle}. 10s-15s: beat resolves. Same character maintained. No text, no watermark`
+              : `Continue from previous scene. ${charDesc}. 0s-2s: transition from last cut. 2s-5s: main action, ${directorStyle} tone, ${veoStyle}. 5s-8s: beat resolves. Same character maintained. No text, no watermark`
       : "",
     transitionHint: i < cutCount - 1 ? "디졸브 - 다음 장면으로 자연스럽게 전환" : "페이드 아웃 - 마무리",
     characterConsistency: `캐릭터 시드 char-1 고정: ${characterSeeds[0].appearanceKo}. 모든 장면에서 동일한 외형 유지. ${directorStyle} 톤 일관성 유지.`,
@@ -194,7 +210,7 @@ export async function generatePrompt(
 
   return {
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
-    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 Google Veo 8초 x ${cuts.length}장면 = ${cuts.length * 8}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
+    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 ${cutDuration}초 x ${cuts.length}장면 = ${cuts.length * cutDuration}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
     totalCuts: cuts.length,
     globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
     directorPersonaPrompt: directorPersonaText,
@@ -204,7 +220,7 @@ export async function generatePrompt(
       "Extend 프롬프트 사용 시 이전 장면 마지막 순간을 구체적으로 묘사하여 자연스러운 연결",
       "캐릭터 외형(의상, 헤어스타일, 체형, 피부톤)을 모든 장면에서 절대 변경 금지",
       `색감/조명은 ${directorName} 스타일의 시그니처 톤으로 통일`,
-      "각 8초 클립의 시작 프레임이 이전 클립의 끝 프레임과 매칭되도록 구성",
+      `각 ${cutDuration}초 클립의 시작 프레임이 이전 클립의 끝 프레임과 매칭되도록 구성`,
       "CUT 1은 Video Prompt로 생성, CUT 2부터는 이전 클립 + Extend Prompt로 연장",
     ],
     cuts,
