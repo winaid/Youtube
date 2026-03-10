@@ -11,15 +11,10 @@ import VideoGenerationPanel from "./VideoGenerationPanel";
 import VideoSettingsPanel from "./VideoSettingsPanel";
 import TimelineEditor from "./TimelineEditor";
 import CharacterFaceManager from "./CharacterFaceManager";
-import SeriesManager from "./SeriesManager";
 import OneClickPipeline from "./OneClickPipeline";
-import EnvironmentPanel from "./EnvironmentPanel";
-import EmotionCurveEditor from "./EmotionCurveEditor";
-import YouTubeSEOPanel from "./YouTubeSEOPanel";
 import VideoHistoryPanel, { saveToHistory } from "./VideoHistoryPanel";
 import VideoReviewPanel from "./VideoReviewPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
-import { EmotionPoint } from "@/types";
 
 interface ResultPanelProps {
   result: PromptOutput | null;
@@ -46,7 +41,6 @@ export default function ResultPanel({
   const [shareCopied, setShareCopied] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline">("prompts");
-  const [emotionPoints, setEmotionPoints] = useState<EmotionPoint[]>([]);
   const [ttsVoice] = useState("ko-KR-Wavenet-A");
   const [ttsRate] = useState(1.0);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -99,54 +93,6 @@ export default function ResultPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result]);
 
-  // 프롬프트 결과 생성 시 감정 곡선 자동 초기화
-  useEffect(() => {
-    if (!result || result.cuts.length === 0) return;
-    // 이미 사용자가 편집한 경우 덮어쓰지 않음
-    if (emotionPoints.length > 0) return;
-
-    const emotionKeywords: Record<EmotionPoint["emotion"], RegExp> = {
-      tension: /tension|suspense|dark|shadow|긴장|불안|위험|추격|대치|대결|공포|mystery|thriller|conflict|dramatic|intense/i,
-      release: /release|relief|resolve|해소|해결|안도|평화|rest|exhale|breath/i,
-      joy: /joy|happy|warm|bright|smile|기쁨|행복|환한|축하|celebrate|laugh|cheerful|delight/i,
-      sadness: /sad|tear|rain|lonely|melanchol|슬픔|눈물|외로|이별|farewell|loss|grief|sorrow/i,
-      anger: /anger|rage|fire|fierce|분노|격렬|폭발|destroy|furious|wrath/i,
-      surprise: /surprise|shock|twist|reveal|놀람|반전|충격|unexpected|sudden|gasp/i,
-      calm: /calm|quiet|still|peace|serene|평온|고요|잔잔|gentle|soft|silence|meditat/i,
-      excitement: /excit|thrill|rush|epic|dynamic|흥분|역동|박진|환호|action|chase|soar|climax/i,
-    };
-
-    const autoPoints: EmotionPoint[] = result.cuts.map((cut) => {
-      const text = `${cut.sceneDescription} ${cut.moodLighting} ${cut.cameraDirection ?? ""}`;
-      let bestEmotion: EmotionPoint["emotion"] = "calm";
-      let bestScore = 0;
-
-      for (const [emotion, pattern] of Object.entries(emotionKeywords)) {
-        const matches = text.match(pattern);
-        if (matches && matches.length > bestScore) {
-          bestScore = matches.length;
-          bestEmotion = emotion as EmotionPoint["emotion"];
-        }
-      }
-
-      // 컷 위치 기반 intensity 추정
-      const pos = cut.cutNumber / result.cuts.length;
-      let intensity = 50;
-      if (pos < 0.15) intensity = 40; // 도입부
-      else if (pos < 0.4) intensity = 55; // 전개
-      else if (pos < 0.7) intensity = 70; // 클라이맥스 접근
-      else if (pos < 0.85) intensity = 80; // 클라이맥스
-      else intensity = 45; // 마무리
-
-      // 감정별 intensity 보정
-      if (bestEmotion === "tension" || bestEmotion === "excitement") intensity = Math.min(100, intensity + 15);
-      if (bestEmotion === "calm" || bestEmotion === "release") intensity = Math.max(20, intensity - 15);
-
-      return { cutNumber: cut.cutNumber, intensity, emotion: bestEmotion };
-    });
-
-    setEmotionPoints(autoPoints);
-  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 영상 완료될 때마다 히스토리에 점진적 저장 (컷 1개라도 완료되면 저장)
   const lastSavedCountRef = useRef(0);
@@ -967,54 +913,10 @@ export default function ResultPanel({
               }
             }}
             onRunBgm={async () => { /* BGM removed */ }}
-            onRunSeo={async () => { /* handled by YouTubeSEOPanel */ }}
-            onRunThumbnail={async () => { /* handled by YouTubeSEOPanel */ }}
+            onRunSeo={async () => {}}
+            onRunThumbnail={async () => {}}
           />
 
-          {/* 유튜브 SEO + 썸네일 + 시청자 예측 */}
-          <YouTubeSEOPanel
-            result={result}
-            region={region}
-            animationMode={animationMode}
-          />
-
-          {/* 감정 곡선 에디터 */}
-          <EmotionCurveEditor
-            cuts={result.cuts}
-            emotionPoints={emotionPoints}
-            onChange={setEmotionPoints}
-          />
-
-          {/* 날씨/시간대 일관성 */}
-          <EnvironmentPanel
-            cuts={result.cuts}
-            onApplyEnvironment={(suffix) => {
-              if (!onUpdateResult) return;
-              const newCuts = result.cuts.map((cut) => ({
-                ...cut,
-                videoPrompt: cut.videoPrompt.includes(suffix.split(",")[0])
-                  ? cut.videoPrompt
-                  : `${cut.videoPrompt}. ${suffix}`,
-                moodLighting: `${cut.moodLighting}, ${suffix.split(",").slice(0, 2).join(",")}`,
-              }));
-              onUpdateResult({ ...result, cuts: newCuts });
-            }}
-          />
-
-          {/* 시리즈 연속성 관리 */}
-          <SeriesManager
-            characterSeeds={result.characterSeeds}
-            projectTitle={result.projectTitle}
-            onLoadCharacters={(chars) => {
-              if (onUpdateResult) {
-                const merged = [...result.characterSeeds];
-                for (const ch of chars) {
-                  if (!merged.find((m) => m.id === ch.id)) merged.push(ch);
-                }
-                onUpdateResult({ ...result, characterSeeds: merged });
-              }
-            }}
-          />
         </>
       )}
 
