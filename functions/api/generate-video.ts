@@ -225,10 +225,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── 모델 선택 ────────────────────────────────────────────────────────────
-    // veo-3.1-generate-001: 고품질, Scene Extension 지원, 느림
-    // veo-3.1-fast-generate-001: 저지연/저비용, Scene Extension 지원, 빠름 (3.1과 동일 기능)
-    // veo-3.0-*: Scene Extension 미지원 → 사용 안 함
-    const model = "veo-3.1-fast-generate-001";
+    // veo-3.1-generate-001: 고품질, Scene Extension + 오디오 생성 지원
+    // veo-3.1-fast-generate-001: 저지연/저비용이지만 generateAudio 미지원 → 무음 영상
+    // ⚠️ generateAudio는 반드시 non-fast 모델을 사용해야 동작함
+    const model = "veo-3.1-generate-001";
 
     // GCS/HTTPS URI 유효성 검사 (base64 data URI 는 Veo 영상 입력 불가)
     const isValidVideoUri = (uri: string) =>
