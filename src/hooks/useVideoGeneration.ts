@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { saveVideoRecord } from "@/lib/video-history";
+import { assemblePrompt } from "@/lib/style-system";
 import {
   Cut,
   VideoClip,
@@ -119,116 +120,6 @@ function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
   });
 }
 
-// ── 전역 스타일 시스템 ───────────────────────────────────────────────────
-// Veo는 프롬프트 앞부분에 강하게 반응 → 스타일을 최상위에 배치하고 구체적으로 명시
-// 각 항목: style (긍정 스타일 블록) + negative (해당 스타일에 충돌하는 요소 차단)
-// isNonRealistic: true면 자동으로 photorealism 차단 키워드가 negative에 합산됨
-
-// 비실사 공통 negative (photorealism 차단)
-const ANTI_PHOTOREALISM = "photorealistic, live-action footage, realistic human skin texture, cinematic realism, hyper-real detail, real camera footage, realistic lens look, DSLR photo";
-
-interface StylePreset {
-  style: string;       // 긍정 스타일 블록 (프롬프트 최상단)
-  negative: string;    // 스타일 전용 negative (프롬프트 끝)
-  isNonRealistic: boolean;
-  /** 스타일 강화 suffix — getStyleSuffix 대신 스타일 특화 키워드 사용 */
-  reinforcement: string;
-}
-
-const STYLE_PRESETS: Record<string, StylePreset> = {
-  "실사": {
-    style: "Photorealistic live-action, cinematic camera, natural lighting.",
-    negative: "cartoon, anime, illustration, painting, text overlay, watermark",
-    isNonRealistic: false,
-    reinforcement: "cinematic masterpiece, film grain, depth of field, anamorphic lens, professional color grading",
-  },
-  "2D 애니": {
-    style: "2D anime animation, cel-shaded outlines, vibrant flat colors, anime character proportions, illustrated background.",
-    negative: "3D rendering, realistic skin, live-action, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "consistent anime art style throughout, clean cel-shading, sharp illustrated edges",
-  },
-  "수채화 애니": {
-    style: "2D hand-painted watercolor animation, storybook illustration style, soft pigment bleeding on textured paper, visible brush strokes, stylized non-photorealistic forms, painterly background, warm watercolor wash.",
-    negative: "sharp digital outlines, clean cel-shading, vibrant saturated flat colors, 3D rendering, CGI, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "watercolor paper grain visible, wet pigment edges, illustrated storybook aesthetic, hand-drawn feel throughout",
-  },
-  "하이브리드": {
-    style: "Semi-realistic digital art, anime character proportions, photorealistic environment, stylized rendering.",
-    negative: "pure photorealism, pure flat anime, text overlay, watermark",
-    isNonRealistic: false,
-    reinforcement: "consistent hybrid art style, detailed digital painting",
-  },
-  "로토스코핑": {
-    style: "Rotoscoped 2D animation, performance-derived fluid movement, painterly stylized overlay, hand-traced outlines over motion.",
-    negative: "flat cartoon, generic anime, vibrant cel-shading, clean flat outlines, 2D anime flatness, plastic motion, mechanical stiff cartoon movement, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "painterly rotoscope effect consistent throughout, hand-traced line quality",
-  },
-  "스톱모션": {
-    style: "Stop-motion animation, handcrafted miniature textures, frame-by-frame movement, material imperfections, tactile surfaces.",
-    negative: "smooth CGI animation, digital clean look, plastic toy appearance, flat cute style, generic puppet animation, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "handmade material feel, visible craft imperfections, stop-motion jitter",
-  },
-  "픽셀아트": {
-    style: "Pixel art 16-bit retro animation, crisp hard edges, limited color palette, blocky character sprites.",
-    negative: "smooth anti-aliased edges, 3D rendering, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "consistent pixel grid, retro game aesthetic throughout",
-  },
-  "잉크워시": {
-    style: "East Asian ink wash animation, sumi-e brush strokes, rice paper texture, monochrome ink gradients, calligraphic line weight.",
-    negative: "colorful vibrant palette, digital clean line art, 3D rendering, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "ink wash aesthetic consistent throughout, brush texture visible",
-  },
-  "클레이": {
-    style: "Claymation animation, smooth clay figures, fingerprint texture on surfaces, warm studio lighting, sculptural forms.",
-    negative: "digital animation, smooth CGI, plastic texture, shiny surface, text overlay, watermark",
-    isNonRealistic: true,
-    reinforcement: "clay material feel throughout, handmade sculptural quality",
-  },
-  "빈티지 필름": {
-    style: "Vintage 35mm film look, warm grain, faded analog color palette, light leaks, soft focus edges.",
-    negative: "digital clean modern look, oversaturated colors, perfect grain, text overlay, watermark",
-    isNonRealistic: false,
-    reinforcement: "film grain consistent throughout, analog color degradation",
-  },
-  "네온 사이버펑크": {
-    style: "Neon cyberpunk aesthetic, glowing neon lights, vivid pink/blue/purple palette, wet reflective surfaces, dark atmosphere.",
-    negative: "natural daylight, muted colors, pastoral setting, text overlay, watermark",
-    isNonRealistic: false,
-    reinforcement: "neon glow consistent throughout, cyberpunk atmosphere",
-  },
-  "미니어처": {
-    style: "Tilt-shift miniature effect, diorama scale appearance, extremely shallow depth of field, toy-like proportions.",
-    negative: "normal scale, deep focus, text overlay, watermark",
-    isNonRealistic: false,
-    reinforcement: "miniature tilt-shift effect consistent throughout",
-  },
-};
-
-// 스타일 preset에서 negative와 reinforcement를 꺼내는 헬퍼
-function getStylePreset(animationMode?: string): StylePreset | undefined {
-  if (!animationMode) return undefined;
-  return STYLE_PRESETS[animationMode];
-}
-
-/** 스타일 강화 suffix — preset의 reinforcement 사용 */
-function getStyleSuffix(intensity: number, animationMode?: string): string {
-  if (intensity <= 20) return "";
-  const preset = getStylePreset(animationMode);
-  if (!preset) return "";
-  // 강도 50 이하: 짧은 버전 (reinforcement 첫 절반), 50 초과: 전체
-  if (intensity <= 50) {
-    const parts = preset.reinforcement.split(",").map(s => s.trim());
-    return parts.slice(0, 2).join(", ");
-  }
-  return preset.reinforcement;
-}
-
 function strengthenNegativePrompt(original: string, retryCount: number): string {
   const additionalNegatives = [
     "distorted face, deformed hands, extra fingers, mutated",
@@ -239,82 +130,8 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
   return extras ? `${original}, ${extras}` : original;
 }
 
-/**
- * 프롬프트에서 "문서/두루마리/편지/책의 내용을 보여주려는" 텍스트 표현을 제거.
- * 주인공이 뭔가를 읽거나 들고 있는 것은 OK지만, 그 내용물이 화면에 보이지 않도록 함.
- * "scroll reads: ..." / "letter that says ..." / "text on paper showing ..." 등을 치환.
- */
-/**
- * 프롬프트에 temporal beats (시간 구조)가 없으면 자동 추가.
- * Veo는 시간 구조가 있을 때 프롬프트를 훨씬 잘 따름.
- */
-function ensureTemporalBeats(prompt: string, durationSec: number): string {
-  // 이미 temporal beats가 있으면 skip
-  if (/\d+s[-–]\d+s/.test(prompt) || /first\s+\d+\s*seconds?/i.test(prompt)) {
-    return prompt;
-  }
-
-  // "first... then... finally..." 패턴도 OK
-  if (/\bfirst\b[\s\S]*\bthen\b[\s\S]*\bfinally\b/i.test(prompt)) {
-    return prompt;
-  }
-
-  // Temporal beats 추가: 프롬프트의 핵심 내용을 시간대로 분배
-  const dur = durationSec || 8;
-  const mid = Math.floor(dur * 0.3);   // ~2s
-  const mid2 = Math.floor(dur * 0.65); // ~5s
-
-  // 프롬프트를 문장 단위로 분리
-  const sentences = prompt.split(/(?<=[.!?])\s+/).filter(Boolean);
-  if (sentences.length < 2) return prompt;
-
-  // 첫 문장(보통 카메라/캐릭터 설정)은 그대로 두고, 나머지를 시간대에 배치
-  const header = sentences[0];
-  const rest = sentences.slice(1);
-
-  if (rest.length >= 3) {
-    const third = Math.ceil(rest.length / 3);
-    const part1 = rest.slice(0, third).join(" ");
-    const part2 = rest.slice(third, third * 2).join(" ");
-    const part3 = rest.slice(third * 2).join(" ");
-    return `${header} 0s-${mid}s: ${part1} ${mid}s-${mid2}s: ${part2} ${mid2}s-${dur}s: ${part3}`;
-  }
-
-  // 2문장이면 2-beat 구조
-  return `${header} 0s-${mid2}s: ${rest[0]} ${mid2}s-${dur}s: ${rest.slice(1).join(" ") || rest[0]}`;
-}
-
-function sanitizeTextContent(prompt: string): string {
-  // 문서 내용을 직접 보여주려는 패턴 제거
-  let sanitized = prompt
-    // "scroll/letter/paper/book reads: ..." or "that reads ..."
-    .replace(/\b(that\s+)?(reads?|saying|says|written|writes?|displaying|shows?)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
-    // "with text: ..." / "with the words ..." / "with inscription ..."
-    .replace(/\bwith\s+(the\s+)?(text|words?|inscription|message|content|writing|characters?|letters?|script)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
-    // "containing text ..." / "bearing text ..."
-    .replace(/\b(containing|bearing|carrying|featuring|displaying)\s+(text|words?|inscription|writing|characters?|script)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
-    // "text visible: ..." / "readable text ..."
-    .replace(/\b(visible|readable|legible|clear)\s+(text|writing|characters?|script|inscription)\s*[:"]?\s*["']?[^.,"']{3,}["']?/gi, "")
-    // "calligraphy/kanji/hangul/Chinese characters reading ..."
-    .replace(/\b(calligraphy|kanji|hangul|chinese characters?|japanese characters?|korean text|hanzi)\s*(reading|saying|that|of|:)\s*["']?[^.,"']{3,}["']?/gi, (match) => {
-      // 서예/한자 자체는 유지하되 내용만 제거
-      return match.split(/reading|saying|that|of|:/i)[0].trim();
-    });
-
-  // 연속 공백/쉼표 정리
-  sanitized = sanitized
-    .replace(/,\s*,/g, ",")
-    .replace(/\.\s*\./g, ".")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  // 프롬프트 끝에 텍스트 금지 보강 (이미 있으면 skip, 최소한으로)
-  if (!/no text overlay/i.test(sanitized) && !/no text[,.]?\s*no watermark/i.test(sanitized)) {
-    sanitized += ". No text overlay, no watermark";
-  }
-
-  return sanitized;
-}
+// sanitizeTextContent, ensureTemporalBeats, naturalizeMetaFields는
+// style-system.ts의 assemblePrompt() 내부에서 처리됨
 
 export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
@@ -935,83 +752,52 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
       }
 
-      // ═══ 3-블록 프롬프트 조립: [STYLE] + [SCENE] + [NEGATIVE] ═══════════
-      // Veo는 프롬프트 앞부분 키워드에 가장 강하게 반응.
-      // 스타일을 최상단에 배치하고, 씬 내용 뒤에 negative를 붙여 스타일 충돌 차단.
-      const preset = getStylePreset(cfg.animationMode);
-
-      // ── BLOCK 1: STYLE (최상단 — Veo가 가장 먼저 인식) ──────────────
-      if (preset) {
-        // 이미 스타일 키워드가 있으면 중복 삽입 방지
-        const firstKeyword = preset.style.split(",")[0].trim().split(" ").slice(0, 3).join(" ");
-        if (!prompt.includes(firstKeyword)) {
-          prompt = `${preset.style} ${prompt}`;
-        }
-      }
-
-      // ── BLOCK 2: SCENE + 스타일 강화 suffix ──────────────────────────
-      const styleSuffix = getStyleSuffix(cfg.styleIntensity, cfg.animationMode);
-      if (styleSuffix && !prompt.includes(styleSuffix.split(",")[0].trim())) {
-        prompt = `${prompt}. ${styleSuffix}`;
-      }
-
-      // Temporal beats
-      prompt = ensureTemporalBeats(prompt, cfg.durationSeconds);
-
-      // 문서/편지/두루마리 내용 텍스트 제거
-      prompt = sanitizeTextContent(prompt);
-
-      // 워드 캡: 씬 내용을 먼저 자른 뒤 negative/audio 추가 (잘려나가지 않도록)
+      // ═══ 전역 스타일 시스템으로 프롬프트 조립 ═══════════════════════
+      // assemblePrompt()가 6개 블록을 우선순위대로 조립:
+      //   1. STYLE IDENTITY (전체 비주얼 정체성)
+      //   2. CONSISTENCY (캐릭터 스타일 + 환경 스타일 + 일관성 규칙)
+      //   3. SCENE CONTENT (메타 필드 자연어 변환 + temporal beats + sanitize)
+      //   4. STYLE REINFORCEMENT (스타일 강화 리마인더)
+      //   5. NEGATIVE (스타일 충돌 차단 + 비실사 anti-photorealism)
+      //   6. AUDIO (오디오 힌트)
       {
-        const capWords = prompt.split(/\s+/);
-        if (capWords.length > 150) {
-          prompt = capWords.slice(0, 140).join(" ");
-          if (!/no text overlay/i.test(prompt)) {
-            prompt += ". No text overlay, no watermark";
-          }
-        }
+        const prevCutData = cutNumber > 1
+          ? cuts.find((c) => c.cutNumber === cutNumber - 1)
+          : undefined;
+
+        const assembled = assemblePrompt({
+          animationMode: cfg.animationMode,
+          styleIntensity: cfg.styleIntensity,
+          scenePrompt: prompt,
+          characterConsistency: prevCutData?.characterConsistency || cut.characterConsistency,
+          moodLighting: prevCutData?.moodLighting || cut.moodLighting,
+          cameraDirection: cut.cameraDirection,
+          userNegativePrompt: negativePrompt,
+          durationSec: cfg.durationSeconds,
+        });
+
+        prompt = assembled.finalPrompt;
+
+        // ── 블록별 디버그 로그 ──────────────────────────────────────────
+        console.log(`[CUT ${cutNumber}] 📝 STYLE SYSTEM`, {
+          animationMode: cfg.animationMode || "(없음)",
+          realismLevel: assembled.debug.realismLevel,
+          isNonRealistic: assembled.debug.isNonRealistic,
+          wordCount: assembled.debug.wordCount,
+        });
+        console.log(`[CUT ${cutNumber}] 📝 BLOCKS`, {
+          style: assembled.debug.styleBlock.slice(0, 120) || "(없음)",
+          consistency: assembled.debug.consistencyBlock.slice(0, 120) || "(없음)",
+          scene: assembled.debug.sceneBlock.slice(0, 120),
+          reinforcement: assembled.debug.reinforcementBlock || "(없음)",
+          negative: assembled.debug.negativeBlock || "(없음)",
+          audio: assembled.debug.audioBlock || "(없음)",
+        });
+        console.log(`[CUT ${cutNumber}] 📝 FINAL PROMPT`, {
+          charCount: prompt.length,
+          prompt: prompt.length > 600 ? prompt.slice(0, 600) + "…" : prompt,
+        });
       }
-
-      // ── BLOCK 3: NEGATIVE STYLE (프롬프트 끝 — 스타일 충돌 차단) ────
-      // preset.negative + 비실사면 ANTI_PHOTOREALISM 자동 합산
-      {
-        const negParts: string[] = [];
-        if (preset) {
-          negParts.push(preset.negative);
-          if (preset.isNonRealistic) {
-            negParts.push(ANTI_PHOTOREALISM);
-          }
-        }
-        // 사용자 지정 negativePrompt도 병합
-        if (negativePrompt && negativePrompt.trim()) {
-          negParts.push(negativePrompt);
-        }
-        // 중복 제거 후 삽입
-        if (negParts.length > 0 && !prompt.includes("Avoid:")) {
-          const seen = new Set<string>();
-          const uniqueItems = negParts.join(", ").split(",")
-            .map(s => s.trim().toLowerCase()).filter(Boolean)
-            .filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
-          // Veo는 negative가 너무 길면 무시 → 핵심 8개로 제한
-          prompt = `${prompt}. Avoid: ${uniqueItems.slice(0, 8).join(", ")}`;
-        }
-      }
-
-      // 오디오 힌트
-      if (!/\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(prompt)) {
-        prompt = `${prompt}. Diegetic sound, ambient audio.`;
-      }
-
-      // ── 최종 프롬프트 로그 (디버그용) ─────────────────────────────────
-      console.log(`[CUT ${cutNumber}] 📝 FINAL PROMPT`, {
-        animationMode: cfg.animationMode || "(없음)",
-        isNonRealistic: preset?.isNonRealistic ?? false,
-        wordCount: prompt.split(/\s+/).length,
-        charCount: prompt.length,
-        prompt: prompt.length > 500 ? prompt.slice(0, 500) + "…" : prompt,
-      });
-
-      // 사용자가 선택한 모드 그대로 사용 (fast 선택 시 무조건 fast)
 
       // ── Continuity firstFrame 취득 (우선순위 순)
       // CUT 1: 사용자 설정값 / CUT N>1: 이전 컷과의 연결 필수
