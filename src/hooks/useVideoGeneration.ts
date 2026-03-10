@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { saveVideoRecord } from "@/lib/video-history";
 import {
   Cut,
   VideoClip,
@@ -454,7 +455,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         consecutiveErrors = 0;
 
         // ── JSON 파싱 (실패해도 재시도)
-        let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; seed?: string; variants?: VideoVariant[] };
+        let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; seed?: string; variants?: VideoVariant[]; noRetry?: boolean };
         try {
           data = await res.json();
         } catch (parseErr) {
@@ -472,13 +473,16 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         // ── 상태별 처리
         // data.status가 없는데 data.error가 있으면 → 즉시 실패 (대기 루프 방지)
         if (!data.status && data.error) {
-          console.error(`[CUT ${cutNumber}] status 없이 error 수신:`, data.error);
+          console.error(`[CUT ${cutNumber}] status 없이 error 수신 (poll #${attempt}):`, data.error);
           updateClip(cutNumber, { status: "failed", error: String(data.error) });
           return;
         }
 
         if (data.status === "PENDING" || data.status === "RUNNING" || !data.status) {
           // 아직 처리 중 → 다음 루프
+          if (attempt % 12 === 11) { // 매 1분마다 로그
+            console.log(`[CUT ${cutNumber}] 폴링 진행 중 — poll #${attempt + 1}/${POLL_MAX_ATTEMPTS}, engine=${engine}`);
+          }
           continue;
         }
 
@@ -538,6 +542,26 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
                 `rawVideoUri="${ruri.slice(0, 60)}"`
               );
             }
+          }
+
+          // ── 영상 기록 저장 (localStorage) ────────────────────────────────────
+          try {
+            const cut = cuts.find((c) => c.cutNumber === cutNumber);
+            saveVideoRecord({
+              operationName,
+              engine,
+              gcsUri: clipUpdate.rawVideoUri || "",
+              proxyUri: clipUpdate.videoUri || "",
+              prompt: cut?.videoPrompt?.slice(0, 500) || "",
+              mode: isExtend ? "extend" : "generate",
+              durationSec: cut?.durationSec || 8,
+              cutNumber,
+              sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
+              seed: clipUpdate.seed,
+              status: "completed",
+            });
+          } catch {
+            // 히스토리 저장 실패는 무시 — 생성 플로우를 방해하지 않음
           }
 
           if (data.seed && onSeedDetected) {
@@ -608,14 +632,15 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
 
         if (data.status === "FAILED") {
-          console.error(`[CUT ${cutNumber}] Veo 생성 실패:`, data.error || "unknown error");
+          console.error(`[CUT ${cutNumber}] Veo 생성 실패:`, data.error || "unknown error", { noRetry: data.noRetry, attempt });
           // Enhancement 6: Auto-retry on failure
+          // noRetry=true: 서버가 재시도 무의미 판정 (스택 오버플로 등 내부 로직 오류)
           setState((prev) => {
             const clip = prev.clips.find((c) => c.cutNumber === cutNumber);
             const retryCount = clip?.retryCount || 0;
             const cfg = prev.config;
 
-            if (cfg.autoRetryOnFailure && retryCount < cfg.maxRetryCount) {
+            if (!data.noRetry && cfg.autoRetryOnFailure && retryCount < cfg.maxRetryCount) {
               console.warn(`[CUT ${cutNumber}] 자동 재시도 ${retryCount + 1}/${cfg.maxRetryCount}`);
               return {
                 ...prev,
@@ -1020,12 +1045,18 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = `${shotLines}. ${prompt}`;
       }
 
+      // ── cut1 hard guard: extend 관련 필드 완전 차단 ──────────────────────────
+      const isCut1 = cutNumber === 1;
+      const safeSourceVideo = isCut1 ? undefined : (sourceVideo || undefined);
+      const safePrevVideoUri = isCut1 ? undefined : previousVideoUri;
+      const safeFirstFrame = isCut1 ? (cfg.firstFrameBase64 || (storyboardImages?.[1]) || undefined) : firstFrameBase64;
+
       const body: Record<string, unknown> = {
         prompt,
         cutNumber,
         engine,
         videoMode,
-        sourceVideo: sourceVideo || undefined,
+        sourceVideo: safeSourceVideo,
         mode: cfg.mode,
         durationSeconds: cfg.durationSeconds,
         resolution: cfg.resolution,
@@ -1036,9 +1067,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         sampleCount: cfg.sampleCount,
         seed: cfg.seed,
         // Scene Extension (Veo) — gs:// 또는 https:// URI만
-        previousVideoUri,
+        previousVideoUri: safePrevVideoUri,
         // First Frame (auto-linked from prev cut's end or storyboard)
-        firstFrameBase64: firstFrameBase64,
+        firstFrameBase64: safeFirstFrame,
         // Last Frame (auto-linked from end storyboard or manual)
         lastFrameBase64: lastFrameBase64,
         // Reference Images (캐릭터 얼굴 + 수동 레퍼런스)

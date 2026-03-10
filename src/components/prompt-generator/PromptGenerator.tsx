@@ -10,6 +10,7 @@ import ResultPanel from "./ResultPanel";
 import StoryChat from "./StoryChat";
 import PromptHistoryPanel from "./PromptHistoryPanel";
 import VideoHistoryPanel from "./VideoHistoryPanel";
+import MyVideosPanel from "./MyVideosPanel";
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
@@ -138,15 +139,26 @@ export default function PromptGenerator() {
           <PromptHistoryPanel onRestore={handleRestoreHistory} />
         </div>
       ) : (
-        /* 생성한 영상 히스토리 */
-        <div className="max-w-2xl mx-auto">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold" style={{ color: "#222" }}>생성한 영상 히스토리</h2>
-            <p className="text-xs mt-0.5" style={{ color: "#999" }}>
-              이전에 생성한 영상 장면을 다시 확인하고 재생할 수 있습니다.
-            </p>
+        /* 내 영상 + 세션 히스토리 */
+        <div className="max-w-2xl mx-auto space-y-6">
+          <div>
+            <div className="mb-4">
+              <h2 className="text-base font-semibold" style={{ color: "#222" }}>내 영상</h2>
+              <p className="text-xs mt-0.5" style={{ color: "#999" }}>
+                생성 완료된 영상이 자동으로 기록됩니다. 개별 컷 단위로 조회·재생할 수 있습니다.
+              </p>
+            </div>
+            <MyVideosPanel />
           </div>
-          <VideoHistoryPanel />
+          <div>
+            <div className="mb-4">
+              <h2 className="text-base font-semibold" style={{ color: "#222" }}>세션 히스토리</h2>
+              <p className="text-xs mt-0.5" style={{ color: "#999" }}>
+                현재/이전 세션에서 생성한 영상을 묶어서 확인할 수 있습니다.
+              </p>
+            </div>
+            <VideoHistoryPanel />
+          </div>
         </div>
       )}
     </div>

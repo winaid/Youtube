@@ -224,12 +224,68 @@ function sanitizeForLog(obj: unknown, depth = 0): unknown {
   return obj;
 }
 
+/**
+ * JSON.stringify 없이 객체를 재귀 탐색하여 bytesBase64Encoded 필드를 찾음.
+ * 깊이 제한으로 스택 오버플로 방지.
+ */
+function findBase64InObject(obj: unknown, results: VideoResult[], depth: number): void {
+  if (depth > 8 || results.length > 0) return;
+  if (isRecord(obj)) {
+    const b64 = obj.bytesBase64Encoded;
+    if (isString(b64) && b64.length > 200) {
+      results.push({
+        kind: "base64",
+        data: b64,
+        mimeType: isString(obj.mimeType) ? obj.mimeType : "video/mp4",
+      });
+      return;
+    }
+    for (const v of Object.values(obj)) {
+      findBase64InObject(v, results, depth + 1);
+      if (results.length > 0) return;
+    }
+  }
+  if (isArray(obj)) {
+    for (const item of obj as unknown[]) {
+      findBase64InObject(item, results, depth + 1);
+      if (results.length > 0) return;
+    }
+  }
+}
+
+/**
+ * base64 영상 데이터를 플레이스홀더로 치환하여 안전하게 직렬화.
+ * JSON.stringify(raw) 직접 호출 시 수 MB base64 문자열로 인해
+ * V8 rope-string flattening 스택 오버플로(RangeError) 발생 가능.
+ * URI 검색에는 영향 없음 (base64 데이터는 URI가 아니므로).
+ */
+function stripBase64ForSearch(obj: unknown, depth = 0): unknown {
+  if (depth > 10) return "[maxDepth]";
+  if (typeof obj === "string") {
+    // base64 데이터(200자 이상)는 제거, URI 등 짧은 문자열은 유지
+    return obj.length > 200 ? `[stripped len=${obj.length}]` : obj;
+  }
+  if (isArray(obj)) {
+    return (obj as unknown[]).map((item) => stripBase64ForSearch(item, depth + 1));
+  }
+  if (isRecord(obj)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = stripBase64ForSearch(v, depth + 1);
+    }
+    return out;
+  }
+  return obj;
+}
+
 function deepSearchVideoData(raw: Record<string, unknown>, results: VideoResult[]): void {
+  // base64 데이터를 제거한 안전한 객체에서 URI 검색
   let jsonStr: string;
   try {
-    jsonStr = JSON.stringify(raw);
+    const stripped = stripBase64ForSearch(raw);
+    jsonStr = JSON.stringify(stripped);
   } catch (e) {
-    console.error("[check-video] deepSearch: JSON.stringify(raw) threw:", e instanceof Error ? e.message : String(e));
+    console.error("[check-video] deepSearch: JSON.stringify threw:", e instanceof Error ? e.message : String(e));
     return;
   }
 
@@ -259,13 +315,10 @@ function deepSearchVideoData(raw: Record<string, unknown>, results: VideoResult[
     }
   }
 
-  // base64 데이터 탐색
+  // base64 데이터 탐색 — jsonStr에서는 stripped되어 있으므로
+  // 원본 객체에서 직접 탐색 (JSON.stringify 없이)
   if (results.length === 0) {
-    const b64Regex = /"bytesBase64Encoded"\s*:\s*"([A-Za-z0-9+/=]{200,})"/;
-    const b64Match = jsonStr.match(b64Regex);
-    if (b64Match) {
-      results.push({ kind: "base64", data: b64Match[1], mimeType: "video/mp4" });
-    }
+    findBase64InObject(raw, results, 0);
   }
 
   if (results.length > 0) {
@@ -375,13 +428,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ── 진입 로그 ──────────────────────────────────────────────────────────────
     console.log("[check-video] ENTRY", {
-      provider: engine,
       engine,
       cutNumber,
       operationName: operationName ? operationName.slice(0, 100) : "(empty)",
       taskId: taskId ? taskId.slice(0, 80) : "(empty)",
       isExtend,
-      payload: bodyText.slice(0, 300),
     });
 
     // ── Kling 체크 분기 ────────────────────────────────────────────────────
@@ -564,7 +615,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const videoResults = extractVideoResults(data);
 
     if (videoResults.length === 0) {
-      console.error("[check-video] No video result found. structure:", safeStringify(structure), "raw:", safeStringify(data, 2000));
+      console.error("[check-video] No video result found. structure:", safeStringify(structure), "raw:", safeStringify(sanitizeForLog(data)));
       return Response.json({
         status: "FAILED",
         error: `영상 결과를 찾을 수 없습니다. response 구조: ${safeStringify(structure.deepKeys)}`,
@@ -653,17 +704,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   } catch (error) {
     const errType = error instanceof Error ? error.constructor.name : typeof error;
     const errMsg = error instanceof Error ? error.message : String(error);
-    // stack overflow 시 error.stack 자체가 비어 있을 수 있음 — 안전하게 처리
     let errStack = "";
     try { errStack = (error instanceof Error && error.stack) ? error.stack.slice(0, 1500) : ""; } catch { /* ignore */ }
-    console.error(`[check-video] UNHANDLED ${errType}: ${errMsg}\nstack: ${errStack}`);
-    // ⚠️ 500 대신 200 FAILED 반환:
-    //   - 500이면 프론트가 "transient 서버 에러"로 판단해 3회 재시도 후 원인 메시지 없이 중단
-    //   - FAILED(200)이면 실제 오류 메시지가 UI에 표시되고 autoRetry 로직이 동작함
+
+    // 스택 오버플로 감지: 재시도해도 반복되므로 noRetry 플래그로 프론트에 전달
+    const isStackOverflow = errMsg.includes("call stack") || errMsg.includes("stack size") || errType === "RangeError";
+
+    console.error(`[check-video] UNHANDLED ${errType}: ${errMsg}${isStackOverflow ? " [STACK_OVERFLOW — noRetry]" : ""}\nstack: ${errStack}`);
+
     return Response.json({
       status: "FAILED",
-      error: `check-video 내부 오류: ${errMsg}`,
+      error: isStackOverflow
+        ? `check-video 내부 로직 오류 (스택 오버플로). 자동 재시도를 건너뜁니다.`
+        : `check-video 내부 오류: ${errMsg}`,
       errorType: errType,
+      noRetry: isStackOverflow, // 프론트에서 auto-retry 차단용
     });
   }
 };
