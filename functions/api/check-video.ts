@@ -353,6 +353,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let engine: "veo" | "kling" = "veo";
     let taskId = "";
     let isExtend = false;
+    let cutNumber: number | null = null;
     try {
       bodyText = await context.request.text();
       const parsed = JSON.parse(bodyText) as {
@@ -360,22 +361,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         engine?: "veo" | "kling";
         taskId?: string;
         isExtend?: boolean;
+        cutNumber?: number;
       };
       operationName = parsed.operationName || "";
       engine    = parsed.engine    ?? "veo";
       taskId    = parsed.taskId    || operationName; // Kling: taskId 우선, fallback operationName
       isExtend  = parsed.isExtend  ?? false;
+      cutNumber = typeof parsed.cutNumber === "number" ? parsed.cutNumber : null;
     } catch (parseErr) {
       console.error("[check-video] JSON parse failed. body:", bodyText.slice(0, 500), "err:", parseErr);
       return Response.json({ error: "Invalid JSON body", details: String(parseErr) }, { status: 400 });
     }
+
+    // ── 진입 로그 ──────────────────────────────────────────────────────────────
+    console.log("[check-video] ENTRY", {
+      provider: engine,
+      engine,
+      cutNumber,
+      operationName: operationName ? operationName.slice(0, 100) : "(empty)",
+      taskId: taskId ? taskId.slice(0, 80) : "(empty)",
+      isExtend,
+      payload: bodyText.slice(0, 300),
+    });
 
     // ── Kling 체크 분기 ────────────────────────────────────────────────────
     if (engine === "kling") {
       if (!taskId) {
         return Response.json({ error: "taskId is required for Kling engine" }, { status: 400 });
       }
-      console.log(`[check-video] Kling check taskId=${taskId} isExtend=${isExtend}`);
+      console.log(`[check-video] Kling check`, { taskId, isExtend, cutNumber });
 
       let result;
       try {
@@ -383,10 +397,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[check-video] Kling check error:", msg);
-        return Response.json({ status: "RUNNING" }); // transient error — keep polling
+        // transient error — keep polling
+        return Response.json({ status: "RUNNING" });
       }
 
-      // EvoLink statuses: pending / processing / completed / failed
+      // raw 결과 로그
+      console.log("[check-video] Kling raw result", {
+        rawStatus: result.status,
+        progress: result.progress,
+        videoUrl: result.videoUrl ? result.videoUrl.slice(0, 80) : null,
+        videoId: result.videoId,
+        error: result.error,
+        parsedStatus:
+          result.status === "pending" || result.status === "processing"
+            ? "processing"
+            : result.status === "completed"
+            ? "completed"
+            : "failed",
+      });
+
+      // EvoLink statuses: pending / processing / completed / failed → 공통 포맷으로 정규화
       if (result.status === "pending" || result.status === "processing") {
         return Response.json({ status: "RUNNING", progress: result.progress });
       }
@@ -397,7 +427,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // completed
       if (!result.videoUrl) {
-        return Response.json({ status: "FAILED", error: "Kling: no video URL in result" });
+        // completed 지만 URL이 없으면 아직 처리 중으로 간주하고 계속 폴링
+        console.warn("[check-video] Kling completed but videoUrl missing — treating as processing");
+        return Response.json({ status: "RUNNING" });
       }
 
       return Response.json({
@@ -412,7 +444,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── Veo 체크 (기존 로직) ───────────────────────────────────────────────
-    console.log(`[check-video] operationName=${operationName}`);
+    console.log(`[check-video] Veo operationName=${operationName ? operationName.slice(0, 80) : "(empty)"}`);
 
     if (!operationName) {
       return Response.json({ error: "operationName is required" }, { status: 400 });
@@ -421,8 +453,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const model = extractModel(operationName);
     // buildVeoFetchUrl: operationName에서 리전 추출, global → us-central1 대체
     // generate-video.ts 가 us-central1 buildVeoUrl 로 생성했으므로 리전 일치
-    const url = buildVeoFetchUrl(context.env, operationName);
-    console.log(`[check-video] model=${model ?? "unknown"} url=${url}`);
+    let url: string;
+    try {
+      url = buildVeoFetchUrl(context.env, operationName);
+    } catch (urlErr) {
+      const msg = urlErr instanceof Error ? urlErr.message : String(urlErr);
+      console.error("[check-video] buildVeoFetchUrl threw:", msg);
+      return Response.json({ status: "FAILED", error: `URL 빌드 실패: ${msg}` });
+    }
+    console.log(`[check-video] Veo model=${model ?? "unknown"} url=${url}`);
 
     // Cloudflare Pages 타임아웃(100s) 전에 자체 타임아웃 설정
     const controller = new AbortController();
@@ -453,13 +492,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`[check-video] fetchPredictOperation failed status=${res.status} url=${url} body=${errText.slice(0, 800)}`);
-      // 4xx는 클라이언트 문제, 5xx는 서버 문제로 구분
-      const clientStatus = res.status >= 400 && res.status < 500 ? res.status : 502;
-      return Response.json(
-        { error: `API error: ${res.status}`, details: errText.slice(0, 500) },
-        { status: clientStatus }
-      );
+      console.error(`[check-video] Veo fetchPredictOperation 실패`, {
+        rawStatus: res.status,
+        url,
+        body: errText.slice(0, 600),
+      });
+      // 5xx Vertex AI 서버 오류 → transient, 계속 폴링
+      if (res.status >= 500) {
+        return Response.json({ status: "RUNNING" });
+      }
+      // 4xx → 즉시 실패 (잘못된 operationName 등)
+      return Response.json({
+        status: "FAILED",
+        error: `Veo API error (${res.status}): ${errText.slice(0, 300)}`,
+      });
     }
 
     let data: Record<string, unknown>;
@@ -467,17 +513,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     try {
       data = JSON.parse(rawText) as Record<string, unknown>;
     } catch (jsonErr) {
-      console.error("[check-video] Response JSON parse failed:", jsonErr, "raw:", rawText.slice(0, 500));
-      return Response.json({ error: "Invalid JSON from Vertex AI", details: String(jsonErr) }, { status: 502 });
+      console.error("[check-video] Veo 응답 JSON 파싱 실패:", jsonErr, "raw:", rawText.slice(0, 500));
+      // JSON 파싱 실패도 transient 처리 (Vertex AI 드물게 비정상 응답)
+      return Response.json({ status: "RUNNING" });
     }
 
     if (data.error) {
       const err = data.error as { message?: string; code?: number };
+      console.error("[check-video] Veo 응답에 error 필드 존재:", safeStringify(err));
       return Response.json({
         status: "FAILED",
-        error: err.message || "Unknown error",
+        error: err.message || "Unknown Veo error",
       });
     }
+
+    // raw 응답 구조 로그
+    console.log("[check-video] Veo raw response", {
+      rawStatus: data.done ? "done" : "running",
+      hasDone: "done" in data,
+      doneValue: data.done,
+      hasError: "error" in data,
+      topLevelKeys: Object.keys(data).slice(0, 10),
+    });
 
     if (!data.done) {
       return Response.json({ status: "RUNNING" });
@@ -576,7 +633,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       });
     }
 
-    console.log("Video result:", variants.length, "variants,", "kinds:", variants.map(v => v.resultKind));
+    // 완료 로그: parsed result URL
+    console.log("[check-video] Veo COMPLETED", {
+      variantCount: variants.length,
+      kinds: variants.map(v => v.resultKind),
+      parsedResultUrl: variants[0]?.rawVideoUri
+        ? variants[0].rawVideoUri.slice(0, 80)
+        : "(base64 or empty)",
+    });
 
     return Response.json({
       status: "COMPLETED",
@@ -593,9 +657,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let errStack = "";
     try { errStack = (error instanceof Error && error.stack) ? error.stack.slice(0, 1500) : ""; } catch { /* ignore */ }
     console.error(`[check-video] UNHANDLED ${errType}: ${errMsg}\nstack: ${errStack}`);
-    return Response.json(
-      { error: `Failed to check video: ${errMsg}`, errorType: errType },
-      { status: 500 }
-    );
+    // ⚠️ 500 대신 200 FAILED 반환:
+    //   - 500이면 프론트가 "transient 서버 에러"로 판단해 3회 재시도 후 원인 메시지 없이 중단
+    //   - FAILED(200)이면 실제 오류 메시지가 UI에 표시되고 autoRetry 로직이 동작함
+    return Response.json({
+      status: "FAILED",
+      error: `check-video 내부 오류: ${errMsg}`,
+      errorType: errType,
+    });
   }
 };

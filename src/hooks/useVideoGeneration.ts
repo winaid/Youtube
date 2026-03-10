@@ -410,6 +410,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
               engine,
               taskId: taskId ?? operationName,
               isExtend: isExtend ?? false,
+              cutNumber, // 서버 로그용
             }),
           });
         } catch (networkErr) {
@@ -431,15 +432,26 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             updateClip(cutNumber, { status: "failed", error: `폴링 오류 (${res.status}) — 요청이 잘못되었습니다` });
             return;
           }
-          // 5xx: 서버 transient 에러 → 최대 3회 재시도
+          // 5xx: 서버 transient 에러 → response body에서 실제 원인 추출 후 최대 3회 재시도
           consecutiveErrors++;
-          console.warn(`[CUT ${cutNumber}] check-video 서버 에러 ${res.status} (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+          let serverErrDetail = "";
+          try {
+            const errBody = await res.json() as { error?: string; errorType?: string };
+            serverErrDetail = errBody.error ? ` (${errBody.error.slice(0, 120)})` : "";
+          } catch { /* body 읽기 실패는 무시 */ }
+          console.warn(`[CUT ${cutNumber}] check-video 서버 에러 ${res.status}${serverErrDetail} (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            updateClip(cutNumber, { status: "failed", error: `서버 오류 (${res.status}) — 잠시 후 다시 시도하세요` });
+            updateClip(cutNumber, {
+              status: "failed",
+              error: `서버 오류 (${res.status})${serverErrDetail || " — 잠시 후 다시 시도하세요"}`,
+            });
             return;
           }
           continue;
         }
+
+        // 성공 응답 시 연속 에러 카운터 리셋
+        consecutiveErrors = 0;
 
         // ── JSON 파싱 (실패해도 재시도)
         let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; seed?: string; variants?: VideoVariant[] };

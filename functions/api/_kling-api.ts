@@ -195,14 +195,35 @@ export async function klingCheckStatus(
 
   let data: {
     id?: string;
+    task_id?: string;
     status?: string;
     progress?: number;
     results?: string[];
+    // EvoLink API가 data 래퍼를 쓰는 경우
+    data?: {
+      id?: string;
+      status?: string;
+      progress?: number;
+      works?: { resource?: { resource?: string } }[];
+    };
     error?: { message?: string } | string;
   };
   try { data = JSON.parse(text); } catch { throw new Error(`Kling check non-JSON: ${text.slice(0, 200)}`); }
 
-  const rawStatus = data.status ?? "processing";
+  // raw 응답 로그
+  console.log("[_kling-api] klingCheckStatus raw response", {
+    taskId,
+    httpStatus: res.status,
+    rawBody: text.slice(0, 400),
+    topKeys: Object.keys(data),
+    rawStatus: data.status ?? data.data?.status ?? "(none)",
+    hasResults: Array.isArray(data.results),
+    resultsLen: Array.isArray(data.results) ? data.results.length : 0,
+    hasDataWorks: Array.isArray(data.data?.works),
+  });
+
+  // EvoLink: 최상위 status 또는 data.status 중 있는 것 사용
+  const rawStatus = data.status ?? data.data?.status ?? "processing";
 
   // EvoLink statuses: pending / processing / completed / failed
   const status: KlingTaskStatus["status"] =
@@ -211,7 +232,15 @@ export async function klingCheckStatus(
     : rawStatus === "pending" ? "pending"
     : "processing";
 
-  const videoUrl = data.results?.[0];
+  // EvoLink 응답 포맷 다양성 대응:
+  //   포맷1: { results: ["https://..."] }
+  //   포맷2: { data: { works: [{ resource: { resource: "https://..." } }] } }
+  const videoUrl =
+    data.results?.[0] ??
+    data.data?.works?.[0]?.resource?.resource ??
+    undefined;
+
+  console.log("[_kling-api] klingCheckStatus parsed", { rawStatus, videoUrl: videoUrl ? videoUrl.slice(0, 80) : null });
 
   const errMsg = typeof data.error === "string"
     ? data.error
