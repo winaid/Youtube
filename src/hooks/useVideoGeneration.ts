@@ -940,6 +940,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       const body: Record<string, unknown> = {
         prompt,
+        cutNumber,
         engine,
         videoMode,
         sourceVideo: sourceVideo || undefined,

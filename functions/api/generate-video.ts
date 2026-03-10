@@ -15,6 +15,7 @@ interface GenerateVideoRequest {
   engine?: "veo" | "kling" | "auto";   // 사용할 엔진 (default: veo)
   videoMode?: "generate" | "extend";   // generate: 독립 생성, extend: 이전 영상 이어서
   sourceVideo?: string;                // extend 모드의 소스 (Veo: gs:// URI, Kling: task_id/video_id)
+  cutNumber?: number;                  // 진단 로그용 컷 번호
   // ── Veo 전용 ──────────────────────────────────────────────────────────────
   mode?: "fast" | "quality";
   durationSeconds?: number;
@@ -101,47 +102,100 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const duration = toKlingDuration(req.durationSeconds ?? 8);
       const aspectRatio = toKlingAspectRatio(req.aspectRatio ?? "16:9");
 
+      // ── base64 검증: strip 후 최소 100자 이상이어야 실제 이미지 데이터 ─────
+      // truthy 체크만으로는 "data:image/png;base64, " 같은 빈 prefix를 잡지 못함
+      // → stripDataPrefix 후 길이 검사 필수 (이게 없으면 model=image-to-video + image 없음 → EvoLink 1201)
+      const strippedFirst = req.firstFrameBase64 ? stripDataPrefix(req.firstFrameBase64) : "";
+      const strippedLast  = req.lastFrameBase64  ? stripDataPrefix(req.lastFrameBase64)  : "";
+      const validFirst    = strippedFirst.length > 100 ? strippedFirst : "";
+      const validLast     = strippedLast.length  > 100 ? strippedLast  : "";
+
+      // ── 진단 로그 ──────────────────────────────────────────────────────────
+      console.log("[Kling] 요청 진단", {
+        cutNumber:        req.cutNumber ?? null,
+        sourceCutId:      req.cutNumber ?? null,
+        parentCutId:      (req.cutNumber != null && req.cutNumber > 1) ? req.cutNumber - 1 : null,
+        provider:         "kling",
+        mode:             videoMode,
+        hasFirstFrame:    !!req.firstFrameBase64,
+        validFirstLen:    validFirst.length,
+        hasLastFrame:     !!req.lastFrameBase64,
+        validLastLen:     validLast.length,
+        rawFirstLen:      strippedFirst.length,  // 검증 통과 전 실제 길이
+        rawLastLen:       strippedLast.length,
+        sourceVideo:      sourceVideo || null,
+        previousVideoUri: req.previousVideoUri || null,
+      });
+
       let taskId: string;
       let modeUsed: "generate" | "extend";
 
       try {
-        if (videoMode === "extend" && req.lastFrameBase64) {
-          // EvoLink에 native video-extend 없음:
-          // 이전 컷 lastFrameBase64 → image-to-video (연속성 유지)
-          console.log("[generate-video] Kling EXTEND (image-to-video with lastFrame)");
+        if (videoMode === "extend" && validLast) {
+          // EXTEND: 이전 컷 끝 프레임 → 이번 컷 시작 프레임으로 image-to-video
+          // validLast: strip + 길이 검증 완료 → image 필드에 넣어도 안전
+          console.log("[Kling] EXTEND mode (last-frame → image-to-video)", { frameLen: validLast.length });
           const result = await klingExtend(context.env, {
-            lastFrameBase64: stripDataPrefix(req.lastFrameBase64),
+            lastFrameBase64: validLast,
             prompt:          req.prompt,
             negative_prompt: req.negativePrompt,
             duration,
-            aspect_ratio: aspectRatio,
+            aspect_ratio:    aspectRatio,
           });
           taskId = result.taskId;
           modeUsed = "extend";
         } else {
-          // Kling generate (text-to-video or image-to-video)
-          console.log("[generate-video] Kling GENERATE", {
-            hasFirstFrame: !!req.firstFrameBase64,
-            duration,
-            aspectRatio,
+          // GENERATE: text-to-video or image-to-video (firstFrame 기준)
+          // 검증된 image만 전달 → model=image-to-video인데 image 없는 상황(EvoLink 1201) 원천 차단
+          if (!validFirst && videoMode === "extend" && !sourceVideo) {
+            // extend 모드인데 쓸 수 있는 image도 sourceVideo도 없음 → 400
+            console.error("[Kling] extend 요청이지만 유효한 image/sourceVideo 없음", {
+              cutNumber:      req.cutNumber,
+              hasLastFrame:   !!req.lastFrameBase64,
+              rawLastLen:     strippedLast.length,
+              hasFirstFrame:  !!req.firstFrameBase64,
+              rawFirstLen:    strippedFirst.length,
+              hasSourceVideo: !!sourceVideo,
+            });
+            return Response.json(
+              {
+                error: "Kling EXTEND mode requires valid lastFrameBase64, firstFrameBase64, or sourceVideo",
+                details: {
+                  videoMode,
+                  hasLastFrame:   !!req.lastFrameBase64,
+                  validLastLen:   validLast.length,
+                  hasFirstFrame:  !!req.firstFrameBase64,
+                  validFirstLen:  validFirst.length,
+                  hasSourceVideo: !!sourceVideo,
+                },
+              },
+              { status: 400 },
+            );
+          }
+
+          console.log("[Kling] GENERATE mode", {
+            hasImage:        !!validFirst,
+            imageLen:        validFirst.length,
+            hasImageTail:    !!validLast,
+            imageTailLen:    validLast.length,
           });
           const result = await klingGenerate(context.env, {
             prompt:          req.prompt,
             negative_prompt: req.negativePrompt,
             aspect_ratio:    aspectRatio,
             duration,
-            ...(req.firstFrameBase64 ? { image:      stripDataPrefix(req.firstFrameBase64) } : {}),
-            ...(req.lastFrameBase64  ? { image_tail: stripDataPrefix(req.lastFrameBase64)  } : {}),
+            ...(validFirst ? { image:      validFirst } : {}),
+            ...(validLast  ? { image_tail: validLast  } : {}),
           });
           taskId = result.taskId;
           modeUsed = "generate";
         }
       } catch (klingErr) {
-        // 외부 API 에러: httpStatus가 있으면 그대로 전달, 없으면 502
+        // 외부 API 에러: httpStatus가 있으면 그대로 전달 (400/401 뭉개지 않음), 없으면 502
         const msg = klingErr instanceof Error ? klingErr.message : String(klingErr);
         const httpStatus = (klingErr as Error & { httpStatus?: number }).httpStatus;
         const status = httpStatus === 400 ? 400 : httpStatus === 401 ? 401 : 502;
-        console.error("[generate-video] Kling API 에러:", msg);
+        console.error("[Kling] API 에러", { msg, httpStatus, cutNumber: req.cutNumber });
         return Response.json({ error: msg }, { status });
       }
 

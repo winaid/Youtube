@@ -82,6 +82,15 @@ export async function klingGenerate(
   const headers = klingHeaders(env);
   const model = req.model ?? (req.image ? "kling-v3-image-to-video" : "kling-v3-text-to-video");
 
+  // image-to-video 모델인데 image가 없으면 EvoLink 1201 에러 발생 → 사전 차단
+  const isImageModel = model.includes("image-to-video");
+  if (isImageModel && !req.image) {
+    throw new Error(
+      `Kling: model="${model}" requires an image, but image is missing or empty after base64 stripping. ` +
+      `Check that lastFrameBase64/firstFrameBase64 contains valid base64 data (not just a data-URI prefix).`,
+    );
+  }
+
   const body: Record<string, unknown> = {
     model,
     prompt: req.prompt,
@@ -123,8 +132,12 @@ export async function klingExtend(
   env: KlingEnv,
   req: KlingExtendRequest,
 ): Promise<{ taskId: string }> {
-  if (!req.lastFrameBase64) {
-    throw new Error("Kling extend: lastFrameBase64 is required (no native video-extend on EvoLink)");
+  // 빈 문자열·공백만 있는 경우도 차단 (data:image/png;base64, 만 있으면 strip 후 "" or " ")
+  if (!req.lastFrameBase64 || req.lastFrameBase64.trim().length < 100) {
+    throw new Error(
+      `Kling extend: lastFrameBase64 is missing or too short after stripping (len=${req.lastFrameBase64?.length ?? 0}). ` +
+      "Ensure the base64 data (not data-URI prefix) is at least 100 chars.",
+    );
   }
 
   return klingGenerate(env, {
