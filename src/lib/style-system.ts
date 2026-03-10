@@ -349,7 +349,215 @@ export const STYLE_PRESETS: Record<string, StylePreset> = {
 };
 
 // ──────────────────────────────────────────────────────────────────────────
-// 4. 프롬프트 조립 엔진 (Prompt Assembly Engine)
+// 4. 카메라 모션 시스템 (Camera Motion System)
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * 샷 타입별 기본 카메라 모션 프리셋.
+ * Static은 기본값이 아니다 — 모든 샷에 최소 서틀 모션이 기본 적용.
+ */
+const SHOT_CAMERA_DEFAULTS: Record<string, string> = {
+  // Establishing / Wide
+  WS:  "Slow push-in from wide establishing frame, gentle reframing to settle on subject",
+  LS:  "Slow dolly forward through environment, subtle lateral drift",
+  // Medium shots
+  MLS: "Gentle dolly in with subtle lateral drift, slight reframing",
+  MS:  "Slow push-in toward subject, subtle handheld drift",
+  // Close-ups
+  MCU: "Subtle push-in with slight handheld drift, intimate reframing",
+  CU:  "Very slow push-in deepening intimacy, minimal handheld sway",
+  ECU: "Almost imperceptible creep-in, slight tremor suggesting held breath",
+  // Special
+  OTS: "Gentle drift past shoulder toward subject face, subtle push-in",
+  POV: "Slight handheld drift simulating eye movement, gentle head-turn pan",
+};
+
+/**
+ * 씬 감정/액션별 카메라 모션 오버라이드.
+ * scenePrompt 내용 기반 자동 감지.
+ */
+interface CameraMotionOverride {
+  keywords: RegExp;
+  motion: string;
+  timeline: string;
+}
+
+const SCENE_CAMERA_OVERRIDES: CameraMotionOverride[] = [
+  {
+    keywords: /\b(tension|suspense|fear|dread|creep|stalk|horror|danger)\b/i,
+    motion: "Slow creep-in building tension, almost imperceptible forward drift",
+    timeline: "0s-3s: static establishing tension, 3s-6s: barely perceptible creep forward, 6s-8s: slight push-in for dread",
+  },
+  {
+    keywords: /\b(reveal|discover|surprise|shock|twist|realize)\b/i,
+    motion: "Slow pull-back revealing full scene, or push-in to reveal detail",
+    timeline: "0s-3s: tight framing hiding context, 3s-6s: steady pull-back revealing, 6s-8s: full reveal settled",
+  },
+  {
+    keywords: /\b(chase|run|rush|flee|escape|sprint|hurry)\b/i,
+    motion: "Dynamic tracking alongside action, urgent handheld movement",
+    timeline: "0s-2s: burst of motion matching action, 2s-5s: tracking alongside movement, 5s-8s: following through",
+  },
+  {
+    keywords: /\b(calm|peace|serene|quiet|still|meditat|contempl|reflect)\b/i,
+    motion: "Gentle floating drift, slow arc around subject",
+    timeline: "0s-3s: gentle lateral drift establishing calm, 3s-6s: slow arc movement, 6s-8s: settling into stillness",
+  },
+  {
+    keywords: /\b(emotion|cry|tear|weep|grief|sorrow|mourn|heartbreak)\b/i,
+    motion: "Subtle push-in toward face deepening emotional connection",
+    timeline: "0s-2s: medium distance observing, 2s-5s: slow push-in toward emotional center, 5s-8s: intimate proximity held",
+  },
+  {
+    keywords: /\b(confront|argue|fight|conflict|clash|stand.?off)\b/i,
+    motion: "Slow arc between opposing figures, building tension through movement",
+    timeline: "0s-3s: establishing both subjects, 3s-6s: slow arc shifting perspective, 6s-8s: push-in to decisive moment",
+  },
+];
+
+/**
+ * 스타일별 카메라 모션 느낌.
+ * 스타일 프리셋과 연동하여 카메라 움직임의 질감을 조정.
+ */
+const STYLE_CAMERA_FLAVOR: Record<string, string> = {
+  "실사":           "cinematic dolly and crane-like movement, filmic steadicam feel",
+  "2D 애니":        "dynamic anime camera sweep, dramatic zoom emphasis",
+  "수채화 애니":     "gentle parallax drift like turning a storybook page, soft floating movement",
+  "하이브리드":      "smooth digital camera motion, cinematic with slight stylization",
+  "로토스코핑":      "organic handheld sway, documentary-feel camera presence",
+  "스톱모션":        "subtle miniature-scale camera shift, stop-motion camera increment",
+  "픽셀아트":        "pixel-aligned scroll, retro game camera pan",
+  "잉크워시":        "scroll-like horizontal drift, contemplative slow pan",
+  "클레이":          "table-top miniature camera nudge, stop-motion camera step",
+  "빈티지 필름":     "vintage camera drift with slight mechanical imprecision",
+  "네온 사이버펑크":  "neon-reflected tracking shot, rain-slicked gliding movement",
+  "미니어처":        "tilt-shift camera slide, overhead slow drift",
+};
+
+/**
+ * 최소 모션 기본값 — 명시적 카메라 지시가 없을 때 삽입.
+ */
+const MINIMUM_MOTION_FALLBACKS = [
+  "slow push-in",
+  "gentle lateral drift",
+  "subtle handheld sway",
+  "slow arc",
+  "slight dolly forward",
+];
+
+/**
+ * 안티-보어덤: static/고정 카메라 감지 패턴.
+ */
+const STATIC_CAMERA_PATTERNS = /\b(static|locked.?off|fixed|stationary|tripod|no.?movement|still.?camera|motionless)\b/i;
+
+/**
+ * 카메라 모션을 결정하고 8초 타임라인과 결합.
+ *
+ * 우선순위:
+ * 1. 사용자 cameraDirection (명시적 "static" 포함 시 존중)
+ * 2. 씬 감정/액션 기반 자동 감지
+ * 3. 샷 타입별 기본 프리셋
+ * 4. 최소 모션 fallback
+ */
+function resolveCameraMotion(input: {
+  cameraDirection?: string;
+  shotType?: string;
+  scenePrompt: string;
+  animationMode?: string;
+  durationSec: number;
+}): { cameraBlock: string; debug: { source: string; motionType: string; hasTimeline: boolean } } {
+  const dur = input.durationSec || 8;
+  const mid1 = Math.floor(dur * 0.25);  // ~2s
+  const mid2 = Math.floor(dur * 0.625); // ~5s
+
+  // ── 1. 사용자 명시 cameraDirection이 있고 충분히 구체적이면 사용 ──
+  if (input.cameraDirection && input.cameraDirection.trim().length > 10) {
+    const cd = input.cameraDirection.trim();
+
+    // "static"이 명시적으로 있으면 존중하되 경고 로그
+    if (STATIC_CAMERA_PATTERNS.test(cd)) {
+      // 의도적 static — 최소 모션만 추가
+      const styleFlavor = input.animationMode ? STYLE_CAMERA_FLAVOR[input.animationMode] : "";
+      const minMotion = styleFlavor
+        ? `Almost imperceptible ${styleFlavor.split(",")[0].trim().toLowerCase()}`
+        : "Almost imperceptible gentle drift";
+      return {
+        cameraBlock: `${cd}. ${minMotion}.`,
+        debug: { source: "user-static-with-minimum", motionType: "near-static", hasTimeline: false },
+      };
+    }
+
+    // 충분한 카메라 지시 — 타임라인 구조만 보강
+    if (!/\d+s/.test(cd)) {
+      // 타임라인 없으면 추가
+      return {
+        cameraBlock: `0s-${mid1}s: establish with ${cd.split(".")[0].trim().toLowerCase()}. ${mid1}s-${mid2}s: ${cd}. ${mid2}s-${dur}s: settle into final frame.`,
+        debug: { source: "user-direction-with-timeline", motionType: "user-specified", hasTimeline: true },
+      };
+    }
+
+    return {
+      cameraBlock: cd,
+      debug: { source: "user-direction", motionType: "user-specified", hasTimeline: true },
+    };
+  }
+
+  // ── 2. 씬 감정/액션 기반 자동 감지 ──
+  for (const override of SCENE_CAMERA_OVERRIDES) {
+    if (override.keywords.test(input.scenePrompt)) {
+      const styleFlavor = input.animationMode ? STYLE_CAMERA_FLAVOR[input.animationMode] : "";
+      const motionDesc = styleFlavor
+        ? `${override.motion}, ${styleFlavor.split(",")[0].trim().toLowerCase()}`
+        : override.motion;
+      return {
+        cameraBlock: `${motionDesc}. ${override.timeline}`,
+        debug: { source: "scene-emotion-auto", motionType: override.motion.split(",")[0], hasTimeline: true },
+      };
+    }
+  }
+
+  // ── 3. 샷 타입별 기본 프리셋 ──
+  const shotKey = (input.shotType || "MS").toUpperCase();
+  const shotDefault = SHOT_CAMERA_DEFAULTS[shotKey] || SHOT_CAMERA_DEFAULTS["MS"];
+  const styleFlavor = input.animationMode ? STYLE_CAMERA_FLAVOR[input.animationMode] : "";
+
+  const motionDesc = styleFlavor
+    ? `${shotDefault}, ${styleFlavor.split(",")[0].trim().toLowerCase()}`
+    : shotDefault;
+
+  const timeline = `0s-${mid1}s: establish framing. ${mid1}s-${mid2}s: ${motionDesc.split(",")[0].trim().toLowerCase()}. ${mid2}s-${dur}s: subtle emphasis shift settling into final composition.`;
+
+  return {
+    cameraBlock: `${motionDesc}. ${timeline}`,
+    debug: { source: "shot-type-preset", motionType: shotDefault.split(",")[0], hasTimeline: true },
+  };
+}
+
+/**
+ * 안티-보어덤 검사: 프롬프트에 카메라 모션 없이 static하면 경고 + 자동 주입.
+ */
+function antiBoredCheck(prompt: string, animationMode?: string): { corrected: string; wasStatic: boolean } {
+  const hasMotionKeywords = /\b(push.?in|pull.?back|dolly|pan|track|arc|drift|crane|handheld|creep|float|glide|sweep|zoom|slide)\b/i.test(prompt);
+
+  if (hasMotionKeywords) {
+    return { corrected: prompt, wasStatic: false };
+  }
+
+  // static 감지 — 최소 모션 삽입
+  const fallback = MINIMUM_MOTION_FALLBACKS[Math.floor(Math.random() * MINIMUM_MOTION_FALLBACKS.length)];
+  const styleFlavor = animationMode ? STYLE_CAMERA_FLAVOR[animationMode] : "";
+  const motionAdd = styleFlavor
+    ? `Camera: ${fallback} with ${styleFlavor.split(",")[0].trim().toLowerCase()}.`
+    : `Camera: ${fallback}.`;
+
+  return {
+    corrected: `${prompt} ${motionAdd}`,
+    wasStatic: true,
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 5. 프롬프트 조립 엔진 (Prompt Assembly Engine)
 // ──────────────────────────────────────────────────────────────────────────
 
 export interface PromptAssemblyInput {
@@ -371,6 +579,9 @@ export interface PromptAssemblyInput {
   /** 카메라 방향 (이전 컷에서 전달) */
   cameraDirection?: string;
 
+  /** 샷 타입 (ECU/CU/MCU/MS/MLS/LS/WS/OTS/POV) — 카메라 모션 프리셋 선택용 */
+  shotType?: string;
+
   /** 사용자 지정 negativePrompt */
   userNegativePrompt?: string;
 
@@ -386,6 +597,7 @@ export interface AssembledPrompt {
   debug: {
     styleBlock: string;
     consistencyBlock: string;
+    cameraBlock: string;
     sceneBlock: string;
     reinforcementBlock: string;
     negativeBlock: string;
@@ -393,6 +605,12 @@ export interface AssembledPrompt {
     wordCount: number;
     realismLevel: RealismLevel | "unknown";
     isNonRealistic: boolean;
+    camera: {
+      source: string;
+      motionType: string;
+      hasTimeline: boolean;
+      antiBoredomTriggered: boolean;
+    };
   };
 }
 
@@ -502,10 +720,11 @@ function sanitizeTextContent(prompt: string): string {
  * 프롬프트 우선순위 (위→아래):
  * 1. 전체 스타일 정체성 (globalStyleBlock)
  * 2. 캐릭터/배경 일관성 (characterStyleRule + characterConsistency)
- * 3. 장면 액션 (scenePrompt — 메타 필드 자연어 변환)
- * 4. 스타일 강화 리마인더 (reinforcement)
- * 5. 네거티브 (negativeBlock + anti-photorealism)
- * 6. 오디오 힌트
+ * 3. 카메라 모션 (자동 프리셋 + 8초 타임라인)
+ * 4. 장면 액션 (scenePrompt — 메타 필드 자연어 변환)
+ * 5. 스타일 강화 리마인더 (reinforcement)
+ * 6. 네거티브 (negativeBlock + anti-photorealism)
+ * 7. 오디오 힌트
  */
 export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const preset = input.animationMode ? STYLE_PRESETS[input.animationMode] : undefined;
@@ -516,7 +735,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     styleBlock = preset.globalStyleBlock;
   }
 
-  // ── BLOCK 2: CONSISTENCY (character + environment + camera) ──
+  // ── BLOCK 2: CONSISTENCY (character + environment) ─────────
   const consistencyParts: string[] = [];
   if (preset) {
     consistencyParts.push(preset.characterStyleRule);
@@ -528,12 +747,20 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   if (input.moodLighting) {
     consistencyParts.push(input.moodLighting);
   }
-  if (input.cameraDirection) {
-    consistencyParts.push(input.cameraDirection);
-  }
   const consistencyBlock = consistencyParts.join(" ");
 
-  // ── BLOCK 3: SCENE CONTENT ─────────────────────────────────
+  // ── BLOCK 3: CAMERA MOTION ──────────────────────────────────
+  // 카메라 모션 시스템: shotType + 감정 감지 + 스타일 연동
+  const cameraResult = resolveCameraMotion({
+    cameraDirection: input.cameraDirection,
+    shotType: input.shotType,
+    scenePrompt: input.scenePrompt,
+    animationMode: input.animationMode,
+    durationSec: input.durationSec,
+  });
+  const cameraBlock = cameraResult.cameraBlock;
+
+  // ── BLOCK 4: SCENE CONTENT ─────────────────────────────────
   // 메타 필드를 자연어로 변환
   let sceneBlock = naturalizeMetaFields(input.scenePrompt);
 
@@ -543,7 +770,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // 텍스트 콘텐츠 sanitize
   sceneBlock = sanitizeTextContent(sceneBlock);
 
-  // ── BLOCK 4: STYLE REINFORCEMENT ───────────────────────────
+  // ── BLOCK 5: STYLE REINFORCEMENT ───────────────────────────
   let reinforcementBlock = "";
   if (preset && input.styleIntensity > 20) {
     if (input.styleIntensity <= 50) {
@@ -556,7 +783,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     }
   }
 
-  // ── BLOCK 5: NEGATIVE ──────────────────────────────────────
+  // ── BLOCK 6: NEGATIVE ──────────────────────────────────────
   const negParts: string[] = [];
   if (preset) {
     negParts.push(preset.negativeBlock);
@@ -576,7 +803,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // 핵심 8개로 제한 (Veo가 너무 긴 negative는 무시)
   const negativeBlock = uniqueNeg.slice(0, 8).join(", ");
 
-  // ── BLOCK 6: AUDIO ──────────────────────────────────────────
+  // ── BLOCK 7: AUDIO ──────────────────────────────────────────
   const hasAudioRef = /\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(sceneBlock);
   const audioBlock = hasAudioRef ? "" : "Diegetic sound, ambient audio.";
 
@@ -589,13 +816,21 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // 2. 일관성 규칙
   if (consistencyBlock) blocks.push(consistencyBlock);
 
-  // 3. 씬 내용
+  // 3. 카메라 모션 (씬 내용보다 앞에 배치 — Veo가 카메라 움직임을 우선 해석)
+  if (cameraBlock) blocks.push(`Camera: ${cameraBlock}`);
+
+  // 4. 씬 내용
   blocks.push(sceneBlock);
 
-  // 4. 스타일 강화
+  // 5. 스타일 강화
   if (reinforcementBlock) blocks.push(reinforcementBlock);
 
   let prompt = blocks.join(" ");
+
+  // ── 안티-보어덤 최종 검사 ────────────────────────────────────
+  const boredCheck = antiBoredCheck(prompt, input.animationMode);
+  const antiBoredomTriggered = boredCheck.wasStatic;
+  prompt = boredCheck.corrected;
 
   // ── 워드 캡 (negative/audio 전에) ──────────────────────────
   const words = prompt.split(/\s+/);
@@ -606,12 +841,12 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     }
   }
 
-  // 5. 네거티브
+  // 6. 네거티브
   if (negativeBlock && !prompt.includes("Avoid:")) {
     prompt = `${prompt}. Avoid: ${negativeBlock}`;
   }
 
-  // 6. 오디오
+  // 7. 오디오
   if (audioBlock) {
     prompt = `${prompt}. ${audioBlock}`;
   }
@@ -623,6 +858,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     debug: {
       styleBlock,
       consistencyBlock,
+      cameraBlock,
       sceneBlock: sceneBlock.slice(0, 200) + (sceneBlock.length > 200 ? "…" : ""),
       reinforcementBlock,
       negativeBlock,
@@ -630,6 +866,12 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
       wordCount: finalWordCount,
       realismLevel: preset?.dimensions.realismLevel ?? "unknown",
       isNonRealistic: preset?.isNonRealistic ?? false,
+      camera: {
+        source: cameraResult.debug.source,
+        motionType: cameraResult.debug.motionType,
+        hasTimeline: cameraResult.debug.hasTimeline,
+        antiBoredomTriggered,
+      },
     },
   };
 }

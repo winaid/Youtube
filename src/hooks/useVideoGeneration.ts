@@ -753,13 +753,14 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       }
 
       // ═══ 전역 스타일 시스템으로 프롬프트 조립 ═══════════════════════
-      // assemblePrompt()가 6개 블록을 우선순위대로 조립:
+      // assemblePrompt()가 7개 블록을 우선순위대로 조립:
       //   1. STYLE IDENTITY (전체 비주얼 정체성)
       //   2. CONSISTENCY (캐릭터 스타일 + 환경 스타일 + 일관성 규칙)
-      //   3. SCENE CONTENT (메타 필드 자연어 변환 + temporal beats + sanitize)
-      //   4. STYLE REINFORCEMENT (스타일 강화 리마인더)
-      //   5. NEGATIVE (스타일 충돌 차단 + 비실사 anti-photorealism)
-      //   6. AUDIO (오디오 힌트)
+      //   3. CAMERA MOTION (자동 프리셋 + 8초 타임라인 + 안티보어덤)
+      //   4. SCENE CONTENT (메타 필드 자연어 변환 + temporal beats + sanitize)
+      //   5. STYLE REINFORCEMENT (스타일 강화 리마인더)
+      //   6. NEGATIVE (스타일 충돌 차단 + 비실사 anti-photorealism)
+      //   7. AUDIO (오디오 힌트)
       {
         const prevCutData = cutNumber > 1
           ? cuts.find((c) => c.cutNumber === cutNumber - 1)
@@ -772,6 +773,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           characterConsistency: prevCutData?.characterConsistency || cut.characterConsistency,
           moodLighting: prevCutData?.moodLighting || cut.moodLighting,
           cameraDirection: cut.cameraDirection,
+          shotType: cut.videoPromptJson?.shotSize,
           userNegativePrompt: negativePrompt,
           durationSec: cfg.durationSeconds,
         });
@@ -784,6 +786,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           realismLevel: assembled.debug.realismLevel,
           isNonRealistic: assembled.debug.isNonRealistic,
           wordCount: assembled.debug.wordCount,
+        });
+        console.log(`[CUT ${cutNumber}] 🎥 CAMERA`, {
+          source: assembled.debug.camera.source,
+          motionType: assembled.debug.camera.motionType,
+          hasTimeline: assembled.debug.camera.hasTimeline,
+          antiBoredom: assembled.debug.camera.antiBoredomTriggered,
+          cameraBlock: assembled.debug.cameraBlock.slice(0, 150),
         });
         console.log(`[CUT ${cutNumber}] 📝 BLOCKS`, {
           style: assembled.debug.styleBlock.slice(0, 120) || "(없음)",
