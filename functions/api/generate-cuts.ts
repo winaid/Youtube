@@ -427,7 +427,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${veoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no watermark, no captions`;
+  const noTextSuffix = `${veoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
 
   // 전체 시퀀스 컨텍스트 (이전 컷 상태 파악용)
   const sequenceContext = allOutlines
@@ -782,7 +782,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (det && typeof det.cutNumber === "number") detailMap.set(det.cutNumber, det);
     }
 
-    const noTextSuffix = `${veoStyle}, directed by ${String(directorName)}, no text, no watermark, no captions`;
+    const noTextSuffix = `${veoStyle}, directed by ${String(directorName)}, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);

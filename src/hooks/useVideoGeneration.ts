@@ -827,11 +827,16 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = `${prompt}. Avoid: ${negItems.join(", ")}`;
       }
 
+      // 오디오 힌트가 없으면 강제 추가 (Veo는 프롬프트에 오디오 언급이 없으면 무음 경향)
+      if (!/\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(prompt)) {
+        prompt = `${prompt}. Natural diegetic sound and ambient environmental audio.`;
+      }
+
       // 최종 프롬프트 길이 제한: Veo 최적 280단어, 초과 시 끝부분 잘라냄
       const words = prompt.split(/\s+/);
       if (words.length > 300) {
         // 핵심 내용(앞부분)을 보존하고, 부가 지시(뒷부분)를 축소
-        prompt = words.slice(0, 280).join(" ") + ". No text overlay, no watermark.";
+        prompt = words.slice(0, 280).join(" ") + ". Natural ambient audio. No text overlay, no watermark.";
       }
 
       // 사용자가 선택한 모드 그대로 사용 (fast 선택 시 무조건 fast)
