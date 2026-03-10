@@ -187,6 +187,7 @@ export interface PromptCard {
   title: string;
   hook: string;
   marketingTactic?: string; // 핵심 홍보 수단 한 줄 (예: "여성 전용 병원 포지셔닝")
+  region?: string; // 지역/문화권 (예: "한국 (조선)", "중동 (이슬람 황금기)")
 }
 
 export interface StoryAIPersona {
