@@ -249,6 +249,11 @@ interface CharacterSeed {
   appearanceKo: string;
 }
 
+/** 컷 카테고리: 피사체 중심 분류 */
+type ShotCategory = "character-driven" | "environment" | "object-detail" | "transition-atmosphere";
+/** 캐릭터 역할: 컷 내 인물의 비중 */
+type CharacterRole = "protagonist" | "background" | "silhouette" | "partial" | "absent";
+
 interface CutOutline {
   cutNumber: number;
   sceneKo: string;         // 한국어 장면 요약 ≤35자
@@ -259,6 +264,8 @@ interface CutOutline {
   cameraMovement: string;  // motivated camera movement (WHY it moves)
   subjectAction: string;   // English ≤15w — concrete physical action (no "stands"/"watches")
   transitionHint: string;  // 한국어 ≤15자
+  shotCategory: ShotCategory;   // 이 컷의 피사체 중심 유형
+  characterRole: CharacterRole;  // 이 컷에서 캐릭터의 역할
 }
 
 interface MultiShotItem {
@@ -391,6 +398,12 @@ outlines (정확히 ${cutCount}개):
 - cameraMovement: ≤10 words 영어
 - subjectAction: 영어 ≤12 words, 구체적 신체 동작 (금지: stands, watches, feels)
 - transitionHint: ≤10자
+- shotCategory: "character-driven" | "environment" | "object-detail" | "transition-atmosphere"
+  (먼저 결정: 이 컷에 캐릭터가 꼭 필요한가? 정보/분위기/공간 컷은 인물 없이 설계)
+- characterRole: "protagonist" | "background" | "silhouette" | "partial" | "absent"
+  (protagonist=인물 중심, background=배경 속 작은 존재, silhouette=실루엣만, partial=손/뒷모습만, absent=인물 없음)
+  ⚠️ shotCategory가 environment/object-detail/transition-atmosphere이면 characterRole="absent" 권장
+  ⚠️ characterRole이 "absent"가 아닌 경우 subjectAction은 반드시 구체적 행동 포함 (standing/motionless 금지)
 
 JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
@@ -448,18 +461,29 @@ JSON만 출력:
     "slow push-in on detail",
   ];
 
+  const validCategories: ShotCategory[] = ["character-driven", "environment", "object-detail", "transition-atmosphere"];
+  const validRoles: CharacterRole[] = ["protagonist", "background", "silhouette", "partial", "absent"];
+
   const outlines: CutOutline[] = Array.isArray(parsed.outlines)
-    ? (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => ({
-        cutNumber: Number(o.cutNumber ?? i + 1),
-        sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
-        emotion: String(o.emotion ?? "neutral"),
-        emotionalDelta: String(o.emotionalDelta ?? (i === 0 ? `opening→${o.emotion ?? "neutral"}` : "neutral→neutral")),
-        purpose: String(o.purpose ?? "develop"),
-        shotType: String(o.shotType ?? shotCycle[i % shotCycle.length]),
-        cameraMovement: String(o.cameraMovement ?? defaultMovements[i % defaultMovements.length]),
-        subjectAction: String(o.subjectAction ?? `moves through scene ${i + 1}`),
-        transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
-      }))
+    ? (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => {
+        const rawCategory = String(o.shotCategory ?? "character-driven");
+        const rawRole = String(o.characterRole ?? "protagonist");
+        const shotCategory = validCategories.includes(rawCategory as ShotCategory) ? rawCategory as ShotCategory : "character-driven";
+        const characterRole = validRoles.includes(rawRole as CharacterRole) ? rawRole as CharacterRole : "protagonist";
+        return {
+          cutNumber: Number(o.cutNumber ?? i + 1),
+          sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
+          emotion: String(o.emotion ?? "neutral"),
+          emotionalDelta: String(o.emotionalDelta ?? (i === 0 ? `opening→${o.emotion ?? "neutral"}` : "neutral→neutral")),
+          purpose: String(o.purpose ?? "develop"),
+          shotType: String(o.shotType ?? shotCycle[i % shotCycle.length]),
+          cameraMovement: String(o.cameraMovement ?? defaultMovements[i % defaultMovements.length]),
+          subjectAction: String(o.subjectAction ?? `moves through scene ${i + 1}`),
+          transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
+          shotCategory,
+          characterRole,
+        };
+      })
     : [];
 
   // 연속 동일 shotType 감지 및 fallback 수정
@@ -529,6 +553,7 @@ async function step23DetailBatch(
       : `REVEAL: one new layer beyond prev scene (${prevOutline?.shotType ?? "unknown"} → ${o.shotType}). WITHHOLD: at least one element that sustains curiosity.`;
     return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}):
   Purpose: ${o.purpose} | Shot: ${o.shotType} | Emotion shift: ${o.emotionalDelta}
+  Shot category: ${o.shotCategory} | Character role: ${o.characterRole}
   Planned camera movement: ${o.cameraMovement}
   Subject action: ${o.subjectAction}
   Scene: ${o.sceneKo}
@@ -542,6 +567,7 @@ async function step23DetailBatch(
 스타일: ${veoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
 ${secPerCut}초/컷 | 화면비: ${aspectRatio}
 캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
+⚠️ 단, shotCategory에 따라 캐릭터 사용 여부가 달라짐 — 아래 SHOT CATEGORY RULES 참조
 
 ## 연출 엔진 (이 철학이 모든 컷의 구조를 지배한다 — 단순 스타일 태그가 아닌 설계 원칙)
 ${directorEngine}
@@ -564,6 +590,26 @@ ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPerso
 - 정보 전달은 갈등·협상·유머·공포·아이러니를 통해 자연스럽게 드러남
 - 인물은 극 중 목적을 가지고 행동하는 배우여야 함 (해설자 절대 금지)
 - 교훈적 내용은 인물의 결정이나 상황 결과로 드러남 (해설자 대사 금지)
+
+## SHOT CATEGORY RULES (컷 유형별 피사체 설계 — 모든 컷에 캐릭터를 강제하지 않는다)
+
+### Shot category별 프롬프트 설계
+- **character-driven** (characterRole=protagonist/partial): 캐릭터가 주 피사체. charRef 포함. subjectAction은 반드시 구체적 행동 (standing/motionless 절대 금지). 캐릭터가 나올 이유가 있어야 함.
+- **environment** (characterRole=absent/background/silhouette): 공간/환경이 주 피사체. charRef 생략 또는 "distant silhouette"/"passing figure" 정도만. subjectAction은 환경 움직임 묘사 (풍경, 조명, 기상 변화 등).
+- **object-detail** (characterRole=absent/partial): 사물/디테일이 주 피사체. charRef 생략. subjectAction은 오브젝트의 움직임/변화 묘사 (간판 깜빡임, 손의 움직임, 차트 변화 등).
+- **transition-atmosphere** (characterRole=absent): 전환/분위기 샷. charRef 생략. subjectAction은 분위기 전환 묘사 (빛 변화, 공간 이동, 시간 흐름 등).
+
+### characterRole별 charRef 사용
+- protagonist: charRef 전체 사용 (얼굴/외형 완전 표현)
+- partial: charRef의 관련 부분만 사용 (예: 손, 뒷모습, 어깨 등)
+- silhouette: "dark silhouette of [gender] figure" 정도만 — 외형 디테일 생략
+- background: "distant figure in [clothing hint]" — 최소한의 힌트만
+- absent: charRef 완전 생략 — 인물 묘사 넣지 않음
+
+### 행동 없는 캐릭터 금지
+캐릭터가 등장하면 반드시 서사적/시각적 이유가 있어야 함:
+✅ 걷는다, 돌아본다, 멈칫한다, 간판을 올려다본다, 문을 밀기 전 숨을 고른다, 손을 만지작거린다
+❌ stands, remains motionless, faces camera, watches quietly
 
 ## CINEMATIC SHOT PROGRESSION ENGINE (영화적 시선 설계 — 단순 다양화가 아닌 의도된 정보 공개 순서)
 
@@ -613,10 +659,13 @@ ${SCENE_TERM_PRECISION_BLOCK}
 ## STRICT 글자 제한
 
 imagePrompt (≤80 words English):
-  Format: "[SHOT_TYPE], [angle]. [charRef]. Subject AT FRAME START: [beginning of subjectAction]. [setting/environment]. [moodLighting]. [noTextSuffix]"
+  If characterRole=protagonist/partial: "[SHOT_TYPE], [angle]. [charRef or partial]. Subject AT FRAME START: [beginning of subjectAction]. [setting/environment]. [moodLighting]. [noTextSuffix]"
+  If characterRole=absent: "[SHOT_TYPE], [angle]. [environment/object description]. AT FRAME START: [what's happening in scene]. [setting detail]. [moodLighting]. [noTextSuffix]"
+  If characterRole=silhouette/background: "[SHOT_TYPE], [angle]. [environment]. [distant/silhouette figure hint]. AT FRAME START: [scene state]. [moodLighting]. [noTextSuffix]"
 
 endImagePrompt (≤65 words English):
-  Format: "[charRef]. Subject AT FRAME END: [end state of subjectAction]. [what changed visually from start]. [noTextSuffix]"
+  If characterRole=protagonist/partial: "[charRef or partial]. Subject AT FRAME END: [end state of subjectAction]. [what changed visually]. [noTextSuffix]"
+  If characterRole=absent: "AT FRAME END: [end state of environment/object]. [what changed visually]. [noTextSuffix]"
 
 videoPrompt (≤150 words English):
   Format: "SHOT_SIZE:[shotType] | CAMERA_ANGLE:[eye-level/low-angle/high-angle/dutch/overhead/POV] | CAMERA_MOVEMENT:[movement + reason in parens e.g. slow push-in (tension builds toward reveal)]. [charRef]. SUBJECT_BLOCKING:[where subject is in frame — foreground/mid/back, frame-left/center/right, depth layer]. SUBJECT:[subjectAction exact motion]. ACTION_BEAT:[core physical action with hesitation/interruption/follow-through]. BODY_SIGNAL:[specific hand/gaze/posture/breath — no emotion labels]. REVEALED:[new visual info this frame shows not in prev]. WITHHELD:[what's kept off-frame to sustain curiosity — be specific]. ${beatTemplate.replace("[start]", "[begin subjectAction]").replace("[develop]", "[midpoint of action]").replace("[climax]", "[peak moment or interruption]")}. TRANSITION_FROM_PREV:[specific contrast — shot distance/angle change/new element entering frame]. [noTextSuffix]"
@@ -867,6 +916,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         cameraMovement: n === 1 ? "slow pan revealing space and atmosphere" : "slow push-in as scene develops",
         subjectAction: `moves through environment in scene ${n}`,
         transitionHint: n < targetCuts ? "디졸브" : "페이드 아웃",
+        shotCategory: "character-driven",
+        characterRole: "protagonist",
       });
     }
     outlines = outlines.slice(0, targetCuts).map((o, i) => ({ ...o, cutNumber: i + 1 }));
@@ -938,13 +989,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const moodLighting = d?.moodLighting ?? "Golden hour warm light. Teal and orange grade.";
 
+      // ── 캐릭터 역할에 따른 characterRef 결정 ────────────────────────────
+      const needsCharacter = outline.characterRole !== "absent";
+      const charRefForCut = (() => {
+        switch (outline.characterRole) {
+          case "protagonist": return mainChar.appearance;
+          case "partial":     return `partial view — ${mainChar.appearance.split(",").slice(0, 2).join(",")}`;
+          case "silhouette":  return `dark silhouette of figure`;
+          case "background":  return `distant figure in background`;
+          case "absent":      return "";
+        }
+      })();
+
       // extendPrompt: 빈 문자열이거나 너무 짧으면 outline 기반 fallback 생성
       const extendFallback = prevOutline
-        ? `PREV SCENE ENDS: ${prevOutline.shotType} — subject was ${prevOutline.subjectAction}. → TRANSITION. NEW SHOT: SHOT_SIZE:${outline.shotType} | CAMERA_MOVEMENT:${outline.cameraMovement}. ${mainChar.appearance}. NEW ACTION: ${outline.subjectAction}. NEWLY REVEALED: new visual layer beyond ${prevOutline.shotType}. ${extendBeatTemplate}. ${noTextSuffix}`
+        ? `PREV SCENE ENDS: ${prevOutline.shotType} — subject was ${prevOutline.subjectAction}. → TRANSITION. NEW SHOT: SHOT_SIZE:${outline.shotType} | CAMERA_MOVEMENT:${outline.cameraMovement}.${charRefForCut ? ` ${charRefForCut}.` : ""} NEW ACTION: ${outline.subjectAction}. NEWLY REVEALED: new visual layer beyond ${prevOutline.shotType}. ${extendBeatTemplate}. ${noTextSuffix}`
         : "";
 
       // ── JSON 기반 프롬프트 구조 생성 ──────────────────────────────────────
-      // videoPrompt string에서 구조화된 필드를 추출하거나 outline 기반으로 생성
       const extractField = (text: string | undefined, key: string): string => {
         if (!text) return "";
         const re = new RegExp(`${key}:([^.|]+)`, "i");
@@ -958,15 +1020,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         shotSize:        extractField(vp, "SHOT_SIZE") || outline.shotType,
         cameraAngle:     extractField(vp, "CAMERA_ANGLE") || "eye-level",
         cameraMovement:  extractField(vp, "CAMERA_MOVEMENT") || outline.cameraMovement,
-        subjectBlocking: extractField(vp, "SUBJECT_BLOCKING") || "subject center-frame mid-ground",
+        subjectBlocking: extractField(vp, "SUBJECT_BLOCKING") || (needsCharacter ? "subject center-frame mid-ground" : "environment fills frame"),
         subjectAction:   extractField(vp, "SUBJECT") || outline.subjectAction,
         actionBeat:      extractField(vp, "ACTION_BEAT") || outline.subjectAction,
-        bodySignal:      extractField(vp, "BODY_SIGNAL") || "",
+        bodySignal:      needsCharacter ? (extractField(vp, "BODY_SIGNAL") || "") : "",
         revealed:        extractField(vp, "REVEALED") || "new visual layer",
         withheld:        extractField(vp, "WITHHELD") || "",
         timingBeat:      beatTemplate,
         transitionFromPrev: extractField(vp, "TRANSITION_FROM_PREV") || "",
-        characterRef:    mainChar.appearance,
+        characterRef:    charRefForCut,
         moodLighting:    moodLighting,
         styleSuffix:     noTextSuffix,
       };
@@ -986,15 +1048,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             cameraAngle:   extractField(ep, "CAMERA_ANGLE") || "eye-level",
             cameraMovement: extractField(ep, "CAMERA_MOVEMENT") || outline.cameraMovement,
           },
-          characterRef:    mainChar.appearance,
+          characterRef:    charRefForCut,
           newAction:       extractField(ep, "NEW ACTION") || outline.subjectAction,
-          behavioralShift: extractField(ep, "BEHAVIORAL SHIFT") || "",
+          behavioralShift: needsCharacter ? (extractField(ep, "BEHAVIORAL SHIFT") || "") : "",
           newlyRevealed:   extractField(ep, "NEWLY REVEALED") || "",
           stillWithheld:   extractField(ep, "STILL WITHHELD") || "",
           timingBeat:      extendBeatTemplate,
           styleSuffix:     noTextSuffix,
         };
       }
+
+      // ── 캐릭터 일관성: 캐릭터 중심 컷만 적용 ──────────────────────────
+      const characterConsistency = (outline.characterRole === "protagonist" || outline.characterRole === "partial")
+        ? `캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`
+        : "";
+      const charactersInScene = needsCharacter ? [mainChar.id] : [];
+
+      // ── 이미지 프롬프트 fallback (캐릭터 유무에 따라 분기) ──────────────
+      const defaultImagePrompt = needsCharacter
+        ? `${outline.shotType}, eye-level. ${charRefForCut}. Subject AT START: ${outline.subjectAction.split(" ").slice(0, 6).join(" ")}. ${noTextSuffix}`
+        : `${outline.shotType}, eye-level. ${outline.sceneKo} — ${outline.subjectAction.split(" ").slice(0, 8).join(" ")}. ${noTextSuffix}`;
+      const defaultEndImagePrompt = needsCharacter
+        ? `${charRefForCut}. Subject AT END: ${outline.subjectAction}. ${noTextSuffix}`
+        : `AT END: ${outline.subjectAction}. ${noTextSuffix}`;
+      const defaultVideoPrompt = needsCharacter
+        ? `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. ${charRefForCut}. SUBJECT_BLOCKING:subject center-frame mid-ground. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:character emotional state not yet shown. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`
+        : `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. SUBJECT_BLOCKING:environment fills frame. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:next narrative element. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`;
 
       return {
         cutNumber:     outline.cutNumber,
@@ -1003,17 +1082,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         shotType:      outline.shotType,
         subjectAction: outline.subjectAction,
         emotionalDelta: outline.emotionalDelta,
+        shotCategory:  outline.shotCategory,
+        characterRole: outline.characterRole,
         cameraDirection:  d?.cameraDirection  ?? `Lens 35mm. Slow dolly in. ${String(directorName)} style.`,
         moodLighting,
-        imagePrompt:      d?.imagePrompt      ?? `${outline.shotType}, eye-level. ${mainChar.appearance}. Subject AT START: ${outline.subjectAction.split(" ").slice(0, 6).join(" ")}. ${noTextSuffix}`,
-        endImagePrompt:   d?.endImagePrompt   ?? `${mainChar.appearance}. Subject AT END: ${outline.subjectAction}. ${noTextSuffix}`,
-        videoPrompt:      d?.videoPrompt      ?? `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. ${mainChar.appearance}. SUBJECT_BLOCKING:subject center-frame mid-ground. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:character emotional state not yet shown. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`,
+        imagePrompt:      d?.imagePrompt      ?? defaultImagePrompt,
+        endImagePrompt:   d?.endImagePrompt   ?? defaultEndImagePrompt,
+        videoPrompt:      d?.videoPrompt      ?? defaultVideoPrompt,
         extendPrompt:     i === 0 ? "" : (d?.extendPrompt && d.extendPrompt.trim().length > 20
           ? d.extendPrompt
           : extendFallback),
         transitionHint:   outline.transitionHint,
-        characterConsistency: `캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`,
-        charactersInScene: [mainChar.id],
+        characterConsistency,
+        charactersInScene,
         // JSON 기반 프롬프트 (provider별 렌더링용)
         videoPromptJson,
         ...(extendPromptJson ? { extendPromptJson } : {}),
