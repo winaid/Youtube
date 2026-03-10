@@ -159,6 +159,62 @@ function buildCharacterPersonaBlock(cps: Array<{
   return lines.join("\n");
 }
 
+// ─── 장면 용어 정밀화 규칙 ───────────────────────────────────────────────────
+/**
+ * imagePrompt / videoPrompt 생성 시 모호한 일상어를 시각 정밀 용어로 치환하도록 강제.
+ * 목적: 영상 모델(Veo/Kling)이 "치과 의자" → 일반 의자, "기계" → 추상 오브젝트로 잘못 해석하는 것을 방지.
+ * 원칙: form(형태) + function(기능) + material(재질) + era(시대)가 드러나는 용어 사용.
+ */
+const SCENE_TERM_PRECISION_BLOCK = `
+## SCENE TERM PRECISION — MANDATORY (generic nouns produce wrong visuals)
+RULE: Bare generic nouns are BANNED in imagePrompt / videoPrompt.
+Every prop / space / equipment / object MUST reveal FORM + FUNCTION + MATERIAL (+ ERA if historical).
+
+### Medical / Dental
+BANNED → REQUIRED replacement:
+- "dental chair" / 치과 의자 → "reclining dental unit chair: padded vinyl headrest, chrome articulated armrests, attached rubber suction hose at side"
+- "dental machine" / 치과 기계 → specify ONE: "overhead tungsten exam lamp on swivel arm" | "foot-pedal belt-driven drill unit with flexible handpiece" | "floor-mounted suction canister with rubber hose" | "hinged instrument tray holding mirror, cotton rolls, extraction forceps"
+- "hospital bed" / 병원 침대 → "padded leather examination table" | "iron-frame recovery cot with canvas mattress" | "tilt-adjustable surgical table"
+- "clinic" / 진료실 → "dental operatory room" | "late 19th-century dental surgery: bare-plank floor, glass-front cabinet of instruments" | "tiled examination room with ceiling-mounted lamp"
+- "tools / equipment" / 도구·장비 → name each item: "steel dental mirror, cotton pellets, ivory-handled extraction forceps on metal tray"
+- "old hospital" / 옛날 병원 → "1890s clinic interior: whitewashed plaster walls, gas-bracket wall lamp, wooden instrument cabinet with beveled glass doors"
+
+### Advertising / Historical Props
+BANNED → REQUIRED replacement:
+- "advertisement" / 광고 → "hand-lettered newspaper broadside column" | "lithographic street poster tacked to brick wall" | "painted wooden signboard hung above doorway on iron bracket"
+- "sign / 간판" → "gilded hanging shop sign on wrought-iron bracket" | "chalk-lettered sidewalk sandwich board" | "carved wooden shingle over entrance"
+- "promotional / 홍보" → "street barker standing on wooden crate, holding printed handbill above crowd" | "market-square public demonstration with illustrated poster board"
+- "flyer / pamphlet" / 전단 → "single-leaf letterpress broadside, bold woodcut typeface" | "folded paper handbill with hand-drawn illustration"
+- "poster" / 포스터 → "hand-printed broadside pinned to wooden post" | "lithographed circus-style advertisement with colored inks"
+
+### Space & Set
+BANNED → REQUIRED replacement:
+- "room" / 방 → specify: "narrow dental operatory, single sash window, instrument cabinet along one wall" | "cramped waiting area with long wooden bench against plaster wall" | "back-office consultation room with rolltop desk"
+- "wall" / 벽 → "whitewashed lime-plaster wall, hairline cracks visible" | "dark tongue-and-groove wood paneling with framed diplomas" | "exposed red brick wall"
+- "floor" / 바닥 → "worn wide-plank hardwood floor, gap-jointed" | "black-and-white octagonal tile floor, grout lines visible" | "bare concrete floor"
+- "desk" / 책상 → "oak consultation desk with green baize writing surface and brass inkwell" | "metal instrument table on locking rubber casters"
+- "window" / 창문 → "tall double-hung sash window, lower pane frosted glass" | "street-facing display window with gold-leaf lettering on glass"
+- "light / lamp" / 조명·램프 → "gas mantle wall sconce, warm amber flicker" | "bare carbon-filament Edison bulb on pendant cord" | "oil lamp with glass chimney on desk surface"
+
+### Props & Objects
+BANNED → REQUIRED replacement:
+- "bottle" / 병 → "amber glass medicine bottle, cork stopper, paper label with printed text" | "tall cylindrical apothecary jar, glass stopper, colored liquid inside"
+- "paper / document" / 종이·서류 → "yellowed broadside newsprint" | "letterpress-printed receipt on carbon paper" | "handwritten ledger page, iron-gall ink entries"
+- "money" / 돈·돈봉투 → "silver dollar coin placed face-up on oak desktop" | "folded paper banknote slid across wooden counter surface"
+- "bag" / 가방 → "black leather physician's satchel with brass clasp and carry handle" | "wicker basket with hinged lid" | "canvas drawstring pouch"
+- "chair" / 의자 → always specify type: "wooden spindle-back chair" | "upholstered armchair with turned legs" | "metal folding chair" — NEVER just "chair"
+
+### Character Behavior (translate emotion → physical action ONLY)
+BANNED → REQUIRED replacement:
+- "scared / 겁먹음" → "jaw locked shut, shoulders pulling back from armrests, knuckles whitening on grip"
+- "nervous / 불안" → "eyes darting toward exit, foot pressing rhythmically on footrest, throat swallowing visibly"
+- "in pain / 아프다" → "neck tendons visibly tensing, sharp breath pulling shoulders upward, fingers pressing hard into padded surface"
+- "reluctant / 주저함" → "body weight shifted backward in seat, hands drawing inward toward lap, chin lowering"
+- "suspicious / 의심" → "chin dropping, eyes sliding laterally without head movement, hands going still mid-gesture"
+- "relieved / 안도" → "jaw releasing, shoulders dropping on slow controlled exhale, grip on surface loosening"
+
+FINAL RULE: If a prop/space/equipment cannot be described without a generic noun (chair, machine, room), ADD at minimum: material + one distinguishing physical feature.`;
+
 // ─── 콘텐츠 모드 감지 ────────────────────────────────────────────────────────
 /**
  * 역사적 인물/사건 중심 콘텐츠 → "dramatized_reenactment" 강제
@@ -306,6 +362,12 @@ ${directorPersona ? directorPersona.slice(0, 600) : "강한 시각 개성, 인�
 ${storyText.slice(0, 1500)}
 
 ## 출력 규칙
+
+### SCENE TERM PRECISION (appearance / subjectAction 작성 기준)
+- 일반 명사 단독 금지: "chair", "machine", "equipment", "room", "tools" — 반드시 재질+형태+기능 수식어 추가
+- 치과: "dental unit chair with padded headrest and suction hose" | "overhead exam lamp" | "extraction forceps on steel tray"
+- 역사적 소품: "amber glass apothecary bottle" | "wooden sandwich board sign" | "lithographic street poster"
+- 행동: 감정 형용사 금지, 신체 동작으로만 — "jaw locked, knuckles whitening on armrest" NOT "scared"
 
 ### characterSeeds (최대 3명 — 위 캐릭터 유형 규칙 준수)
 - appearance: 영어, 최대 65 words (성별/나이/헤어/의상/피부톤만 — 심리/감정 금지)
@@ -494,6 +556,7 @@ ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPerso
 5. 각 컷에서 "이전 컷에 없던 시각 정보" 최소 1개 포함
 6. 동일 감정이 연속되면 다른 행동 양상으로 드러낼 것. 같은 행동 반복 금지.
 7. 감정 상태를 정지된 포즈가 아니라 "진행 중인 행동 비트"로 설계할 것
+${SCENE_TERM_PRECISION_BLOCK}
 
 ## STRICT 글자 제한
 
