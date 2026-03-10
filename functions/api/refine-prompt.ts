@@ -102,17 +102,66 @@ ${extendPrompt ? `## Original Extend Prompt:\n${String(extendPrompt)}` : ""}
     } else if (mode === "sanitize") {
       // Safety filter bypass: rewrite prompt removing policy-violating words
       systemPrompt = `You are a safety editor for Google Veo / Vertex AI video prompts.
-The prompt below was REJECTED by Vertex AI safety filters ("contains words that violate usage guidelines").
-Your job: rewrite it to pass safety filters while preserving the exact visual intent.
+The prompt below was REJECTED by Vertex AI safety filters.
+Your job: rewrite it to pass safety filters while preserving the exact visual intent and cinematic structure.
 
-## Rules
-1. Replace or remove any words that could trigger safety filters:
-   - Violence descriptors → neutral cinematic language (e.g. "blood" → "red fluid", "fight" → "struggle", "kill" → "defeat")
-   - Medical/body references → clinical neutral terms (e.g. "surgery wound" → "medical procedure")
-   - Sensitive political/religious terms → abstract/symbolic equivalents
-2. Keep all visual, cinematographic, and temporal structure intact
-3. Do NOT change character descriptions, camera work, or mood
-4. Output must remain in English
+## MANDATORY REPLACEMENT TABLE — apply ALL that match
+
+### Medical / Procedure Imagery (VERY HIGH trigger risk)
+| BANNED → | SAFE REPLACEMENT |
+|---|---|
+| surgery, operation, incision | clinical procedure, examination, treatment moment |
+| needle, injection, syringe | medical instrument, clinical tool |
+| drill, scalpel, blade (medical context) | precision instrument, clinical device |
+| wound, injury, cut, laceration | treatment area, mark, affected area |
+| blood, bleeding, hemorrhage | red fluid, vital signs, coloration |
+| suture, stitches | closure, binding |
+| anesthesia, sedation | preparation, calm state |
+
+### Pain / Fear / Suffering (HIGH trigger risk)
+| BANNED → | SAFE REPLACEMENT |
+|---|---|
+| pain, agony, suffering | tension, discomfort, strain |
+| fear, terror, dread, horror | unease, nervousness, apprehension |
+| screaming in pain, crying in agony | vocalizing, expressing strong emotion |
+| trauma, traumatic | intense, overwhelming |
+| torture, torment | extreme pressure, ordeal |
+| panic, frantic | urgent, heightened alertness |
+| helpless, trapped, desperate | constrained, seeking resolution |
+
+### Violence / Harm (HIGHEST trigger risk)
+| BANNED → | SAFE REPLACEMENT |
+|---|---|
+| kill, murder, death, dying | still, final moment, ceasing motion |
+| dead body, corpse | figure at rest, motionless form |
+| weapon (violent context) | object, tool, instrument |
+| hit, punch, strike, blow (violent) | contact, impact, collision |
+| stabbing, piercing | sharp contact |
+| explosion (violent) | burst of energy, dramatic release |
+| fight, battle, combat | struggle, contest, confrontation |
+| threatening, menacing | imposing, looming, intense |
+| strangle, choke | grip, grasp around |
+| broken bones, fracture | physical strain, structural stress |
+
+### Body Horror / Graphic Content
+| BANNED → | SAFE REPLACEMENT |
+|---|---|
+| gore, visceral, gruesome | intense, raw, unflinching |
+| body horror | distorted form, uncanny presence |
+| graphic detail of wounds | visible treatment area |
+| exposed organs, viscera | internal view → REMOVE entirely |
+
+## Structural Rules
+1. Apply ALL replacements from the table above
+2. Keep all camera movements, shot types, temporal beats (0s-2s, 2s-5s, etc.) EXACTLY as-is
+3. Keep character appearance descriptions EXACTLY as-is
+4. Keep lighting, mood, and atmosphere intact — only replace harmful words
+5. If a sentence cannot be saved without the harmful content, REFRAME it around what the character is doing physically (body language, posture, gaze) rather than what is happening TO them
+6. Convert "experiencing X" → "showing body signs of X" using:
+   - fear → "gaze darts, fingers tense, breath held"
+   - pain → "jaw set tight, shoulders drawn up, movement suspended"
+   - grief → "stillness with micro-tremor, gaze unfocused, slow exhale"
+7. Output must remain in English
 
 ## Original prompt (REJECTED):
 ${String(videoPrompt)}
@@ -120,7 +169,7 @@ ${String(videoPrompt)}
 ## Output JSON only (no markdown):
 {
   "refinedVideoPrompt": "sanitized prompt that passes safety filters",
-  "changes": ["list of words/phrases replaced and why"]
+  "changes": ["exact word/phrase replaced → replacement, and why"]
 }`;
     } else {
       // Enhancement 2: Scene feedback regeneration

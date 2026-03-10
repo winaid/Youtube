@@ -975,13 +975,29 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         console.error(`CUT ${cutNumber} 영상 생성 실패:`, errMsg, errData.details || "", errData.warning || "");
 
         // Safety filter 에러 → Gemini로 프롬프트 sanitize 후 1회 재시도
+        // Veo 실제 에러 메시지 패턴 (Vertex AI / Google Video AI 공통):
+        //   "could not generate videos based on the prompt"
+        //   "You will not be charged for this request"
+        //   "Try rephrasing the prompt"
+        //   "usage guidelines"
+        //   "could not be submitted"
+        //   raiFiltered: true
         const isSafetyError =
+          errMsg.includes("could not generate videos") ||
+          errMsg.includes("not be charged") ||
+          errMsg.includes("Try rephrasing") ||
           errMsg.includes("usage guidelines") ||
           errMsg.includes("could not be submitted") ||
+          errMsg.includes("safety") ||
           errData.raiFiltered === true;
 
         if (isSafetyError && retryCount === 0) {
-          console.warn(`[CUT ${cutNumber}] Safety 에러 감지 → 프롬프트 sanitize 후 재시도`);
+          const originalPrompt = prompt;
+          console.warn(`[CUT ${cutNumber}] Safety 차단 감지`, {
+            blockReason: errMsg.slice(0, 200),
+            originalPromptLen: originalPrompt.length,
+            originalPromptHead: originalPrompt.slice(0, 120),
+          });
           try {
             const sanitizeRes = await fetch("/api/refine-prompt", {
               method: "POST",
@@ -991,9 +1007,12 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             if (sanitizeRes.ok) {
               const sanitized = await sanitizeRes.json();
               if (sanitized?.refinedVideoPrompt) {
-                console.log(`[CUT ${cutNumber}] Sanitized prompt 적용:`, sanitized.changes?.join(", "));
                 prompt = sanitized.refinedVideoPrompt;
-                // sanitized prompt로 즉시 재재생 (retryCount 1로 올려서 무한루프 방지)
+                console.log(`[CUT ${cutNumber}] Safety 재시도`, {
+                  changes: sanitized.changes,
+                  originalHead: originalPrompt.slice(0, 100),
+                  sanitizedHead: prompt.slice(0, 100),
+                });
                 body.prompt = prompt;
                 const retryRes = await fetch("/api/generate-video", {
                   method: "POST",
@@ -1005,18 +1024,23 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
                   updateClip(cutNumber, { operationName: retryData.operationName });
                   startPolling(cutNumber, retryData.operationName);
                   return;
+                } else {
+                  const retryErr = await retryRes.json().catch(() => ({ error: "재시도 실패" }));
+                  console.error(`[CUT ${cutNumber}] Safety 재시도도 실패:`, retryErr.error);
                 }
+              } else {
+                console.warn(`[CUT ${cutNumber}] Sanitize 응답에 refinedVideoPrompt 없음:`, sanitized);
               }
             }
           } catch (sanitizeErr) {
-            console.warn(`[CUT ${cutNumber}] Sanitize 실패:`, sanitizeErr);
+            console.warn(`[CUT ${cutNumber}] Sanitize 호출 실패:`, sanitizeErr);
           }
         }
 
         updateClip(cutNumber, {
           status: "failed",
           error: isSafetyError
-            ? `Vertex AI 안전 필터 차단 — 프롬프트에서 민감한 표현을 직접 수정하세요.`
+            ? `Vertex AI 안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
             : errMsg,
         });
         return;

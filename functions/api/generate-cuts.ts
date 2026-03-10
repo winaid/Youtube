@@ -16,6 +16,64 @@ type Env = GeminiEnv;
 const MODEL_OUTLINE = "gemini-2.0-flash-001";
 const MODEL_DETAIL  = "gemini-2.0-flash-001";
 
+// ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
+/**
+ * directorPersona + directorStyle + directorTechniques를 조합해
+ * 각 컷 프롬프트에 직접 주입 가능한 "연출 엔진" 텍스트를 생성한다.
+ *
+ * 목적: 감독 이름을 태그로 붙이는 대신, 그 감독이 "장면을 설계하는 방식"이
+ * 프롬프트 구조 자체를 지배하도록 한다.
+ *
+ * 규칙:
+ * - 이름(감독 이름) 직접 언급 금지 → 스타일 규칙으로만 표현
+ * - 각 항목은 프롬프트 생성 모델이 실제로 따를 수 있는 구체적 지시문
+ */
+function buildDirectorEngine(
+  directorPersona: string,
+  directorStyle: string,
+  directorTechniques: Record<string, string> | null,
+  animationMode: string,
+): string {
+  const persona = directorPersona.slice(0, 800);
+  const style   = directorStyle.slice(0, 200);
+  const tech    = directorTechniques ?? {};
+
+  // 스톱모션 전용 확장: 스타일이 "스톱모션" 계열이면 추가 제약
+  const isStopMotion = animationMode === "스톱모션" || animationMode === "클레이";
+  const stopMotionRules = isStopMotion ? `
+### Stop-Motion Aesthetic Rules (MANDATORY — prevents generic puppet look)
+- Characters MUST have elongated, fragile, or theatrically exaggerated proportions — NOT cute/toy-like
+- Movement MUST show intentional stop-motion stiffness: jerky hesitations, micro-tremors, deliberate weight shifts
+- NO smooth plastic/CGI movement — handcrafted imperfections are REQUIRED (clay thumb prints, wire joints, slight warping)
+- Set design MUST reflect character psychology — backgrounds are NOT neutral scenery but emotional projections
+- Lighting: high-contrast, theatrical — NOT flat or evenly lit
+- Texture: tactile, real-world materials — fabric, clay, painted wood — NOT digital clean
+- Humor and darkness MUST coexist: gothic whimsy, not pure darkness, not pure cuteness
+- BANNED: generic puppet animation, plastic toy look, flat cute style, meaningless gothic aesthetic without emotional core` : "";
+
+  const lines: string[] = [
+    "### Director Aesthetic Engine (operational rules — NOT style tags)",
+    `Persona core: ${persona}`,
+    style ? `Style principle: ${style}` : "",
+    tech.cameraStyle   ? `Camera philosophy: ${tech.cameraStyle}` : "",
+    tech.editingStyle  ? `Editing rhythm: ${tech.editingStyle}` : "",
+    tech.colorPalette  ? `Color/lighting: ${tech.colorPalette}` : "",
+    tech.characterDesign ? `Character design: ${tech.characterDesign}` : "",
+    tech.emotionalCore ? `Emotional core: ${tech.emotionalCore}` : "",
+    stopMotionRules,
+    "### Per-cut application (apply ALL of the above to EVERY cut):",
+    "- How are characters physically exaggerated or stylized by this director's eye?",
+    "- Is movement fluid, jerky, stiff, or rhythmically authored — and WHY for this scene?",
+    "- Does the camera sympathize with, observe, or mock the character?",
+    "- Does the set/environment mirror the character's psychological state?",
+    "- How do lighting and color PUSH the emotion — not just describe it?",
+    "- What makes THIS cut feel authored rather than generated?",
+    "BANNED in all cuts: generic visuals, anonymous style, unnamed darkness, meaningless symmetry",
+  ].filter(Boolean);
+
+  return lines.join("\n");
+}
+
 // ─── 내부 타입 ────────────────────────────────────────────────────────────────
 
 interface CharacterSeed {
@@ -92,8 +150,12 @@ async function step1Outlines(
       ? "MS → CU → WS → OTS → MCU → LS → CU → MS"
       : "MS → CU → WS → OTS → MCU → ECU → LS → POV → CU → MS → WS → MCU → OTS → CU → MS";
 
-  const prompt = `당신은 영화 감독 ${directorNameKo}의 연출 의도를 분석하는 시나리오 분석가입니다.
-감독 페르소나(발췌): ${directorPersona ? directorPersona.slice(0, 250) : "스타일리시하고 감정에 집중하는 감독"}
+  const prompt = `당신은 ${directorNameKo} 감독의 연출 방식으로 장면을 구조화하는 시나리오 분석가입니다.
+이 감독의 연출 철학 전체가 각 컷의 구조를 결정해야 합니다.
+
+## 감독 연출 철학 (이것이 모든 컷 설계의 기준)
+${directorPersona ? directorPersona.slice(0, 600) : "강한 시각 개성, 인물의 심리가 화면 구성을 지배하는 스타일"}
+
 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
 
 ## 시나리오
@@ -199,6 +261,7 @@ async function step23DetailBatch(
   regionFlavor: string,
   directorName: string,
   directorStyle: string,
+  directorEngine: string,       // buildDirectorEngine() 결과 — 연출 철학 전체
   secPerCut: number,
   beatTemplate: string,
   extendBeatTemplate: string,
@@ -213,7 +276,12 @@ async function step23DetailBatch(
   const firstCutNum = batchOutlines[0].cutNumber;
   const lastCutNum  = batchOutlines[batchOutlines.length - 1].cutNumber;
 
-  const noTextSuffix = `${veoStyle}, directed by ${directorName}, ${aspectRatio} aspect ratio, no text, no watermark, no captions`;
+  // noTextSuffix: 감독 이름 태그 대신 스타일 특성어로 대체
+  // (이름 태그 = 표면 스타일, 특성어 = 실제 미학 주입)
+  const styleFingerprint = directorStyle
+    ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
+    : directorName;
+  const noTextSuffix = `${veoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no watermark, no captions`;
 
   // 전체 시퀀스 컨텍스트 (이전 컷 상태 파악용)
   const sequenceContext = allOutlines
@@ -234,10 +302,13 @@ async function step23DetailBatch(
   Transition out: ${o.transitionHint}`;
   }).join("\n\n");
 
-  const prompt = `당신은 감독 ${directorName}의 촬영 지시를 내리는 촬영 감독입니다.
-스타일: ${veoStyle} | 지역: ${regionFlavor}${directorStyle ? ` | 연출: ${directorStyle.slice(0, 80)}` : ""}${editingNote ? ` | ${editingNote}` : ""}
+  const prompt = `당신은 아래 연출 철학을 완전히 내면화한 촬영 감독입니다.
+스타일: ${veoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
 ${secPerCut}초/컷 | 화면비: ${aspectRatio}
 캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
+
+## 연출 엔진 (이 철학이 모든 컷의 구조를 지배한다 — 단순 스타일 태그가 아닌 설계 원칙)
+${directorEngine}
 
 ## 전체 시퀀스 컨텍스트 (반복 방지용 — 이 컷들의 흐름 파악에만 사용)
 ${sequenceContext}
@@ -351,18 +422,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ── 스타일 맵 ─────────────────────────────────────────────────────────────
     const veoStyleMap: Record<string, string> = {
-      "2D 애니":       "2D anime cel-shaded, vibrant colors",
+      "2D 애니":       "2D anime cel-shaded, vibrant flat colors, clean outlines",
       "실사":          "photorealistic cinematic 4K",
-      "하이브리드":    "hybrid 2D-3D semi-realistic",
-      "수채화 애니":   "watercolor animation pastel tones",
-      "로토스코핑":    "rotoscope painted outlines",
-      "스톱모션":      "stop-motion claymation",
-      "픽셀아트":      "pixel art 16-bit retro",
-      "잉크워시":      "ink wash sumi-e",
-      "클레이":        "clay animation plasticine",
-      "빈티지 필름":   "vintage 1970s film grain",
-      "네온 사이버펑크":"neon cyberpunk Blade Runner",
-      "미니어처":      "tilt-shift miniature diorama",
+      "하이브리드":    "hybrid 2D-3D semi-realistic blending",
+      "수채화 애니":   "watercolor animation, soft translucent washes, pastel tones",
+      "로토스코핑":    "rotoscoped animation, hand-traced brush strokes over live action",
+      // 스톱모션: 단순 "claymation" 금지 — 질감·움직임·조명의 구체적 미학 주입
+      "스톱모션":      "stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame stiffness, real-world material imperfections (clay, fabric, wire), theatrical high-contrast lighting, psychological set design",
+      "픽셀아트":      "pixel art 16-bit retro game aesthetic, clean pixel edges",
+      "잉크워시":      "East Asian ink wash painting, sumi-e brush strokes, black ink on rice paper",
+      "클레이":        "claymation, smooth clay figures, visible fingerprint texture, studio lighting",
+      "빈티지 필름":   "vintage 35mm film, warm grain, faded colors, 1970s cinema",
+      "네온 사이버펑크":"neon cyberpunk, glowing neon lights, vivid pink/blue/purple palette",
+      "미니어처":      "tilt-shift miniature photography, tiny diorama, shallow depth of field",
     };
     const veoStyle = veoStyleMap[String(animationMode)] ?? "photorealistic cinematic";
 
@@ -400,6 +472,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const editingNote = techniques?.editingStyle
       ? `editing: ${String(techniques.editingStyle).slice(0, 60)}`
       : "";
+
+    // ── 감독 연출 엔진 빌드 ───────────────────────────────────────────────────
+    // 이름 태그가 아닌 실제 연출 방식 규칙으로 변환 → step2/3 프롬프트 전체를 지배
+    const directorEngine = buildDirectorEngine(
+      String(directorPersona ?? ""),
+      String(directorStyle ?? ""),
+      techniques,
+      String(animationMode),
+    );
 
     // ── STEP 1: 아웃라인 생성 ─────────────────────────────────────────────────
     let characterSeeds: CharacterSeed[];
@@ -461,6 +542,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       regionFlavor,
       String(directorName),
       String(directorStyle ?? ""),
+      directorEngine,        // 연출 철학 엔진 (이름 태그 대체)
       secPerCut,
       beatTemplate,
       extendBeatTemplate,
