@@ -1163,7 +1163,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               <button
                 className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
                 style={{ background: "#22c55e0a", border: "1px solid #22c55e25" }}
-                onClick={() => setCutCount(aiCutRecommendation.recommendedCuts)}
+                onClick={() => setCutCount(Math.min(aiCutRecommendation.recommendedCuts, 10))}
               >
                 <div className="flex items-center gap-2">
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style={{ background: "#22c55e" }}>
@@ -1188,7 +1188,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             )}
 
             <div className="grid grid-cols-4 gap-1.5">
-              {([{ value: "auto" as const, label: "자동" }, ...([4, 6, 8, 10, 12, 15] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
+              {([{ value: "auto" as const, label: "자동" }, ...([4, 6, 8, 10] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
                 <button
                   key={String(item.value)}
                   className="h-8 rounded-lg text-xs font-medium transition-all"
@@ -1207,12 +1207,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               <input
                 type="number"
                 min={4}
-                max={15}
-                placeholder="직접 입력 (4~15)"
-                value={typeof cutCount === "number" && ![4, 6, 8, 10, 12, 15].includes(cutCount) ? cutCount : ""}
+                max={10}
+                placeholder="직접 입력 (4~10)"
+                value={typeof cutCount === "number" && ![4, 6, 8, 10].includes(cutCount) ? cutCount : ""}
                 onChange={(e) => {
                   const v = parseInt(e.target.value);
-                  if (v >= 4 && v <= 15) setCutCount(v);
+                  if (v >= 4 && v <= 10) setCutCount(v);
                   else if (e.target.value === "") setCutCount("auto");
                 }}
                 className="flex h-8 w-full rounded-lg border bg-white px-3 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"
