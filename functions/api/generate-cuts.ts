@@ -693,7 +693,7 @@ endImagePrompt (≤65 words English — 씬의 마지막 순간):
   If characterRole=absent: "SCENE ENDS: [sceneBeat3 결과 상태]. [what changed from opening]. [noTextSuffix]"
 
 videoPrompt (≤180 words English — ⚠️ 이것은 단일 샷 설명이 아니라 ${secPerCut}초 씬 전체의 진행 설명):
-  Format: "SHOT_SIZE:[opening shotType] | CAMERA_ANGLE:[opening angle] | CAMERA_PROGRESSION:[camera changes across scene — e.g. 'starts WS pulling back → pushes into MS as subject enters → settles CU on hands (tension builds)']. ${beatTemplate.replace("[start]", "[sceneBeat1: what opens the scene visually]").replace("[develop]", "[sceneBeat2: what develops, enters, reacts, or shifts]").replace("[climax]", "[sceneBeat3: what is revealed, peaks, or hooks into next scene]")}. SUBJECT_ACROSS_SCENE:[what the subject DOES across the full ${secPerCut}s — not a pose, an action arc]. REVEALED:[new visual info that emerges during this scene]. WITHHELD:[what's kept hidden to sustain curiosity]. END_HOOK:[visual element that pulls viewer into next scene].${" [charRef]." if characterRole !== "absent" else ""} [noTextSuffix]"
+  Format: "SHOT_SIZE:[opening shotType] | CAMERA_ANGLE:[opening angle] | CAMERA_PROGRESSION:[camera changes across scene — e.g. 'starts WS pulling back → pushes into MS as subject enters → settles CU on hands (tension builds)']. ${beatTemplate.replace("[start]", "[sceneBeat1: what opens the scene visually]").replace("[develop]", "[sceneBeat2: what develops, enters, reacts, or shifts]").replace("[climax]", "[sceneBeat3: what is revealed, peaks, or hooks into next scene]")}. SUBJECT_ACROSS_SCENE:[what the subject DOES across the full ${secPerCut}s — not a pose, an action arc]. REVEALED:[new visual info that emerges during this scene]. WITHHELD:[what's kept hidden to sustain curiosity]. END_HOOK:[visual element that pulls viewer into next scene]. [charRef if characterRole is NOT absent — omit entirely if absent]. [noTextSuffix]"
   ⚠️ videoPrompt의 핵심은 SCENE PROGRESSION이다:
   - 씬 시작과 끝이 달라야 한다 (구도/카메라/피사체/정보 중 최소 2개 변화)
   - 카메라도 씬 안에서 진행한다 (CAMERA_PROGRESSION = 시작 위치 → 중간 변화 → 최종 위치)
@@ -702,7 +702,7 @@ videoPrompt (≤180 words English — ⚠️ 이것은 단일 샷 설명이 아�
   BANNED emotion labels: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — body behavior only
 
 extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
-  Format: "PREV SCENE ENDS: [prevScene endHook state]. → TRANSITION. NEW SCENE OPENS: SHOT_SIZE:[this shotType] | CAMERA_PROGRESSION:[camera arc for new scene]. SCENE BEATS: [beat1] → [beat2] → [beat3].${" [charRef]." if characterRole !== "absent" else ""} NEWLY REVEALED: [what this scene shows]. STILL WITHHELD: [what remains hidden]. END_HOOK: [visual bridge to next]. [noTextSuffix]"
+  Format: "PREV SCENE ENDS: [prevScene endHook state]. → TRANSITION. NEW SCENE OPENS: SHOT_SIZE:[this shotType] | CAMERA_PROGRESSION:[camera arc for new scene]. SCENE BEATS: [beat1] → [beat2] → [beat3]. [charRef if characterRole is NOT absent — omit if absent]. NEWLY REVEALED: [what this scene shows]. STILL WITHHELD: [what remains hidden]. END_HOOK: [visual bridge to next]. [noTextSuffix]"
   BANNED: "continuing", "similar to previous", "same pose", emotion adjectives
 
 cameraDirection (≤55 chars English):
