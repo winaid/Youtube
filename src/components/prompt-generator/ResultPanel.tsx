@@ -896,6 +896,7 @@ export default function ResultPanel({
             onStartAuto={videoGen.startAutoGeneration}
             onStopAuto={videoGen.stopAutoGeneration}
             onResetClip={videoGen.resetClip}
+            onAddCut={videoGen.addCutVariant}
             onSelectVariant={videoGen.selectVariant}
           />
 

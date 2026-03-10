@@ -39,15 +39,24 @@ function klingHeaders(env: KlingEnv): Record<string, string> {
 
 // ── Request / Response types ─────────────────────────────────────────────────
 
+export interface KlingMultiShot {
+  index: number;
+  prompt: string;
+  duration: string; // 초 단위 문자열 (예: "5")
+}
+
 export interface KlingGenerateRequest {
   prompt: string;
   negative_prompt?: string;
-  /** default: "kling-v3-text-to-video" or "kling-v3-image-to-video" if image supplied */
+  /** default: "kling-o3-text-to-video" or "kling-o3-image-to-video" if image supplied */
   model?: string;
-  duration?: 5 | 10 | 15;  // EvoLink API expects int — Kling 지원: 5s, 10s, 15s
+  duration?: number;  // EvoLink o3: 3~15초 정수 지원
   aspect_ratio?: "16:9" | "9:16" | "1:1";
   cfg_scale?: number;
-  with_audio?: boolean; // o3 모델 사운드 활성화 (default: true)
+  quality?: "720p" | "1080p";
+  sound?: "on" | "off"; // o3 모델 사운드 파라미터: "on" = 사운드 ON, "off" = 무음 (default: "on")
+  // Multi-shot: 1장면에 여러 카메라 앵글/구도 지정
+  multiShot?: KlingMultiShot[];
   // Image-to-video
   image?: string;       // base64 or public URL for start frame
   image_tail?: string;  // base64 or public URL for end frame
@@ -61,7 +70,7 @@ export interface KlingExtendRequest {
   lastFrameBase64: string;
   prompt?: string;
   negative_prompt?: string;
-  duration?: 5 | 10 | 15;  // EvoLink API expects int — Kling 지원: 5s, 10s, 15s
+  duration?: number;  // EvoLink o3: 3~15초 정수 지원
   aspect_ratio?: "16:9" | "9:16" | "1:1";
 }
 
@@ -96,14 +105,27 @@ export async function klingGenerate(
   const body: Record<string, unknown> = {
     model,
     prompt: req.prompt,
-    duration: req.duration ?? 5,  // EvoLink expects int
+    duration: req.duration ?? 5,
     aspect_ratio: req.aspect_ratio ?? "16:9",
-    with_audio: req.with_audio !== false,  // 항상 사운드 ON (o3 모델 필수 파라미터)
+    sound: req.sound ?? "on",  // EvoLink o3 사운드 파라미터: "on"/"off"
   };
   if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
   if (req.cfg_scale !== undefined) body.cfg_scale = req.cfg_scale;
+  if (req.quality) body.quality = req.quality;
   if (req.image)      body.image      = req.image;
   if (req.image_tail) body.image_tail = req.image_tail;
+  // Multi-shot: 1장면 안에 여러 카메라 구도/앵글 지정
+  if (req.multiShot && req.multiShot.length > 0) {
+    body.model_params = {
+      multi_shot: true,
+      shot_type: "customize",
+      multi_prompt: req.multiShot.map((s) => ({
+        index: s.index,
+        prompt: s.prompt,
+        duration: String(s.duration),
+      })),
+    };
+  }
 
   const res = await fetch(`${klingBase(env)}/v1/videos/generations`, {
     method: "POST",
@@ -147,10 +169,10 @@ export async function klingExtend(
     model:           "kling-o3-image-to-video", // o3: 사운드 지원
     prompt:          req.prompt ?? "continue the scene naturally",
     negative_prompt: req.negative_prompt,
-    duration:        req.duration ?? 5,  // EvoLink expects int
+    duration:        req.duration ?? 5,
     aspect_ratio:    req.aspect_ratio ?? "16:9",
     image:           req.lastFrameBase64,
-    with_audio:      true,  // 사운드 강제 ON
+    sound:           "on",  // EvoLink o3 사운드 ON
   });
 }
 
@@ -208,16 +230,11 @@ export async function klingCheckStatus(
 // ── Duration / Aspect ratio helpers ──────────────────────────────────────────
 
 /**
- * 입력 초 → Kling 지원 초 매핑. EvoLink API는 int 필요.
- * 4s / 6s → 5s   (Veo 4/6 = 짧은 클립)
- * 8s      → 10s  (Veo 8 ≒ Kling 10 근사)
- * 10s     → 10s  (Kling 전용 10초)
- * 15s     → 15s  (Kling 전용 15초)
+ * 입력 초 → Kling o3 지원 초 매핑. EvoLink o3 API: 3~15초 정수 지원.
+ * 실제 요청 초수를 최대한 유지하되 3~15 범위로 클램핑.
  */
-export function toKlingDuration(sec: number): 5 | 10 | 15 {
-  if (sec >= 15) return 15;
-  if (sec >= 9)  return 10;  // 10s 정확 + 8s 근사
-  return 5;                  // 4s, 6s
+export function toKlingDuration(sec: number): number {
+  return Math.min(15, Math.max(3, Math.round(sec)));
 }
 
 export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {

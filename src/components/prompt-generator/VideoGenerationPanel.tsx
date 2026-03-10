@@ -17,6 +17,7 @@ interface VideoGenerationPanelProps {
   onStartAuto: () => void;
   onStopAuto: () => void;
   onResetClip: (cutNumber: number) => void;
+  onAddCut?: (cutNumber: number) => void;
   onSelectVariant: (cutNumber: number, variantIndex: number) => void;
 }
 
@@ -63,6 +64,7 @@ export default function VideoGenerationPanel({
   onStartAuto,
   onStopAuto,
   onResetClip,
+  onAddCut,
   onSelectVariant,
 }: VideoGenerationPanelProps) {
 
@@ -162,7 +164,7 @@ export default function VideoGenerationPanel({
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-sm font-medium">CUT {cut.cutNumber}</span>
+                      <span className="text-sm font-medium">장면 {cut.cutNumber}</span>
 
                       {/* 엔진 배지 — 완료 후 실제 사용 엔진 표시, 완료 전엔 회색 */}
                       {clip.engineUsed ? (
@@ -187,11 +189,11 @@ export default function VideoGenerationPanel({
                           ? (clip.modeUsed === "generate" ? "Generate" : "Extend")
                           : (cut.cutNumber === 1 ? "Generate" : "Extend")}
                       </Badge>
-                      {charsInScene.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          [{charsInScene.join(", ")}]
+                      {charsInScene.map((ch) => (
+                        <span key={ch} className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff15", color: "#5a5ecc" }}>
+                          {ch}
                         </span>
-                      )}
+                      ))}
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                       {cut.sceneDescription}
@@ -282,7 +284,7 @@ export default function VideoGenerationPanel({
                     <div className="flex gap-1.5">
                       <a
                         href={clip.videoUri}
-                        download={`cut-${cut.cutNumber}.mp4`}
+                        download={`scene-${cut.cutNumber}.mp4`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[10px] px-2.5 py-1 rounded-md inline-flex items-center gap-1"
@@ -291,22 +293,31 @@ export default function VideoGenerationPanel({
                       >
                         MP4 다운로드
                       </a>
+                      {onAddCut && (
+                        <button
+                          onClick={() => onAddCut(cut.cutNumber)}
+                          className="text-[10px] px-2.5 py-1 rounded-md"
+                          style={{ background: "#787fff15", color: "#5a5ecc", border: "1px solid #787fff30" }}
+                        >
+                          컷 추가 생성
+                        </button>
+                      )}
                       <button
                         onClick={() => onResetClip(cut.cutNumber)}
                         className="text-[10px] px-2.5 py-1 rounded-md"
                         style={{ background: "#ef444410", color: "#dc2626", border: "1px solid #ef444420" }}
                       >
-                        재생성
+                        초기화
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* 변형 선택 (sampleCount > 1) */}
+                {/* 컷 선택 (여러 take) */}
                 {clip.status === "completed" && clip.variants && clip.variants.length > 1 && (
                   <div className="px-3 pb-3 space-y-1.5">
                     <p className="text-[10px] font-medium" style={{ color: "#787fff" }}>
-                      {clip.variants.length}개 변형 — 베스트를 선택하세요
+                      {clip.variants.length}개 컷 — 베스트 컷을 선택하세요
                     </p>
                     <div className="flex gap-2 overflow-x-auto">
                       {clip.variants.map((variant, vi) => (
@@ -335,7 +346,7 @@ export default function VideoGenerationPanel({
                           />
                           <div className="p-1 text-center">
                             <span className="text-[9px]" style={{ color: clip.selectedVariant === vi ? "#787fff" : "#999" }}>
-                              변형 {vi + 1}
+                              컷 {vi + 1}
                             </span>
                             {variant.seed && (
                               <p className="text-[8px] text-muted-foreground">S: {variant.seed}</p>

@@ -368,6 +368,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     engine: "veo" | "kling" = "veo",
     taskId?: string,
     isExtend?: boolean,
+    variantsToPreserve?: VideoVariant[],
   ) => {
     // ── 중복 폴링 방지: 이미 폴링 중이면 즉시 리턴
     if (activePolls.current.has(cutNumber)) {
@@ -485,11 +486,20 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           };
 
           if (data.variants && data.variants.length > 0) {
-            clipUpdate.variants = data.variants as VideoVariant[];
-            clipUpdate.selectedVariant = 0;
-            clipUpdate.videoUri = data.variants[0].videoUri;
-            clipUpdate.rawVideoUri = data.variants[0].rawVideoUri;
-            clipUpdate.seed = data.variants[0].seed;
+            // 컷 추가 생성 모드: 기존 variants에 새 컷 append
+            const newVariants = data.variants as VideoVariant[];
+            const merged = variantsToPreserve ? [...variantsToPreserve, ...newVariants] : newVariants;
+            const selectedIdx = variantsToPreserve ? merged.length - 1 : 0; // 새 컷 선택
+            clipUpdate.variants = merged;
+            clipUpdate.selectedVariant = selectedIdx;
+            clipUpdate.videoUri = newVariants[0].videoUri;
+            clipUpdate.rawVideoUri = newVariants[0].rawVideoUri;
+            clipUpdate.seed = newVariants[0].seed;
+          } else if (variantsToPreserve && clipUpdate.videoUri) {
+            // 단일 결과 + 컷 추가 모드: 기존 + 새 컷 합치기
+            const newVariant: VideoVariant = { videoUri: clipUpdate.videoUri, rawVideoUri: clipUpdate.rawVideoUri, seed: clipUpdate.seed };
+            clipUpdate.variants = [...variantsToPreserve, newVariant];
+            clipUpdate.selectedVariant = clipUpdate.variants.length - 1;
           }
 
           updateClip(cutNumber, clipUpdate);
@@ -650,7 +660,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   }, [state.clips]);
 
   // 단일 장면 생성
-  const generateCut = useCallback(async (cutNumber: number) => {
+  const generateCut = useCallback(async (cutNumber: number, preserveVariants?: boolean) => {
     const cut = cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
 
@@ -691,12 +701,20 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       (c) => c.cutNumber === cutNumber - 1 && c.status === "completed"
     );
 
+    // preserveVariants=true 이면 기존 컷들을 보존하며 새 컷 추가 (컷 추가 생성 모드)
+    const existingClip = state.clips.find((c) => c.cutNumber === cutNumber);
+    const variantsToPreserve: VideoVariant[] | undefined = preserveVariants && existingClip?.status === "completed"
+      ? (existingClip.variants && existingClip.variants.length > 0
+          ? existingClip.variants
+          : existingClip.videoUri ? [{ videoUri: existingClip.videoUri, rawVideoUri: existingClip.rawVideoUri, seed: existingClip.seed }] : undefined)
+      : undefined;
+
     updateClip(cutNumber, {
       status: "generating",
       startedAt: Date.now(),
       error: undefined,
-      variants: undefined,
-      selectedVariant: undefined,
+      variants: variantsToPreserve ?? undefined,
+      selectedVariant: variantsToPreserve ? (existingClip?.selectedVariant ?? 0) : undefined,
     });
 
     try {
@@ -1115,6 +1133,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         data.engine ?? "veo",
         data.taskId,
         data.modeUsed === "extend",
+        variantsToPreserve,
       );
     } catch (err) {
       updateClip(cutNumber, {
@@ -1163,6 +1182,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     autoModeRef.current = false;
     setState((prev) => ({ ...prev, isAutoMode: false }));
   }, []);
+
+  // 컷 추가 생성 — 기존 완료 영상을 유지한 채 새 컷을 variants에 추가
+  const addCutVariant = useCallback((cutNumber: number) => {
+    const existingClip = state.clips.find((c) => c.cutNumber === cutNumber);
+    if (!existingClip || existingClip.status !== "completed") return;
+    generateCut(cutNumber, true /* preserveVariants */);
+  }, [state.clips, generateCut]);
 
   // 변형 선택
   const selectVariant = useCallback((cutNumber: number, variantIndex: number) => {
@@ -1440,6 +1466,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     reorderClips,
     setTrim,
     resetClip,
+    addCutVariant,
     verifyPrompt,
     refinePromptEnglish,
     reviewAllClips,
