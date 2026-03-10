@@ -119,19 +119,37 @@ function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
 }
 
 // animationMode → Veo 프롬프트 스타일 프리픽스
+// 중요: 각 항목은 "스타일 태그"가 아니라 motion quality + surface texture + realism level을 명시
 const VEO_STYLE_PREFIX: Record<string, string> = {
-  "실사": "Photorealistic live-action footage.",
-  "2D 애니": "2D anime animation style, clean cel-shaded lines, vibrant flat colors.",
-  "수채화 애니": "Watercolor anime painting style, soft translucent washes, hand-painted textures.",
-  "하이브리드": "Semi-realistic digital art blending anime and photorealism.",
-  "로토스코핑": "Rotoscoped animation style, hand-traced over live action, visible brush strokes.",
-  "스톱모션": "Stop-motion claymation style, tactile clay textures, miniature set.",
-  "픽셀아트": "Pixel art retro 16-bit game aesthetic, clean pixel edges.",
-  "잉크워시": "East Asian ink wash painting style (수묵화/水墨画), black ink on rice paper, minimalist brush strokes, flowing ink gradients, traditional sumi-e aesthetic.",
-  "클레이": "Claymation animation, smooth clay figures, soft studio lighting.",
-  "빈티지 필름": "Vintage 35mm film look, warm grain, faded colors, 1970s cinema.",
-  "네온 사이버펑크": "Neon cyberpunk aesthetic, glowing neon lights, vivid pink/blue/purple palette.",
-  "미니어처": "Tilt-shift miniature photography, tiny diorama look, shallow depth of field.",
+  "실사": "Photorealistic live-action footage, cinematic camera, natural lighting.",
+  // 2D 애니: cel-shaded 계열 — flat color는 이 스타일의 의도된 특성
+  "2D 애니": "2D anime animation style, clean cel-shaded lines, vibrant flat colors, expressive character movement.",
+  "수채화 애니": "Watercolor animation style, soft translucent pigment washes, visible paper texture, hand-painted edges bleeding gently, non-flat color depth.",
+  "하이브리드": "Semi-realistic digital art, anime character proportions over photorealistic environment, 2D-3D blended rendering.",
+  // 로토스코핑: 핵심은 실사 퍼포먼스에서 파생된 움직임의 질감
+  // "flat cartoon", "generic anime", "cel-shaded"는 이 스타일의 정반대
+  "로토스코핑": "Rotoscoped 2D animation. Movement is performance-derived: natural body mechanics, real weight transfer, grounded gesture timing traced from live motion. Visual surface: painterly or textured stylized overlay — NOT flat cartoon, NOT generic cel-shading. Style character: fluid but slightly imperfect hand-traced rhythm, subtle realism in posture and transition, stylized color treatment over live-performance-like motion.",
+  // 스톱모션: 일반 claymation 금지 — tactile imperfection이 핵심
+  "스톱모션": "Stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame movement with intentional stiffness and micro-tremors, real-world material imperfections (clay, fabric, wire armature), theatrical high-contrast lighting, psychological set design. NOT smooth digital animation, NOT plastic toy look.",
+  "픽셀아트": "Pixel art 16-bit retro aesthetic, crisp pixel edges, limited color palette, chunky character sprites.",
+  "잉크워시": "East Asian ink wash painting (수묵화/水墨画), flowing sumi-e brush strokes, black ink gradients on rice paper texture, minimalist negative space, traditional calligraphic line quality.",
+  "클레이": "Claymation animation, smooth clay figures with visible fingerprint texture, soft diffuse studio lighting, warm earthy color palette, slight clay warping on movement.",
+  "빈티지 필름": "Vintage 35mm film aesthetic, warm grain and scratches, faded analog color palette, 1970s cinema color grading, light leaks.",
+  "네온 사이버펑크": "Neon cyberpunk aesthetic, glowing neon lights against dark environments, vivid pink/blue/purple palette, wet reflective surfaces.",
+  "미니어처": "Tilt-shift miniature photography, tiny diorama scale, extreme shallow depth of field blurring edges, toy-world lighting.",
+};
+
+// animationMode별 스타일 전용 negativePrompt 오버라이드
+// 기본 negativePrompt를 "스타일 충돌 방지"용으로 보강한다
+// 특히 로토스코핑: "live action" 금지 ← 이게 없으면 실사 퍼포먼스 기반 움직임이 살아야 함
+const STYLE_NEGATIVE_OVERRIDES: Record<string, string> = {
+  "로토스코핑": "flat cartoon, generic anime, vibrant cel-shading, clean flat outlines, 2D anime flatness, plastic motion, mechanical stiff cartoon movement, text overlay, watermark",
+  "스톱모션": "smooth CGI animation, digital clean look, plastic toy appearance, flat cute style, generic puppet animation, photorealistic, text overlay, watermark",
+  "클레이": "digital animation, smooth CGI, plastic texture, shiny surface, text overlay, watermark",
+  "수채화 애니": "sharp digital outlines, clean cel-shading, vibrant saturated flat colors, text overlay, watermark",
+  "잉크워시": "colorful vibrant palette, photorealistic, digital clean line art, text overlay, watermark",
+  "빈티지 필름": "digital clean modern look, oversaturated colors, perfect grain, text overlay, watermark",
+  "픽셀아트": "smooth anti-aliased edges, photorealistic, 3D rendering, text overlay, watermark",
 };
 
 // Style intensity keywords at different levels (animationMode별 분기)
@@ -799,9 +817,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       prompt = sanitizeTextContent(prompt);
 
       // Veo는 negativePrompt 파라미터를 지원하지 않으므로 프롬프트에 직접 삽입
-      // refine-prompt가 이미 "no X, no Y"를 포함했으면 Avoid: 블록 생략
-      if (negativePrompt && !prompt.includes("Avoid:") && !/\bno text[,.]?\s*no watermark\b/i.test(prompt)) {
-        const negItems = negativePrompt.split(",").map(s => s.trim()).filter(Boolean).slice(0, 3);
+      // 스타일별 오버라이드가 있으면 기본 negativePrompt 대신 스타일 전용 negative 사용
+      // (예: 로토스코핑은 "live action"을 금지하면 안 됨 → 기본 negative를 스타일 negative로 대체)
+      const styleNegOverride = cfg.animationMode ? STYLE_NEGATIVE_OVERRIDES[cfg.animationMode] : undefined;
+      const effectiveNegative = styleNegOverride ?? negativePrompt;
+
+      if (effectiveNegative && !prompt.includes("Avoid:") && !/\bno text[,.]?\s*no watermark\b/i.test(prompt)) {
+        const negItems = effectiveNegative.split(",").map(s => s.trim()).filter(Boolean).slice(0, 4);
         prompt = `${prompt}. Avoid: ${negItems.join(", ")}`;
       }
 

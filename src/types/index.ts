@@ -177,7 +177,9 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   aspectRatio: "16:9",
   generateAudio: true,
   animationMode: "2D 애니",
-  negativePrompt: "text overlay, watermark, logo, blurry, distorted face, photorealistic, live action, real footage",
+  // "live action, real footage"는 global negative에서 제외:
+  // 로토스코핑은 실사 퍼포먼스 기반 움직임이 핵심 — 스타일별 STYLE_NEGATIVE_OVERRIDES에서 처리
+  negativePrompt: "text overlay, watermark, logo, blurry, distorted face, photorealistic",
   personGeneration: "allow_all",
   sampleCount: 1,
   referenceImages: [],

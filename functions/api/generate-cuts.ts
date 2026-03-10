@@ -426,7 +426,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "실사":          "photorealistic cinematic 4K",
       "하이브리드":    "hybrid 2D-3D semi-realistic blending",
       "수채화 애니":   "watercolor animation, soft translucent washes, pastel tones",
-      "로토스코핑":    "rotoscoped animation, hand-traced brush strokes over live action",
+      // 로토스코핑: "painted outlines" 금지 — 실사 퍼포먼스 기반 움직임 질감이 핵심
+      "로토스코핑":    "rotoscoped 2D animation, performance-derived movement timing, natural body mechanics under stylized painterly surface, traced-from-live-motion rhythm, NOT flat cartoon NOT generic anime",
       // 스톱모션: 단순 "claymation" 금지 — 질감·움직임·조명의 구체적 미학 주입
       "스톱모션":      "stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame stiffness, real-world material imperfections (clay, fabric, wire), theatrical high-contrast lighting, psychological set design",
       "픽셀아트":      "pixel art 16-bit retro game aesthetic, clean pixel edges",
