@@ -51,6 +51,21 @@ function buildDirectorEngine(
 - Humor and darkness MUST coexist: gothic whimsy, not pure darkness, not pure cuteness
 - BANNED: generic puppet animation, plastic toy look, flat cute style, meaningless gothic aesthetic without emotional core` : "";
 
+  // 하이브리드 전용 규칙: 배경/캐릭터 레이어 분리 강제 + anti-collapse
+  const isHybrid = animationMode === "하이브리드";
+  const hybridRules = isHybrid ? `
+### Hybrid Composite Aesthetic Rules (MANDATORY — prevents full-frame animation collapse)
+- BACKGROUND LAYER: photorealistic live-action cinematic environment — real physical textures, volumetric depth, physical set lighting. Background MUST NOT become cel-shaded, animated, or illustrated.
+- CHARACTER LAYER: stylized / illustrated / semi-graphic render — designed outlines, artistic character stylization visually placed INTO the real environment
+- CONTRAST IS REQUIRED: background realism vs character stylization must be visibly distinct — the gap is the aesthetic, not a bug
+- CINEMATIC LIGHTING: falls physically on both layers — no flat even lighting that collapses depth
+- BANNED (failure states — any of these = wrong output):
+  ✗ Full-frame anime look (background also animated/stylized)
+  ✗ Flat cel-shaded entire scene
+  ✗ Generic 2D illustration for whole frame including background
+  ✗ "semi-realistic" as the only descriptor — must specify WHICH layer is real, WHICH is stylized
+  ✗ Evenly stylized frame with no visible background/character contrast` : "";
+
   const lines: string[] = [
     "### Director Aesthetic Engine (operational rules — NOT style tags)",
     `Persona core: ${persona}`,
@@ -61,6 +76,7 @@ function buildDirectorEngine(
     tech.characterDesign ? `Character design: ${tech.characterDesign}` : "",
     tech.emotionalCore ? `Emotional core: ${tech.emotionalCore}` : "",
     stopMotionRules,
+    hybridRules,
     "### Per-cut application (apply ALL of the above to EVERY cut):",
     "- How are characters physically exaggerated or stylized by this director's eye?",
     "- Is movement fluid, jerky, stiff, or rhythmically authored — and WHY for this scene?",
@@ -597,7 +613,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // 로토스코핑: "painted outlines" 금지 — 실사 퍼포먼스 기반 움직임 질감이 핵심
       "로토스코핑":    "rotoscoped 2D animation over live-action performance, movement derived from real human motion, natural body mechanics under stylized painterly surface, traced-from-live-motion rhythm, NOT flat cartoon NOT generic anime NOT painted background banner",
       // 하이브리드: 이전 "2D-3D blending"은 모호 → 실사 공간 + 스타일 캐릭터로 명확화
-      "하이브리드":    "photorealistic live-action environment with stylized character render, semi-realistic blending where subject style differs from background realism, subject-focused NOT evenly stylized",
+      "하이브리드":    "HYBRID COMPOSITE [BACKGROUND=photorealistic cinematic live-action: real physical textures, volumetric depth, naturalistic environment lighting, no animation on background | CHARACTER=stylized illustrated design: visible design lines, graphic artistic stylization, character-designed render]. ANTI-COLLAPSE: NEVER render entire frame as anime/cartoon/flat illustration — background MUST stay photorealistic and cinematic. Stylization applies ONLY to characters, NOT to environment. Mixed-media composite: realistic set + stylized figure against it.",
     };
     const veoStyle = veoStyleMap[String(animationMode)] ?? "photorealistic cinematic, subject-focused composition";
 

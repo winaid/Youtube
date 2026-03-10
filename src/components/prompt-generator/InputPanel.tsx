@@ -53,7 +53,8 @@ interface AnimationStyleDef {
   desc: string;
   directors: string[];
   family: StyleFamilyFilter;
-  badge: string;  // 결과 성향 한줄 요약
+  badge: string;   // 결과 성향 한줄 요약
+  badge2?: string; // 두 번째 성향 뱃지 (하이브리드 등 레이어 구분 필요 시)
   realism: "높음" | "중간" | "낮음";
 }
 
@@ -114,9 +115,9 @@ const animationStyles: AnimationStyleDef[] = [
     family: "hybrid", badge: "실제 움직임+2D", realism: "중간",
   },
   {
-    mode: "하이브리드", label: "하이브리드", desc: "실사 배경+스타일 캐릭터 혼합",
+    mode: "하이브리드", label: "하이브리드", desc: "배경=포토리얼 유지 / 캐릭터만 스타일화",
     directors: ["이안", "기예르모 델 토로"],
-    family: "hybrid", badge: "스타일 유연", realism: "중간",
+    family: "hybrid", badge: "실사 배경 우선", badge2: "캐릭터 스타일화", realism: "중간",
   },
 ];
 
@@ -1076,16 +1077,30 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       {style.desc}
                     </p>
                     {/* 결과 성향 뱃지 */}
-                    <span
-                      className="inline-block text-[8px] px-1 py-0 rounded mt-1 leading-tight"
-                      style={
-                        isSelected
-                          ? { background: "rgba(255,255,255,0.25)", color: "white" }
-                          : { background: "#f0f0ff", color: "#787fff" }
-                      }
-                    >
-                      {style.badge}
-                    </span>
+                    <div className="flex flex-wrap gap-0.5 mt-1">
+                      <span
+                        className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
+                        style={
+                          isSelected
+                            ? { background: "rgba(255,255,255,0.25)", color: "white" }
+                            : { background: "#f0f0ff", color: "#787fff" }
+                        }
+                      >
+                        {style.badge}
+                      </span>
+                      {style.badge2 && (
+                        <span
+                          className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
+                          style={
+                            isSelected
+                              ? { background: "rgba(255,255,255,0.2)", color: "white" }
+                              : { background: "#fff3e0", color: "#b45309" }
+                          }
+                        >
+                          {style.badge2}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}

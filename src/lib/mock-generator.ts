@@ -110,9 +110,9 @@ function generateFallbackCuts(
 
   const veoStyle =
     input.animationMode === "2D 애니"
-      ? "2D anime style, cel-shaded animation, vibrant colors"
+      ? "2D cel-shaded animation, hand-drawn character, stylized but not rigidly flat"
       : input.animationMode === "하이브리드"
-        ? "hybrid 2D-3D rendering, stylized semi-realistic"
+        ? "HYBRID COMPOSITE: photorealistic cinematic environment (real textures, physical depth) + stylized character render (illustrated design lines), background=live-action realism, character=artistic stylization, ANTI-COLLAPSE: no full-frame anime or cartoon look"
         : "photorealistic, cinematic film grain, 4K quality";
 
   const characterSeeds: CharacterSeed[] = [{
@@ -189,9 +189,9 @@ export async function generatePrompt(
 
   const veoStyle =
     input.animationMode === "2D 애니"
-      ? "2D anime style, cel-shaded animation, vibrant colors"
+      ? "2D cel-shaded animation, hand-drawn character, stylized but not rigidly flat"
       : input.animationMode === "하이브리드"
-        ? "hybrid 2D-3D rendering, stylized semi-realistic"
+        ? "HYBRID COMPOSITE: photorealistic cinematic environment (real textures, physical depth) + stylized character render (illustrated design lines), background=live-action realism, character=artistic stylization, ANTI-COLLAPSE: no full-frame anime or cartoon look"
         : "photorealistic, cinematic film grain, 4K quality";
 
   const regionFlavor: Record<string, string> = {

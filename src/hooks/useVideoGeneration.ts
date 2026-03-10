@@ -986,7 +986,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         durationSeconds: cfg.durationSeconds,
         resolution: cfg.resolution,
         aspectRatio: cfg.aspectRatio,
-        generateAudio: cfg.generateAudio,
+        generateAudio: true, // 항상 사운드 ON 강제
         negativePrompt: negativePrompt || undefined,
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,
