@@ -17,7 +17,9 @@ export type StyleFamily = "all" | "live_action" | "animation_2d" | "stop_motion"
 export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
-export type VeoClipDuration = 4 | 6 | 8;
+// 4 | 6 | 8 → Veo + Kling 모두 가능
+// 10 | 15   → Kling 전용 (Veo 미지원)
+export type VeoClipDuration = 4 | 6 | 8 | 10 | 15;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
 export interface SignatureTechniques {
@@ -48,9 +50,86 @@ export interface PromptInput {
   duration: Duration;
   aspectRatio: AspectRatio;
   cutCount?: number; // 사용자 지정 장면 수 (없으면 자동 계산)
-  cutDuration?: number; // 장면당 초 (4 | 6 | 8, 기본 8)
+  cutDuration?: number; // 장면당 초 (4|6|8 → Veo+Kling, 10|15 → Kling 전용)
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
+  // 페르소나 시스템
+  generationPersona?: GenerationPersona;      // 영상 생성 규칙 세트
+  characterPersonas?: CharacterPersonaInput[]; // 캐릭터별 행동/감정 규칙
 }
+
+// ===== 페르소나 시스템 =====
+
+/**
+ * 캐릭터 페르소나 — 각 캐릭터의 행동/감정/말투 규칙
+ * characterSeeds.id와 매핑해 subjectAction 설계 기준으로 사용
+ */
+export interface CharacterPersonaInput {
+  characterId: string;     // char-1 | char-2 | char-3
+  personality: string;     // 성격 (예: "냉소적이지만 야망 있는 쇼맨")
+  behaviorHabits: string;  // 행동 습관 (예: "말하기 전에 군중을 둘러봄")
+  emotionStyle: string;    // 감정 표현 방식 (예: "불안을 퍼포먼스로 전환")
+  speechStyle: string;     // 말투 (예: "짧고 선언적, 끝에 수사 의문문")
+  gestureTraits: string;   // 몸짓 특징 (예: "팔을 넓게 벌림, 군중과 직접 눈 맞춤")
+}
+
+/**
+ * 생성 페르소나 — 영상 생성 전체에 적용되는 금지/필수 규칙 세트
+ * 단순 스타일 키워드보다 강하게 작동 — 모든 컷 프롬프트에 직접 주입
+ */
+export interface GenerationPersona {
+  id: string;
+  name: string;
+  // ── 금지 규칙
+  noSubtitles: boolean;        // 자막/캡션/화면 텍스트 금지
+  noNarration: boolean;        // 나레이션/보이스오버 금지
+  noLecturerChar: boolean;     // 강사/발표자/해설자 캐릭터 자동 생성 금지
+  // ── 구도 규칙
+  subjectFirst: boolean;       // 인물이 화면 주체, 배경은 지지 역할
+  noBackgroundClutter: boolean; // 배경 장식/배너/문양 과다 금지
+  // ── 연기/감정 규칙
+  emotionAsAction: boolean;    // 감정은 반드시 구체적 신체 행동으로만 표현
+  // ── 일관성 규칙
+  noRepeatComposition: boolean; // 같은 구도/표정/감정 연속 반복 금지
+}
+
+/** 기본 GenerationPersona 프리셋 */
+export const GENERATION_PERSONA_PRESETS: { id: string; name: string; desc: string; preset: GenerationPersona }[] = [
+  {
+    id: "dramatic_film",
+    name: "극영화 모드",
+    desc: "자막·나레이션·강사 금지, 감정은 행동으로",
+    preset: {
+      id: "dramatic_film", name: "극영화 모드",
+      noSubtitles: true, noNarration: true, noLecturerChar: true,
+      subjectFirst: true, noBackgroundClutter: true,
+      emotionAsAction: true, noRepeatComposition: true,
+    },
+  },
+  {
+    id: "mz_shorts",
+    name: "MZ 쇼츠 모드",
+    desc: "자막·나레이션 허용, 강사 금지, 주인공 우선",
+    preset: {
+      id: "mz_shorts", name: "MZ 쇼츠 모드",
+      noSubtitles: false, noNarration: false, noLecturerChar: true,
+      subjectFirst: true, noBackgroundClutter: true,
+      emotionAsAction: true, noRepeatComposition: true,
+    },
+  },
+  {
+    id: "free_mode",
+    name: "자유 모드",
+    desc: "모든 제약 해제",
+    preset: {
+      id: "free_mode", name: "자유 모드",
+      noSubtitles: false, noNarration: false, noLecturerChar: false,
+      subjectFirst: false, noBackgroundClutter: false,
+      emotionAsAction: false, noRepeatComposition: false,
+    },
+  },
+];
+
+export const DEFAULT_GENERATION_PERSONA: GenerationPersona = GENERATION_PERSONA_PRESETS[0].preset;
 
 // ===== 캐릭터 시드 =====
 export interface CharacterSeed {

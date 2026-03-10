@@ -74,6 +74,75 @@ function buildDirectorEngine(
   return lines.join("\n");
 }
 
+// ─── 페르소나 빌더 ───────────────────────────────────────────────────────────
+
+/**
+ * GenerationPersona → 프롬프트 블록 변환
+ * 단순 스타일 태그가 아니라 "모든 컷에 적용되는 운영 규칙"으로 주입
+ */
+function buildGenerationPersonaBlock(gp: {
+  noSubtitles?: boolean;
+  noNarration?: boolean;
+  noLecturerChar?: boolean;
+  subjectFirst?: boolean;
+  noBackgroundClutter?: boolean;
+  emotionAsAction?: boolean;
+  noRepeatComposition?: boolean;
+} | null | undefined): string {
+  if (!gp) return "";
+
+  const forbidden: string[] = [];
+  const required: string[] = [];
+
+  if (gp.noSubtitles)          forbidden.push("subtitle overlay, caption, on-screen lesson text, any readable text burned into frame");
+  if (gp.noNarration)          forbidden.push("narration audio, voiceover, off-screen explanatory voice");
+  if (gp.noLecturerChar)       forbidden.push("lecturer / presenter / host / narrator character — no one explains to camera");
+  if (gp.subjectFirst)         required.push("subject-first composition: character occupies primary frame zone, background is support — NOT decoration that competes");
+  if (gp.noBackgroundClutter)  required.push("minimal background: NO excessive banners, ornate patterns, signage, or decorative elements that override subject");
+  if (gp.emotionAsAction)      required.push("emotion ONLY through specific physical action — never abstract emotion labels, never adjectives like 'nervously' or 'sadly'");
+  if (gp.noRepeatComposition)  required.push("each cut: different shot type + different body position + different emotional beat than previous cut");
+
+  if (forbidden.length === 0 && required.length === 0) return "";
+
+  const lines = ["## GENERATION PERSONA (전체 시퀀스 생성 규칙 — 모든 컷에 절대 적용)"];
+  if (forbidden.length > 0) {
+    lines.push("FORBIDDEN in every single cut:");
+    forbidden.forEach(f => lines.push(`  ✗ ${f}`));
+  }
+  if (required.length > 0) {
+    lines.push("REQUIRED in every single cut:");
+    required.forEach(r => lines.push(`  ✓ ${r}`));
+  }
+  return lines.join("\n");
+}
+
+/**
+ * CharacterPersonaInput[] → 프롬프트 블록 변환
+ * subjectAction 설계 기준으로 캐릭터별 행동 규칙을 주입
+ */
+function buildCharacterPersonaBlock(cps: Array<{
+  characterId: string;
+  personality: string;
+  behaviorHabits: string;
+  emotionStyle: string;
+  speechStyle: string;
+  gestureTraits: string;
+}> | null | undefined): string {
+  if (!cps || cps.length === 0) return "";
+
+  const lines = ["## CHARACTER PERSONAS (캐릭터별 행동 규칙 — subjectAction 설계 기준)"];
+  for (const cp of cps) {
+    lines.push(`### ${cp.characterId}`);
+    if (cp.personality)    lines.push(`  PERSONALITY:  ${cp.personality}`);
+    if (cp.behaviorHabits) lines.push(`  BEHAVIOR:     ${cp.behaviorHabits}`);
+    if (cp.emotionStyle)   lines.push(`  EMOTION:      ${cp.emotionStyle}`);
+    if (cp.speechStyle)    lines.push(`  SPEECH:       ${cp.speechStyle}`);
+    if (cp.gestureTraits)  lines.push(`  GESTURE:      ${cp.gestureTraits}`);
+  }
+  lines.push("→ subjectAction MUST express the above traits. Actions reveal who the character IS.");
+  return lines.join("\n");
+}
+
 // ─── 콘텐츠 모드 감지 ────────────────────────────────────────────────────────
 /**
  * 역사적 인물/사건 중심 콘텐츠 → "dramatized_reenactment" 강제
@@ -162,6 +231,8 @@ async function step1Outlines(
   cutCount: number,
   secPerCut: number,
   contentMode: "dramatized_reenactment" | "general",
+  generationPersonaBlock: string,
+  characterPersonaBlock: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 컷 수에 따른 샷 타입 다양화 가이드
@@ -210,7 +281,7 @@ async function step1Outlines(
   const prompt = `당신은 ${directorNameKo} 감독의 연출 방식으로 장면을 구조화하는 시나리오 분석가입니다.
 이 감독의 연출 철학 전체가 각 컷의 구조를 결정해야 합니다.
 ${formatRules}
-## 감독 연출 철학 (이것이 모든 컷 설계의 기준)
+${generationPersonaBlock ? generationPersonaBlock + "\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n" : ""}## 감독 연출 철학 (이것이 모든 컷 설계의 기준)
 ${directorPersona ? directorPersona.slice(0, 600) : "강한 시각 개성, 인물의 심리가 화면 구성을 지배하는 스타일"}
 
 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
@@ -326,6 +397,8 @@ async function step23DetailBatch(
   editingNote: string,
   batchOutlines: CutOutline[],  // 이번 배치에서 생성할 컷 (호출부에서 뒤에 추가)
   stepLabel: string,
+  generationPersonaBlock: string,  // buildGenerationPersonaBlock() 결과
+  characterPersonaBlock: string,   // buildCharacterPersonaBlock() 결과
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -374,7 +447,7 @@ ${sequenceContext}
 
 ${batchDirectives}
 
-## 드라마타이즈 규칙 (절대 금지 / 필수)
+${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}## 드라마타이즈 규칙 (절대 금지 / 필수)
 절대 금지:
 - 자막(subtitle overlay, caption, on-screen lesson text) 생성 금지
 - 나레이션/보이스오버(narration audio, voiceover) 생성 금지
@@ -480,6 +553,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       region,
       cutCount,
       cutDuration,
+      generationPersona,
+      characterPersonas,
     } = await context.request.json() as Record<string, string | number | object>;
 
     const secPerCut  = Number(cutDuration) || 8;
@@ -574,6 +649,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const contentMode = detectContentMode(String(storyText));
     console.info(`[generate-cuts] contentMode=${contentMode}`);
 
+    // ── 페르소나 블록 빌드 ─────────────────────────────────────────────────
+    const gpRaw = generationPersona && typeof generationPersona === "object"
+      ? generationPersona as Record<string, boolean>
+      : null;
+    const cpRaw = Array.isArray(characterPersonas)
+      ? characterPersonas as Array<Record<string, string>>
+      : [];
+
+    const generationPersonaBlock = buildGenerationPersonaBlock(gpRaw);
+    const characterPersonaBlock  = buildCharacterPersonaBlock(cpRaw);
+
+    if (generationPersonaBlock) {
+      console.info(`[generate-cuts] generationPersona 주입: ${generationPersonaBlock.slice(0, 120)}…`);
+    }
+    if (characterPersonaBlock) {
+      console.info(`[generate-cuts] characterPersonas 주입: ${cpRaw.length}명`);
+    }
+
     // ── STEP 1: 아웃라인 생성 ─────────────────────────────────────────────────
     let characterSeeds: CharacterSeed[];
     let outlines: CutOutline[];
@@ -587,6 +680,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         targetCuts,
         secPerCut,
         contentMode,
+        generationPersonaBlock,
+        characterPersonaBlock,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -645,9 +740,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     try {
       [details1, details2] = await Promise.all([
-        step23DetailBatch(context.env, ...detailArgs, batch1, "step2"),
+        step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock),
         batch2.length > 0
-          ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3")
+          ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock)
           : Promise.resolve([]),
       ]);
     } catch (e) {

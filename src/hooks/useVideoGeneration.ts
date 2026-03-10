@@ -951,7 +951,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       });
 
       // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
-      const engine = cfg.engine ?? "veo";
+      // 10s / 15s는 Kling 전용 — Veo 미지원이므로 엔진을 강제 override
+      const durSec = cfg.durationSeconds ?? 8;
+      const isKlingOnlyDuration = durSec >= 10;
+      const engine = isKlingOnlyDuration ? "kling" : (cfg.engine ?? "veo");
+
       // CUT 1은 이전 영상/프레임이 존재하지 않으므로 extend 절대 금지
       // CUT 2 이상: cfg.videoMode 또는 기본값 "extend" 사용
       const videoMode = cutNumber === 1 ? "generate" : (cfg.videoMode ?? "extend");
@@ -961,6 +965,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         selectedMode: videoMode,
         cfgMode: cfg.videoMode ?? null,
         reason: cutNumber === 1 ? "cut1_force_generate" : "normal",
+        durationSec: durSec,
+        engineOverride: isKlingOnlyDuration ? `Kling 강제 (${durSec}s >= 10s)` : null,
+        engine,
       });
 
       // Kling extend: sourceVideo = 이전 클립의 rawVideoUri (Kling video_id)

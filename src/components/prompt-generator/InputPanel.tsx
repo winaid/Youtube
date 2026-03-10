@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques } from "@/types";
+import {
+  PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques,
+  GenerationPersona, DEFAULT_GENERATION_PERSONA, GENERATION_PERSONA_PRESETS,
+} from "@/types";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -272,6 +275,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [region, setRegion] = useState<Region>("한국");
   const [animationMode, setAnimationMode] = useState<AnimationMode>("2D 애니");
   const [styleFamily, setStyleFamily] = useState<import("../../types").StyleFamily>("all");
+  const [generationPersona, setGenerationPersona] = useState<GenerationPersona>(DEFAULT_GENERATION_PERSONA);
   const [duration, setDuration] = useState<Duration>("auto");
   const [directorSearch, setDirectorSearch] = useState("");
   const [webResults, setWebResults] = useState<WebDirectorResult[]>([]);
@@ -547,6 +551,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
         : undefined,
+      generationPersona,
     });
   };
 
@@ -1223,21 +1228,97 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           {/* 장면당 초 */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면당 초</Label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {([4, 6, 8] as const).map((sec) => (
+            <div className="grid grid-cols-5 gap-1.5">
+              {([4, 6, 8, 10, 15] as const).map((sec) => {
+                const isKlingOnly = sec >= 10;
+                return (
+                  <button
+                    key={sec}
+                    className="h-8 rounded-lg text-xs font-medium transition-all relative"
+                    style={
+                      cutDuration === sec
+                        ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                        : isKlingOnly
+                          ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
+                          : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                    }
+                    onClick={() => setCutDuration(sec)}
+                    title={isKlingOnly ? "Kling 전용 (Veo 미지원)" : undefined}
+                  >
+                    {sec}초
+                    {isKlingOnly && (
+                      <span
+                        className="absolute -top-1 -right-1 text-[7px] px-0.5 rounded leading-tight"
+                        style={{ background: "#f97316", color: "white" }}
+                      >
+                        K
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {cutDuration >= 10 && (
+              <p className="text-[9px]" style={{ color: "#f97316" }}>
+                ⚠ {cutDuration}초는 Kling 전용 — 영상 생성 시 Kling 엔진이 자동 선택됩니다
+              </p>
+            )}
+          </div>
+
+          <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
+
+          {/* 생성 페르소나 */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>생성 규칙 (페르소나)</Label>
+
+            {/* 프리셋 탭 */}
+            <div className="flex gap-1 flex-wrap">
+              {GENERATION_PERSONA_PRESETS.map((preset) => (
                 <button
-                  key={sec}
-                  className="h-8 rounded-lg text-xs font-medium transition-all"
+                  key={preset.id}
+                  onClick={() => setGenerationPersona(preset.preset)}
+                  className="text-[10px] px-2 py-0.5 rounded-full transition-all"
                   style={
-                    cutDuration === sec
-                      ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
-                      : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                    generationPersona.id === preset.id
+                      ? { background: "#787fff", color: "white", fontWeight: 600 }
+                      : { background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" }
                   }
-                  onClick={() => setCutDuration(sec)}
+                  title={preset.desc}
                 >
-                  {sec}초
+                  {preset.name}
                 </button>
               ))}
+            </div>
+
+            {/* 개별 토글 */}
+            <div className="grid grid-cols-2 gap-1">
+              {([
+                { key: "noSubtitles",        label: "자막 금지" },
+                { key: "noNarration",        label: "나레이션 금지" },
+                { key: "noLecturerChar",     label: "강사 캐릭터 금지" },
+                { key: "subjectFirst",       label: "인물 우선 구도" },
+                { key: "noBackgroundClutter",label: "배경 장식 억제" },
+                { key: "emotionAsAction",    label: "감정→행동 변환" },
+                { key: "noRepeatComposition",label: "반복 구도 금지" },
+              ] as { key: keyof GenerationPersona; label: string }[]).map(({ key, label }) => {
+                if (key === "id" || key === "name") return null;
+                const val = generationPersona[key] as boolean;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setGenerationPersona(prev => ({ ...prev, id: "custom", name: "커스텀", [key]: !val }))}
+                    className="text-left text-[9px] px-1.5 py-1 rounded transition-all flex items-center gap-1"
+                    style={
+                      val
+                        ? { background: "#ede9fe", color: "#7c3aed", border: "1px solid #c4b5fd" }
+                        : { background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0" }
+                    }
+                  >
+                    <span>{val ? "✓" : "○"}</span>
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

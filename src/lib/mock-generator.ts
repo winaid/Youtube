@@ -51,6 +51,9 @@ async function fetchGeminiCuts(
         region: input.region,
         cutCount,
         cutDuration,
+        // 페르소나 시스템
+        generationPersona: input.generationPersona ?? null,
+        characterPersonas: input.characterPersonas ?? [],
       }),
     });
 

@@ -44,7 +44,7 @@ export interface KlingGenerateRequest {
   negative_prompt?: string;
   /** default: "kling-v3-text-to-video" or "kling-v3-image-to-video" if image supplied */
   model?: string;
-  duration?: 5 | 10;  // EvoLink API expects int, not string
+  duration?: 5 | 10 | 15;  // EvoLink API expects int — Kling 지원: 5s, 10s, 15s
   aspect_ratio?: "16:9" | "9:16" | "1:1";
   cfg_scale?: number;
   // Image-to-video
@@ -60,7 +60,7 @@ export interface KlingExtendRequest {
   lastFrameBase64: string;
   prompt?: string;
   negative_prompt?: string;
-  duration?: 5 | 10;  // EvoLink API expects int, not string
+  duration?: 5 | 10 | 15;  // EvoLink API expects int — Kling 지원: 5s, 10s, 15s
   aspect_ratio?: "16:9" | "9:16" | "1:1";
 }
 
@@ -203,9 +203,17 @@ export async function klingCheckStatus(
 
 // ── Duration / Aspect ratio helpers ──────────────────────────────────────────
 
-/** Veo(4/6/8s) → Kling(5/10) nearest mapping. Returns int as EvoLink API requires. */
-export function toKlingDuration(veoSec: number): 5 | 10 {
-  return veoSec <= 6 ? 5 : 10;
+/**
+ * 입력 초 → Kling 지원 초 매핑. EvoLink API는 int 필요.
+ * 4s / 6s → 5s   (Veo 4/6 = 짧은 클립)
+ * 8s      → 10s  (Veo 8 ≒ Kling 10 근사)
+ * 10s     → 10s  (Kling 전용 10초)
+ * 15s     → 15s  (Kling 전용 15초)
+ */
+export function toKlingDuration(sec: number): 5 | 10 | 15 {
+  if (sec >= 15) return 15;
+  if (sec >= 9)  return 10;  // 10s 정확 + 8s 근사
+  return 5;                  // 4s, 6s
 }
 
 export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {
