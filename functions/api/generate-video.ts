@@ -61,6 +61,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const hasGoogle = !!(context.env.GOOGLE_SERVICE_ACCOUNT_JSON || context.env.GOOGLE_CLOUD_API_KEY);
     const hasKling  = !!context.env.KLING_API_KEY;
 
+    // DEBUG: 환경변수 키 목록 로깅 (값은 노출 안 함)
+    console.log("[generate-video] env keys:", Object.keys(context.env || {}));
+    console.log("[generate-video] hasGoogle:", hasGoogle, "hasKling:", hasKling, "engine req:", req.engine);
+
     let engineUsed: "veo" | "kling";
     if (req.engine === "kling") {
       engineUsed = "kling";
