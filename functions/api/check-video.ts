@@ -399,6 +399,7 @@ function extractModel(operationName: string): string | null {
 // === 메인 핸들러 ===
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const tCheckStart = Date.now();
   try {
     // ── 1. Request body 파싱 (실패 시 400 반환)
     let bodyText = "";
@@ -519,6 +520,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const timeout = setTimeout(() => controller.abort(), 25000);
 
     let res: Response;
+    const tFetchStart = Date.now();
     try {
       res = await fetchWithAuth(context.env, url, {
         method: "POST",
@@ -588,6 +590,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     });
 
     if (!data.done) {
+      const checkMs = Date.now() - tCheckStart;
+      console.log("[check-video] ⏱ RUNNING", { checkMs, cutNumber });
       return Response.json({ status: "RUNNING" });
     }
 
@@ -685,6 +689,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // 완료 로그: parsed result URL
+    const checkTotalMs = Date.now() - tCheckStart;
+    const fetchMs = Date.now() - tFetchStart;
     console.log("[check-video] Veo COMPLETED", {
       variantCount: variants.length,
       kinds: variants.map(v => v.resultKind),
@@ -692,6 +698,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         ? variants[0].rawVideoUri.slice(0, 80)
         : "(base64 or empty)",
     });
+    console.log("[check-video] ⏱ timing", { checkTotalMs, fetchMs, cutNumber });
 
     return Response.json({
       status: "COMPLETED",

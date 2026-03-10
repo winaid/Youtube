@@ -63,6 +63,7 @@ function inlineImage(rawB64: string, mimeType = "image/png") {
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const tServerStart = Date.now();
   try {
     const req = await context.request.json() as GenerateVideoRequest;
 
@@ -387,6 +388,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }));
 
     // ── 1차 시도 ─────────────────────────────────────────────────────────────
+    const tVeoStart = Date.now();
     let res = await callVeo(instance, parameters);
 
     // ── Fallback 1: Scene Extension(video) 400 → image-to-video → text-to-video ──
@@ -436,11 +438,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
+    const tVeoEnd = Date.now();
     const data = await res.json() as { name: string };
 
     const veoModeUsed: "generate" | "extend" = instance.video
       ? "extend"   // Scene Extension = extend
       : videoMode === "generate" ? "generate" : "extend";
+
+    const serverTotalMs = Date.now() - tServerStart;
+    const veoApiMs = tVeoEnd - tVeoStart;
+    const promptLen = typeof req.prompt === "string" ? req.prompt.length : 0;
+
+    console.log("[generate-video] ⏱ timing", {
+      serverTotalMs,
+      veoApiMs,
+      promptChars: promptLen,
+      promptWords: promptLen > 0 ? req.prompt.split(/\s+/).length : 0,
+      mode: veoMode,
+      cutNumber: cutNumberRaw,
+    });
 
     return Response.json({
       operationName: data.name,

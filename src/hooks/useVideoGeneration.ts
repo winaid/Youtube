@@ -121,23 +121,21 @@ function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
 
 // animationMode → Veo 프롬프트 스타일 프리픽스
 // 중요: 각 항목은 "스타일 태그"가 아니라 motion quality + surface texture + realism level을 명시
+// Veo 프롬프트 스타일 프리픽스 — 핵심 키워드만 (장황한 설명 제거)
+// Veo 최적: 전체 프롬프트 150단어 이내. 스타일은 1줄로 충분.
 const VEO_STYLE_PREFIX: Record<string, string> = {
-  "실사": "Photorealistic live-action footage, cinematic camera, natural lighting.",
-  // 2D 애니: cel-shaded 계열 — flat color는 이 스타일의 의도된 특성
-  "2D 애니": "2D anime animation style, clean cel-shaded lines, vibrant flat colors, expressive character movement.",
-  "수채화 애니": "Watercolor animation style, soft translucent pigment washes, visible paper texture, hand-painted edges bleeding gently, non-flat color depth.",
-  "하이브리드": "Semi-realistic digital art, anime character proportions over photorealistic environment, 2D-3D blended rendering.",
-  // 로토스코핑: 핵심은 실사 퍼포먼스에서 파생된 움직임의 질감
-  // "flat cartoon", "generic anime", "cel-shaded"는 이 스타일의 정반대
-  "로토스코핑": "Rotoscoped 2D animation. Movement is performance-derived: natural body mechanics, real weight transfer, grounded gesture timing traced from live motion. Visual surface: painterly or textured stylized overlay — NOT flat cartoon, NOT generic cel-shading. Style character: fluid but slightly imperfect hand-traced rhythm, subtle realism in posture and transition, stylized color treatment over live-performance-like motion.",
-  // 스톱모션: 일반 claymation 금지 — tactile imperfection이 핵심
-  "스톱모션": "Stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame movement with intentional stiffness and micro-tremors, real-world material imperfections (clay, fabric, wire armature), theatrical high-contrast lighting, psychological set design. NOT smooth digital animation, NOT plastic toy look.",
-  "픽셀아트": "Pixel art 16-bit retro aesthetic, crisp pixel edges, limited color palette, chunky character sprites.",
-  "잉크워시": "East Asian ink wash painting (수묵화/水墨画), flowing sumi-e brush strokes, black ink gradients on rice paper texture, minimalist negative space, traditional calligraphic line quality.",
-  "클레이": "Claymation animation, smooth clay figures with visible fingerprint texture, soft diffuse studio lighting, warm earthy color palette, slight clay warping on movement.",
-  "빈티지 필름": "Vintage 35mm film aesthetic, warm grain and scratches, faded analog color palette, 1970s cinema color grading, light leaks.",
-  "네온 사이버펑크": "Neon cyberpunk aesthetic, glowing neon lights against dark environments, vivid pink/blue/purple palette, wet reflective surfaces.",
-  "미니어처": "Tilt-shift miniature photography, tiny diorama scale, extreme shallow depth of field blurring edges, toy-world lighting.",
+  "실사": "Photorealistic live-action, cinematic camera, natural lighting.",
+  "2D 애니": "2D anime, cel-shaded lines, vibrant flat colors.",
+  "수채화 애니": "Watercolor animation, soft pigment washes, paper texture.",
+  "하이브리드": "Semi-realistic digital art, anime proportions, photorealistic environment.",
+  "로토스코핑": "Rotoscoped 2D animation, performance-derived movement, painterly stylized overlay.",
+  "스톱모션": "Stop-motion animation, handcrafted textures, frame-by-frame movement, material imperfections.",
+  "픽셀아트": "Pixel art 16-bit retro, crisp edges, limited palette.",
+  "잉크워시": "East Asian ink wash, sumi-e brush strokes, rice paper texture.",
+  "클레이": "Claymation, smooth clay figures, fingerprint texture, studio lighting.",
+  "빈티지 필름": "Vintage 35mm film, warm grain, faded analog palette, light leaks.",
+  "네온 사이버펑크": "Neon cyberpunk, glowing neon lights, vivid pink/blue/purple, wet reflective surfaces.",
+  "미니어처": "Tilt-shift miniature, diorama scale, shallow depth of field.",
 };
 
 // animationMode별 스타일 전용 negativePrompt 오버라이드
@@ -389,6 +387,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
     let consecutiveErrors = 0;
     const MAX_CONSECUTIVE_ERRORS = 3;
+    const tPollStart = performance.now();
+    let pollCount = 0;
 
     try {
       for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
@@ -469,6 +469,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
 
         consecutiveErrors = 0; // 성공 시 리셋
+        pollCount++;
 
         // ── 상태별 처리
         // data.status가 없는데 data.error가 있으면 → 즉시 실패 (대기 루프 방지)
@@ -519,6 +520,15 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           }
 
           updateClip(cutNumber, clipUpdate);
+
+          // ── 타이밍: 폴링 완료 ──────────────────────────────────────────────────
+          const tPollEnd = performance.now();
+          const pollTotalMs = Math.round(tPollEnd - tPollStart);
+          console.log(`[CUT ${cutNumber}] ⏱ polling`, {
+            pollCount,
+            pollTotalMs,
+            avgPollMs: pollCount > 0 ? Math.round(pollTotalMs / pollCount) : 0,
+          });
 
           // ── 완료 후 진단 로그 ───────────────────────────────────────────────
           {
@@ -615,6 +625,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             }
           }
 
+          // ── 타이밍: 후처리 완료 ────────────────────────────────────────────────
+          const tPostEnd = performance.now();
+          const postProcessMs = Math.round(tPostEnd - tPollEnd);
+          console.log(`[CUT ${cutNumber}] ⏱ postProcess`, { postProcessMs });
+          console.log(`[CUT ${cutNumber}] ⏱ TOTAL (polling loop)`, {
+            pollTotalMs,
+            postProcessMs,
+            totalMs: Math.round(tPostEnd - tPollStart),
+            pollCount,
+          });
+
           // 자동 모드: 완료 여부만 체크, 다음 컷 트리거는 autoMode useEffect가 담당
           if (autoModeRef.current) {
             setState((prev) => {
@@ -698,6 +719,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
   // 단일 장면 생성
   const generateCut = useCallback(async (cutNumber: number, preserveVariants?: boolean) => {
+    const t0 = performance.now(); // ── 전체 시작
     const cut = cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
 
@@ -871,27 +893,32 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       // 프롬프트에서 문서/편지/두루마리 내용 텍스트 제거 (금지 문구는 중복 방지)
       prompt = sanitizeTextContent(prompt);
 
+      // 워드 캡: 핵심 내용(스타일+씬+temporal beats)을 먼저 자른 뒤 부가 요소 추가
+      // Avoid/audio는 캡 이후 삽입 → 잘려나가지 않음
+      {
+        const capWords = prompt.split(/\s+/);
+        if (capWords.length > 150) {
+          prompt = capWords.slice(0, 140).join(" ");
+          // sanitizeTextContent가 이미 추가한 "No text overlay" 유지 확인
+          if (!/no text overlay/i.test(prompt)) {
+            prompt += ". No text overlay, no watermark";
+          }
+        }
+      }
+
       // Veo는 negativePrompt 파라미터를 지원하지 않으므로 프롬프트에 직접 삽입
       // 스타일별 오버라이드가 있으면 기본 negativePrompt 대신 스타일 전용 negative 사용
-      // (예: 로토스코핑은 "live action"을 금지하면 안 됨 → 기본 negative를 스타일 negative로 대체)
       const styleNegOverride = cfg.animationMode ? STYLE_NEGATIVE_OVERRIDES[cfg.animationMode] : undefined;
       const effectiveNegative = styleNegOverride ?? negativePrompt;
 
-      if (effectiveNegative && !prompt.includes("Avoid:") && !/\bno text[,.]?\s*no watermark\b/i.test(prompt)) {
+      if (effectiveNegative && !prompt.includes("Avoid:")) {
         const negItems = effectiveNegative.split(",").map(s => s.trim()).filter(Boolean).slice(0, 4);
         prompt = `${prompt}. Avoid: ${negItems.join(", ")}`;
       }
 
       // 오디오 힌트가 없으면 강제 추가 (Veo는 프롬프트에 오디오 언급이 없으면 무음 경향)
       if (!/\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(prompt)) {
-        prompt = `${prompt}. Natural diegetic sound and ambient environmental audio.`;
-      }
-
-      // 최종 프롬프트 길이 제한: Veo 최적 280단어, 초과 시 끝부분 잘라냄
-      const words = prompt.split(/\s+/);
-      if (words.length > 300) {
-        // 핵심 내용(앞부분)을 보존하고, 부가 지시(뒷부분)를 축소
-        prompt = words.slice(0, 280).join(" ") + ". Natural ambient audio. No text overlay, no watermark.";
+        prompt = `${prompt}. Diegetic sound, ambient audio.`;
       }
 
       // 사용자가 선택한 모드 그대로 사용 (fast 선택 시 무조건 fast)
@@ -1083,10 +1110,30 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
       };
 
+      // ── 타이밍: 프롬프트 조립 완료 ──────────────────────────────────────────
+      const tBuildDone = performance.now();
+      const buildPromptMs = Math.round(tBuildDone - t0);
+      const promptWordCount = prompt.split(/\s+/).length;
+      const promptCharCount = prompt.length;
+
+      console.log(`[CUT ${cutNumber}] ⏱ buildPrompt`, {
+        buildPromptMs,
+        promptChars: promptCharCount,
+        promptWords: promptWordCount,
+      });
+
+      const tApiStart = performance.now();
       const res = await fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+      });
+      const tApiEnd = performance.now();
+      const apiRequestMs = Math.round(tApiEnd - tApiStart);
+
+      console.log(`[CUT ${cutNumber}] ⏱ apiRequest`, {
+        apiRequestMs,
+        httpStatus: res.status,
       });
 
       if (!res.ok) {
@@ -1185,6 +1232,16 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       if (data.warning) {
         console.warn(`CUT ${cutNumber} warning:`, data.warning);
       }
+
+      // ── 타이밍: generateCut 전체 (API 응답까지) ──────────────────────────
+      const tGenDone = performance.now();
+      console.log(`[CUT ${cutNumber}] ⏱ generateCut TOTAL`, {
+        buildPromptMs,
+        apiRequestMs,
+        totalMs: Math.round(tGenDone - t0),
+        promptChars: promptCharCount,
+        promptWords: promptWordCount,
+      });
 
       startPolling(
         cutNumber,
