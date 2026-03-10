@@ -87,6 +87,18 @@ export default function ResultPanel({
     }
   }, [animationMode, videoGen]);
 
+  // 프롬프트 생성 시 cutDuration → videoGen config에 자동 동기화
+  useEffect(() => {
+    if (!result || result.cuts.length === 0) return;
+    const dur = result.cuts[0].durationSec as import("@/types").VeoClipDuration;
+    if (dur && videoGen.config.durationSeconds !== dur) {
+      const engine = dur >= 10 ? "kling" : videoGen.config.engine;
+      videoGen.updateConfig({ durationSeconds: dur, engine });
+    }
+  // result가 새로 생성될 때만 실행
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
   // 프롬프트 결과 생성 시 감정 곡선 자동 초기화
   useEffect(() => {
     if (!result || result.cuts.length === 0) return;
