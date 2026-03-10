@@ -7,6 +7,14 @@ import {
   type KlingEnv,
   type KlingMultiShot,
 } from "./_kling-api";
+import {
+  type VideoPromptJson,
+  type ExtendPromptJson,
+  renderVeoPromptFromJson,
+  renderVeoExtendPromptFromJson,
+  renderKlingPromptFromJson,
+  renderKlingExtendPromptFromJson,
+} from "./_video-prompt-json";
 
 type Env = GeminiEnv & KlingEnv;
 
@@ -17,6 +25,9 @@ interface GenerateVideoRequest {
   videoMode?: "generate" | "extend";   // generate: 독립 생성, extend: 이전 영상 이어서
   sourceVideo?: string;                // extend 모드의 소스 (Veo: gs:// URI, Kling: task_id/video_id)
   cutNumber?: number;                  // 진단 로그용 컷 번호
+  // ── JSON 프롬프트 (있으면 prompt보다 우선) ─────────────────────────────────
+  videoPromptJson?: VideoPromptJson;   // 구조화된 영상 프롬프트
+  extendPromptJson?: ExtendPromptJson; // 구조화된 확장 프롬프트
   // ── Veo 전용 ──────────────────────────────────────────────────────────────
   mode?: "fast" | "quality";
   durationSeconds?: number;
@@ -54,6 +65,14 @@ function inlineImage(rawB64: string, mimeType = "image/png") {
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const req = await context.request.json() as GenerateVideoRequest;
+
+    // ── JSON 프롬프트 → provider별 string 렌더링 ─────────────────────────────
+    // videoPromptJson이 있으면 engine에 따라 적절한 string으로 렌더링
+    // 없으면 기존 prompt string 사용 (하위 호환)
+    if (req.videoPromptJson && !req.prompt) {
+      // 일단 Veo 기본으로 렌더링 (엔진 확정 전이므로, 아래에서 Kling이면 재렌더링)
+      req.prompt = renderVeoPromptFromJson(req.videoPromptJson);
+    }
 
     if (!req.prompt) {
       return Response.json({ error: "prompt is required" }, { status: 400 });
@@ -113,6 +132,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           { error: "KLING_API_KEY not configured" },
           { status: 400 },
         );
+      }
+
+      // JSON 프롬프트가 있으면 Kling 전용으로 재렌더링
+      if (req.videoPromptJson) {
+        req.prompt = renderKlingPromptFromJson(req.videoPromptJson);
+        console.log("[generate-video] Kling: JSON → prompt 렌더링 완료", { promptLen: req.prompt.length });
       }
 
       const duration = toKlingDuration(req.durationSeconds ?? 8);

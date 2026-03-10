@@ -146,6 +146,47 @@ export interface MultiShotPrompt {
   duration: string; // 초 단위 문자열 (예: "5")
 }
 
+// ===== JSON 기반 영상 프롬프트 구조 =====
+/** 구조화된 영상 프롬프트 — 내부 source-of-truth */
+export interface VideoPromptJson {
+  shotSize: string;           // ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV
+  cameraAngle: string;        // eye-level | low-angle | high-angle | dutch | overhead | POV
+  cameraMovement: string;     // e.g. "slow push-in (tension builds)"
+  subjectBlocking: string;    // e.g. "foreground center-frame"
+  subjectAction: string;      // 구체적 신체 동작 ≤15w
+  actionBeat: string;         // 망설임/중단/follow-through 포함
+  bodySignal: string;         // hand/gaze/posture/breath (감정 라벨 금지)
+  revealed: string;           // 이 프레임에서 새로 공개되는 시각 정보
+  withheld: string;           // 프레임 밖에 보류되는 정보
+  timingBeat: string;         // e.g. "0s-2s: start. 2s-5s: develop. 5s-8s: climax"
+  transitionFromPrev: string; // 이전 장면과의 전환 대비
+  characterRef: string;       // 캐릭터 외형 (절대 수정 금지)
+  moodLighting: string;       // 조명/무드
+  styleSuffix: string;        // 스타일 + no text/watermark
+}
+
+/** Scene Extension용 프롬프트 JSON */
+export interface ExtendPromptJson {
+  prevSceneEnd: {
+    shotType: string;
+    subjectAction: string;
+    bodySignal: string;
+  };
+  transition: string;
+  newShot: {
+    shotSize: string;
+    cameraAngle: string;
+    cameraMovement: string;
+  };
+  characterRef: string;
+  newAction: string;
+  behavioralShift: string;
+  newlyRevealed: string;
+  stillWithheld: string;
+  timingBeat: string;
+  styleSuffix: string;
+}
+
 export interface Cut {
   cutNumber: number;
   durationSec: number;
@@ -160,6 +201,9 @@ export interface Cut {
   characterConsistency: string;
   charactersInScene: string[];
   multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (durationSec >= 10 시 생성)
+  // JSON 기반 프롬프트 — string 필드와 공존 (점진적 마이그레이션)
+  videoPromptJson?: VideoPromptJson;
+  extendPromptJson?: ExtendPromptJson;
 }
 
 export interface PromptOutput {

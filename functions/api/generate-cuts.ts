@@ -10,6 +10,7 @@
  *   Step3: maxTokens=8192  (컷 N/2+1~N 상세) — Step2와 병렬
  */
 import { GeminiEnv, streamingGenerate } from "./_gemini-keys";
+import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 
 type Env = GeminiEnv;
 
@@ -942,10 +943,65 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const d = detailMap.get(outline.cutNumber);
       const prevOutline = i > 0 ? outlines[i - 1] : null;
 
+      const moodLighting = d?.moodLighting ?? "Golden hour warm light. Teal and orange grade.";
+
       // extendPrompt: 빈 문자열이거나 너무 짧으면 outline 기반 fallback 생성
       const extendFallback = prevOutline
         ? `PREV SCENE ENDS: ${prevOutline.shotType} — subject was ${prevOutline.subjectAction}. → TRANSITION. NEW SHOT: SHOT_SIZE:${outline.shotType} | CAMERA_MOVEMENT:${outline.cameraMovement}. ${mainChar.appearance}. NEW ACTION: ${outline.subjectAction}. NEWLY REVEALED: new visual layer beyond ${prevOutline.shotType}. ${extendBeatTemplate}. ${noTextSuffix}`
         : "";
+
+      // ── JSON 기반 프롬프트 구조 생성 ──────────────────────────────────────
+      // videoPrompt string에서 구조화된 필드를 추출하거나 outline 기반으로 생성
+      const extractField = (text: string | undefined, key: string): string => {
+        if (!text) return "";
+        const re = new RegExp(`${key}:([^.|]+)`, "i");
+        const m = text.match(re);
+        return m ? m[1].trim() : "";
+      };
+
+      const vp = d?.videoPrompt ?? "";
+
+      const videoPromptJson: VideoPromptJson = {
+        shotSize:        extractField(vp, "SHOT_SIZE") || outline.shotType,
+        cameraAngle:     extractField(vp, "CAMERA_ANGLE") || "eye-level",
+        cameraMovement:  extractField(vp, "CAMERA_MOVEMENT") || outline.cameraMovement,
+        subjectBlocking: extractField(vp, "SUBJECT_BLOCKING") || "subject center-frame mid-ground",
+        subjectAction:   extractField(vp, "SUBJECT") || outline.subjectAction,
+        actionBeat:      extractField(vp, "ACTION_BEAT") || outline.subjectAction,
+        bodySignal:      extractField(vp, "BODY_SIGNAL") || "",
+        revealed:        extractField(vp, "REVEALED") || "new visual layer",
+        withheld:        extractField(vp, "WITHHELD") || "",
+        timingBeat:      beatTemplate,
+        transitionFromPrev: extractField(vp, "TRANSITION_FROM_PREV") || "",
+        characterRef:    mainChar.appearance,
+        moodLighting:    moodLighting,
+        styleSuffix:     noTextSuffix,
+      };
+
+      let extendPromptJson: ExtendPromptJson | undefined;
+      if (i > 0 && prevOutline) {
+        const ep = d?.extendPrompt ?? "";
+        extendPromptJson = {
+          prevSceneEnd: {
+            shotType:      prevOutline.shotType,
+            subjectAction: prevOutline.subjectAction,
+            bodySignal:    extractField(ep, "body showed") || "",
+          },
+          transition:      outline.transitionHint || "cut",
+          newShot: {
+            shotSize:      outline.shotType,
+            cameraAngle:   extractField(ep, "CAMERA_ANGLE") || "eye-level",
+            cameraMovement: extractField(ep, "CAMERA_MOVEMENT") || outline.cameraMovement,
+          },
+          characterRef:    mainChar.appearance,
+          newAction:       extractField(ep, "NEW ACTION") || outline.subjectAction,
+          behavioralShift: extractField(ep, "BEHAVIORAL SHIFT") || "",
+          newlyRevealed:   extractField(ep, "NEWLY REVEALED") || "",
+          stillWithheld:   extractField(ep, "STILL WITHHELD") || "",
+          timingBeat:      extendBeatTemplate,
+          styleSuffix:     noTextSuffix,
+        };
+      }
 
       return {
         cutNumber:     outline.cutNumber,
@@ -955,7 +1011,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         subjectAction: outline.subjectAction,
         emotionalDelta: outline.emotionalDelta,
         cameraDirection:  d?.cameraDirection  ?? `Lens 35mm. Slow dolly in. ${String(directorName)} style.`,
-        moodLighting:     d?.moodLighting     ?? "Golden hour warm light. Teal and orange grade.",
+        moodLighting,
         imagePrompt:      d?.imagePrompt      ?? `${outline.shotType}, eye-level. ${mainChar.appearance}. Subject AT START: ${outline.subjectAction.split(" ").slice(0, 6).join(" ")}. ${noTextSuffix}`,
         endImagePrompt:   d?.endImagePrompt   ?? `${mainChar.appearance}. Subject AT END: ${outline.subjectAction}. ${noTextSuffix}`,
         videoPrompt:      d?.videoPrompt      ?? `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. ${mainChar.appearance}. SUBJECT_BLOCKING:subject center-frame mid-ground. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:character emotional state not yet shown. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`,
@@ -965,6 +1021,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         transitionHint:   outline.transitionHint,
         characterConsistency: `캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`,
         charactersInScene: [mainChar.id],
+        // JSON 기반 프롬프트 (provider별 렌더링용)
+        videoPromptJson,
+        ...(extendPromptJson ? { extendPromptJson } : {}),
         // 멀티샷: Kling(10s+)은 model_params로 전달, Veo는 구조화 프롬프트로 적용
         ...(d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0
           ? { multiShot: d.multiShot }

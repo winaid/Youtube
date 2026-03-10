@@ -1047,6 +1047,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         ...(engine === "kling" && cut.multiShot && cut.multiShot.length > 0
           ? { multiShot: cut.multiShot }
           : {}),
+        // JSON 기반 프롬프트 (있으면 서버에서 provider별 렌더링)
+        ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
+        ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
       };
 
       const res = await fetch("/api/generate-video", {
