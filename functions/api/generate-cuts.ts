@@ -490,23 +490,41 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── 스타일 맵 ─────────────────────────────────────────────────────────────
+    // 설계 원칙:
+    //   - subject-focused composition: 배경 장식/배너/문양이 주제를 덮지 않게 subject-first 명시
+    //   - 각 계열(live_action / animation_2d / stop_motion / hybrid)별로 결과 성향 분리
+    //   - "2D 애니": 이전에 vibrant flat colors / clean outlines 강제 → 평면 카툰 고착 문제
+    //     → 스타일 자체는 cel-shaded 기반이지만 overriding color lock을 완화
+    //   - "하이브리드": "2D-3D blending"은 해석이 모호 → 실사 배경 + 스타일 캐릭터 명시
+    //   - "로토스코핑": 일반 2D 아님 — performance/live-motion 기반임을 유지
     const veoStyleMap: Record<string, string> = {
-      "2D 애니":       "2D anime cel-shaded, vibrant flat colors, clean outlines",
-      "실사":          "photorealistic cinematic 4K",
-      "하이브리드":    "hybrid 2D-3D semi-realistic blending",
-      "수채화 애니":   "watercolor animation, soft translucent washes, pastel tones",
-      // 로토스코핑: "painted outlines" 금지 — 실사 퍼포먼스 기반 움직임 질감이 핵심
-      "로토스코핑":    "rotoscoped 2D animation, performance-derived movement timing, natural body mechanics under stylized painterly surface, traced-from-live-motion rhythm, NOT flat cartoon NOT generic anime",
+      // ── live_action 계열 ──────────────────────────────────────────────────
+      // 배경은 환경 묘사에 집중, 인물이 화면 주체
+      "실사":          "photorealistic cinematic 4K, subject-focused composition, natural light and shadow, minimal background decoration",
+      "빈티지 필름":   "vintage 35mm film, warm grain, faded colors, 1970s cinema, subject-centered frame, aged analog texture",
+      "네온 사이버펑크":"neon cyberpunk, glowing neon accent lights on subject, rain-wet street, holographic haze, subject-first NOT background-overloaded",
+
+      // ── animation_2d 계열 ─────────────────────────────────────────────────
+      // 이전: "vibrant flat colors, clean outlines" → 평면 카툰으로 과도하게 고착됨
+      // 수정: 스타일 식별자는 유지하되 색·선 강제를 완화, director aesthetic에 여지 부여
+      "2D 애니":       "2D cel-shaded animation, hand-drawn character with expressive linework, stylized but not rigidly flat, subject-focused frame, minimal decorative background elements",
+      "수채화 애니":   "watercolor animation, soft translucent washes, pastel tones, gentle bleeding edges, subject as focal point NOT decorative background",
+      "픽셀아트":      "pixel art 16-bit retro game aesthetic, clean pixel edges, limited color palette, character-centered composition",
+      "잉크워시":      "East Asian ink wash painting, sumi-e brush strokes, black ink on rice paper, negative space around subject, NOT ornate patterned background",
+
+      // ── stop_motion 계열 ─────────────────────────────────────────────────
       // 스톱모션: 단순 "claymation" 금지 — 질감·움직임·조명의 구체적 미학 주입
-      "스톱모션":      "stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame stiffness, real-world material imperfections (clay, fabric, wire), theatrical high-contrast lighting, psychological set design",
-      "픽셀아트":      "pixel art 16-bit retro game aesthetic, clean pixel edges",
-      "잉크워시":      "East Asian ink wash painting, sumi-e brush strokes, black ink on rice paper",
-      "클레이":        "claymation, smooth clay figures, visible fingerprint texture, studio lighting",
-      "빈티지 필름":   "vintage 35mm film, warm grain, faded colors, 1970s cinema",
-      "네온 사이버펑크":"neon cyberpunk, glowing neon lights, vivid pink/blue/purple palette",
-      "미니어처":      "tilt-shift miniature photography, tiny diorama, shallow depth of field",
+      "스톱모션":      "stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame stiffness, real-world material imperfections (clay, fabric, wire), theatrical high-contrast lighting, psychological set design, subject-first NOT generic decorative set",
+      "클레이":        "claymation, smooth clay figures, visible fingerprint texture, studio lighting, clay-built environment NOT painted backdrop",
+      "미니어처":      "tilt-shift miniature photography, tiny diorama, shallow depth of field, handcrafted miniature set, subject as primary miniature figure",
+
+      // ── hybrid 계열 ──────────────────────────────────────────────────────
+      // 로토스코핑: "painted outlines" 금지 — 실사 퍼포먼스 기반 움직임 질감이 핵심
+      "로토스코핑":    "rotoscoped 2D animation over live-action performance, movement derived from real human motion, natural body mechanics under stylized painterly surface, traced-from-live-motion rhythm, NOT flat cartoon NOT generic anime NOT painted background banner",
+      // 하이브리드: 이전 "2D-3D blending"은 모호 → 실사 공간 + 스타일 캐릭터로 명확화
+      "하이브리드":    "photorealistic live-action environment with stylized character render, semi-realistic blending where subject style differs from background realism, subject-focused NOT evenly stylized",
     };
-    const veoStyle = veoStyleMap[String(animationMode)] ?? "photorealistic cinematic";
+    const veoStyle = veoStyleMap[String(animationMode)] ?? "photorealistic cinematic, subject-focused composition";
 
     const regionFlavorMap: Record<string, string> = {
       "한국":   "Korean urban-rural aesthetic",

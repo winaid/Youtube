@@ -37,19 +37,92 @@ interface InputPanelProps {
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
 
-const animationStyles: { mode: AnimationMode; label: string; desc: string; directors: string[] }[] = [
-  { mode: "2D 애니", label: "2D 애니", desc: "셀 애니메이션, 선명한 외곽선", directors: ["미야자키 하야오", "신카이 마코토", "콘 사토시"] },
-  { mode: "실사", label: "실사", desc: "포토리얼, 시네마틱 필름 그레인", directors: ["봉준호", "크리스토퍼 놀란", "데이비드 핀처"] },
-  { mode: "하이브리드", label: "하이브리드", desc: "2D+3D 혼합, 반실사 스타일", directors: ["이안", "기예르모 델 토로"] },
-  { mode: "수채화 애니", label: "수채화", desc: "번지는 수채 물감 질감, 파스텔 톤", directors: ["미야자키 하야오", "임권택"] },
-  { mode: "로토스코핑", label: "로토스코핑", desc: "실사 위에 그림 덧씌움, A Scanner Darkly 풍", directors: ["콘 사토시", "왕가위"] },
-  { mode: "스톱모션", label: "스톱모션", desc: "클레이/인형 프레임별 촬영", directors: ["웨스 앤더슨", "기예르모 델 토로"] },
-  { mode: "픽셀아트", label: "픽셀아트", desc: "16비트 레트로 게임 감성", directors: ["쿼틴 타란티노", "콘 사토시"] },
-  { mode: "잉크워시", label: "동양화", desc: "수묵화 붓터치, 먹과 한지 질감", directors: ["장이머우", "임권택", "아피찻퐁"] },
-  { mode: "클레이", label: "클레이", desc: "점토 캐릭터, 수제 미니어처", directors: ["웨스 앤더슨", "피터 잭슨"] },
-  { mode: "빈티지 필름", label: "빈티지 필름", desc: "70년대 필름 그레인, 바랜 색감", directors: ["쿼틴 타란티노", "왕가위", "알폰소 쿠아론"] },
-  { mode: "네온 사이버펑크", label: "네온 사이버펑크", desc: "네온, 비 젖은 거리, 홀로그램", directors: ["니콜라스 빈딩 레픈", "드니 빌뇌브", "콘 사토시"] },
-  { mode: "미니어처", label: "미니어처", desc: "틸트시프트, 인형의 집 스타일", directors: ["웨스 앤더슨", "피터 잭슨"] },
+// StyleFamily 분류:
+//   live_action  — 실사 기반 (카메라, 필름, 빛)
+//   animation_2d — 2D 그림 기반 (셀, 수채, 수묵, 픽셀)
+//   stop_motion  — 수공예 오브젝트 (클레이, 인형, 미니어처)
+//   hybrid       — 실제 움직임 + 스타일 레이어 (로토스코핑, 반실사 혼합)
+type StyleFamilyFilter = Exclude<import("../../types").StyleFamily, "all">;
+
+interface AnimationStyleDef {
+  mode: AnimationMode;
+  label: string;
+  desc: string;
+  directors: string[];
+  family: StyleFamilyFilter;
+  badge: string;  // 결과 성향 한줄 요약
+  realism: "높음" | "중간" | "낮음";
+}
+
+const animationStyles: AnimationStyleDef[] = [
+  {
+    mode: "실사", label: "실사", desc: "포토리얼, 시네마틱 필름 그레인",
+    directors: ["봉준호", "크리스토퍼 놀란", "데이비드 핀처"],
+    family: "live_action", badge: "실사 강함", realism: "높음",
+  },
+  {
+    mode: "빈티지 필름", label: "빈티지 필름", desc: "70년대 필름 그레인, 바랜 색감",
+    directors: ["쿼틴 타란티노", "왕가위", "알폰소 쿠아론"],
+    family: "live_action", badge: "아날로그 필름", realism: "높음",
+  },
+  {
+    mode: "네온 사이버펑크", label: "네온 사이버펑크", desc: "네온, 비 젖은 거리, 홀로그램",
+    directors: ["니콜라스 빈딩 레픈", "드니 빌뇌브", "콘 사토시"],
+    family: "live_action", badge: "네온 강조", realism: "높음",
+  },
+  {
+    mode: "2D 애니", label: "2D 애니", desc: "셀 애니메이션, 외곽선 기반 작화",
+    directors: ["미야자키 하야오", "신카이 마코토", "콘 사토시"],
+    family: "animation_2d", badge: "평면 채색", realism: "낮음",
+  },
+  {
+    mode: "수채화 애니", label: "수채화", desc: "번지는 수채 물감 질감, 파스텔 톤",
+    directors: ["미야자키 하야오", "임권택"],
+    family: "animation_2d", badge: "수채 질감", realism: "낮음",
+  },
+  {
+    mode: "픽셀아트", label: "픽셀아트", desc: "16비트 레트로 게임 감성",
+    directors: ["쿼틴 타란티노", "콘 사토시"],
+    family: "animation_2d", badge: "레트로 픽셀", realism: "낮음",
+  },
+  {
+    mode: "잉크워시", label: "동양화", desc: "수묵화 붓터치, 먹과 한지 질감",
+    directors: ["장이머우", "임권택", "아피찻퐁"],
+    family: "animation_2d", badge: "수묵 절제", realism: "낮음",
+  },
+  {
+    mode: "스톱모션", label: "스톱모션", desc: "수공예 소재, 프레임별 촬영",
+    directors: ["웨스 앤더슨", "기예르모 델 토로"],
+    family: "stop_motion", badge: "수공예 질감", realism: "중간",
+  },
+  {
+    mode: "클레이", label: "클레이", desc: "점토 캐릭터, 손자국 질감",
+    directors: ["웨스 앤더슨", "피터 잭슨"],
+    family: "stop_motion", badge: "점토 질감", realism: "중간",
+  },
+  {
+    mode: "미니어처", label: "미니어처", desc: "틸트시프트, 소형 디오라마 시점",
+    directors: ["웨스 앤더슨", "피터 잭슨"],
+    family: "stop_motion", badge: "미니어처 시점", realism: "중간",
+  },
+  {
+    mode: "로토스코핑", label: "로토스코핑", desc: "실제 움직임 기반 2D — 일반 2D 아님",
+    directors: ["콘 사토시", "왕가위"],
+    family: "hybrid", badge: "실제 움직임+2D", realism: "중간",
+  },
+  {
+    mode: "하이브리드", label: "하이브리드", desc: "실사 배경+스타일 캐릭터 혼합",
+    directors: ["이안", "기예르모 델 토로"],
+    family: "hybrid", badge: "스타일 유연", realism: "중간",
+  },
+];
+
+const FAMILY_TABS: { key: import("../../types").StyleFamily; label: string; hint: string }[] = [
+  { key: "all",          label: "전체",    hint: "모든 스타일" },
+  { key: "live_action",  label: "실사",    hint: "카메라 기반" },
+  { key: "animation_2d", label: "2D",      hint: "그림 기반" },
+  { key: "stop_motion",  label: "스톱모션", hint: "수공예" },
+  { key: "hybrid",       label: "혼합",    hint: "실사+스타일" },
 ];
 // 감독 스타일 분석 → 영상 스타일 추천
 function recommendStylesForDirector(
@@ -198,6 +271,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
   const [animationMode, setAnimationMode] = useState<AnimationMode>("2D 애니");
+  const [styleFamily, setStyleFamily] = useState<import("../../types").StyleFamily>("all");
   const [duration, setDuration] = useState<Duration>("auto");
   const [directorSearch, setDirectorSearch] = useState("");
   const [webResults, setWebResults] = useState<WebDirectorResult[]>([]);
@@ -957,24 +1031,61 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         {/* 애니메이션 모드 */}
         <div className="space-y-2">
           <Label>영상 스타일</Label>
-          <div className="grid grid-cols-3 gap-1.5">
-            {animationStyles.map((style) => (
+
+          {/* 계열 필터 탭 */}
+          <div className="flex gap-1 flex-wrap">
+            {FAMILY_TABS.map((tab) => (
               <button
-                key={style.mode}
-                className="text-left p-2 rounded-lg transition-all hover:shadow-sm"
+                key={tab.key}
+                onClick={() => setStyleFamily(tab.key)}
+                className="text-[10px] px-2 py-0.5 rounded-full transition-all"
                 style={
-                  animationMode === style.mode
-                    ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
-                    : { background: "white", color: "#333", border: "1px solid #e2e8f0" }
+                  styleFamily === tab.key
+                    ? { background: "#787fff", color: "white", fontWeight: 600 }
+                    : { background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" }
                 }
-                onClick={() => setAnimationMode(style.mode)}
+                title={tab.hint}
               >
-                <p className="text-[11px] font-semibold leading-tight">{style.label}</p>
-                <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: animationMode === style.mode ? 0.85 : 0.5 }}>
-                  {style.desc}
-                </p>
+                {tab.label}
               </button>
             ))}
+          </div>
+
+          {/* 스타일 카드 그리드 */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {animationStyles
+              .filter((s) => styleFamily === "all" || s.family === styleFamily)
+              .map((style) => {
+                const isSelected = animationMode === style.mode;
+                return (
+                  <button
+                    key={style.mode}
+                    className="text-left p-2 rounded-lg transition-all hover:shadow-sm relative"
+                    style={
+                      isSelected
+                        ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                        : { background: "white", color: "#333", border: "1px solid #e2e8f0" }
+                    }
+                    onClick={() => setAnimationMode(style.mode)}
+                  >
+                    <p className="text-[11px] font-semibold leading-tight">{style.label}</p>
+                    <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: isSelected ? 0.85 : 0.5 }}>
+                      {style.desc}
+                    </p>
+                    {/* 결과 성향 뱃지 */}
+                    <span
+                      className="inline-block text-[8px] px-1 py-0 rounded mt-1 leading-tight"
+                      style={
+                        isSelected
+                          ? { background: "rgba(255,255,255,0.25)", color: "white" }
+                          : { background: "#f0f0ff", color: "#787fff" }
+                      }
+                    >
+                      {style.badge}
+                    </span>
+                  </button>
+                );
+              })}
           </div>
           {/* 감독 추천 */}
           {(() => {
