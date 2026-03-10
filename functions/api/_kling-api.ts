@@ -47,6 +47,7 @@ export interface KlingGenerateRequest {
   duration?: 5 | 10 | 15;  // EvoLink API expects int — Kling 지원: 5s, 10s, 15s
   aspect_ratio?: "16:9" | "9:16" | "1:1";
   cfg_scale?: number;
+  with_audio?: boolean; // o3 모델 사운드 활성화 (default: true)
   // Image-to-video
   image?: string;       // base64 or public URL for start frame
   image_tail?: string;  // base64 or public URL for end frame
@@ -97,6 +98,7 @@ export async function klingGenerate(
     prompt: req.prompt,
     duration: req.duration ?? 5,  // EvoLink expects int
     aspect_ratio: req.aspect_ratio ?? "16:9",
+    with_audio: req.with_audio !== false,  // 항상 사운드 ON (o3 모델 필수 파라미터)
   };
   if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
   if (req.cfg_scale !== undefined) body.cfg_scale = req.cfg_scale;
@@ -148,6 +150,7 @@ export async function klingExtend(
     duration:        req.duration ?? 5,  // EvoLink expects int
     aspect_ratio:    req.aspect_ratio ?? "16:9",
     image:           req.lastFrameBase64,
+    with_audio:      true,  // 사운드 강제 ON
   });
 }
 
