@@ -951,8 +951,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       });
 
       // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
-      const engine    = cfg.engine    ?? "veo";
-      const videoMode = cfg.videoMode ?? "extend";
+      const engine = cfg.engine ?? "veo";
+      // CUT 1은 이전 영상/프레임이 존재하지 않으므로 extend 절대 금지
+      // CUT 2 이상: cfg.videoMode 또는 기본값 "extend" 사용
+      const videoMode = cutNumber === 1 ? "generate" : (cfg.videoMode ?? "extend");
+
+      console.log(`[CUT ${cutNumber}] videoMode 결정`, {
+        cutNumber,
+        selectedMode: videoMode,
+        cfgMode: cfg.videoMode ?? null,
+        reason: cutNumber === 1 ? "cut1_force_generate" : "normal",
+      });
 
       // Kling extend: sourceVideo = 이전 클립의 rawVideoUri (Kling video_id)
       // Veo extend:   previousVideoUri = 이전 클립의 gs:// URI (기존 로직 유지)

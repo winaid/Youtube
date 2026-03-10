@@ -87,7 +87,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       engineUsed = "veo";
     }
 
-    const videoMode = req.videoMode ?? "extend";
+    // CUT 1 서버 방어: 프론트엔드가 잘못된 "extend"를 보내도 서버에서 강제 차단
+    // cutNumber === 1이면 이전 영상/프레임이 있을 수 없으므로 generate로 오버라이드
+    const cutNumberRaw = req.cutNumber != null ? Number(req.cutNumber) : null;
+    const videoMode = (req.videoMode === "extend" && cutNumberRaw === 1)
+      ? "generate"  // CUT 1 → extend 강제 차단
+      : (req.videoMode ?? "extend");
+
+    if (req.videoMode === "extend" && cutNumberRaw === 1) {
+      console.warn("[generate-video] CUT 1에 videoMode=extend 요청 → generate로 강제 전환", {
+        cutNumber: cutNumberRaw,
+        originalMode: req.videoMode,
+        forcedMode: "generate",
+      });
+    }
+
     const sourceVideo = req.sourceVideo || req.previousVideoUri || "";
 
     // ── Kling 분기 ────────────────────────────────────────────────────────────
@@ -112,19 +126,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // ── 진단 로그 ──────────────────────────────────────────────────────────
       console.log("[Kling] 요청 진단", {
-        cutNumber:        req.cutNumber ?? null,
-        sourceCutId:      req.cutNumber ?? null,
-        parentCutId:      (req.cutNumber != null && req.cutNumber > 1) ? req.cutNumber - 1 : null,
+        cutNumber:        cutNumberRaw,
+        sourceCutId:      cutNumberRaw,
+        parentCutId:      (cutNumberRaw != null && cutNumberRaw > 1) ? cutNumberRaw - 1 : null,
         provider:         "kling",
-        mode:             videoMode,
+        selectedMode:     videoMode,
+        originalReqMode:  req.videoMode ?? null,
+        previousVideoUri: req.previousVideoUri || null,
+        sourceVideo:      sourceVideo || null,
         hasFirstFrame:    !!req.firstFrameBase64,
         validFirstLen:    validFirst.length,
         hasLastFrame:     !!req.lastFrameBase64,
         validLastLen:     validLast.length,
-        rawFirstLen:      strippedFirst.length,  // 검증 통과 전 실제 길이
+        rawFirstLen:      strippedFirst.length,
         rawLastLen:       strippedLast.length,
-        sourceVideo:      sourceVideo || null,
-        previousVideoUri: req.previousVideoUri || null,
       });
 
       let taskId: string;
