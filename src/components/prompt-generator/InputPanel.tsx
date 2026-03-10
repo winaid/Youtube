@@ -286,6 +286,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
     recommendedDuration: number;
+    totalSeconds: number;
     reason: string;
     scenes: string[];
   } | null>(null);
@@ -451,16 +452,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     }
   };
 
-  // AI 컷 수 분석
-  const analyzeStory = useCallback(async () => {
+  // AI 장면 분석 — 영상 길이 지정 시에만 실행 (자동=건너뜀)
+  const analyzeStory = useCallback(async (targetDurationSec: number) => {
     if (!storyText.trim() || storyText.length < 20) return;
-    console.log("[analyze-cuts] 분석 시작, 텍스트 길이:", storyText.length);
+    console.log("[analyze-cuts] 분석 시작, 텍스트 길이:", storyText.length, "목표 길이:", targetDurationSec);
     setIsAnalyzing(true);
     try {
       const res = await fetch("/api/analyze-cuts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storyText }),
+        body: JSON.stringify({ storyText, targetDuration: targetDurationSec }),
       });
       console.log("[analyze-cuts] 응답:", res.status, res.statusText);
       if (!res.ok) {
@@ -478,9 +479,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       }
       const rawCuts = data.recommendedCuts ?? 8;
       const rawDur  = data.recommendedDuration ?? 8;
+      const safeCuts = Math.min(10, Math.max(4, rawCuts));
+      const safeDur  = [4, 6, 8, 10, 15].includes(rawDur) ? rawDur : 8;
       setAiCutRecommendation({
-        recommendedCuts:     Math.min(10, Math.max(4, rawCuts)),
-        recommendedDuration: [4, 6, 8].includes(rawDur) ? rawDur : 8,
+        recommendedCuts:     safeCuts,
+        recommendedDuration: safeDur,
+        totalSeconds:        data.totalSeconds ?? safeCuts * safeDur,
         reason:  data.reason ?? "",
         scenes:  data.scenes ?? [],
       });
@@ -492,15 +496,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     }
   }, [storyText]);
 
-  // 시나리오 변경 시 디바운스 분석
+  // 영상 길이가 지정된 경우에만 AI 분석 — 자동이면 추천 없음
   useEffect(() => {
-    if (storyText.trim().length < 20) {
+    if (duration === "auto") {
       setAiCutRecommendation(null);
       return;
     }
-    const timer = setTimeout(analyzeStory, 1500);
+    const targetSec = typeof duration === "number" ? duration : null;
+    if (!targetSec || storyText.trim().length < 20) return;
+    const timer = setTimeout(() => analyzeStory(targetSec), 1000);
     return () => clearTimeout(timer);
-  }, [storyText, analyzeStory]);
+  }, [storyText, duration, analyzeStory]);
 
   // 감독 추천 함수
   const recommendDirector = useCallback(async () => {
@@ -1169,16 +1175,21 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면 수</Label>
-              {isAnalyzing && (
-                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
-                  AI 분석 중...
-                </span>
-              )}
             </div>
 
-            {/* AI 추천 */}
-            {aiCutRecommendation && (
+            {/* AI 추천 — 영상 길이 지정 시에만 표시 */}
+            {duration === "auto" && storyText.trim().length >= 20 && (
+              <p className="text-[10px] px-2 py-1.5 rounded-lg" style={{ background: "#f1f5f9", color: "#94a3b8" }}>
+                영상 길이를 선택하면 AI가 장면 수와 초를 자동 추천합니다
+              </p>
+            )}
+            {isAnalyzing && (
+              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg" style={{ background: "#787fff08", border: "1px solid #787fff20" }}>
+                <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" style={{ color: "#787fff" }} />
+                <span className="text-[10px]" style={{ color: "#787fff" }}>영상 길이 기준으로 분석 중...</span>
+              </div>
+            )}
+            {aiCutRecommendation && !isAnalyzing && (
               <button
                 className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
                 style={{ background: "#22c55e0a", border: "1px solid #22c55e25" }}
@@ -1187,7 +1198,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   setCutDuration(aiCutRecommendation.recommendedDuration);
                 }}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style={{ background: "#22c55e" }}>
                     AI 추천
                   </span>
@@ -1196,6 +1207,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: "#dcfce7", color: "#15803d" }}>
                     × {aiCutRecommendation.recommendedDuration}초
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "#e0f2fe", color: "#0369a1" }}>
+                    = {aiCutRecommendation.totalSeconds}초
                   </span>
                   <span className="text-[10px] text-muted-foreground ml-auto">클릭하여 적용</span>
                 </div>
