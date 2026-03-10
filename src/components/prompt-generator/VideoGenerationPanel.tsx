@@ -198,6 +198,17 @@ export default function VideoGenerationPanel({
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                       {cut.sceneDescription}
                     </p>
+                    {/* 멀티샷 서브샷 목록 */}
+                    {cut.multiShot && cut.multiShot.length > 0 && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {cut.multiShot.map((s) => (
+                          <span key={s.index} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{ background: "#e85d0415", color: "#e85d04", border: "1px solid #e85d0425" }}>
+                            <span className="font-semibold">샷{s.index}</span>
+                            <span>{s.duration}s</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">

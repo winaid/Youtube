@@ -256,6 +256,12 @@ interface CutOutline {
   transitionHint: string;  // 한국어 ≤15자
 }
 
+interface MultiShotItem {
+  index: number;
+  prompt: string;
+  duration: string;
+}
+
 interface CutDetail {
   cutNumber: number;
   imagePrompt: string;
@@ -264,6 +270,7 @@ interface CutDetail {
   extendPrompt: string;
   cameraDirection: string;
   moodLighting: string;
+  multiShot?: MultiShotItem[];
 }
 
 // ─── JSON 파싱 유틸 ───────────────────────────────────────────────────────────
@@ -657,8 +664,20 @@ cameraDirection (≤55 chars English):
 moodLighting (≤55 chars English):
   Format: "[lighting type]. [color grade reflecting emotionalDelta]."
 
+## MULTI-SHOT 규칙 (모든 장면 필수 — Kling과 Veo 공통 적용)
+각 장면마다 "multiShot" 배열을 생성하라. 배열은 2~3개의 서브샷으로 구성된다.
+- 모든 duration(초 단위 정수) 합산 = ${secPerCut} (반드시 정확히 일치)
+- 각 서브샷 prompt: ≤80 words English, 해당 서브샷의 카메라 지시만
+- 서브샷마다 다른 카메라 앵글/구도 사용 (예: close-up → wide shot → medium shot)
+- 같은 캐릭터를 여러 각도에서 연속 촬영하거나 다른 등장인물/공간으로 컷 전환 가능
+- 서브샷 1: 주요 행동 시작 장면 (핵심 인물/공간 설정)
+- 서브샷 2: 반응 또는 클로즈업 (감정 디테일)
+- 서브샷 3 (${secPerCut} >= 9일 때 권장): 풀아웃 또는 연결 앵글
+- duration 분배: 균등 또는 핵심 샷에 가중치 (정수만, 합산 ${secPerCut})
+- BANNED: 서브샷 전체에 동일 prompt 반복, 감정 형용사 사용
+
 JSON 배열로만 출력 (마크다운 없이):
-[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."}]`;
+[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 2)}"},{"index":2,"prompt":"...","duration":"${Math.floor(secPerCut / 2)}"}]}]`;
 
   const maxTokens = 8192;
   console.info(`[cuts:${stepLabel}] model=${MODEL_DETAIL} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens}`);
@@ -951,6 +970,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         transitionHint:   outline.transitionHint,
         characterConsistency: `캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`,
         charactersInScene: [mainChar.id],
+        // 멀티샷: Kling(10s+)은 model_params로 전달, Veo는 구조화 프롬프트로 적용
+        ...(d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0
+          ? { multiShot: d.multiShot }
+          : {}),
       };
     });
 

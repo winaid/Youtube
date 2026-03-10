@@ -5,6 +5,7 @@ import {
   toKlingDuration,
   toKlingAspectRatio,
   type KlingEnv,
+  type KlingMultiShot,
 } from "./_kling-api";
 
 type Env = GeminiEnv & KlingEnv;
@@ -30,6 +31,7 @@ interface GenerateVideoRequest {
   firstFrameBase64?: string;
   lastFrameBase64?: string;
   referenceImages?: string[];
+  multiShot?: KlingMultiShot[]; // Kling o3 멀티샷 (10s+ 장면)
 }
 
 // ── base64 data URI 접두사 제거 ────────────────────────────────────────────
@@ -201,6 +203,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             duration,
             ...(validFirst ? { image:      validFirst } : {}),
             ...(validLast  ? { image_tail: validLast  } : {}),
+            // 멀티샷: 1장면 안 여러 카메라 구도
+            ...(req.multiShot && req.multiShot.length > 0 ? { multiShot: req.multiShot } : {}),
           });
           taskId = result.taskId;
           modeUsed = "generate";

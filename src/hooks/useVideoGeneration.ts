@@ -828,6 +828,15 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         prompt = `${prompt}. ${styleSuffix}`;
       }
 
+      // Veo 멀티샷: multiShot이 있으면 shot-by-shot 구조를 프롬프트 앞에 삽입
+      // (Kling은 model_params.multi_shot으로 별도 처리, Veo는 프롬프트 구조화)
+      if (cut.multiShot && cut.multiShot.length > 0 && engine !== "kling") {
+        const shotLines = cut.multiShot.map((s) =>
+          `SHOT ${s.index} (${s.duration}s): ${s.prompt}`
+        ).join(" → ");
+        prompt = `${shotLines}. ${prompt}`;
+      }
+
       // Temporal beats: refine-prompt가 이미 삽입했으면 skip
       prompt = ensureTemporalBeats(prompt, cfg.durationSeconds);
 
@@ -1022,6 +1031,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         lastFrameBase64: lastFrameBase64,
         // Reference Images (캐릭터 얼굴 + 수동 레퍼런스)
         referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
+        // Kling 멀티샷: Kling 장면에서 multiShot이 있으면 model_params로 전달
+        // Veo는 이미 위에서 프롬프트에 인라인으로 삽입됨
+        ...(engine === "kling" && cut.multiShot && cut.multiShot.length > 0
+          ? { multiShot: cut.multiShot }
+          : {}),
       };
 
       const res = await fetch("/api/generate-video", {

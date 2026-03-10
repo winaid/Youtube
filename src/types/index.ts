@@ -140,6 +140,12 @@ export interface CharacterSeed {
 }
 
 // ===== 출력 타입 =====
+export interface MultiShotPrompt {
+  index: number;
+  prompt: string;
+  duration: string; // 초 단위 문자열 (예: "5")
+}
+
 export interface Cut {
   cutNumber: number;
   durationSec: number;
@@ -153,6 +159,7 @@ export interface Cut {
   transitionHint: string;
   characterConsistency: string;
   charactersInScene: string[];
+  multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (durationSec >= 10 시 생성)
 }
 
 export interface PromptOutput {
