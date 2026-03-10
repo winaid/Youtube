@@ -230,6 +230,10 @@ function detectContentMode(storyText: string): "dramatized_reenactment" | "gener
     /마케팅\s*(사례|역사|전략)|광고\s*역사/,
     /의사|치과|병원|의원|클리닉|surgeon|dentist/i,
     /Painless|Parker|Blackwell|Joshi|Kellogg|patent medicine/i,
+    // 대체역사 / 만약에 역사 감지
+    /만약[에]?\s|대체\s*역사|가정[형]?\s*역사|if\s.*had\s/i,
+    /제국|왕조|멸망|전쟁|혁명|독립|통일|분단|식민/,
+    /로마|몽골|나폴레옹|오스만|조선|고구려|메이지|냉전/,
   ];
   return historicalSignals.some(r => r.test(storyText))
     ? "dramatized_reenactment"
@@ -338,14 +342,15 @@ async function step1Outlines(
 - "교훈:", "마케팅 포인트:" 같은 설명 단락으로 끝나는 장면 금지
 
 ### characterSeeds 규칙
-✅ 역사적 실존 인물 또는 역할 기반 캐릭터 (의사, 환자, 상인, 군중)
+✅ 역사적 실존 인물 또는 역할 기반 캐릭터 (왕, 장군, 의사, 학자, 상인, 군중, 병사 등)
 ✅ 내레이션이 언급하는 인물의 행동/상황을 시각화하는 캐릭터
+✅ 대체역사 가정의 경우: 실제 역사적 맥락의 인물을 시각화
 ❌ 강사, 발표자, 해설자, 내레이터, 진행자
 
 ### 장면 설계 방향
 - 내레이션 텍스트의 팩트를 시각적 행동으로 변환
 - 대화극이 아닌, 행동과 상황으로 정보를 보여주기
-- 교훈적 메시지는 상황 아이러니로 드러내기
+- 교훈적 메시지 또는 대체역사 가정은 상황 아이러니로 드러내기
 ` : `
 ## 콘텐츠 형식: 일반 영상 장면
 
@@ -361,7 +366,7 @@ async function step1Outlines(
   const storyExcerpt = storyText.slice(0, 800);
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
-${contentMode === "dramatized_reenactment" ? "콘텐츠: 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
+${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
 

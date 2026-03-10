@@ -207,7 +207,7 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
               시나리오 AI 생성
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              실제 역사를 검색하여 병의원 마케팅 쇼츠 시나리오를 만들어줍니다
+              역사 마케팅 사례 발굴 또는 팩트 기반 대체역사 쇼츠를 생성합니다
             </p>
           </div>
           <div className="flex gap-1.5">
@@ -475,7 +475,7 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="병의원 마케팅 쇼츠 시나리오를 요청해보세요..."
+            placeholder="역사 마케팅 또는 '만약에 역사' 주제를 요청해보세요..."
             rows={2}
             className="resize-none flex-1 text-sm focus-visible:ring-[#fff787]"
           />
