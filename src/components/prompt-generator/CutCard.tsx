@@ -175,7 +175,7 @@ export default function CutCard({
               className="text-xs text-white"
               style={{ background: isEven ? "#c4b800" : "#787fff" }}
             >
-              CUT {cut.cutNumber}
+              장면 {cut.cutNumber}
             </Badge>
             <span className="text-xs text-muted-foreground">
               {cut.durationSec}초

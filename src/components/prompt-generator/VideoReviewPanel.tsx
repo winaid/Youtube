@@ -114,7 +114,7 @@ export default function VideoReviewPanel({
 
         {review.status === "reviewing" && (
           <p className="text-xs text-muted-foreground mt-1">
-            각 컷의 프레임을 캡처하여 AI가 분석 중입니다...
+            각 장면의 프레임을 캡처하여 AI가 분석 중입니다...
           </p>
         )}
       </CardHeader>
@@ -129,10 +129,10 @@ export default function VideoReviewPanel({
             </p>
           </div>
 
-          {/* 컷별 피드백 */}
+          {/* 장면별 피드백 */}
           {review.cutFeedbacks.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">컷별 상세 피드백</p>
+              <p className="text-xs font-medium text-muted-foreground">장면별 상세 피드백</p>
               {review.cutFeedbacks.map((fb) => {
                 const fbColor =
                   fb.score >= 80 ? "#22c55e" : fb.score >= 60 ? "#e09900" : "#ef4444";
@@ -149,7 +149,7 @@ export default function VideoReviewPanel({
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">CUT {fb.cutNumber}</span>
+                        <span className="text-sm font-medium">장면 {fb.cutNumber}</span>
                         <Badge
                           className="text-[10px]"
                           style={{ background: `${fbColor}20`, color: fbColor }}
@@ -181,7 +181,7 @@ export default function VideoReviewPanel({
                           style={{ background: "#787fff" }}
                           onClick={() => onRegenerateCut(fb.cutNumber, fb.improvedPrompt)}
                         >
-                          이 컷 재생성
+                          이 장면 재생성
                         </Button>
                       )}
                     </div>
@@ -219,7 +219,7 @@ export default function VideoReviewPanel({
                 style={{ background: "linear-gradient(135deg, #ef4444, #e09900)" }}
                 onClick={onRegenerateAll}
               >
-                문제 컷 전체 재생성 ({needsRegen.length}개)
+                문제 장면 전체 재생성 ({needsRegen.length}개)
               </Button>
             )}
             <Button

@@ -251,6 +251,7 @@ interface CutOutline {
   emotionalDelta: string;  // "prev→this" e.g. "calm→tense" (CUT1: "opening→[emotion]")
   purpose: string;         // establish | develop | climax | resolve
   shotType: string;        // ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV
+  cameraMovement: string;  // motivated camera movement (WHY it moves)
   subjectAction: string;   // English ≤15w — concrete physical action (no "stands"/"watches")
   transitionHint: string;  // 한국어 ≤15자
 }
@@ -307,12 +308,12 @@ async function step1Outlines(
   characterPersonaBlock: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
-  // 컷 수에 따른 샷 타입 다양화 가이드
+  // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
   const shotGuide = cutCount <= 5
-    ? "MS → CU → WS → MCU → OTS"
+    ? "SCENE1=WS(establishing:open-space+atmosphere) → SCENE2=MS(approach:who-is-here) → SCENE3=CU(focus:emotional-peak) → SCENE4=OTS(reaction:other-pov) → SCENE5=MCU(intimate-close)"
     : cutCount <= 8
-      ? "MS → CU → WS → OTS → MCU → LS → CU → MS"
-      : "MS → CU → WS → OTS → MCU → ECU → LS → POV → CU → MS → WS → MCU → OTS → CU → MS";
+      ? "SCENE1=WS(establishing) → SCENE2=MS(approach) → SCENE3=CU(focus) → SCENE4=OTS(reaction) → SCENE5=MCU(close) → SCENE6=ECU(extreme-detail) → SCENE7=LS(breathing-room:contrast) → SCENE8=CU(final-focus)"
+      : "SCENE1=WS(establishing) → SCENE2=MS(approach) → SCENE3=CU(focus) → SCENE4=OTS(reaction) → SCENE5=MCU(close) → SCENE6=ECU(extreme-detail) → SCENE7=LS(contrast:breathe) → SCENE8=POV(subjective) → SCENE9=CU(reveal) → SCENE10=MS(resolution)";
 
   // 콘텐츠 모드별 형식 규칙 블록
   const formatRules = contentMode === "dramatized_reenactment" ? `
@@ -398,13 +399,38 @@ ${storyText.slice(0, 1500)}
   예시: "spins abruptly toward sound, freezes mid-step"
 - transitionHint: 최대 15자
 
-## 샷 다양화 강제 규칙
-- 연속된 2개 컷이 동일한 shotType을 가지면 오류로 간주
-- 각 컷의 subjectAction은 이전 컷과 반드시 다른 동작이어야 함
-- 같은 장소, 같은 포즈, 같은 표정이 3컷 이상 연속되면 안 됨
+## 영화적 샷 진행 강제 규칙 (MANDATORY — 단순 다양화가 아닌 "시선 설계")
+
+### Shot Progression Law
+- SCENE1: 반드시 WS 또는 LS → 공간과 분위기를 먼저 열 것. 인물 얼굴 클로즈업 금지.
+- SCENE2: MS 또는 MLS → 인물에게 접근. 배경과 인물의 관계를 드러낼 것.
+- SCENE3+: CU / OTS / MCU / ECU로 점진적 좁힘 → 감정 정점에서 ECU.
+- 중반 이후 LS 또는 WS 1회 삽입 → 호흡을 열고 대비를 만들 것.
+- 같은 거리(shot size)의 장면 2회 연속 금지.
+
+### cameraMovement 설계 원칙
+- 카메라는 감정 변화 또는 정보 공개 이유가 있을 때만 움직인다.
+- 허용 움직임 (이유와 함께 작성):
+  • "slow push-in as tension builds" — 긴장 고조, 인물 내면 진입
+  • "subtle dolly forward as resolve grows" — 결심, 집중 강화
+  • "gentle pan revealing new figure" — 새 요소/인물 발견
+  • "restrained reframing as unease shifts" — 심리적 불안 표현
+  • "locked-off static — suppressed tension" — 억압, 통제된 긴장
+- 금지: 이유 없는 핸드헬드 흔들림, 목적 없는 zoom, 장식용 crane
+
+### Visual Reveal / Withhold Strategy
+- SCENE1에서 모든 정보 공개 금지 — 공간 분위기와 배치만.
+- 인물 얼굴·핵심 소품·갈등 원인은 SCENE3 이후 점진적으로 드러낼 것.
+- 각 장면은 "이전 장면에 없던 새 시각 정보 하나"를 공개해야 함.
+- 동시에 "아직 보여주지 않는 것 하나"를 프레임 밖에 보류해야 함.
+
+### 샷 다양화 강제 규칙
+- 연속된 2개 장면이 동일한 shotType을 가지면 오류로 간주
+- 각 장면의 subjectAction은 이전 장면과 반드시 다른 동작이어야 함
+- 같은 장소, 같은 포즈, 같은 정보량이 3장면 이상 연속되면 안 됨
 
 JSON만 출력 (마크다운 없이):
-{"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"[English ≤65w]","appearanceKo":"[≤25자]"}],"outlines":[{"cutNumber":1,"sceneKo":"[≤35자]","emotion":"[English]","emotionalDelta":"opening→[emotion]","purpose":"establish","shotType":"MS","subjectAction":"[concrete action ≤15w]","transitionHint":"[≤15자]"}]}`;
+{"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"[English ≤65w]","appearanceKo":"[≤25자]"}],"outlines":[{"cutNumber":1,"sceneKo":"[≤35자]","emotion":"[English]","emotionalDelta":"opening→[emotion]","purpose":"establish","shotType":"WS","cameraMovement":"slow pan revealing space and atmosphere","subjectAction":"[concrete action ≤15w]","transitionHint":"[≤15자]"}]}`;
 
   console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=2048`);
 
@@ -432,6 +458,19 @@ JSON만 출력 (마크다운 없이):
   // 샷 타입 기본 순환 (step1이 다양화에 실패했을 때 fallback)
   const shotCycle = ["MS", "CU", "WS", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
 
+  // 영화적 기본 카메라 움직임 (fallback용)
+  const defaultMovements = [
+    "slow pan revealing space and atmosphere",
+    "subtle dolly forward as subject is introduced",
+    "slow push-in as tension builds",
+    "locked-off static — contained reaction",
+    "restrained reframing as focus narrows",
+    "slow pull-back revealing new context",
+    "gentle pan following subject movement",
+    "locked-off static — suppressed emotion",
+    "slow push-in on detail",
+  ];
+
   const outlines: CutOutline[] = Array.isArray(parsed.outlines)
     ? (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => ({
         cutNumber: Number(o.cutNumber ?? i + 1),
@@ -440,6 +479,7 @@ JSON만 출력 (마크다운 없이):
         emotionalDelta: String(o.emotionalDelta ?? (i === 0 ? `opening→${o.emotion ?? "neutral"}` : "neutral→neutral")),
         purpose: String(o.purpose ?? "develop"),
         shotType: String(o.shotType ?? shotCycle[i % shotCycle.length]),
+        cameraMovement: String(o.cameraMovement ?? defaultMovements[i % defaultMovements.length]),
         subjectAction: String(o.subjectAction ?? `moves through scene ${i + 1}`),
         transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
       }))
@@ -499,14 +539,25 @@ async function step23DetailBatch(
   // 이번 배치 컷 연출 지시
   const batchDirectives = batchOutlines.map((o, i) => {
     const prevOutline = allOutlines.find(a => a.cutNumber === o.cutNumber - 1);
+    const nextOutline = allOutlines.find(a => a.cutNumber === o.cutNumber + 1);
     const prevDesc = prevOutline
-      ? `[PREV CUT${prevOutline.cutNumber}: ${prevOutline.shotType}, action="${prevOutline.subjectAction}", emotion="${prevOutline.emotion}"]`
-      : "[PREV: none — this is opening cut]";
-    return `CUT${o.cutNumber} (${i + 1}/${batchOutlines.length}):
+      ? `[PREV SCENE${prevOutline.cutNumber}: ${prevOutline.shotType}, movement="${prevOutline.cameraMovement}", action="${prevOutline.subjectAction}", emotion="${prevOutline.emotion}"]`
+      : "[PREV: none — this is establishing shot]";
+    const nextHint = nextOutline
+      ? `[NEXT SCENE${nextOutline.cutNumber}: ${nextOutline.shotType} — audience will see ${nextOutline.shotType} next, so THIS scene must withhold something]`
+      : "[NEXT: final scene — resolve all withheld information]";
+    const isFirst = o.cutNumber === 1;
+    const revealHint = isFirst
+      ? "REVEAL: space layout, atmosphere, physical environment only. WITHHOLD: character face, central conflict object, dramatic information."
+      : `REVEAL: one new layer beyond prev scene (${prevOutline?.shotType ?? "unknown"} → ${o.shotType}). WITHHOLD: at least one element that sustains curiosity.`;
+    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}):
   Purpose: ${o.purpose} | Shot: ${o.shotType} | Emotion shift: ${o.emotionalDelta}
+  Planned camera movement: ${o.cameraMovement}
   Subject action: ${o.subjectAction}
   Scene: ${o.sceneKo}
   Previous: ${prevDesc}
+  ${nextHint}
+  ${revealHint}
   Transition out: ${o.transitionHint}`;
   }).join("\n\n");
 
@@ -537,9 +588,33 @@ ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPerso
 - 인물은 극 중 목적을 가지고 행동하는 배우여야 함 (해설자 절대 금지)
 - 교훈적 내용은 인물의 결정이나 상황 결과로 드러남 (해설자 대사 금지)
 
+## CINEMATIC SHOT PROGRESSION ENGINE (영화적 시선 설계 — 단순 다양화가 아닌 의도된 정보 공개 순서)
+
+### Shot Sequence Law
+- 첫 장면(SCENE1)은 WS 또는 LS — 공간과 분위기만 열 것. 인물 얼굴 클로즈업 금지.
+- 이후 장면에서 MS→CU→ECU 방향으로 점진적으로 좁혀들 것.
+- 중반부 이후 LS/WS 한 번 삽입 — 대비와 호흡을 만들 것.
+- 같은 shot size의 장면 2회 연속 금지. 반드시 closer 또는 further.
+
+### Camera Movement Motivation Law (카메라는 이유 없이 움직이지 않는다)
+- Allowed with mandatory reason:
+  • slow push-in: 긴장 고조, 인물 내면으로 진입, 정보 공개 임박
+  • subtle dolly forward/back: 친밀감 변화, 심리적 접근/후퇴
+  • gentle pan: 새 인물/요소 발견, 공간 관계 탐색
+  • restrained reframing: 심리적 불안, 무언가를 놓친 인식
+  • locked-off static: 억압된 감정, 격식, 통제된 긴장
+- BANNED: 이유 없는 핸드헬드 흔들림, 장식용 crane/jib/dutch, 목적 없는 zoom
+- Camera movement = CAMERA_MOVEMENT + "(reason: [why it moves])" 형식으로 작성
+
+### Visual Reveal / Withhold Law (관객 궁금증 유지 구조)
+- 각 장면은 반드시 "이전 장면에 없던 새 시각 정보 하나"를 공개한다.
+- 동시에 "아직 보여주지 않는 정보 하나"를 프레임 밖에 보류한다.
+- WITHHELD 전략: 인물 얼굴을 등/측면으로 숨기기, 핵심 소품을 프레임 경계에 걸치기, 갈등 원인을 암시만
+- REVEALED 순서: 공간 → 인물 위치 → 인물 표정 → 핵심 소품 → 감정 정점 → 결과
+
 ## 감독 연출 원칙 (반드시 준수)
 1. videoPrompt는 "스토리 설명"이 아니라 "카메라 지시"다
-2. 이전 컷과 shotType이 이미 다르게 설정되어 있음 — 이것을 반드시 반영
+2. 이전 장면과 shotType이 이미 다르게 설정되어 있음 — 이것을 반드시 반영
 3. subjectAction을 그대로 영상화하되, 구체적 신체 동작으로 묘사
 4. 감정을 형용사/추상어로 절대 이름 붙이지 말 것. 그 감정이 유발하는 "신체 행동 + 망설임/중단/충동"으로만 표현.
    감정→행동 번역 원칙:
@@ -553,7 +628,7 @@ ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPerso
    - resignation    → action begun then abandoned, hand lowered slowly, gaze drops
    - jealousy       → quick side-glance immediately retracted, neutral mask reassembled
    - embarrassment  → gaze redirected, micro-smile suppressed, body self-adjusted
-5. 각 컷에서 "이전 컷에 없던 시각 정보" 최소 1개 포함
+5. 각 장면에서 "이전 장면에 없던 시각 정보" 최소 1개 포함
 6. 동일 감정이 연속되면 다른 행동 양상으로 드러낼 것. 같은 행동 반복 금지.
 7. 감정 상태를 정지된 포즈가 아니라 "진행 중인 행동 비트"로 설계할 것
 ${SCENE_TERM_PRECISION_BLOCK}
@@ -566,13 +641,14 @@ imagePrompt (≤80 words English):
 endImagePrompt (≤65 words English):
   Format: "[charRef]. Subject AT FRAME END: [end state of subjectAction]. [what changed visually from start]. [noTextSuffix]"
 
-videoPrompt (≤130 words English):
-  Format: "[SHOT_TYPE from directive], [camera move]. [charRef]. SUBJECT: [subjectAction — exact motion, not vague]. ACTION BEAT: [core physical action with hesitation, interruption, or follow-through]. BODY SIGNAL: [specific hand/gaze/posture/breath change — no abstract emotion labels]. NEWLY IN FRAME: [what wasn't visible in prev cut]. ${beatTemplate.replace("[start]", "[begin subjectAction]").replace("[develop]", "[midpoint of action]").replace("[climax]", "[peak moment or interruption]")}. VISUAL CONTRAST FROM PREV: [specific difference in framing/distance/angle]. [noTextSuffix]"
+videoPrompt (≤150 words English):
+  Format: "SHOT_SIZE:[shotType] | CAMERA_ANGLE:[eye-level/low-angle/high-angle/dutch/overhead/POV] | CAMERA_MOVEMENT:[movement + reason in parens e.g. slow push-in (tension builds toward reveal)]. [charRef]. SUBJECT_BLOCKING:[where subject is in frame — foreground/mid/back, frame-left/center/right, depth layer]. SUBJECT:[subjectAction exact motion]. ACTION_BEAT:[core physical action with hesitation/interruption/follow-through]. BODY_SIGNAL:[specific hand/gaze/posture/breath — no emotion labels]. REVEALED:[new visual info this frame shows not in prev]. WITHHELD:[what's kept off-frame to sustain curiosity — be specific]. ${beatTemplate.replace("[start]", "[begin subjectAction]").replace("[develop]", "[midpoint of action]").replace("[climax]", "[peak moment or interruption]")}. TRANSITION_FROM_PREV:[specific contrast — shot distance/angle change/new element entering frame]. [noTextSuffix]"
   BANNED: "continues", "still", "same as before", "watches quietly", "stands facing"
-  BANNED emotion labels in BODY SIGNAL: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — describe the body behavior, not the feeling
+  BANNED emotion labels in BODY_SIGNAL: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — body behavior only
+  CAMERA_MOVEMENT must include motivation in parentheses — NEVER write just "slow push-in" alone
 
-extendPrompt (CUT${firstCutNum}=="" if CUT1 | others ≤110 words English):
-  Format: "PREV CUT ENDS: [shotType of prev] — subject was [prev subjectAction], body showed [prev body signal]. → TRANSITION. NEW SHOT: [this shotType], [camera repositioning]. [charRef]. NEW ACTION: [this subjectAction — must be different motion from prev]. BEHAVIORAL SHIFT: [how body behavior changes — hands/gaze/posture/breath, no emotion labels]. NEWLY REVEALED: [information/element not seen before]. ${extendBeatTemplate}. [noTextSuffix]"
+extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
+  Format: "PREV SCENE ENDS: [shotType of prev] — subject was [prev subjectAction], body showed [prev body signal]. → TRANSITION. NEW SHOT: SHOT_SIZE:[this shotType] | CAMERA_ANGLE:[angle] | CAMERA_MOVEMENT:[movement + reason in parens]. [charRef]. NEW ACTION: [this subjectAction — must be different motion from prev]. BEHAVIORAL SHIFT: [how body behavior changes — hands/gaze/posture/breath, no emotion labels]. NEWLY REVEALED: [what this scene shows that wasn't visible before]. STILL WITHHELD: [what remains off-frame to sustain curiosity]. ${extendBeatTemplate}. [noTextSuffix]"
   BANNED: "continuing", "similar to previous", "same pose", emotion adjectives in BEHAVIORAL SHIFT
 
 cameraDirection (≤55 chars English):
@@ -789,6 +865,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         emotionalDelta: "neutral→neutral",
         purpose: n === targetCuts ? "resolve" : "develop",
         shotType: nextShot,
+        cameraMovement: n === 1 ? "slow pan revealing space and atmosphere" : "slow push-in as scene develops",
         subjectAction: `moves through environment in scene ${n}`,
         transitionHint: n < targetCuts ? "디졸브" : "페이드 아웃",
       });
@@ -853,7 +930,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // extendPrompt: 빈 문자열이거나 너무 짧으면 outline 기반 fallback 생성
       const extendFallback = prevOutline
-        ? `PREV CUT ENDS: ${prevOutline.shotType} — subject was ${prevOutline.subjectAction}, emotion ${prevOutline.emotion}. → TRANSITION to ${outline.shotType}. ${mainChar.appearance}. NEW ACTION: ${outline.subjectAction}. EMOTIONAL SHIFT: ${outline.emotionalDelta}. ${extendBeatTemplate}. ${noTextSuffix}`
+        ? `PREV SCENE ENDS: ${prevOutline.shotType} — subject was ${prevOutline.subjectAction}. → TRANSITION. NEW SHOT: SHOT_SIZE:${outline.shotType} | CAMERA_MOVEMENT:${outline.cameraMovement}. ${mainChar.appearance}. NEW ACTION: ${outline.subjectAction}. NEWLY REVEALED: new visual layer beyond ${prevOutline.shotType}. ${extendBeatTemplate}. ${noTextSuffix}`
         : "";
 
       return {
@@ -867,7 +944,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         moodLighting:     d?.moodLighting     ?? "Golden hour warm light. Teal and orange grade.",
         imagePrompt:      d?.imagePrompt      ?? `${outline.shotType}, eye-level. ${mainChar.appearance}. Subject AT START: ${outline.subjectAction.split(" ").slice(0, 6).join(" ")}. ${noTextSuffix}`,
         endImagePrompt:   d?.endImagePrompt   ?? `${mainChar.appearance}. Subject AT END: ${outline.subjectAction}. ${noTextSuffix}`,
-        videoPrompt:      d?.videoPrompt      ?? `${outline.shotType}, slow push-in. ${mainChar.appearance}. SUBJECT: ${outline.subjectAction}. EMOTIONAL TONE: ${outline.emotionalDelta}. ${beatTemplate}. ${noTextSuffix}`,
+        videoPrompt:      d?.videoPrompt      ?? `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. ${mainChar.appearance}. SUBJECT_BLOCKING:subject center-frame mid-ground. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:character emotional state not yet shown. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`,
         extendPrompt:     i === 0 ? "" : (d?.extendPrompt && d.extendPrompt.trim().length > 20
           ? d.extendPrompt
           : extendFallback),

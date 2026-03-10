@@ -66,7 +66,7 @@ export default function PromptHistoryPanel({ onRestore }: Props) {
                     {entry.output.projectTitle || "제목 없음"}
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "#787fff15", color: "#787fff" }}>
-                    {entry.output.totalCuts}컷
+                    {entry.output.totalCuts}장면
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "#f3f4f6", color: "#666" }}>
                     {entry.input.animationMode}
@@ -104,11 +104,11 @@ export default function PromptHistoryPanel({ onRestore }: Props) {
               </div>
             </div>
 
-            {/* 컷 목록 펼치기 */}
+            {/* 장면 목록 펼치기 */}
             {isOpen && (
               <div className="border-t px-4 pb-4 pt-3 space-y-2" style={{ borderColor: "#787fff20" }}>
                 <p className="text-[10px] font-semibold mb-2" style={{ color: "#787fff" }}>
-                  컷 프롬프트 미리보기
+                  장면 프롬프트 미리보기
                 </p>
                 {entry.output.cuts.map((cut) => (
                   <div

@@ -143,7 +143,7 @@ export default function PromptGenerator() {
           <div className="mb-4">
             <h2 className="text-base font-semibold" style={{ color: "#222" }}>생성한 영상 히스토리</h2>
             <p className="text-xs mt-0.5" style={{ color: "#999" }}>
-              이전에 생성한 영상 컷을 다시 확인하고 재생할 수 있습니다.
+              이전에 생성한 영상 장면을 다시 확인하고 재생할 수 있습니다.
             </p>
           </div>
           <VideoHistoryPanel />

@@ -191,7 +191,7 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
                     )}
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    {formatDate(entry.timestamp)} · {entry.cuts.length}컷
+                    {formatDate(entry.timestamp)} · {entry.cuts.length}장면
                   </p>
                 </div>
                 <span className="text-[10px] text-muted-foreground">

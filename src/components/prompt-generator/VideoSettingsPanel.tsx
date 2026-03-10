@@ -213,7 +213,7 @@ export default function VideoSettingsPanel({
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground">
-              Generate: 각 컷 독립 생성. Extend: 이전 컷을 이어서 생성 (연속성 유지).
+              Generate: 각 장면 독립 생성. Extend: 이전 장면을 이어서 생성 (연속성 유지).
             </p>
           </div>
 

@@ -332,7 +332,7 @@ export default function ResultPanel({
     continuityRules: result.continuityRules,
     totalDuration: (() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? 8), 0); return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`; })(),
     extendStrategy: {
-      description: "CUT 1은 Video Prompt로 최초 생성. CUT 2부터는 이전 클립의 마지막 프레임을 참조 이미지로 사용하여 Extend Prompt로 연장.",
+      description: "장면 1은 Video Prompt로 최초 생성. 장면 2부터는 이전 클립의 마지막 프레임을 참조 이미지로 사용하여 Extend Prompt로 연장.",
       steps: result.cuts.map((cut) => ({
         cut: cut.cutNumber,
         method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND_FROM_PREVIOUS",
