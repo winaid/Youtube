@@ -99,6 +99,7 @@ export interface ChatMessage {
 export interface PromptCard {
   title: string;
   hook: string;
+  marketingTactic?: string; // 핵심 홍보 수단 한 줄 (예: "여성 전용 병원 포지셔닝")
 }
 
 export interface StoryAIPersona {

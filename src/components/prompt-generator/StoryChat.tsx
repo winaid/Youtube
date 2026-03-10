@@ -455,6 +455,14 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
                       {card.hook}
                     </p>
                   )}
+                  {card.marketingTactic && (
+                    <span
+                      className="inline-block mt-1.5 px-1.5 py-0.5 rounded text-[9px] font-medium"
+                      style={{ background: "#787fff18", color: "#5a5ad4" }}
+                    >
+                      {card.marketingTactic}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
