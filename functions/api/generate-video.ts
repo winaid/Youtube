@@ -59,7 +59,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── 엔진 선택 ────────────────────────────────────────────────────────────
     // auto: KLING 자격증명이 있고 Google 자격증명이 없으면 Kling 사용
     const hasGoogle = !!(context.env.GOOGLE_SERVICE_ACCOUNT_JSON || context.env.GOOGLE_CLOUD_API_KEY);
-    const hasKling  = !!(context.env.KLING_API_KEY && context.env.KLING_API_SECRET);
+    const hasKling  = !!context.env.KLING_API_KEY;
 
     let engineUsed: "veo" | "kling";
     if (req.engine === "kling") {
@@ -77,7 +77,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (engineUsed === "kling") {
       if (!hasKling) {
         return Response.json(
-          { error: "KLING_API_KEY / KLING_API_SECRET not configured" },
+          { error: "KLING_API_KEY not configured" },
           { status: 400 },
         );
       }
@@ -88,14 +88,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       let taskId: string;
       let modeUsed: "generate" | "extend";
 
-      if (videoMode === "extend" && sourceVideo) {
-        // Kling extend: 이전 영상 video_id 필요
-        console.log("[generate-video] Kling EXTEND", { sourceVideo: sourceVideo.slice(0, 60) });
+      if (videoMode === "extend" && req.lastFrameBase64) {
+        // EvoLink에 native video-extend 없음:
+        // 이전 컷 lastFrameBase64 → image-to-video (연속성 유지)
+        console.log("[generate-video] Kling EXTEND (image-to-video with lastFrame)");
         const result = await klingExtend(context.env, {
-          video_id: sourceVideo,
-          prompt: req.prompt,
+          lastFrameBase64: stripDataPrefix(req.lastFrameBase64),
+          prompt:          req.prompt,
           negative_prompt: req.negativePrompt,
-          cfg_scale: 0.5,
+          duration,
+          aspect_ratio: aspectRatio,
         });
         taskId = result.taskId;
         modeUsed = "extend";
@@ -107,15 +109,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           aspectRatio,
         });
         const result = await klingGenerate(context.env, {
-          prompt: req.prompt,
+          prompt:          req.prompt,
           negative_prompt: req.negativePrompt,
-          model_name: "kling-v1-5",
-          mode: "std",
-          aspect_ratio: aspectRatio,
+          aspect_ratio:    aspectRatio,
           duration,
-          cfg_scale: 0.5,
-          ...(req.firstFrameBase64 ? { image: req.firstFrameBase64 } : {}),
-          ...(req.lastFrameBase64  ? { image_tail: req.lastFrameBase64 } : {}),
+          ...(req.firstFrameBase64 ? { image:      stripDataPrefix(req.firstFrameBase64) } : {}),
+          ...(req.lastFrameBase64  ? { image_tail: stripDataPrefix(req.lastFrameBase64)  } : {}),
         });
         taskId = result.taskId;
         modeUsed = "generate";

@@ -386,15 +386,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         return Response.json({ status: "RUNNING" }); // transient error — keep polling
       }
 
-      if (result.status === "submitted" || result.status === "processing") {
-        return Response.json({ status: "RUNNING" });
+      // EvoLink statuses: pending / processing / completed / failed
+      if (result.status === "pending" || result.status === "processing") {
+        return Response.json({ status: "RUNNING", progress: result.progress });
       }
 
       if (result.status === "failed") {
         return Response.json({ status: "FAILED", error: result.error ?? "Kling generation failed" });
       }
 
-      // succeed
+      // completed
       if (!result.videoUrl) {
         return Response.json({ status: "FAILED", error: "Kling: no video URL in result" });
       }

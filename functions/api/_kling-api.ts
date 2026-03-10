@@ -1,65 +1,40 @@
 /**
- * _kling-api.ts — Kling AI Video API helper
+ * _kling-api.ts — EvoLink.AI Kling Video API helper
  *
- * Auth: JWT HS256 signed with KLING_API_KEY + KLING_API_SECRET
- * Base: https://api.klingai.com
+ * Auth: Bearer token (KLING_API_KEY)
+ * Base: https://api.evolink.ai  (KLING_API_BASE_URL으로 재정의 가능)
  *
  * Endpoints:
- *   POST /v1/videos/text2video          — text-to-video generate
- *   POST /v1/videos/image2video         — image-to-video generate
- *   POST /v1/videos/video-extend        — extend an existing video
- *   GET  /v1/videos/text2video/:task_id — check generate status
- *   GET  /v1/videos/video-extend/:task_id — check extend status
+ *   POST /v1/videos/generations   — 영상 생성 (text-to-video / image-to-video)
+ *   GET  /v1/tasks/{task_id}      — 작업 상태 폴링
+ *
+ * Extend 모드:
+ *   EvoLink에 native video-extend 없음.
+ *   이전 컷 lastFrameBase64 → image 파라미터로 전달해 image-to-video로 대체.
+ *
+ * Models:
+ *   kling-v3-text-to-video      — 텍스트→영상 (기본)
+ *   kling-v3-image-to-video     — 이미지→영상 (first/last frame)
+ *   kling-o3-text-to-video      — 최신 텍스트→영상 (사운드 지원)
+ *   kling-o3-image-to-video     — 최신 이미지→영상
  */
 
 export interface KlingEnv {
-  KLING_API_KEY?: string;
-  KLING_API_SECRET?: string;
+  KLING_API_KEY?:      string;
+  KLING_API_BASE_URL?: string; // default: https://api.evolink.ai
 }
 
-const KLING_BASE = "https://api.klingai.com";
-
-// ── JWT HS256 builder ────────────────────────────────────────────────────────
-
-function b64url(data: ArrayBuffer | string): string {
-  let str: string;
-  if (typeof data === "string") {
-    str = data;
-  } else {
-    const bytes = new Uint8Array(data);
-    let s = "";
-    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-    str = s;
-  }
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function klingBase(env: KlingEnv): string {
+  return (env.KLING_API_BASE_URL ?? "https://api.evolink.ai").replace(/\/$/, "");
 }
 
-async function buildKlingJWT(apiKey: string, apiSecret: string): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header  = { alg: "HS256", typ: "JWT" };
-  const payload = { iss: apiKey, exp: now + 1800, nbf: now - 5 };
-
-  const h = b64url(JSON.stringify(header));
-  const p = b64url(JSON.stringify(payload));
-  const sigInput = `${h}.${p}`;
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(apiSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(sigInput));
-  return `${sigInput}.${b64url(sig)}`;
-}
-
-async function klingHeaders(env: KlingEnv): Promise<Record<string, string>> {
-  const key    = env.KLING_API_KEY    ?? "";
-  const secret = env.KLING_API_SECRET ?? "";
-  if (!key || !secret) throw new Error("KLING_API_KEY / KLING_API_SECRET not configured");
-  const token = await buildKlingJWT(key, secret);
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+function klingHeaders(env: KlingEnv): Record<string, string> {
+  const key = env.KLING_API_KEY ?? "";
+  if (!key) throw new Error("KLING_API_KEY not configured");
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${key}`,
+  };
 }
 
 // ── Request / Response types ─────────────────────────────────────────────────
@@ -67,29 +42,34 @@ async function klingHeaders(env: KlingEnv): Promise<Record<string, string>> {
 export interface KlingGenerateRequest {
   prompt: string;
   negative_prompt?: string;
-  model_name?: "kling-v1" | "kling-v1-5" | "kling-v2";
-  mode?: "std" | "pro";
-  aspect_ratio?: "16:9" | "9:16" | "1:1";
+  /** default: "kling-v3-text-to-video" or "kling-v3-image-to-video" if image supplied */
+  model?: string;
   duration?: "5" | "10";
+  aspect_ratio?: "16:9" | "9:16" | "1:1";
   cfg_scale?: number;
-  // image-to-video fields (optional)
+  // Image-to-video
   image?: string;       // base64 or public URL for start frame
   image_tail?: string;  // base64 or public URL for end frame
 }
 
 export interface KlingExtendRequest {
-  video_id: string;     // task_id of the source video
+  /**
+   * EvoLink에 native video-extend 없음.
+   * lastFrameBase64: 이전 컷 끝 프레임 → image-to-video의 start frame으로 사용
+   */
+  lastFrameBase64: string;
   prompt?: string;
   negative_prompt?: string;
-  cfg_scale?: number;
+  duration?: "5" | "10";
+  aspect_ratio?: "16:9" | "9:16" | "1:1";
 }
 
 export interface KlingTaskStatus {
   taskId: string;
-  status: "submitted" | "processing" | "succeed" | "failed";
-  videoUrl?: string;    // final video URL (when succeed)
-  videoId?: string;     // Kling video id (use as next extend source)
-  duration?: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  progress?: number;
+  videoUrl?: string;   // first result URI (when completed)
+  videoId?: string;    // task_id doubles as reference ID for next extend
   error?: string;
 }
 
@@ -99,55 +79,57 @@ export async function klingGenerate(
   env: KlingEnv,
   req: KlingGenerateRequest,
 ): Promise<{ taskId: string }> {
-  const headers = await klingHeaders(env);
-  const endpoint = req.image ? "/v1/videos/image2video" : "/v1/videos/text2video";
+  const headers = klingHeaders(env);
+  const model = req.model ?? (req.image ? "kling-v3-image-to-video" : "kling-v3-text-to-video");
 
-  const res = await fetch(`${KLING_BASE}${endpoint}`, {
+  const body: Record<string, unknown> = {
+    model,
+    prompt: req.prompt,
+    duration: req.duration ?? "5",
+    aspect_ratio: req.aspect_ratio ?? "16:9",
+  };
+  if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
+  if (req.cfg_scale !== undefined) body.cfg_scale = req.cfg_scale;
+  if (req.image)      body.image      = req.image;
+  if (req.image_tail) body.image_tail = req.image_tail;
+
+  const res = await fetch(`${klingBase(env)}/v1/videos/generations`, {
     method: "POST",
     headers,
-    body: JSON.stringify(req),
+    body: JSON.stringify(body),
   });
 
   const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Kling generate error (${res.status}): ${text.slice(0, 400)}`);
-  }
+  if (!res.ok) throw new Error(`Kling generate (${res.status}): ${text.slice(0, 400)}`);
 
-  let data: { code?: number; message?: string; data?: { task_id?: string } };
+  let data: { id?: string; task_id?: string; error?: { message?: string } };
   try { data = JSON.parse(text); } catch { throw new Error(`Kling generate non-JSON: ${text.slice(0, 200)}`); }
 
-  if (data.code !== 0) throw new Error(`Kling generate failed: ${data.message ?? "unknown"}`);
-  const taskId = data.data?.task_id;
-  if (!taskId) throw new Error("Kling generate: no task_id in response");
+  if (data.error?.message) throw new Error(`Kling generate failed: ${data.error.message}`);
+
+  const taskId = data.id ?? data.task_id;
+  if (!taskId) throw new Error("Kling generate: no task id in response");
   return { taskId };
 }
 
-// ── Extend ───────────────────────────────────────────────────────────────────
+// ── Extend (last-frame image-to-video) ──────────────────────────────────────
 
 export async function klingExtend(
   env: KlingEnv,
   req: KlingExtendRequest,
 ): Promise<{ taskId: string }> {
-  const headers = await klingHeaders(env);
-
-  const res = await fetch(`${KLING_BASE}/v1/videos/video-extend`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(req),
-  });
-
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Kling extend error (${res.status}): ${text.slice(0, 400)}`);
+  if (!req.lastFrameBase64) {
+    throw new Error("Kling extend: lastFrameBase64 is required (no native video-extend on EvoLink)");
   }
 
-  let data: { code?: number; message?: string; data?: { task_id?: string } };
-  try { data = JSON.parse(text); } catch { throw new Error(`Kling extend non-JSON: ${text.slice(0, 200)}`); }
-
-  if (data.code !== 0) throw new Error(`Kling extend failed: ${data.message ?? "unknown"}`);
-  const taskId = data.data?.task_id;
-  if (!taskId) throw new Error("Kling extend: no task_id in response");
-  return { taskId };
+  return klingGenerate(env, {
+    model:           "kling-v3-image-to-video",
+    prompt:          req.prompt ?? "continue the scene naturally",
+    negative_prompt: req.negative_prompt,
+    duration:        req.duration ?? "5",
+    aspect_ratio:    req.aspect_ratio ?? "16:9",
+    image:           req.lastFrameBase64,
+  });
 }
 
 // ── Check Status ─────────────────────────────────────────────────────────────
@@ -155,66 +137,59 @@ export async function klingExtend(
 export async function klingCheckStatus(
   env: KlingEnv,
   taskId: string,
-  isExtend: boolean,
+  _isExtend: boolean,  // kept for interface compat — EvoLink uses unified tasks endpoint
 ): Promise<KlingTaskStatus> {
-  const headers = await klingHeaders(env);
-  const path = isExtend
-    ? `/v1/videos/video-extend/${taskId}`
-    : `/v1/videos/text2video/${taskId}`;
+  const headers = klingHeaders(env);
 
-  const res = await fetch(`${KLING_BASE}${path}`, { method: "GET", headers });
+  const res = await fetch(`${klingBase(env)}/v1/tasks/${taskId}`, {
+    method: "GET",
+    headers,
+  });
 
   const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Kling check error (${res.status}): ${text.slice(0, 400)}`);
-  }
+  if (!res.ok) throw new Error(`Kling check (${res.status}): ${text.slice(0, 400)}`);
 
   let data: {
-    code?: number;
-    message?: string;
-    data?: {
-      task_id?: string;
-      task_status?: string;
-      task_status_msg?: string;
-      task_result?: { videos?: Array<{ id?: string; url?: string; duration?: string }> };
-    };
+    id?: string;
+    status?: string;
+    progress?: number;
+    results?: string[];
+    error?: { message?: string } | string;
   };
   try { data = JSON.parse(text); } catch { throw new Error(`Kling check non-JSON: ${text.slice(0, 200)}`); }
 
-  if (data.code !== 0) {
-    return { taskId, status: "failed", error: data.message ?? "unknown" };
-  }
+  const rawStatus = data.status ?? "processing";
 
-  const d = data.data;
-  if (!d) return { taskId, status: "failed", error: "no data in response" };
-
-  const rawStatus = d.task_status ?? "processing";
+  // EvoLink statuses: pending / processing / completed / failed
   const status: KlingTaskStatus["status"] =
-    rawStatus === "succeed"    ? "succeed"
-    : rawStatus === "failed"   ? "failed"
-    : rawStatus === "submitted" ? "submitted"
+    rawStatus === "completed" ? "completed"
+    : rawStatus === "failed"  ? "failed"
+    : rawStatus === "pending" ? "pending"
     : "processing";
 
-  const videos = d.task_result?.videos;
-  const firstVideo = videos?.[0];
+  const videoUrl = data.results?.[0];
+
+  const errMsg = typeof data.error === "string"
+    ? data.error
+    : data.error?.message;
 
   return {
     taskId,
     status,
-    videoUrl: firstVideo?.url,
-    videoId:  firstVideo?.id ?? taskId,
-    duration: firstVideo?.duration,
-    error:    status === "failed" ? (d.task_status_msg ?? "generation failed") : undefined,
+    progress: data.progress,
+    videoUrl,
+    videoId: taskId,  // task_id를 다음 extend 참조로 사용
+    error: status === "failed" ? (errMsg ?? "generation failed") : undefined,
   };
 }
 
-// ── Duration map ─────────────────────────────────────────────────────────────
-// Veo supports 4/6/8s; Kling supports "5"/"10" — nearest mapping:
+// ── Duration / Aspect ratio helpers ──────────────────────────────────────────
+
+/** Veo(4/6/8s) → Kling("5"/"10") nearest mapping */
 export function toKlingDuration(veoSec: number): "5" | "10" {
   return veoSec <= 6 ? "5" : "10";
 }
 
-// Aspect ratio passthrough (both use "16:9" / "9:16")
 export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {
   return ratio === "9:16" ? "9:16" : ratio === "1:1" ? "1:1" : "16:9";
 }
