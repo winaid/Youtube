@@ -285,6 +285,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
+    recommendedDuration: number;
     reason: string;
     scenes: string[];
   } | null>(null);
@@ -475,10 +476,13 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         setAiCutRecommendation(null);
         return;
       }
+      const rawCuts = data.recommendedCuts ?? 8;
+      const rawDur  = data.recommendedDuration ?? 8;
       setAiCutRecommendation({
-        recommendedCuts: data.recommendedCuts ?? 8,
-        reason: data.reason ?? "",
-        scenes: data.scenes ?? [],
+        recommendedCuts:     Math.min(10, Math.max(4, rawCuts)),
+        recommendedDuration: [4, 6, 8].includes(rawDur) ? rawDur : 8,
+        reason:  data.reason ?? "",
+        scenes:  data.scenes ?? [],
       });
     } catch (err) {
       console.error("[analyze-cuts] fetch 실패:", err);
@@ -1178,7 +1182,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               <button
                 className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
                 style={{ background: "#22c55e0a", border: "1px solid #22c55e25" }}
-                onClick={() => setCutCount(Math.min(aiCutRecommendation.recommendedCuts, 10))}
+                onClick={() => {
+                  setCutCount(aiCutRecommendation.recommendedCuts);
+                  setCutDuration(aiCutRecommendation.recommendedDuration);
+                }}
               >
                 <div className="flex items-center gap-2">
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style={{ background: "#22c55e" }}>
@@ -1186,6 +1193,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   </span>
                   <span className="text-xs font-bold" style={{ color: "#16a34a" }}>
                     {aiCutRecommendation.recommendedCuts}장면
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: "#dcfce7", color: "#15803d" }}>
+                    × {aiCutRecommendation.recommendedDuration}초
                   </span>
                   <span className="text-[10px] text-muted-foreground ml-auto">클릭하여 적용</span>
                 </div>

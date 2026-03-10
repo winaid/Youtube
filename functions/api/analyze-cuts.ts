@@ -10,8 +10,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "storyText is required" }, { status: 400 });
     }
 
-    const prompt = `다음 시나리오를 분석하여 YouTube 쇼츠 영상으로 만들 때 적절한 장면 수를 추천해주세요.
-(장면 = 8초짜리 하나의 영상 클립. 장면 안에서 카메라 무빙/앵글 변화 가능)
+    const prompt = `다음 시나리오를 분석하여 YouTube 쇼츠 영상으로 만들 때 적절한 장면 수와 장면당 길이를 추천해주세요.
+(장면 = 하나의 영상 클립. 장면 안에서 카메라 무빙/앵글 변화 가능)
 
 시나리오:
 """
@@ -19,16 +19,21 @@ ${storyText.slice(0, 2000)}
 """
 
 규칙:
-- 각 장면은 4~8초
-- 최소 4장면, 최대 25장면
-- 내용 전환이 많으면 장면 수 증가
-- 감정 변화가 크면 장면 수 증가
-- 단순 나레이션은 적은 장면
+- 최소 4장면, 최대 10장면 (10을 절대 초과하지 말 것)
+- 내용 전환이 많으면 장면 수 증가 (단, 10 이하)
+- 감정 변화가 크면 장면 수 증가 (단, 10 이하)
+- 단순 나레이션은 4~6장면으로 충분
 
-JSON으로만 응답:
+장면당 초(recommendedDuration) 선택 기준:
+- 4초: 짧고 임팩트 있는 액션 컷, 빠른 템포 (4~6장면일 때 어울림)
+- 6초: 표준 드라마 컷, 감정 전환 포함 (6~8장면일 때 어울림)
+- 8초: 긴 호흡의 감정 씬, 대사가 있는 장면 (8~10장면일 때 어울림)
+
+JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
 {
-  "recommendedCuts": 숫자,
-  "reason": "추천 이유 (한국어, 1줄)",
+  "recommendedCuts": 숫자(4~10),
+  "recommendedDuration": 숫자(4 또는 6 또는 8),
+  "reason": "추천 이유 (한국어, 1줄 — 장면 수와 초 모두 이유 포함)",
   "scenes": ["장면1 요약", "장면2 요약", ...]
 }`;
 
@@ -71,12 +76,13 @@ JSON으로만 응답:
         error: "AI가 빈 응답을 반환",
         detail: JSON.stringify(data).slice(0, 300),
         recommendedCuts: 8,
-        reason: "분석 실패 - 기본값 8장면",
+        recommendedDuration: 8,
+        reason: "분석 실패 - 기본값 8장면 × 8초",
         scenes: [],
       }, { status: 500 });
     }
 
-    let parsed: { recommendedCuts?: number; reason?: string; scenes?: string[] };
+    let parsed: { recommendedCuts?: number; recommendedDuration?: number; reason?: string; scenes?: string[] };
     try {
       parsed = JSON.parse(text);
     } catch {
@@ -85,15 +91,19 @@ JSON으로만 응답:
         error: "AI 응답 파싱 실패",
         detail: text.slice(0, 300),
         recommendedCuts: 8,
-        reason: "분석 실패 - 기본값 8장면",
+        recommendedDuration: 8,
+        reason: "분석 실패 - 기본값 8장면 × 8초",
         scenes: [],
       }, { status: 500 });
     }
 
+    const rawCuts = parsed.recommendedCuts ?? 8;
+    const rawDur  = parsed.recommendedDuration ?? 8;
     return Response.json({
-      recommendedCuts: parsed.recommendedCuts ?? 8,
-      reason: parsed.reason ?? "",
-      scenes: parsed.scenes ?? [],
+      recommendedCuts:     Math.min(10, Math.max(4, rawCuts)),   // 4~10 강제
+      recommendedDuration: [4, 6, 8].includes(rawDur) ? rawDur : 8,
+      reason:  parsed.reason ?? "",
+      scenes:  parsed.scenes ?? [],
     });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -103,7 +113,8 @@ JSON으로만 응답:
         error: "분석 실패",
         detail: errMsg,
         recommendedCuts: 8,
-        reason: "분석 실패 - 기본값 8장면",
+        recommendedDuration: 8,
+        reason: "분석 실패 - 기본값 8장면 × 8초",
         scenes: [],
       },
       { status: 500 }
