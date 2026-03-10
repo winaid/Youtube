@@ -193,9 +193,11 @@ export function validateVideoPromptJson(json: VideoPromptJson): ValidationResult
     }
   }
 
-  // characterRef 필수
-  if (!json.characterRef || json.characterRef.trim().length === 0) {
-    errors.push("characterRef is empty");
+  // characterRef — 캐릭터 부재 씬에서는 빈 값 허용
+  // (shotCategory=environment/object-detail/transition-atmosphere일 때)
+  // 존재하지만 너무 짧은 경우만 경고
+  if (json.characterRef && json.characterRef.trim().length > 0 && json.characterRef.trim().length < 5) {
+    warnings.push("characterRef is very short — verify if intentional");
   }
 
   // cameraMovement 동기 확인
@@ -219,23 +221,21 @@ export function validateVideoPromptJson(json: VideoPromptJson): ValidationResult
 export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
 
-  // Shot/Camera 블록
+  // Shot/Camera 블록 — 씬 오프닝 기준
   parts.push(`SHOT_SIZE:${json.shotSize}`);
   parts.push(`CAMERA_ANGLE:${json.cameraAngle}`);
-  parts.push(`CAMERA_MOVEMENT:${json.cameraMovement}`);
+  parts.push(`CAMERA_PROGRESSION:${json.cameraMovement}`);
 
-  // Character
-  parts.push(json.characterRef);
+  // Character (있을 때만)
+  if (json.characterRef) {
+    parts.push(json.characterRef);
+  }
 
   // Blocking
   parts.push(`SUBJECT_BLOCKING:${json.subjectBlocking}`);
 
-  // Action
-  parts.push(`SUBJECT:${json.subjectAction}`);
-
-  if (json.actionBeat) {
-    parts.push(`ACTION_BEAT:${json.actionBeat}`);
-  }
+  // Scene progression — 핵심: 씬 안에서 일어나는 행동 arc
+  parts.push(`SUBJECT_ACROSS_SCENE:${json.subjectAction}`);
 
   if (json.bodySignal) {
     parts.push(`BODY_SIGNAL:${json.bodySignal}`);
@@ -249,7 +249,7 @@ export function renderVeoPromptFromJson(json: VideoPromptJson): string {
     parts.push(`WITHHELD:${json.withheld}`);
   }
 
-  // Timing
+  // Scene timing beats — 씬 내부 진행의 핵심 구조
   parts.push(json.timingBeat);
 
   // Transition
@@ -278,14 +278,16 @@ export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
   // Transition
   parts.push(`→ ${json.transition.toUpperCase()}`);
 
-  // New shot
-  parts.push(`NEW SHOT: SHOT_SIZE:${json.newShot.shotSize} | CAMERA_ANGLE:${json.newShot.cameraAngle} | CAMERA_MOVEMENT:${json.newShot.cameraMovement}`);
+  // New scene
+  parts.push(`NEW SCENE: SHOT_SIZE:${json.newShot.shotSize} | CAMERA_ANGLE:${json.newShot.cameraAngle} | CAMERA_PROGRESSION:${json.newShot.cameraMovement}`);
 
-  // Character
-  parts.push(json.characterRef);
+  // Character (있을 때만)
+  if (json.characterRef) {
+    parts.push(json.characterRef);
+  }
 
-  // Action
-  parts.push(`NEW ACTION: ${json.newAction}`);
+  // Scene action
+  parts.push(`SCENE ACTION: ${json.newAction}`);
 
   if (json.behavioralShift) {
     parts.push(`BEHAVIORAL SHIFT: ${json.behavioralShift}`);
@@ -325,8 +327,10 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     parts.push(movement);
   }
 
-  // Character + action (핵심만)
-  parts.push(json.characterRef);
+  // Character (있을 때만) + scene action
+  if (json.characterRef) {
+    parts.push(json.characterRef);
+  }
   parts.push(json.subjectAction);
 
   if (json.bodySignal) {
@@ -354,14 +358,16 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
 export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
 
-  // 이전 장면 컨텍스트 (간결하게)
-  parts.push(`Continuing from ${json.prevSceneEnd.shotType} shot`);
+  // 이전 씬 컨텍스트 (간결하게)
+  parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
 
-  // 새 장면
+  // 새 씬
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
 
-  // Character + action
-  parts.push(json.characterRef);
+  // Character (있을 때만) + scene action
+  if (json.characterRef) {
+    parts.push(json.characterRef);
+  }
   parts.push(json.newAction);
 
   if (json.behavioralShift) {

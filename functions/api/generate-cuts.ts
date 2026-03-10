@@ -260,12 +260,17 @@ interface CutOutline {
   emotion: string;         // English emotion keyword
   emotionalDelta: string;  // "prev→this" e.g. "calm→tense" (CUT1: "opening→[emotion]")
   purpose: string;         // establish | develop | climax | resolve
-  shotType: string;        // ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV
+  shotType: string;        // ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV (opening shot of scene)
   cameraMovement: string;  // motivated camera movement (WHY it moves)
   subjectAction: string;   // English ≤15w — concrete physical action (no "stands"/"watches")
   transitionHint: string;  // 한국어 ≤15자
-  shotCategory: ShotCategory;   // 이 컷의 피사체 중심 유형
-  characterRole: CharacterRole;  // 이 컷에서 캐릭터의 역할
+  shotCategory: ShotCategory;   // 이 씬의 피사체 중심 유형
+  characterRole: CharacterRole;  // 이 씬에서 캐릭터의 역할
+  // ── Scene progression (8초 안의 내부 비트) ──────────────
+  sceneBeat1: string;      // English ≤12w — 0s~2s: establishing visual beat
+  sceneBeat2: string;      // English ≤12w — 2s~5s: development / reaction / detail
+  sceneBeat3: string;      // English ≤12w — 5s~8s: reveal / emotion peak / transition
+  endHook: string;         // English ≤10w — 다음 씬으로 이어지는 시각적 고리
 }
 
 interface MultiShotItem {
@@ -388,22 +393,26 @@ characterSeeds (최대 3명):
 - appearance: 영어 ≤40 words (성별/나이/헤어/의상/피부톤만)
 - appearanceKo: ≤25자
 
-outlines (정확히 ${cutCount}개):
+outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마이크로 씬"):
+⚠️ 각 ${secPerCut}초는 단일 정지 샷이 아님! 하나의 씬 안에서 시각적 진행이 있어야 함.
 - cutNumber: 순번
 - sceneKo: ≤30자
 - emotion: 영어 키워드
 - emotionalDelta: "이전→현재" (CUT1: "opening→[emotion]")
 - purpose: establish | develop | climax | resolve
-- shotType: ${shotGuide} (연속 동일 금지)
+- shotType: ${shotGuide} (연속 동일 금지 — 씬 시작 시점의 오프닝 샷)
 - cameraMovement: ≤10 words 영어
-- subjectAction: 영어 ≤12 words, 구체적 신체 동작 (금지: stands, watches, feels)
+- subjectAction: 영어 ≤12 words — 이 씬에서 일어나는 핵심 행동/변화 (금지: stands, watches, feels)
 - transitionHint: ≤10자
 - shotCategory: "character-driven" | "environment" | "object-detail" | "transition-atmosphere"
-  (먼저 결정: 이 컷에 캐릭터가 꼭 필요한가? 정보/분위기/공간 컷은 인물 없이 설계)
+  (먼저 결정: 이 씬에 캐릭터가 꼭 필요한가? 정보/분위기/공간 씬은 인물 없이 설계)
 - characterRole: "protagonist" | "background" | "silhouette" | "partial" | "absent"
-  (protagonist=인물 중심, background=배경 속 작은 존재, silhouette=실루엣만, partial=손/뒷모습만, absent=인물 없음)
   ⚠️ shotCategory가 environment/object-detail/transition-atmosphere이면 characterRole="absent" 권장
   ⚠️ characterRole이 "absent"가 아닌 경우 subjectAction은 반드시 구체적 행동 포함 (standing/motionless 금지)
+- sceneBeat1: 영어 ≤12 words — ${secPerCut >= 8 ? "0s~2s" : "0s~1s"}: 시각적 오프닝 (무엇이 보이는가, 어떻게 씬이 열리는가)
+- sceneBeat2: 영어 ≤12 words — ${secPerCut >= 8 ? "2s~5s" : "1s~3s"}: 전개 (반응/디테일/움직임 변화/새 요소 등장)
+- sceneBeat3: 영어 ≤12 words — ${secPerCut >= 8 ? "5s~8s" : "3s~" + secPerCut + "s"}: reveal / 감정 피크 / 다음 씬 연결
+- endHook: 영어 ≤10 words — 관객이 다음 씬을 기대하게 만드는 시각적 고리
 
 JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
@@ -482,6 +491,10 @@ JSON만 출력:
           transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
           shotCategory,
           characterRole,
+          sceneBeat1: String(o.sceneBeat1 ?? "establishing space and atmosphere"),
+          sceneBeat2: String(o.sceneBeat2 ?? "subject enters or key detail emerges"),
+          sceneBeat3: String(o.sceneBeat3 ?? "reveal or emotional shift"),
+          endHook: String(o.endHook ?? "visual tension toward next scene"),
         };
       })
     : [];
@@ -532,9 +545,9 @@ async function step23DetailBatch(
     : directorName;
   const noTextSuffix = `${veoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
 
-  // 전체 시퀀스 컨텍스트 (이전 컷 상태 파악용)
+  // 전체 시퀀스 컨텍스트 (이전 씬 상태 파악용)
   const sequenceContext = allOutlines
-    .map(o => `CUT${o.cutNumber}[${o.shotType}|${o.purpose}]: action="${o.subjectAction}" | emotion="${o.emotionalDelta}" | scene="${o.sceneKo}"`)
+    .map(o => `SCENE${o.cutNumber}[${o.shotType}|${o.purpose}|${o.shotCategory}]: "${o.sceneKo}" | beats: ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3} | endHook: ${o.endHook}`)
     .join("\n");
 
   // 이번 배치 컷 연출 지시
@@ -551,12 +564,18 @@ async function step23DetailBatch(
     const revealHint = isFirst
       ? "REVEAL: space layout, atmosphere, physical environment only. WITHHOLD: character face, central conflict object, dramatic information."
       : `REVEAL: one new layer beyond prev scene (${prevOutline?.shotType ?? "unknown"} → ${o.shotType}). WITHHOLD: at least one element that sustains curiosity.`;
-    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}):
-  Purpose: ${o.purpose} | Shot: ${o.shotType} | Emotion shift: ${o.emotionalDelta}
+    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}) — ${secPerCut}초 MICRO-SCENE (NOT a single static shot):
+  Purpose: ${o.purpose} | Opening shot: ${o.shotType} | Emotion shift: ${o.emotionalDelta}
   Shot category: ${o.shotCategory} | Character role: ${o.characterRole}
-  Planned camera movement: ${o.cameraMovement}
-  Subject action: ${o.subjectAction}
-  Scene: ${o.sceneKo}
+  Camera progression: ${o.cameraMovement}
+  Core action across scene: ${o.subjectAction}
+  Scene summary: ${o.sceneKo}
+  ── INTERNAL SCENE BEATS (이 씬 안에서 일어나는 시각적 진행) ──
+  BEAT1 (${secPerCut >= 8 ? "0s-2s" : "0s-1s"}): ${o.sceneBeat1}
+  BEAT2 (${secPerCut >= 8 ? "2s-5s" : "1s-3s"}): ${o.sceneBeat2}
+  BEAT3 (${secPerCut >= 8 ? "5s-" + secPerCut + "s" : "3s-" + secPerCut + "s"}): ${o.sceneBeat3}
+  END HOOK: ${o.endHook}
+  ── CONTEXT ──
   Previous: ${prevDesc}
   ${nextHint}
   ${revealHint}
@@ -565,7 +584,13 @@ async function step23DetailBatch(
 
   const prompt = `당신은 아래 연출 철학을 완전히 내면화한 촬영 감독입니다.
 스타일: ${veoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
-${secPerCut}초/컷 | 화면비: ${aspectRatio}
+${secPerCut}초/씬 | 화면비: ${aspectRatio}
+
+## ⚠️ 핵심 원칙: ${secPerCut}초 = "마이크로 씬"이다 (단일 정지 샷이 아님!)
+- 각 ${secPerCut}초 단위는 하나의 scene이다. 사람 하나 세워두고 카메라 고정하는 "single static shot"이 아님.
+- 씬 안에서 시각적 진행이 있어야 한다: 오프닝 → 전개 → 리빌/전환
+- 카메라도 진행한다: 구도, 거리, 앵글이 씬 안에서 변화
+- 씬이 끝날 때 시작과 다른 상태여야 한다 (무언가가 변했거나 드러났거나 움직였거나)
 캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
 ⚠️ 단, shotCategory에 따라 캐릭터 사용 여부가 달라짐 — 아래 SHOT CATEGORY RULES 참조
 
@@ -658,24 +683,27 @@ ${SCENE_TERM_PRECISION_BLOCK}
 
 ## STRICT 글자 제한
 
-imagePrompt (≤80 words English):
-  If characterRole=protagonist/partial: "[SHOT_TYPE], [angle]. [charRef or partial]. Subject AT FRAME START: [beginning of subjectAction]. [setting/environment]. [moodLighting]. [noTextSuffix]"
-  If characterRole=absent: "[SHOT_TYPE], [angle]. [environment/object description]. AT FRAME START: [what's happening in scene]. [setting detail]. [moodLighting]. [noTextSuffix]"
-  If characterRole=silhouette/background: "[SHOT_TYPE], [angle]. [environment]. [distant/silhouette figure hint]. AT FRAME START: [scene state]. [moodLighting]. [noTextSuffix]"
+imagePrompt (≤80 words English — 씬의 오프닝 순간):
+  If characterRole=protagonist/partial: "[SHOT_TYPE], [angle]. [charRef or partial]. SCENE OPENS: [sceneBeat1]. [setting/environment]. [moodLighting]. [noTextSuffix]"
+  If characterRole=absent: "[SHOT_TYPE], [angle]. [environment/object]. SCENE OPENS: [sceneBeat1]. [setting detail]. [moodLighting]. [noTextSuffix]"
+  If characterRole=silhouette/background: "[SHOT_TYPE], [angle]. [environment]. [distant figure hint]. SCENE OPENS: [sceneBeat1]. [moodLighting]. [noTextSuffix]"
 
-endImagePrompt (≤65 words English):
-  If characterRole=protagonist/partial: "[charRef or partial]. Subject AT FRAME END: [end state of subjectAction]. [what changed visually]. [noTextSuffix]"
-  If characterRole=absent: "AT FRAME END: [end state of environment/object]. [what changed visually]. [noTextSuffix]"
+endImagePrompt (≤65 words English — 씬의 마지막 순간):
+  If characterRole=protagonist/partial: "[charRef or partial]. SCENE ENDS: [sceneBeat3 결과 상태]. [what changed from opening]. [noTextSuffix]"
+  If characterRole=absent: "SCENE ENDS: [sceneBeat3 결과 상태]. [what changed from opening]. [noTextSuffix]"
 
-videoPrompt (≤150 words English):
-  Format: "SHOT_SIZE:[shotType] | CAMERA_ANGLE:[eye-level/low-angle/high-angle/dutch/overhead/POV] | CAMERA_MOVEMENT:[movement + reason in parens e.g. slow push-in (tension builds toward reveal)]. [charRef]. SUBJECT_BLOCKING:[where subject is in frame — foreground/mid/back, frame-left/center/right, depth layer]. SUBJECT:[subjectAction exact motion]. ACTION_BEAT:[core physical action with hesitation/interruption/follow-through]. BODY_SIGNAL:[specific hand/gaze/posture/breath — no emotion labels]. REVEALED:[new visual info this frame shows not in prev]. WITHHELD:[what's kept off-frame to sustain curiosity — be specific]. ${beatTemplate.replace("[start]", "[begin subjectAction]").replace("[develop]", "[midpoint of action]").replace("[climax]", "[peak moment or interruption]")}. TRANSITION_FROM_PREV:[specific contrast — shot distance/angle change/new element entering frame]. [noTextSuffix]"
-  BANNED: "continues", "still", "same as before", "watches quietly", "stands facing"
-  BANNED emotion labels in BODY_SIGNAL: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — body behavior only
-  CAMERA_MOVEMENT must include motivation in parentheses — NEVER write just "slow push-in" alone
+videoPrompt (≤180 words English — ⚠️ 이것은 단일 샷 설명이 아니라 ${secPerCut}초 씬 전체의 진행 설명):
+  Format: "SHOT_SIZE:[opening shotType] | CAMERA_ANGLE:[opening angle] | CAMERA_PROGRESSION:[camera changes across scene — e.g. 'starts WS pulling back → pushes into MS as subject enters → settles CU on hands (tension builds)']. ${beatTemplate.replace("[start]", "[sceneBeat1: what opens the scene visually]").replace("[develop]", "[sceneBeat2: what develops, enters, reacts, or shifts]").replace("[climax]", "[sceneBeat3: what is revealed, peaks, or hooks into next scene]")}. SUBJECT_ACROSS_SCENE:[what the subject DOES across the full ${secPerCut}s — not a pose, an action arc]. REVEALED:[new visual info that emerges during this scene]. WITHHELD:[what's kept hidden to sustain curiosity]. END_HOOK:[visual element that pulls viewer into next scene].${" [charRef]." if characterRole !== "absent" else ""} [noTextSuffix]"
+  ⚠️ videoPrompt의 핵심은 SCENE PROGRESSION이다:
+  - 씬 시작과 끝이 달라야 한다 (구도/카메라/피사체/정보 중 최소 2개 변화)
+  - 카메라도 씬 안에서 진행한다 (CAMERA_PROGRESSION = 시작 위치 → 중간 변화 → 최종 위치)
+  - 피사체도 씬 안에서 행동한다 (SUBJECT_ACROSS_SCENE = 행동의 시작 → 전개 → 결과)
+  BANNED: "continues", "still", "same as before", "watches quietly", "stands facing", "remains motionless", "standing"
+  BANNED emotion labels: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — body behavior only
 
 extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
-  Format: "PREV SCENE ENDS: [shotType of prev] — subject was [prev subjectAction], body showed [prev body signal]. → TRANSITION. NEW SHOT: SHOT_SIZE:[this shotType] | CAMERA_ANGLE:[angle] | CAMERA_MOVEMENT:[movement + reason in parens]. [charRef]. NEW ACTION: [this subjectAction — must be different motion from prev]. BEHAVIORAL SHIFT: [how body behavior changes — hands/gaze/posture/breath, no emotion labels]. NEWLY REVEALED: [what this scene shows that wasn't visible before]. STILL WITHHELD: [what remains off-frame to sustain curiosity]. ${extendBeatTemplate}. [noTextSuffix]"
-  BANNED: "continuing", "similar to previous", "same pose", emotion adjectives in BEHAVIORAL SHIFT
+  Format: "PREV SCENE ENDS: [prevScene endHook state]. → TRANSITION. NEW SCENE OPENS: SHOT_SIZE:[this shotType] | CAMERA_PROGRESSION:[camera arc for new scene]. SCENE BEATS: [beat1] → [beat2] → [beat3].${" [charRef]." if characterRole !== "absent" else ""} NEWLY REVEALED: [what this scene shows]. STILL WITHHELD: [what remains hidden]. END_HOOK: [visual bridge to next]. [noTextSuffix]"
+  BANNED: "continuing", "similar to previous", "same pose", emotion adjectives
 
 cameraDirection (≤55 chars English):
   Format: "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
@@ -683,20 +711,19 @@ cameraDirection (≤55 chars English):
 moodLighting (≤55 chars English):
   Format: "[lighting type]. [color grade reflecting emotionalDelta]."
 
-## MULTI-SHOT 규칙 (모든 장면 필수 — Kling과 Veo 공통 적용)
-각 장면마다 "multiShot" 배열을 생성하라. 배열은 2~3개의 서브샷으로 구성된다.
+## MULTI-SHOT 규칙 (씬 내부 비트를 서브샷으로 구현 — Kling과 Veo 공통)
+각 씬마다 "multiShot" 배열을 생성하라. 배열은 sceneBeat1/2/3에 대응하는 2~3개 서브샷이다.
 - 모든 duration(초 단위 정수) 합산 = ${secPerCut} (반드시 정확히 일치)
-- 각 서브샷 prompt: ≤80 words English, 해당 서브샷의 카메라 지시만
-- 서브샷마다 다른 카메라 앵글/구도 사용 (예: close-up → wide shot → medium shot)
-- 같은 캐릭터를 여러 각도에서 연속 촬영하거나 다른 등장인물/공간으로 컷 전환 가능
-- 서브샷 1: 주요 행동 시작 장면 (핵심 인물/공간 설정)
-- 서브샷 2: 반응 또는 클로즈업 (감정 디테일)
-- 서브샷 3 (${secPerCut} >= 9일 때 권장): 풀아웃 또는 연결 앵글
-- duration 분배: 균등 또는 핵심 샷에 가중치 (정수만, 합산 ${secPerCut})
-- BANNED: 서브샷 전체에 동일 prompt 반복, 감정 형용사 사용
+- 각 서브샷 = 씬 내부의 하나의 visual beat (단일 정지 샷이 아님!)
+- 서브샷 1 = sceneBeat1 시각화: 씬 오프닝/공간 설정 (≤80 words)
+- 서브샷 2 = sceneBeat2 시각화: 전개/반응/디테일 (≤80 words)
+- 서브샷 3 (${secPerCut} >= 9 시 권장) = sceneBeat3 시각화: 리빌/피크/전환 (≤80 words)
+- 서브샷마다 다른 카메라 앵글/구도 사용 (WS→CU→MS 등 씬 내 shot progression)
+- duration 분배: 균등 또는 핵심 비트에 가중치 (정수만, 합산 ${secPerCut})
+- BANNED: 서브샷 전체에 동일 prompt 반복, 감정 형용사 사용, "standing motionless"
 
 JSON 배열로만 출력 (마크다운 없이):
-[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 2)}"},{"index":2,"prompt":"...","duration":"${Math.floor(secPerCut / 2)}"}]}]`;
+[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":2,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":3,"prompt":"...","duration":"${secPerCut - 2 * Math.ceil(secPerCut / 3)}"}]}]`;
 
   const maxTokens = 8192;
   console.info(`[cuts:${stepLabel}] model=${MODEL_DETAIL} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens}`);
@@ -918,6 +945,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         transitionHint: n < targetCuts ? "디졸브" : "페이드 아웃",
         shotCategory: "character-driven",
         characterRole: "protagonist",
+        sceneBeat1: "establishing space and atmosphere",
+        sceneBeat2: "subject enters or key detail emerges",
+        sceneBeat3: "reveal or emotional shift",
+        endHook: "visual tension toward next scene",
       });
     }
     outlines = outlines.slice(0, targetCuts).map((o, i) => ({ ...o, cutNumber: i + 1 }));
@@ -1003,7 +1034,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // extendPrompt: 빈 문자열이거나 너무 짧으면 outline 기반 fallback 생성
       const extendFallback = prevOutline
-        ? `PREV SCENE ENDS: ${prevOutline.shotType} — subject was ${prevOutline.subjectAction}. → TRANSITION. NEW SHOT: SHOT_SIZE:${outline.shotType} | CAMERA_MOVEMENT:${outline.cameraMovement}.${charRefForCut ? ` ${charRefForCut}.` : ""} NEW ACTION: ${outline.subjectAction}. NEWLY REVEALED: new visual layer beyond ${prevOutline.shotType}. ${extendBeatTemplate}. ${noTextSuffix}`
+        ? `PREV SCENE ENDS: ${prevOutline.endHook}. → TRANSITION. NEW SCENE OPENS: SHOT_SIZE:${outline.shotType} | CAMERA_PROGRESSION:${outline.cameraMovement}. SCENE BEATS: ${outline.sceneBeat1} → ${outline.sceneBeat2} → ${outline.sceneBeat3}.${charRefForCut ? ` ${charRefForCut}.` : ""} NEWLY REVEALED: new visual layer. END_HOOK: ${outline.endHook}. ${extendBeatTemplate}. ${noTextSuffix}`
         : "";
 
       // ── JSON 기반 프롬프트 구조 생성 ──────────────────────────────────────
@@ -1016,17 +1047,23 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const vp = d?.videoPrompt ?? "";
 
+      // sceneBeat 기반 timing beat 생성
+      const sceneTimingBeat = beatTemplate
+        .replace("[start]", outline.sceneBeat1)
+        .replace("[develop]", outline.sceneBeat2)
+        .replace("[climax]", outline.sceneBeat3);
+
       const videoPromptJson: VideoPromptJson = {
         shotSize:        extractField(vp, "SHOT_SIZE") || outline.shotType,
         cameraAngle:     extractField(vp, "CAMERA_ANGLE") || "eye-level",
-        cameraMovement:  extractField(vp, "CAMERA_MOVEMENT") || outline.cameraMovement,
+        cameraMovement:  extractField(vp, "CAMERA_PROGRESSION") || extractField(vp, "CAMERA_MOVEMENT") || outline.cameraMovement,
         subjectBlocking: extractField(vp, "SUBJECT_BLOCKING") || (needsCharacter ? "subject center-frame mid-ground" : "environment fills frame"),
-        subjectAction:   extractField(vp, "SUBJECT") || outline.subjectAction,
+        subjectAction:   extractField(vp, "SUBJECT_ACROSS_SCENE") || extractField(vp, "SUBJECT") || `${outline.sceneBeat1} → ${outline.sceneBeat2} → ${outline.sceneBeat3}`,
         actionBeat:      extractField(vp, "ACTION_BEAT") || outline.subjectAction,
         bodySignal:      needsCharacter ? (extractField(vp, "BODY_SIGNAL") || "") : "",
         revealed:        extractField(vp, "REVEALED") || "new visual layer",
         withheld:        extractField(vp, "WITHHELD") || "",
-        timingBeat:      beatTemplate,
+        timingBeat:      sceneTimingBeat,
         transitionFromPrev: extractField(vp, "TRANSITION_FROM_PREV") || "",
         characterRef:    charRefForCut,
         moodLighting:    moodLighting,
@@ -1064,16 +1101,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         : "";
       const charactersInScene = needsCharacter ? [mainChar.id] : [];
 
-      // ── 이미지 프롬프트 fallback (캐릭터 유무에 따라 분기) ──────────────
+      // ── 이미지 프롬프트 fallback (씬 오프닝/엔딩 기반) ──────────────
       const defaultImagePrompt = needsCharacter
-        ? `${outline.shotType}, eye-level. ${charRefForCut}. Subject AT START: ${outline.subjectAction.split(" ").slice(0, 6).join(" ")}. ${noTextSuffix}`
-        : `${outline.shotType}, eye-level. ${outline.sceneKo} — ${outline.subjectAction.split(" ").slice(0, 8).join(" ")}. ${noTextSuffix}`;
+        ? `${outline.shotType}, eye-level. ${charRefForCut}. SCENE OPENS: ${outline.sceneBeat1}. ${noTextSuffix}`
+        : `${outline.shotType}, eye-level. SCENE OPENS: ${outline.sceneBeat1}. ${outline.sceneKo}. ${noTextSuffix}`;
       const defaultEndImagePrompt = needsCharacter
-        ? `${charRefForCut}. Subject AT END: ${outline.subjectAction}. ${noTextSuffix}`
-        : `AT END: ${outline.subjectAction}. ${noTextSuffix}`;
-      const defaultVideoPrompt = needsCharacter
-        ? `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. ${charRefForCut}. SUBJECT_BLOCKING:subject center-frame mid-ground. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:character emotional state not yet shown. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`
-        : `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_MOVEMENT:${outline.cameraMovement}. SUBJECT_BLOCKING:environment fills frame. SUBJECT:${outline.subjectAction}. REVEALED:new visual layer. WITHHELD:next narrative element. ${beatTemplate}. TRANSITION_FROM_PREV:shot size change from previous. ${noTextSuffix}`;
+        ? `${charRefForCut}. SCENE ENDS: ${outline.sceneBeat3}. ${noTextSuffix}`
+        : `SCENE ENDS: ${outline.sceneBeat3}. ${noTextSuffix}`;
+      const defaultVideoPrompt = `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_PROGRESSION:${outline.cameraMovement}. ${sceneTimingBeat}. SUBJECT_ACROSS_SCENE:${outline.sceneBeat1} → ${outline.sceneBeat2} → ${outline.sceneBeat3}. REVEALED:new visual layer. WITHHELD:next narrative element. END_HOOK:${outline.endHook}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${noTextSuffix}`;
 
       return {
         cutNumber:     outline.cutNumber,

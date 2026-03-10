@@ -51,11 +51,10 @@ export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   parts.push(`SHOT_SIZE:${json.shotSize}`);
   parts.push(`CAMERA_ANGLE:${json.cameraAngle}`);
-  parts.push(`CAMERA_MOVEMENT:${json.cameraMovement}`);
-  parts.push(json.characterRef);
+  parts.push(`CAMERA_PROGRESSION:${json.cameraMovement}`);
+  if (json.characterRef) parts.push(json.characterRef);
   parts.push(`SUBJECT_BLOCKING:${json.subjectBlocking}`);
-  parts.push(`SUBJECT:${json.subjectAction}`);
-  if (json.actionBeat) parts.push(`ACTION_BEAT:${json.actionBeat}`);
+  parts.push(`SUBJECT_ACROSS_SCENE:${json.subjectAction}`);
   if (json.bodySignal) parts.push(`BODY_SIGNAL:${json.bodySignal}`);
   if (json.revealed) parts.push(`REVEALED:${json.revealed}`);
   if (json.withheld) parts.push(`WITHHELD:${json.withheld}`);
@@ -70,9 +69,9 @@ export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
   parts.push(`PREV SCENE ENDS: ${json.prevSceneEnd.shotType} — subject was ${json.prevSceneEnd.subjectAction}`);
   if (json.prevSceneEnd.bodySignal) parts.push(`body showed ${json.prevSceneEnd.bodySignal}`);
   parts.push(`→ ${json.transition.toUpperCase()}`);
-  parts.push(`NEW SHOT: SHOT_SIZE:${json.newShot.shotSize} | CAMERA_ANGLE:${json.newShot.cameraAngle} | CAMERA_MOVEMENT:${json.newShot.cameraMovement}`);
-  parts.push(json.characterRef);
-  parts.push(`NEW ACTION: ${json.newAction}`);
+  parts.push(`NEW SCENE: SHOT_SIZE:${json.newShot.shotSize} | CAMERA_ANGLE:${json.newShot.cameraAngle} | CAMERA_PROGRESSION:${json.newShot.cameraMovement}`);
+  if (json.characterRef) parts.push(json.characterRef);
+  parts.push(`SCENE ACTION: ${json.newAction}`);
   if (json.behavioralShift) parts.push(`BEHAVIORAL SHIFT: ${json.behavioralShift}`);
   if (json.newlyRevealed) parts.push(`NEWLY REVEALED: ${json.newlyRevealed}`);
   if (json.stillWithheld) parts.push(`STILL WITHHELD: ${json.stillWithheld}`);
@@ -90,7 +89,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     const movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
     parts.push(movement);
   }
-  parts.push(json.characterRef);
+  if (json.characterRef) parts.push(json.characterRef);
   parts.push(json.subjectAction);
   if (json.bodySignal) parts.push(json.bodySignal);
   if (json.moodLighting) parts.push(json.moodLighting);
@@ -103,9 +102,9 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
 
 export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
-  parts.push(`Continuing from ${json.prevSceneEnd.shotType} shot`);
+  parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
-  parts.push(json.characterRef);
+  if (json.characterRef) parts.push(json.characterRef);
   parts.push(json.newAction);
   if (json.behavioralShift) parts.push(json.behavioralShift);
   const cleanSuffix = json.styleSuffix
