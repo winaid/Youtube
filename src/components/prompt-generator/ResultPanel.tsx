@@ -318,7 +318,7 @@ export default function ResultPanel({
     directorPersona: result.directorPersonaPrompt,
     characterSeeds: result.characterSeeds,
     continuityRules: result.continuityRules,
-    totalDuration: `${result.cuts.length * 8}초 (${Math.floor((result.cuts.length * 8) / 60)}분${(result.cuts.length * 8) % 60 > 0 ? ` ${(result.cuts.length * 8) % 60}초` : ""})`,
+    totalDuration: (() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? 8), 0); return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`; })(),
     extendStrategy: {
       description: "CUT 1은 Video Prompt로 최초 생성. CUT 2부터는 이전 클립의 마지막 프레임을 참조 이미지로 사용하여 Extend Prompt로 연장.",
       steps: result.cuts.map((cut) => ({
@@ -472,7 +472,7 @@ export default function ResultPanel({
             <Badge style={{ background: "#787fff", color: "white" }}>총 {result.totalCuts}장면</Badge>
             <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}장면</Badge>
             <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
-              총 {result.cuts.length * 8}초 ({Math.floor((result.cuts.length * 8) / 60)}분 {(result.cuts.length * 8) % 60 > 0 ? `${(result.cuts.length * 8) % 60}초` : ""})
+              {(() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? 8), 0); return `총 ${t}초 (${Math.floor(t / 60)}분 ${t % 60}초)`; })()}
             </Badge>
             <Badge variant="outline" style={{ borderColor: "#e09900" }}>
               캐릭터 {result.characterSeeds.length}명 시드 고정

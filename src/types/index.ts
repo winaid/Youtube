@@ -14,7 +14,7 @@ export type AnimationMode =
   | "네온 사이버펑크"
   | "미니어처";
 export type StyleFamily = "all" | "live_action" | "animation_2d" | "stop_motion" | "hybrid";
-export type Duration = 60 | 90 | 120 | 150 | 180 | "auto";
+export type Duration = 60 | 90 | 120 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
 // 4 | 6 | 8 → Veo + Kling 모두 가능

@@ -247,8 +247,6 @@ const durations: { value: Duration; label: string }[] = [
   { value: 60, label: "60초" },
   { value: 90, label: "90초" },
   { value: 120, label: "2분" },
-  { value: 150, label: "2분 30초" },
-  { value: 180, label: "3분" },
 ];
 
 const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
@@ -1128,7 +1126,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           {/* 영상 길이 */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>영상 길이</Label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {durations.map((d) => (
                 <button
                   key={String(d.value)}

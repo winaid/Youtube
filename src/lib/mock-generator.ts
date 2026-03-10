@@ -169,7 +169,7 @@ export async function generatePrompt(
 
   const effectiveDuration =
     input.duration === "auto"
-      ? Math.min(180, Math.max(60, Math.round(input.storyText.length / 2)))
+      ? Math.min(120, Math.max(60, Math.round(input.storyText.length / 2)))
       : input.duration;
 
   const cutDuration = input.cutDuration ?? 8;
