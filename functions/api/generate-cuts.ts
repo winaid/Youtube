@@ -74,6 +74,26 @@ function buildDirectorEngine(
   return lines.join("\n");
 }
 
+// ─── 콘텐츠 모드 감지 ────────────────────────────────────────────────────────
+/**
+ * 역사적 인물/사건 중심 콘텐츠 → "dramatized_reenactment" 강제
+ * "교훈", "마케팅 인사이트" 같은 교육적 메시지가 있어도 explainer로 분류하지 않음.
+ * 기준: 역사 신호가 하나라도 있으면 극영화 재연 모드.
+ */
+function detectContentMode(storyText: string): "dramatized_reenactment" | "general" {
+  const historicalSignals = [
+    /역사[적]?|역사[적]?\s*인물|역사[적]?\s*사건/,
+    /\d{3,4}년[대]?|세기|왕조|시대/,
+    /실제\s*(사례|인물|사건)|실화|재연/,
+    /마케팅\s*(사례|역사|전략)|광고\s*역사/,
+    /의사|치과|병원|의원|클리닉|surgeon|dentist/i,
+    /Painless|Parker|Blackwell|Joshi|Kellogg|patent medicine/i,
+  ];
+  return historicalSignals.some(r => r.test(storyText))
+    ? "dramatized_reenactment"
+    : "general";
+}
+
 // ─── 내부 타입 ────────────────────────────────────────────────────────────────
 
 interface CharacterSeed {
@@ -141,6 +161,7 @@ async function step1Outlines(
   directorPersona: string,
   cutCount: number,
   secPerCut: number,
+  contentMode: "dramatized_reenactment" | "general",
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 컷 수에 따른 샷 타입 다양화 가이드
@@ -150,9 +171,45 @@ async function step1Outlines(
       ? "MS → CU → WS → OTS → MCU → LS → CU → MS"
       : "MS → CU → WS → OTS → MCU → ECU → LS → POV → CU → MS → WS → MCU → OTS → CU → MS";
 
+  // 콘텐츠 모드별 형식 규칙 블록
+  const formatRules = contentMode === "dramatized_reenactment" ? `
+## 콘텐츠 형식: 짧은 극영화 / 역사 재연 / 시대극 (이 규칙이 모든 설계를 지배한다)
+
+### 절대 금지 — 강의형/설명형 요소
+- 강사(lecturer), 발표자(presenter), 해설자(host/narrator), 전문가 해설 캐릭터 생성 금지
+- 카메라를 향해 "여러분, 오늘은 ..." 식으로 설명하는 인물 금지
+- 자막(subtitle), 화면 텍스트(on-screen text lesson), 나레이션(voiceover) 금지
+- "교훈:", "마케팅 포인트:", "우리가 배울 것은" 같은 설명 단락으로 끝나는 장면 금지
+- 시나리오에 "교훈", "마케팅", "배울 점" 같은 단어가 있어도 → 강의형 콘텐츠로 분류 금지
+
+### 필수 — 장면으로 보여주기
+- 모든 정보 전달은 등장인물의 행동, 표정, 상황, 한국어 대사로만 이루어진다
+- 인물은 극 중 구체적 목적(공포 자극, 설득, 저항, 갈등)을 가진 배우여야 한다
+- 교육적 메시지는 인물의 결정·실패·아이러니 상황으로 드러낸다
+- 마지막 장면의 "교훈"도 해설자가 말하는 것이 아니라 인물 대사나 상황 아이러니로 느껴지게
+
+### characterSeeds에서 허용/금지 캐릭터 유형
+✅ 역사적 실존 인물 또는 역할 기반 캐릭터 (의사, 환자, 상인, 군중, 적대자, 경쟁자)
+✅ 극 안에서 목적을 가지고 충돌하는 모든 인물
+❌ 강사, 발표자, 해설자, 전문가 패널, 내레이터, 진행자
+
+### 대사 규칙
+- 모든 대사(dialogue)는 반드시 한국어로 작성
+- 말투는 시대극/블랙코미디/풍자극에 맞게 자연스럽게
+- 인물은 정보를 갈등·협상·유머·공포·아이러니를 통해 간접적으로 전달
+- 긴 설명형 독백 금지 — 짧고 목적 있는 대사만
+` : `
+## 콘텐츠 형식: 일반 드라마 장면
+
+### 금지
+- 강사/발표자/해설자 캐릭터 자동 생성 금지
+- 자막, 나레이션, 보이스오버 금지
+- 모든 대사는 한국어로 작성
+`;
+
   const prompt = `당신은 ${directorNameKo} 감독의 연출 방식으로 장면을 구조화하는 시나리오 분석가입니다.
 이 감독의 연출 철학 전체가 각 컷의 구조를 결정해야 합니다.
-
+${formatRules}
 ## 감독 연출 철학 (이것이 모든 컷 설계의 기준)
 ${directorPersona ? directorPersona.slice(0, 600) : "강한 시각 개성, 인물의 심리가 화면 구성을 지배하는 스타일"}
 
@@ -163,7 +220,7 @@ ${storyText.slice(0, 1500)}
 
 ## 출력 규칙
 
-### characterSeeds (최대 3명)
+### characterSeeds (최대 3명 — 위 캐릭터 유형 규칙 준수)
 - appearance: 영어, 최대 65 words (성별/나이/헤어/의상/피부톤만 — 심리/감정 금지)
 - appearanceKo: 최대 25자
 
@@ -316,6 +373,18 @@ ${sequenceContext}
 ## 이번 배치: CUT${firstCutNum}~CUT${lastCutNum} 상세 연출 지시 생성
 
 ${batchDirectives}
+
+## 드라마타이즈 규칙 (절대 금지 / 필수)
+절대 금지:
+- 자막(subtitle overlay, caption, on-screen lesson text) 생성 금지
+- 나레이션/보이스오버(narration audio, voiceover) 생성 금지
+- 카메라를 향해 설명하는 진행자/강사/해설자 인물 생성 금지
+- "여러분, 오늘은 ...", "이 장면에서 배울 점은 ..." 식의 강의형 대사 금지
+필수:
+- 모든 대사(dialogue)는 반드시 한국어로 작성
+- 정보 전달은 갈등·협상·유머·공포·아이러니를 통해 자연스럽게 드러남
+- 인물은 극 중 목적을 가지고 행동하는 배우여야 함 (해설자 절대 금지)
+- 교훈적 내용은 인물의 결정이나 상황 결과로 드러남 (해설자 대사 금지)
 
 ## 감독 연출 원칙 (반드시 준수)
 1. videoPrompt는 "스토리 설명"이 아니라 "카메라 지시"다
@@ -483,6 +552,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       String(animationMode),
     );
 
+    // ── 콘텐츠 모드 감지 (역사 재연 vs 일반) ─────────────────────────────────
+    const contentMode = detectContentMode(String(storyText));
+    console.info(`[generate-cuts] contentMode=${contentMode}`);
+
     // ── STEP 1: 아웃라인 생성 ─────────────────────────────────────────────────
     let characterSeeds: CharacterSeed[];
     let outlines: CutOutline[];
@@ -495,6 +568,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         String(directorPersona ?? ""),
         targetCuts,
         secPerCut,
+        contentMode,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
