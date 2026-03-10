@@ -479,16 +479,39 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
                   if (qRes.ok) {
                     const quality = await qRes.json();
                     if (quality.overallScore !== undefined) {
+                      const rawScores = {
+                        promptMatch: quality.scores?.promptMatch ?? 0,
+                        visualQuality: quality.scores?.visualQuality ?? 0,
+                        faceQuality: quality.scores?.faceQuality ?? 0,
+                        motionCoherence: quality.scores?.motionCoherence ?? 0,
+                        styleConsistency: quality.scores?.styleConsistency ?? 0,
+                        composition: quality.scores?.composition ?? 0,
+                      };
+
+                      // 세부 점수 디버그 로그
+                      console.log(`[CUT ${cutNumber}] 🎯 QUALITY BREAKDOWN`, {
+                        overall: quality.overallScore,
+                        promptMatch: `${rawScores.promptMatch}/10`,
+                        visualQuality: `${rawScores.visualQuality}/10`,
+                        faceQuality: `${rawScores.faceQuality}/10`,
+                        motionCoherence: `${rawScores.motionCoherence}/10`,
+                        styleConsistency: `${rawScores.styleConsistency}/10`,
+                        composition: `${rawScores.composition}/10`,
+                        issues: quality.issues || [],
+                        suggestion: quality.suggestion || "(없음)",
+                      });
+
                       updateClip(cutNumber, {
                         verification: {
                           overallScore: quality.overallScore,
                           scores: {
-                            characterDescription: quality.scores?.promptMatch ?? 0,
-                            cameraMovement: quality.scores?.composition ?? 0,
-                            actionSequence: quality.scores?.motionCoherence ?? 0,
-                            lightingMood: quality.scores?.styleConsistency ?? 0,
-                            veoCompatibility: quality.scores?.visualQuality ?? 0,
+                            characterDescription: rawScores.promptMatch,
+                            cameraMovement: rawScores.composition,
+                            actionSequence: rawScores.motionCoherence,
+                            lightingMood: rawScores.styleConsistency,
+                            veoCompatibility: rawScores.visualQuality,
                           },
+                          rawScores,
                           issues: quality.issues || [],
                           suggestions: quality.suggestion ? [quality.suggestion] : [],
                         },
@@ -1005,6 +1028,49 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         buildPromptMs,
         promptChars: promptCharCount,
         promptWords: promptWordCount,
+      });
+
+      // ── RAW JSON PAYLOAD 디버그 ────────────────────────────────────────────
+      console.log(`[CUT ${cutNumber}] 📦 RAW API PAYLOAD`, {
+        engine,
+        videoMode,
+        mode: cfg.mode,
+        durationSeconds: cfg.durationSeconds,
+        resolution: cfg.resolution,
+        aspectRatio: cfg.aspectRatio,
+        animationMode: cfg.animationMode || "(없음)",
+        styleIntensity: cfg.styleIntensity,
+        personGeneration: cfg.personGeneration,
+        sampleCount: cfg.sampleCount,
+        seed: cfg.seed || "(없음)",
+        hasNegativePrompt: !!negativePrompt,
+        negativePrompt: negativePrompt?.slice(0, 100) || "(없음)",
+        hasPreviousVideoUri: !!safePrevVideoUri,
+        hasSourceVideo: !!safeSourceVideo,
+        hasFirstFrame: !!safeFirstFrame,
+        hasLastFrame: !!lastFrameBase64,
+        hasReferenceImages: finalRefImages.length > 0,
+        referenceImageCount: finalRefImages.length,
+        hasVideoPromptJson: !!cut.videoPromptJson,
+        hasExtendPromptJson: !!cut.extendPromptJson,
+        hasMultiShot: !!(cut.multiShot && cut.multiShot.length > 0),
+        promptLength: prompt.length,
+        promptWords: prompt.split(/\s+/).length,
+        prompt: prompt.slice(0, 300) + (prompt.length > 300 ? "…" : ""),
+      });
+
+      // ── 프롬프트 조립 과정 상세 ─────────────────────────────────────────────
+      console.log(`[CUT ${cutNumber}] 🔧 PROMPT ASSEMBLY STEPS`, {
+        step1_stylePreset: cfg.animationMode || "(없음)",
+        step2_characterConsistency: (cut.characterConsistency || "(없음)").slice(0, 80),
+        step3_cameraDirection: (cut.cameraDirection || "(없음)").slice(0, 80),
+        step4_shotType: cut.videoPromptJson?.shotSize || "(없음)",
+        step5_moodLighting: (cut.moodLighting || "(없음)").slice(0, 80),
+        step6_videoPromptRaw: (cut.videoPrompt || "(없음)").slice(0, 120),
+        step7_finalPrompt: prompt.slice(0, 200) + (prompt.length > 200 ? "…" : ""),
+        isCut1,
+        generateVsExtend: videoMode,
+        cut1Reason: isCut1 ? "cut1_force_generate — extend 관련 필드 차단됨" : "normal",
       });
 
       const tApiStart = performance.now();

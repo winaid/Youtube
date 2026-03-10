@@ -342,6 +342,15 @@ export interface PromptVerification {
     lightingMood: number;
     veoCompatibility: number;
   };
+  /** Gemini 원본 6축 점수 (0-10 각) */
+  rawScores?: {
+    promptMatch: number;       // 프롬프트 일치도
+    visualQuality: number;     // 시각 품질
+    faceQuality: number;       // 얼굴 품질
+    motionCoherence: number;   // 모션 자연스러움
+    styleConsistency: number;  // 스타일 일관성
+    composition: number;       // 구도
+  };
   issues: string[];
   suggestions: string[];
   improvedVideoPrompt?: string;

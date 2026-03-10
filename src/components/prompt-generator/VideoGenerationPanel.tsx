@@ -251,25 +251,71 @@ export default function VideoGenerationPanel({
 
                 {/* Quality Score & Retry Info */}
                 {(clip.verification || (clip.retryCount && clip.retryCount > 0)) && (
-                  <div className="px-3 pb-2 flex gap-1.5 flex-wrap">
-                    {clip.verification && (
-                      <Badge
-                        className="text-[10px] text-white"
-                        style={{
-                          background: clip.verification.overallScore >= 80
-                            ? "#22c55e"
-                            : clip.verification.overallScore >= 60
-                            ? "#e09900"
-                            : "#ef4444",
-                        }}
-                      >
-                        품질 {clip.verification.overallScore}/100
-                      </Badge>
+                  <div className="px-3 pb-2 space-y-1.5">
+                    <div className="flex gap-1.5 flex-wrap">
+                      {clip.verification && (
+                        <Badge
+                          className="text-[10px] text-white"
+                          style={{
+                            background: clip.verification.overallScore >= 80
+                              ? "#22c55e"
+                              : clip.verification.overallScore >= 60
+                              ? "#e09900"
+                              : "#ef4444",
+                          }}
+                        >
+                          품질 {clip.verification.overallScore}/100
+                        </Badge>
+                      )}
+                      {clip.retryCount && clip.retryCount > 0 && (
+                        <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#ef4444", color: "#dc2626" }}>
+                          재시도 {clip.retryCount}회
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* 세부 품질 점수 */}
+                    {clip.verification?.rawScores && (
+                      <div className="bg-gray-50 rounded p-2 space-y-1">
+                        {([
+                          { key: "promptMatch" as const, label: "프롬프트 일치", icon: "🎯" },
+                          { key: "styleConsistency" as const, label: "스타일 일관성", icon: "🎨" },
+                          { key: "composition" as const, label: "구도/카메라", icon: "📷" },
+                          { key: "motionCoherence" as const, label: "모션 자연스러움", icon: "🎬" },
+                          { key: "visualQuality" as const, label: "시각 품질", icon: "✨" },
+                          { key: "faceQuality" as const, label: "얼굴 품질", icon: "👤" },
+                        ] as const).map(({ key, label, icon }) => {
+                          const val = clip.verification!.rawScores![key];
+                          const pct = val * 10;
+                          return (
+                            <div key={key} className="flex items-center gap-1.5">
+                              <span className="text-[9px] w-[85px] shrink-0">{icon} {label}</span>
+                              <div className="flex-1 h-[6px] bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${pct}%`,
+                                    background: pct >= 80 ? "#22c55e" : pct >= 60 ? "#e09900" : "#ef4444",
+                                  }}
+                                />
+                              </div>
+                              <span className="text-[9px] w-[28px] text-right font-mono">{val}/10</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
-                    {clip.retryCount && clip.retryCount > 0 && (
-                      <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#ef4444", color: "#dc2626" }}>
-                        재시도 {clip.retryCount}회
-                      </Badge>
+
+                    {/* 감점 요인 & 개선 제안 */}
+                    {clip.verification && (clip.verification.issues.length > 0 || clip.verification.suggestions.length > 0) && (
+                      <div className="space-y-0.5">
+                        {clip.verification.issues.map((issue, i) => (
+                          <p key={`issue-${i}`} className="text-[9px] text-red-600">⚠ {issue}</p>
+                        ))}
+                        {clip.verification.suggestions.map((sug, i) => (
+                          <p key={`sug-${i}`} className="text-[9px] text-blue-600">💡 {sug}</p>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
