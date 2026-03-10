@@ -5,7 +5,7 @@
  * Step2+3: 배치별 시각 프롬프트 (전체 시퀀스 컨텍스트 + anti-repetition 강제)
  *
  * 토큰 예산:
- *   Step1: maxTokens=2048  (아웃라인 전체)
+ *   Step1: maxTokens=4096  (아웃라인 전체 — 경량 프롬프트)
  *   Step2: maxTokens=8192  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192  (컷 N/2+1~N 상세) — Step2와 병렬
  */
@@ -354,100 +354,69 @@ async function step1Outlines(
 - 모든 대사는 한국어로 작성
 `;
 
-  const prompt = `당신은 ${directorNameKo} 감독의 연출 방식으로 장면을 구조화하는 시나리오 분석가입니다.
-이 감독의 연출 철학 전체가 각 컷의 구조를 결정해야 합니다.
-${formatRules}
-${generationPersonaBlock ? generationPersonaBlock + "\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n" : ""}## 감독 연출 철학 (이것이 모든 컷 설계의 기준)
-${directorPersona ? directorPersona.slice(0, 600) : "강한 시각 개성, 인물의 심리가 화면 구성을 지배하는 스타일"}
+  // ── Step1 프롬프트: 경량 아웃라인 전용 ────────────────────────────────────
+  // 목적: characterSeeds + outlines JSON만 빠르게 생성
+  // 무거운 규칙(SCENE_TERM_PRECISION, 감정→행동 상세 예시)은 step2/3에서 적용
+  // storyText는 800자로 제한 (토큰 예산 절약)
+  const storyExcerpt = storyText.slice(0, 800);
 
+  const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
+${contentMode === "dramatized_reenactment" ? "콘텐츠: 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
+${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
 
 ## 시나리오
-${storyText.slice(0, 1500)}
+${storyExcerpt}
 
-## 출력 규칙
+## 출력 JSON 스키마
 
-### SCENE TERM PRECISION (appearance / subjectAction 작성 기준)
-- 일반 명사 단독 금지: "chair", "machine", "equipment", "room", "tools" — 반드시 재질+형태+기능 수식어 추가
-- 치과: "dental unit chair with padded headrest and suction hose" | "overhead exam lamp" | "extraction forceps on steel tray"
-- 역사적 소품: "amber glass apothecary bottle" | "wooden sandwich board sign" | "lithographic street poster"
-- 행동: 감정 형용사 금지, 신체 동작으로만 — "jaw locked, knuckles whitening on armrest" NOT "scared"
+characterSeeds (최대 3명):
+- id: "char-1" 등
+- label: 한국어 역할명
+- appearance: 영어 ≤40 words (성별/나이/헤어/의상/피부톤만)
+- appearanceKo: ≤25자
 
-### characterSeeds (최대 3명 — 위 캐릭터 유형 규칙 준수)
-- appearance: 영어, 최대 65 words (성별/나이/헤어/의상/피부톤만 — 심리/감정 금지)
-- appearanceKo: 최대 25자
+outlines (정확히 ${cutCount}개):
+- cutNumber: 순번
+- sceneKo: ≤30자
+- emotion: 영어 키워드
+- emotionalDelta: "이전→현재" (CUT1: "opening→[emotion]")
+- purpose: establish | develop | climax | resolve
+- shotType: ${shotGuide} (연속 동일 금지)
+- cameraMovement: ≤10 words 영어
+- subjectAction: 영어 ≤12 words, 구체적 신체 동작 (금지: stands, watches, feels)
+- transitionHint: ≤10자
 
-### outlines (정확히 ${cutCount}개) — 감독의 연출 의도 중심
-- sceneKo: 최대 35자 (무슨 일이 일어나는가, 줄거리 요약 금지, 연출 관점으로)
-- emotion: 영어 감정 키워드
-- emotionalDelta: 이전 컷 대비 감정 변화 (형식: "이전감정→이감정", CUT1은 "opening→[emotion]")
-- purpose: "establish" | "develop" | "climax" | "resolve" 중 하나
-- shotType: 아래 목록에서 선택. 연속 컷은 반드시 다른 값 사용
-  가능 값: ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV
-  권장 순서 (${cutCount}컷): ${shotGuide}
-- subjectAction: 피사체의 구체적 신체 동작 (영어 ≤15 words)
-  금지: "stands", "watches", "looks at camera", "faces forward", "feels anxious", "seems nervous", "appears sad"
-  금지: 감정 형용사를 동작처럼 쓰는 것 (예: "nervously stands" — "nervously"는 형용사, 금지)
-  필수: 행동 비트 — 시작·망설임·중단·충동·완수 중 하나를 포함한 구체적 동작
-  감정→행동 번역 예시 (subjectAction 작성 기준):
-    anxiety    → "types search term then deletes it before submitting"
-    hesitation → "extends hand toward button then pulls back"
-    resolve    → "pauses then grips handle and pushes door open fully"
-    guilt      → "opens mouth to speak then closes it, turns gaze away"
-    anger      → "clenches jaw, tightens fist, jerks head sharply to side"
-    relief     → "exhales slowly, shoulders drop, hands release grip"
-    anticipation→ "leans torso forward, eyes fix before body follows"
-    resignation → "reaches halfway then lowers hand and steps back"
-  예시: "reaches for door handle then stops, fingers hovering"
-  예시: "spins abruptly toward sound, freezes mid-step"
-- transitionHint: 최대 15자
+JSON만 출력:
+{"characterSeeds":[...],"outlines":[...]}`;
 
-## 영화적 샷 진행 강제 규칙 (MANDATORY — 단순 다양화가 아닌 "시선 설계")
-
-### Shot Progression Law
-- SCENE1: 반드시 WS 또는 LS → 공간과 분위기를 먼저 열 것. 인물 얼굴 클로즈업 금지.
-- SCENE2: MS 또는 MLS → 인물에게 접근. 배경과 인물의 관계를 드러낼 것.
-- SCENE3+: CU / OTS / MCU / ECU로 점진적 좁힘 → 감정 정점에서 ECU.
-- 중반 이후 LS 또는 WS 1회 삽입 → 호흡을 열고 대비를 만들 것.
-- 같은 거리(shot size)의 장면 2회 연속 금지.
-
-### cameraMovement 설계 원칙
-- 카메라는 감정 변화 또는 정보 공개 이유가 있을 때만 움직인다.
-- 허용 움직임 (이유와 함께 작성):
-  • "slow push-in as tension builds" — 긴장 고조, 인물 내면 진입
-  • "subtle dolly forward as resolve grows" — 결심, 집중 강화
-  • "gentle pan revealing new figure" — 새 요소/인물 발견
-  • "restrained reframing as unease shifts" — 심리적 불안 표현
-  • "locked-off static — suppressed tension" — 억압, 통제된 긴장
-- 금지: 이유 없는 핸드헬드 흔들림, 목적 없는 zoom, 장식용 crane
-
-### Visual Reveal / Withhold Strategy
-- SCENE1에서 모든 정보 공개 금지 — 공간 분위기와 배치만.
-- 인물 얼굴·핵심 소품·갈등 원인은 SCENE3 이후 점진적으로 드러낼 것.
-- 각 장면은 "이전 장면에 없던 새 시각 정보 하나"를 공개해야 함.
-- 동시에 "아직 보여주지 않는 것 하나"를 프레임 밖에 보류해야 함.
-
-### 샷 다양화 강제 규칙
-- 연속된 2개 장면이 동일한 shotType을 가지면 오류로 간주
-- 각 장면의 subjectAction은 이전 장면과 반드시 다른 동작이어야 함
-- 같은 장소, 같은 포즈, 같은 정보량이 3장면 이상 연속되면 안 됨
-
-JSON만 출력 (마크다운 없이):
-{"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"[English ≤65w]","appearanceKo":"[≤25자]"}],"outlines":[{"cutNumber":1,"sceneKo":"[≤35자]","emotion":"[English]","emotionalDelta":"opening→[emotion]","purpose":"establish","shotType":"WS","cameraMovement":"slow pan revealing space and atmosphere","subjectAction":"[concrete action ≤15w]","transitionHint":"[≤15자]"}]}`;
-
-  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=2048`);
+  const step1MaxTokens = 4096;
+  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens}`);
 
   const result = await streamingGenerate(env, MODEL_OUTLINE, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.5, maxOutputTokens: 2048, responseMimeType: "application/json" },
+    generationConfig: { temperature: 0.5, maxOutputTokens: step1MaxTokens, responseMimeType: "application/json" },
   });
 
   console.info(`[cuts:step1] responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
 
-  if (result.error) throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
+  // MAX_TOKENS truncation: 부분 텍스트로 파싱 시도 (잘린 JSON 복구)
+  if (result.truncated && result.text) {
+    console.warn(`[cuts:step1] TRUNCATED — attempting partial recovery. partialLen=${result.text.length}`);
+    const partial = safeParseObj(result.text);
+    if (partial) {
+      // 부분 복구 성공 — outlines가 부족할 수 있지만 downstream에서 채움
+      console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${Array.isArray(partial.outlines) ? (partial.outlines as unknown[]).length : 0}`);
+      // result.error 무시하고 진행
+    } else if (result.error) {
+      throw new Error(`step1 truncated & parse failed: ${result.error.slice(0, 300)}`);
+    }
+  } else if (result.error) {
+    throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
+  }
 
   const parsed = safeParseObj(result.text);
-  if (!parsed) throw new Error(`step1 parse failed. responseLen=${result.text.length} tail=${result.text.slice(-300)}`);
+  if (!parsed) throw new Error(`step1 parse failed. responseLen=${result.text.length} truncated=${result.truncated ?? false} tail=${result.text.slice(-200)}`);
 
   const characterSeeds: CharacterSeed[] = Array.isArray(parsed.characterSeeds)
     ? (parsed.characterSeeds as Array<Partial<CharacterSeed>>).map((s) => ({
@@ -863,8 +832,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("[generate-cuts] step1 failed:", msg);
-      return Response.json({ error: "Step 1 (outlines) failed", detail: msg, step: 1 }, { status: 502 });
+      const isTruncation = msg.includes("MAX_TOKENS") || msg.includes("truncat");
+      console.error("[generate-cuts] step1 failed:", msg, "isTruncation:", isTruncation);
+      // MAX_TOKENS는 서버 에러(502)가 아니라 요청 크기 문제 → 422 + 명확한 원인
+      const status = isTruncation ? 422 : 502;
+      return Response.json({
+        error: isTruncation
+          ? "Step 1 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요."
+          : "Step 1 (outlines) failed",
+        detail: msg,
+        step: 1,
+        cause: isTruncation ? "MAX_TOKENS" : "API_ERROR",
+      }, { status });
     }
 
     // 아웃라인 정규화
@@ -926,8 +905,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("[generate-cuts] step2/3 failed:", msg);
-      return Response.json({ error: "Step 2/3 (details) failed", detail: msg, step: 2 }, { status: 502 });
+      const isTruncation = msg.includes("MAX_TOKENS") || msg.includes("truncat");
+      console.error("[generate-cuts] step2/3 failed:", msg, "isTruncation:", isTruncation);
+      const status = isTruncation ? 422 : 502;
+      return Response.json({
+        error: isTruncation
+          ? "Step 2/3 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요."
+          : "Step 2/3 (details) failed",
+        detail: msg,
+        step: 2,
+        cause: isTruncation ? "MAX_TOKENS" : "API_ERROR",
+      }, { status });
     }
 
     // ── 병합 ──────────────────────────────────────────────────────────────────

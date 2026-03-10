@@ -58,8 +58,15 @@ async function fetchGeminiCuts(
     });
 
     if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      throw new Error(`API error: ${res.status} — ${(errBody as Record<string, string>).detail || "unknown"}`);
+      const errBody = await res.json().catch(() => ({} as Record<string, string>));
+      const eb = errBody as Record<string, string>;
+      const cause = eb.cause || "";
+      const detail = eb.detail || eb.error || "unknown";
+      throw new Error(
+        cause === "MAX_TOKENS"
+          ? `토큰 한도 초과 (step ${eb.step || "?"}): ${detail}`
+          : `API error: ${res.status} — ${detail}`,
+      );
     }
 
     const data = await res.json();
