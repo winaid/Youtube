@@ -80,7 +80,8 @@ export async function klingGenerate(
   req: KlingGenerateRequest,
 ): Promise<{ taskId: string }> {
   const headers = klingHeaders(env);
-  const model = req.model ?? (req.image ? "kling-v3-image-to-video" : "kling-v3-text-to-video");
+  // kling-o3-*: 사운드 지원 최신 모델 / kling-v3-*: 사운드 없음
+  const model = req.model ?? (req.image ? "kling-o3-image-to-video" : "kling-o3-text-to-video");
 
   // image-to-video 모델인데 image가 없으면 EvoLink 1201 에러 발생 → 사전 차단
   const isImageModel = model.includes("image-to-video");
@@ -141,7 +142,7 @@ export async function klingExtend(
   }
 
   return klingGenerate(env, {
-    model:           "kling-v3-image-to-video",
+    model:           "kling-o3-image-to-video", // o3: 사운드 지원
     prompt:          req.prompt ?? "continue the scene naturally",
     negative_prompt: req.negative_prompt,
     duration:        req.duration ?? 5,  // EvoLink expects int
