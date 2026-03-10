@@ -44,7 +44,7 @@ export interface KlingGenerateRequest {
   negative_prompt?: string;
   /** default: "kling-v3-text-to-video" or "kling-v3-image-to-video" if image supplied */
   model?: string;
-  duration?: "5" | "10";
+  duration?: 5 | 10;  // EvoLink API expects int, not string
   aspect_ratio?: "16:9" | "9:16" | "1:1";
   cfg_scale?: number;
   // Image-to-video
@@ -60,7 +60,7 @@ export interface KlingExtendRequest {
   lastFrameBase64: string;
   prompt?: string;
   negative_prompt?: string;
-  duration?: "5" | "10";
+  duration?: 5 | 10;  // EvoLink API expects int, not string
   aspect_ratio?: "16:9" | "9:16" | "1:1";
 }
 
@@ -85,7 +85,7 @@ export async function klingGenerate(
   const body: Record<string, unknown> = {
     model,
     prompt: req.prompt,
-    duration: req.duration ?? "5",
+    duration: req.duration ?? 5,  // EvoLink expects int
     aspect_ratio: req.aspect_ratio ?? "16:9",
   };
   if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
@@ -100,7 +100,12 @@ export async function klingGenerate(
   });
 
   const text = await res.text();
-  if (!res.ok) throw new Error(`Kling generate (${res.status}): ${text.slice(0, 400)}`);
+  if (!res.ok) {
+    const httpStatus = res.status;
+    const err = new Error(`Kling generate (${httpStatus}): ${text.slice(0, 400)}`);
+    (err as Error & { httpStatus: number }).httpStatus = httpStatus;
+    throw err;
+  }
 
   let data: { id?: string; task_id?: string; error?: { message?: string } };
   try { data = JSON.parse(text); } catch { throw new Error(`Kling generate non-JSON: ${text.slice(0, 200)}`); }
@@ -126,7 +131,7 @@ export async function klingExtend(
     model:           "kling-v3-image-to-video",
     prompt:          req.prompt ?? "continue the scene naturally",
     negative_prompt: req.negative_prompt,
-    duration:        req.duration ?? "5",
+    duration:        req.duration ?? 5,  // EvoLink expects int
     aspect_ratio:    req.aspect_ratio ?? "16:9",
     image:           req.lastFrameBase64,
   });
@@ -185,9 +190,9 @@ export async function klingCheckStatus(
 
 // ── Duration / Aspect ratio helpers ──────────────────────────────────────────
 
-/** Veo(4/6/8s) → Kling("5"/"10") nearest mapping */
-export function toKlingDuration(veoSec: number): "5" | "10" {
-  return veoSec <= 6 ? "5" : "10";
+/** Veo(4/6/8s) → Kling(5/10) nearest mapping. Returns int as EvoLink API requires. */
+export function toKlingDuration(veoSec: number): 5 | 10 {
+  return veoSec <= 6 ? 5 : 10;
 }
 
 export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {

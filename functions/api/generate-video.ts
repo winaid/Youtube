@@ -56,6 +56,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "prompt is required" }, { status: 400 });
     }
 
+    // durationSeconds 타입 검증 및 정규화
+    if (req.durationSeconds !== undefined) {
+      const durNum = Number(req.durationSeconds);
+      if (!Number.isFinite(durNum)) {
+        return Response.json(
+          { error: `durationSeconds must be a number, got: ${JSON.stringify(req.durationSeconds)}` },
+          { status: 400 },
+        );
+      }
+      req.durationSeconds = durNum;
+    }
+
     // ── 엔진 선택 ────────────────────────────────────────────────────────────
     // auto: KLING 자격증명이 있고 Google 자격증명이 없으면 Kling 사용
     const hasGoogle = !!(context.env.GOOGLE_SERVICE_ACCOUNT_JSON || context.env.GOOGLE_CLOUD_API_KEY);
@@ -92,36 +104,45 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       let taskId: string;
       let modeUsed: "generate" | "extend";
 
-      if (videoMode === "extend" && req.lastFrameBase64) {
-        // EvoLink에 native video-extend 없음:
-        // 이전 컷 lastFrameBase64 → image-to-video (연속성 유지)
-        console.log("[generate-video] Kling EXTEND (image-to-video with lastFrame)");
-        const result = await klingExtend(context.env, {
-          lastFrameBase64: stripDataPrefix(req.lastFrameBase64),
-          prompt:          req.prompt,
-          negative_prompt: req.negativePrompt,
-          duration,
-          aspect_ratio: aspectRatio,
-        });
-        taskId = result.taskId;
-        modeUsed = "extend";
-      } else {
-        // Kling generate (text-to-video or image-to-video)
-        console.log("[generate-video] Kling GENERATE", {
-          hasFirstFrame: !!req.firstFrameBase64,
-          duration,
-          aspectRatio,
-        });
-        const result = await klingGenerate(context.env, {
-          prompt:          req.prompt,
-          negative_prompt: req.negativePrompt,
-          aspect_ratio:    aspectRatio,
-          duration,
-          ...(req.firstFrameBase64 ? { image:      stripDataPrefix(req.firstFrameBase64) } : {}),
-          ...(req.lastFrameBase64  ? { image_tail: stripDataPrefix(req.lastFrameBase64)  } : {}),
-        });
-        taskId = result.taskId;
-        modeUsed = "generate";
+      try {
+        if (videoMode === "extend" && req.lastFrameBase64) {
+          // EvoLink에 native video-extend 없음:
+          // 이전 컷 lastFrameBase64 → image-to-video (연속성 유지)
+          console.log("[generate-video] Kling EXTEND (image-to-video with lastFrame)");
+          const result = await klingExtend(context.env, {
+            lastFrameBase64: stripDataPrefix(req.lastFrameBase64),
+            prompt:          req.prompt,
+            negative_prompt: req.negativePrompt,
+            duration,
+            aspect_ratio: aspectRatio,
+          });
+          taskId = result.taskId;
+          modeUsed = "extend";
+        } else {
+          // Kling generate (text-to-video or image-to-video)
+          console.log("[generate-video] Kling GENERATE", {
+            hasFirstFrame: !!req.firstFrameBase64,
+            duration,
+            aspectRatio,
+          });
+          const result = await klingGenerate(context.env, {
+            prompt:          req.prompt,
+            negative_prompt: req.negativePrompt,
+            aspect_ratio:    aspectRatio,
+            duration,
+            ...(req.firstFrameBase64 ? { image:      stripDataPrefix(req.firstFrameBase64) } : {}),
+            ...(req.lastFrameBase64  ? { image_tail: stripDataPrefix(req.lastFrameBase64)  } : {}),
+          });
+          taskId = result.taskId;
+          modeUsed = "generate";
+        }
+      } catch (klingErr) {
+        // 외부 API 에러: httpStatus가 있으면 그대로 전달, 없으면 502
+        const msg = klingErr instanceof Error ? klingErr.message : String(klingErr);
+        const httpStatus = (klingErr as Error & { httpStatus?: number }).httpStatus;
+        const status = httpStatus === 400 ? 400 : httpStatus === 401 ? 401 : 502;
+        console.error("[generate-video] Kling API 에러:", msg);
+        return Response.json({ error: msg }, { status });
       }
 
       return Response.json({
