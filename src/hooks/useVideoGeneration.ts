@@ -119,54 +119,114 @@ function captureVideoMiddleFrame(videoUri: string): Promise<string | null> {
   });
 }
 
-// animationMode → Veo 프롬프트 스타일 프리픽스
-// 중요: 각 항목은 "스타일 태그"가 아니라 motion quality + surface texture + realism level을 명시
-// Veo 프롬프트 스타일 프리픽스 — 핵심 키워드만 (장황한 설명 제거)
-// Veo 최적: 전체 프롬프트 150단어 이내. 스타일은 1줄로 충분.
-const VEO_STYLE_PREFIX: Record<string, string> = {
-  "실사": "Photorealistic live-action, cinematic camera, natural lighting.",
-  "2D 애니": "2D anime, cel-shaded lines, vibrant flat colors.",
-  "수채화 애니": "Watercolor animation, soft pigment washes, paper texture.",
-  "하이브리드": "Semi-realistic digital art, anime proportions, photorealistic environment.",
-  "로토스코핑": "Rotoscoped 2D animation, performance-derived movement, painterly stylized overlay.",
-  "스톱모션": "Stop-motion animation, handcrafted textures, frame-by-frame movement, material imperfections.",
-  "픽셀아트": "Pixel art 16-bit retro, crisp edges, limited palette.",
-  "잉크워시": "East Asian ink wash, sumi-e brush strokes, rice paper texture.",
-  "클레이": "Claymation, smooth clay figures, fingerprint texture, studio lighting.",
-  "빈티지 필름": "Vintage 35mm film, warm grain, faded analog palette, light leaks.",
-  "네온 사이버펑크": "Neon cyberpunk, glowing neon lights, vivid pink/blue/purple, wet reflective surfaces.",
-  "미니어처": "Tilt-shift miniature, diorama scale, shallow depth of field.",
+// ── 전역 스타일 시스템 ───────────────────────────────────────────────────
+// Veo는 프롬프트 앞부분에 강하게 반응 → 스타일을 최상위에 배치하고 구체적으로 명시
+// 각 항목: style (긍정 스타일 블록) + negative (해당 스타일에 충돌하는 요소 차단)
+// isNonRealistic: true면 자동으로 photorealism 차단 키워드가 negative에 합산됨
+
+// 비실사 공통 negative (photorealism 차단)
+const ANTI_PHOTOREALISM = "photorealistic, live-action footage, realistic human skin texture, cinematic realism, hyper-real detail, real camera footage, realistic lens look, DSLR photo";
+
+interface StylePreset {
+  style: string;       // 긍정 스타일 블록 (프롬프트 최상단)
+  negative: string;    // 스타일 전용 negative (프롬프트 끝)
+  isNonRealistic: boolean;
+  /** 스타일 강화 suffix — getStyleSuffix 대신 스타일 특화 키워드 사용 */
+  reinforcement: string;
+}
+
+const STYLE_PRESETS: Record<string, StylePreset> = {
+  "실사": {
+    style: "Photorealistic live-action, cinematic camera, natural lighting.",
+    negative: "cartoon, anime, illustration, painting, text overlay, watermark",
+    isNonRealistic: false,
+    reinforcement: "cinematic masterpiece, film grain, depth of field, anamorphic lens, professional color grading",
+  },
+  "2D 애니": {
+    style: "2D anime animation, cel-shaded outlines, vibrant flat colors, anime character proportions, illustrated background.",
+    negative: "3D rendering, realistic skin, live-action, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "consistent anime art style throughout, clean cel-shading, sharp illustrated edges",
+  },
+  "수채화 애니": {
+    style: "2D hand-painted watercolor animation, storybook illustration style, soft pigment bleeding on textured paper, visible brush strokes, stylized non-photorealistic forms, painterly background, warm watercolor wash.",
+    negative: "sharp digital outlines, clean cel-shading, vibrant saturated flat colors, 3D rendering, CGI, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "watercolor paper grain visible, wet pigment edges, illustrated storybook aesthetic, hand-drawn feel throughout",
+  },
+  "하이브리드": {
+    style: "Semi-realistic digital art, anime character proportions, photorealistic environment, stylized rendering.",
+    negative: "pure photorealism, pure flat anime, text overlay, watermark",
+    isNonRealistic: false,
+    reinforcement: "consistent hybrid art style, detailed digital painting",
+  },
+  "로토스코핑": {
+    style: "Rotoscoped 2D animation, performance-derived fluid movement, painterly stylized overlay, hand-traced outlines over motion.",
+    negative: "flat cartoon, generic anime, vibrant cel-shading, clean flat outlines, 2D anime flatness, plastic motion, mechanical stiff cartoon movement, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "painterly rotoscope effect consistent throughout, hand-traced line quality",
+  },
+  "스톱모션": {
+    style: "Stop-motion animation, handcrafted miniature textures, frame-by-frame movement, material imperfections, tactile surfaces.",
+    negative: "smooth CGI animation, digital clean look, plastic toy appearance, flat cute style, generic puppet animation, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "handmade material feel, visible craft imperfections, stop-motion jitter",
+  },
+  "픽셀아트": {
+    style: "Pixel art 16-bit retro animation, crisp hard edges, limited color palette, blocky character sprites.",
+    negative: "smooth anti-aliased edges, 3D rendering, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "consistent pixel grid, retro game aesthetic throughout",
+  },
+  "잉크워시": {
+    style: "East Asian ink wash animation, sumi-e brush strokes, rice paper texture, monochrome ink gradients, calligraphic line weight.",
+    negative: "colorful vibrant palette, digital clean line art, 3D rendering, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "ink wash aesthetic consistent throughout, brush texture visible",
+  },
+  "클레이": {
+    style: "Claymation animation, smooth clay figures, fingerprint texture on surfaces, warm studio lighting, sculptural forms.",
+    negative: "digital animation, smooth CGI, plastic texture, shiny surface, text overlay, watermark",
+    isNonRealistic: true,
+    reinforcement: "clay material feel throughout, handmade sculptural quality",
+  },
+  "빈티지 필름": {
+    style: "Vintage 35mm film look, warm grain, faded analog color palette, light leaks, soft focus edges.",
+    negative: "digital clean modern look, oversaturated colors, perfect grain, text overlay, watermark",
+    isNonRealistic: false,
+    reinforcement: "film grain consistent throughout, analog color degradation",
+  },
+  "네온 사이버펑크": {
+    style: "Neon cyberpunk aesthetic, glowing neon lights, vivid pink/blue/purple palette, wet reflective surfaces, dark atmosphere.",
+    negative: "natural daylight, muted colors, pastoral setting, text overlay, watermark",
+    isNonRealistic: false,
+    reinforcement: "neon glow consistent throughout, cyberpunk atmosphere",
+  },
+  "미니어처": {
+    style: "Tilt-shift miniature effect, diorama scale appearance, extremely shallow depth of field, toy-like proportions.",
+    negative: "normal scale, deep focus, text overlay, watermark",
+    isNonRealistic: false,
+    reinforcement: "miniature tilt-shift effect consistent throughout",
+  },
 };
 
-// animationMode별 스타일 전용 negativePrompt 오버라이드
-// 기본 negativePrompt를 "스타일 충돌 방지"용으로 보강한다
-// 특히 로토스코핑: "live action" 금지 ← 이게 없으면 실사 퍼포먼스 기반 움직임이 살아야 함
-const STYLE_NEGATIVE_OVERRIDES: Record<string, string> = {
-  "로토스코핑": "flat cartoon, generic anime, vibrant cel-shading, clean flat outlines, 2D anime flatness, plastic motion, mechanical stiff cartoon movement, text overlay, watermark",
-  "스톱모션": "smooth CGI animation, digital clean look, plastic toy appearance, flat cute style, generic puppet animation, photorealistic, text overlay, watermark",
-  "클레이": "digital animation, smooth CGI, plastic texture, shiny surface, text overlay, watermark",
-  "수채화 애니": "sharp digital outlines, clean cel-shading, vibrant saturated flat colors, text overlay, watermark",
-  "잉크워시": "colorful vibrant palette, photorealistic, digital clean line art, text overlay, watermark",
-  "빈티지 필름": "digital clean modern look, oversaturated colors, perfect grain, text overlay, watermark",
-  "픽셀아트": "smooth anti-aliased edges, photorealistic, 3D rendering, text overlay, watermark",
-};
+// 스타일 preset에서 negative와 reinforcement를 꺼내는 헬퍼
+function getStylePreset(animationMode?: string): StylePreset | undefined {
+  if (!animationMode) return undefined;
+  return STYLE_PRESETS[animationMode];
+}
 
-// Style intensity keywords at different levels (animationMode별 분기)
+/** 스타일 강화 suffix — preset의 reinforcement 사용 */
 function getStyleSuffix(intensity: number, animationMode?: string): string {
   if (intensity <= 20) return "";
-
-  // animationMode가 실사/cinematic이 아닌 경우 → cinematic 키워드 대신 스타일 강화
-  const isNonRealistic = animationMode && !["실사", "cinematic"].includes(animationMode);
-
-  if (isNonRealistic) {
-    // 비실사 스타일은 cinematic 키워드가 스타일을 오염시킴 → 스타일 일관성 키워드로 대체
-    if (intensity <= 50) return "consistent art style, high detail";
-    return "consistent art style throughout, high detail, masterful composition, rich color palette";
+  const preset = getStylePreset(animationMode);
+  if (!preset) return "";
+  // 강도 50 이하: 짧은 버전 (reinforcement 첫 절반), 50 초과: 전체
+  if (intensity <= 50) {
+    const parts = preset.reinforcement.split(",").map(s => s.trim());
+    return parts.slice(0, 2).join(", ");
   }
-
-  // 실사/cinematic
-  if (intensity <= 50) return "cinematic, film grain";
-  return "cinematic masterpiece, film grain, depth of field, anamorphic lens, professional color grading, dramatic composition";
+  return preset.reinforcement;
 }
 
 function strengthenNegativePrompt(original: string, retryCount: number): string {
@@ -875,51 +935,81 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
       }
 
-      // animationMode 스타일 프리픽스 삽입 (프롬프트 맨 앞에 배치 → Veo가 스타일을 가장 먼저 인식)
-      const stylePrefix = cfg.animationMode ? VEO_STYLE_PREFIX[cfg.animationMode] : undefined;
-      if (stylePrefix && !prompt.includes(stylePrefix.split(",")[0].trim())) {
-        prompt = `${stylePrefix} ${prompt}`;
+      // ═══ 3-블록 프롬프트 조립: [STYLE] + [SCENE] + [NEGATIVE] ═══════════
+      // Veo는 프롬프트 앞부분 키워드에 가장 강하게 반응.
+      // 스타일을 최상단에 배치하고, 씬 내용 뒤에 negative를 붙여 스타일 충돌 차단.
+      const preset = getStylePreset(cfg.animationMode);
+
+      // ── BLOCK 1: STYLE (최상단 — Veo가 가장 먼저 인식) ──────────────
+      if (preset) {
+        // 이미 스타일 키워드가 있으면 중복 삽입 방지
+        const firstKeyword = preset.style.split(",")[0].trim().split(" ").slice(0, 3).join(" ");
+        if (!prompt.includes(firstKeyword)) {
+          prompt = `${preset.style} ${prompt}`;
+        }
       }
 
-      // Enhancement 5: Apply style intensity (animationMode에 따라 적절한 키워드 사용)
+      // ── BLOCK 2: SCENE + 스타일 강화 suffix ──────────────────────────
       const styleSuffix = getStyleSuffix(cfg.styleIntensity, cfg.animationMode);
-      if (styleSuffix && !prompt.includes(styleSuffix.split(",")[0])) {
+      if (styleSuffix && !prompt.includes(styleSuffix.split(",")[0].trim())) {
         prompt = `${prompt}. ${styleSuffix}`;
       }
 
-      // Temporal beats: refine-prompt가 이미 삽입했으면 skip
+      // Temporal beats
       prompt = ensureTemporalBeats(prompt, cfg.durationSeconds);
 
-      // 프롬프트에서 문서/편지/두루마리 내용 텍스트 제거 (금지 문구는 중복 방지)
+      // 문서/편지/두루마리 내용 텍스트 제거
       prompt = sanitizeTextContent(prompt);
 
-      // 워드 캡: 핵심 내용(스타일+씬+temporal beats)을 먼저 자른 뒤 부가 요소 추가
-      // Avoid/audio는 캡 이후 삽입 → 잘려나가지 않음
+      // 워드 캡: 씬 내용을 먼저 자른 뒤 negative/audio 추가 (잘려나가지 않도록)
       {
         const capWords = prompt.split(/\s+/);
         if (capWords.length > 150) {
           prompt = capWords.slice(0, 140).join(" ");
-          // sanitizeTextContent가 이미 추가한 "No text overlay" 유지 확인
           if (!/no text overlay/i.test(prompt)) {
             prompt += ". No text overlay, no watermark";
           }
         }
       }
 
-      // Veo는 negativePrompt 파라미터를 지원하지 않으므로 프롬프트에 직접 삽입
-      // 스타일별 오버라이드가 있으면 기본 negativePrompt 대신 스타일 전용 negative 사용
-      const styleNegOverride = cfg.animationMode ? STYLE_NEGATIVE_OVERRIDES[cfg.animationMode] : undefined;
-      const effectiveNegative = styleNegOverride ?? negativePrompt;
-
-      if (effectiveNegative && !prompt.includes("Avoid:")) {
-        const negItems = effectiveNegative.split(",").map(s => s.trim()).filter(Boolean).slice(0, 4);
-        prompt = `${prompt}. Avoid: ${negItems.join(", ")}`;
+      // ── BLOCK 3: NEGATIVE STYLE (프롬프트 끝 — 스타일 충돌 차단) ────
+      // preset.negative + 비실사면 ANTI_PHOTOREALISM 자동 합산
+      {
+        const negParts: string[] = [];
+        if (preset) {
+          negParts.push(preset.negative);
+          if (preset.isNonRealistic) {
+            negParts.push(ANTI_PHOTOREALISM);
+          }
+        }
+        // 사용자 지정 negativePrompt도 병합
+        if (negativePrompt && negativePrompt.trim()) {
+          negParts.push(negativePrompt);
+        }
+        // 중복 제거 후 삽입
+        if (negParts.length > 0 && !prompt.includes("Avoid:")) {
+          const seen = new Set<string>();
+          const uniqueItems = negParts.join(", ").split(",")
+            .map(s => s.trim().toLowerCase()).filter(Boolean)
+            .filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
+          // Veo는 negative가 너무 길면 무시 → 핵심 8개로 제한
+          prompt = `${prompt}. Avoid: ${uniqueItems.slice(0, 8).join(", ")}`;
+        }
       }
 
-      // 오디오 힌트가 없으면 강제 추가 (Veo는 프롬프트에 오디오 언급이 없으면 무음 경향)
+      // 오디오 힌트
       if (!/\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(prompt)) {
         prompt = `${prompt}. Diegetic sound, ambient audio.`;
       }
+
+      // ── 최종 프롬프트 로그 (디버그용) ─────────────────────────────────
+      console.log(`[CUT ${cutNumber}] 📝 FINAL PROMPT`, {
+        animationMode: cfg.animationMode || "(없음)",
+        isNonRealistic: preset?.isNonRealistic ?? false,
+        wordCount: prompt.split(/\s+/).length,
+        charCount: prompt.length,
+        prompt: prompt.length > 500 ? prompt.slice(0, 500) + "…" : prompt,
+      });
 
       // 사용자가 선택한 모드 그대로 사용 (fast 선택 시 무조건 fast)
 
