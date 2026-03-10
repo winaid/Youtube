@@ -110,8 +110,14 @@ export interface StoryAIPersona {
   sampleCards: PromptCard[];
 }
 
+// ===== 영상 생성 엔진 & 모드 =====
+export type VideoEngine = "veo" | "kling" | "auto";
+export type VideoMode   = "generate" | "extend";
+
 // ===== Veo 3.1 영상 생성 설정 =====
 export interface VeoGenerationConfig {
+  engine: VideoEngine;         // 사용할 엔진 (veo | kling | auto)
+  videoMode: VideoMode;        // generate: 독립 생성 | extend: 이전 영상 이어서
   mode: "fast";
   durationSeconds: VeoClipDuration;
   resolution: VeoResolution;
@@ -162,6 +168,8 @@ export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
 };
 
 export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
+  engine: "veo",
+  videoMode: "extend",
   mode: "fast",
   durationSeconds: 6,
   resolution: "720p",
@@ -223,6 +231,10 @@ export interface VideoClip {
   selectedVariant?: number; // 선택된 변형 인덱스
   retryCount?: number; // Enhancement: auto-retry tracking
   verification?: PromptVerification; // Enhancement: prompt quality score
+  // 멀티 프로바이더
+  engineUsed?: "veo" | "kling";      // 실제 사용된 엔진
+  modeUsed?: VideoMode;              // 실제 사용된 모드
+  sourceVideo?: string;              // extend 모드의 소스 영상 URI / task_id
 }
 
 // ===== AI 피드백 리뷰 =====

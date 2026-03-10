@@ -344,7 +344,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   }, [state.config, cuts]);
 
   // 폴링 시작 — for-loop + sleep 방식, 중복 실행 방지
-  const startPolling = useCallback(async (cutNumber: number, operationName: string) => {
+  const startPolling = useCallback(async (
+    cutNumber: number,
+    operationName: string,
+    engine: "veo" | "kling" = "veo",
+    taskId?: string,
+    isExtend?: boolean,
+  ) => {
     // ── 중복 폴링 방지: 이미 폴링 중이면 즉시 리턴
     if (activePolls.current.has(cutNumber)) {
       console.warn(`[CUT ${cutNumber}] 이미 폴링 중 — 중복 startPolling 무시`);
@@ -380,7 +386,12 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           res = await fetch("/api/check-video", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ operationName }),
+            body: JSON.stringify({
+              operationName,
+              engine,
+              taskId: taskId ?? operationName,
+              isExtend: isExtend ?? false,
+            }),
           });
         } catch (networkErr) {
           consecutiveErrors++;
@@ -917,8 +928,21 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         model: "veo-3.1-fast-generate-001",
       });
 
+      // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
+      const engine    = cfg.engine    ?? "veo";
+      const videoMode = cfg.videoMode ?? "extend";
+
+      // Kling extend: sourceVideo = 이전 클립의 rawVideoUri (Kling video_id)
+      // Veo extend:   previousVideoUri = 이전 클립의 gs:// URI (기존 로직 유지)
+      const sourceVideo = (videoMode === "extend" && cutNumber > 1)
+        ? (prevClip?.rawVideoUri ?? "")
+        : "";
+
       const body: Record<string, unknown> = {
         prompt,
+        engine,
+        videoMode,
+        sourceVideo: sourceVideo || undefined,
         mode: cfg.mode,
         durationSeconds: cfg.durationSeconds,
         resolution: cfg.resolution,
@@ -928,7 +952,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,
         seed: cfg.seed,
-        // Scene Extension — gs:// 또는 https:// URI만 (data:/blob: 필터링 완료)
+        // Scene Extension (Veo) — gs:// 또는 https:// URI만
         previousVideoUri,
         // First Frame (auto-linked from prev cut's end or storyboard)
         firstFrameBase64: firstFrameBase64,
@@ -997,14 +1021,33 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         return;
       }
 
-      const data = await res.json();
-      updateClip(cutNumber, { operationName: data.operationName });
+      const data = await res.json() as {
+        operationName?: string;
+        taskId?: string;
+        engine?: "veo" | "kling";
+        modeUsed?: "generate" | "extend";
+        sourceVideo?: string;
+        warning?: string;
+      };
+
+      updateClip(cutNumber, {
+        operationName: data.operationName,
+        engineUsed: data.engine,
+        modeUsed: data.modeUsed,
+        sourceVideo: data.sourceVideo,
+      });
 
       if (data.warning) {
         console.warn(`CUT ${cutNumber} warning:`, data.warning);
       }
 
-      startPolling(cutNumber, data.operationName);
+      startPolling(
+        cutNumber,
+        data.operationName ?? "",
+        data.engine ?? "veo",
+        data.taskId,
+        data.modeUsed === "extend",
+      );
     } catch (err) {
       updateClip(cutNumber, {
         status: "failed",

@@ -7,6 +7,8 @@ import {
   VeoClipDuration,
   AspectRatio,
   PersonGeneration,
+  VideoEngine,
+  VideoMode,
 } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -124,6 +126,10 @@ export default function VideoSettingsPanel({
   const pricePerSec = 0.15;
   const estimatedCost = pricePerSec * config.durationSeconds * config.sampleCount;
 
+  const engineLabels: Record<VideoEngine, string> = { veo: "Veo 3.1", kling: "Kling", auto: "Auto" };
+  const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };
+  const engineColors: Record<VideoEngine, string> = { veo: "#787fff", kling: "#e85d04", auto: "#22c55e" };
+
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#c4b80040" }}>
       <CardHeader
@@ -133,11 +139,21 @@ export default function VideoSettingsPanel({
       >
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm" style={{ color: "#7a7000" }}>
-            Veo 3.1 고급 설정
+            영상 생성 설정
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge className="text-[10px] text-white" style={{ background: "#22c55e" }}>
-              Fast
+            <Badge
+              className="text-[10px] text-white"
+              style={{ background: engineColors[config.engine ?? "veo"] }}
+            >
+              {engineLabels[config.engine ?? "veo"]}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              style={{ borderColor: "#6b5ce7", color: "#6b5ce7" }}
+            >
+              {modeLabels[config.videoMode ?? "extend"]}
             </Badge>
             <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#c4b800" }}>
               {config.durationSeconds}s | {config.resolution} | {config.aspectRatio}
@@ -152,6 +168,57 @@ export default function VideoSettingsPanel({
 
       {expanded && (
         <CardContent className="space-y-4 pt-4">
+
+          {/* ── 엔진 선택 ── */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">엔진</Label>
+            <div className="flex gap-2">
+              {(["veo", "kling", "auto"] as VideoEngine[]).map((eng) => (
+                <Button
+                  key={eng}
+                  size="sm"
+                  variant={config.engine === eng ? "default" : "outline"}
+                  className="h-7 text-xs flex-1"
+                  style={config.engine === eng
+                    ? { background: engineColors[eng], color: "#fff", border: "none" }
+                    : { borderColor: engineColors[eng], color: engineColors[eng] }}
+                  onClick={() => update({ engine: eng })}
+                >
+                  {engineLabels[eng]}
+                </Button>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Auto: Google 자격증명 없으면 Kling 사용. Kling 사용 시 KLING_API_KEY 필요.
+            </p>
+          </div>
+
+          {/* ── 생성 모드 ── */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">모드</Label>
+            <div className="flex gap-2">
+              {(["generate", "extend"] as VideoMode[]).map((m) => (
+                <Button
+                  key={m}
+                  size="sm"
+                  variant={config.videoMode === m ? "default" : "outline"}
+                  className="h-7 text-xs flex-1"
+                  style={config.videoMode === m
+                    ? { background: "#6b5ce7", color: "#fff", border: "none" }
+                    : { borderColor: "#6b5ce7", color: "#6b5ce7" }}
+                  onClick={() => update({ videoMode: m })}
+                >
+                  {modeLabels[m]}
+                </Button>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Generate: 각 컷 독립 생성. Extend: 이전 컷을 이어서 생성 (연속성 유지).
+            </p>
+          </div>
+
+          <Separator />
+
           {/* 클립 길이 */}
           <div className="space-y-1.5">
             <Label className="text-xs">클립 길이</Label>

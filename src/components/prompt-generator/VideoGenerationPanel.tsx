@@ -163,14 +163,29 @@ export default function VideoGenerationPanel({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-sm font-medium">CUT {cut.cutNumber}</span>
-                      <Badge className="text-[10px] text-white" style={{ background: "#22c55e" }}>
-                        Fast
-                      </Badge>
+
+                      {/* 엔진 배지 — 완료 후 실제 사용 엔진 표시, 완료 전엔 회색 */}
+                      {clip.engineUsed ? (
+                        <Badge
+                          className="text-[10px] text-white"
+                          style={{ background: clip.engineUsed === "kling" ? "#e85d04" : "#787fff" }}
+                        >
+                          {clip.engineUsed === "kling" ? "Kling" : "Veo"}
+                        </Badge>
+                      ) : (
+                        <Badge className="text-[10px] text-white" style={{ background: "#aaa" }}>
+                          {clip.status === "idle" ? "엔진 대기" : "생성 중"}
+                        </Badge>
+                      )}
+
+                      {/* 모드 배지 — 완료 후 실제 모드 표시 */}
                       <Badge variant="outline" className="text-[10px]" style={{
-                        borderColor: cut.cutNumber === 1 ? "#787fff" : "#6b5ce7",
-                        color: cut.cutNumber === 1 ? "#787fff" : "#6b5ce7",
+                        borderColor: (clip.modeUsed ?? (cut.cutNumber === 1 ? "generate" : "extend")) === "generate" ? "#787fff" : "#6b5ce7",
+                        color:       (clip.modeUsed ?? (cut.cutNumber === 1 ? "generate" : "extend")) === "generate" ? "#787fff" : "#6b5ce7",
                       }}>
-                        {cut.cutNumber === 1 ? "Video" : "Extend"}
+                        {clip.modeUsed
+                          ? (clip.modeUsed === "generate" ? "Generate" : "Extend")
+                          : (cut.cutNumber === 1 ? "Generate" : "Extend")}
                       </Badge>
                       {charsInScene.length > 0 && (
                         <span className="text-[10px] text-muted-foreground">

@@ -1,6 +1,7 @@
 import { GeminiEnv, fetchWithAuth, buildVeoFetchUrl } from "./_gemini-keys";
+import { klingCheckStatus, type KlingEnv } from "./_kling-api";
 
-type Env = GeminiEnv;
+type Env = GeminiEnv & KlingEnv;
 
 // === 비디오 결과 타입 ===
 
@@ -349,15 +350,67 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── 1. Request body 파싱 (실패 시 400 반환)
     let bodyText = "";
     let operationName = "";
+    let engine: "veo" | "kling" = "veo";
+    let taskId = "";
+    let isExtend = false;
     try {
       bodyText = await context.request.text();
-      const parsed = JSON.parse(bodyText) as { operationName?: string };
+      const parsed = JSON.parse(bodyText) as {
+        operationName?: string;
+        engine?: "veo" | "kling";
+        taskId?: string;
+        isExtend?: boolean;
+      };
       operationName = parsed.operationName || "";
+      engine    = parsed.engine    ?? "veo";
+      taskId    = parsed.taskId    || operationName; // Kling: taskId 우선, fallback operationName
+      isExtend  = parsed.isExtend  ?? false;
     } catch (parseErr) {
       console.error("[check-video] JSON parse failed. body:", bodyText.slice(0, 500), "err:", parseErr);
       return Response.json({ error: "Invalid JSON body", details: String(parseErr) }, { status: 400 });
     }
 
+    // ── Kling 체크 분기 ────────────────────────────────────────────────────
+    if (engine === "kling") {
+      if (!taskId) {
+        return Response.json({ error: "taskId is required for Kling engine" }, { status: 400 });
+      }
+      console.log(`[check-video] Kling check taskId=${taskId} isExtend=${isExtend}`);
+
+      let result;
+      try {
+        result = await klingCheckStatus(context.env, taskId, isExtend);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[check-video] Kling check error:", msg);
+        return Response.json({ status: "RUNNING" }); // transient error — keep polling
+      }
+
+      if (result.status === "submitted" || result.status === "processing") {
+        return Response.json({ status: "RUNNING" });
+      }
+
+      if (result.status === "failed") {
+        return Response.json({ status: "FAILED", error: result.error ?? "Kling generation failed" });
+      }
+
+      // succeed
+      if (!result.videoUrl) {
+        return Response.json({ status: "FAILED", error: "Kling: no video URL in result" });
+      }
+
+      return Response.json({
+        status: "COMPLETED",
+        videoUri: result.videoUrl,
+        rawVideoUri: result.videoId ?? taskId, // use videoId as source for next extend
+        seed: undefined,
+        variants: [{ videoUri: result.videoUrl, rawVideoUri: result.videoId ?? taskId }],
+        sampleCount: 1,
+        engine: "kling",
+      });
+    }
+
+    // ── Veo 체크 (기존 로직) ───────────────────────────────────────────────
     console.log(`[check-video] operationName=${operationName}`);
 
     if (!operationName) {

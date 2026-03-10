@@ -1,9 +1,21 @@
 import { GeminiEnv, fetchWithAuth, buildVeoUrl } from "./_gemini-keys";
+import {
+  klingGenerate,
+  klingExtend,
+  toKlingDuration,
+  toKlingAspectRatio,
+  type KlingEnv,
+} from "./_kling-api";
 
-type Env = GeminiEnv;
+type Env = GeminiEnv & KlingEnv;
 
 interface GenerateVideoRequest {
+  // ── 공통 ──────────────────────────────────────────────────────────────────
   prompt: string;
+  engine?: "veo" | "kling" | "auto";   // 사용할 엔진 (default: veo)
+  videoMode?: "generate" | "extend";   // generate: 독립 생성, extend: 이전 영상 이어서
+  sourceVideo?: string;                // extend 모드의 소스 (Veo: gs:// URI, Kling: task_id/video_id)
+  // ── Veo 전용 ──────────────────────────────────────────────────────────────
   mode?: "fast" | "quality";
   durationSeconds?: number;
   resolution?: string;
@@ -13,7 +25,7 @@ interface GenerateVideoRequest {
   personGeneration?: string;
   seed?: number;
   sampleCount?: number;
-  previousVideoUri?: string;
+  previousVideoUri?: string;           // 레거시 Scene Extension (sourceVideo 미설정 시 fallback)
   firstFrameBase64?: string;
   lastFrameBase64?: string;
   referenceImages?: string[];
@@ -42,6 +54,81 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!req.prompt) {
       return Response.json({ error: "prompt is required" }, { status: 400 });
+    }
+
+    // ── 엔진 선택 ────────────────────────────────────────────────────────────
+    // auto: KLING 자격증명이 있고 Google 자격증명이 없으면 Kling 사용
+    const hasGoogle = !!(context.env.GOOGLE_SERVICE_ACCOUNT_JSON || context.env.GOOGLE_CLOUD_API_KEY);
+    const hasKling  = !!(context.env.KLING_API_KEY && context.env.KLING_API_SECRET);
+
+    let engineUsed: "veo" | "kling";
+    if (req.engine === "kling") {
+      engineUsed = "kling";
+    } else if (req.engine === "auto" && !hasGoogle && hasKling) {
+      engineUsed = "kling";
+    } else {
+      engineUsed = "veo";
+    }
+
+    const videoMode = req.videoMode ?? "extend";
+    const sourceVideo = req.sourceVideo || req.previousVideoUri || "";
+
+    // ── Kling 분기 ────────────────────────────────────────────────────────────
+    if (engineUsed === "kling") {
+      if (!hasKling) {
+        return Response.json(
+          { error: "KLING_API_KEY / KLING_API_SECRET not configured" },
+          { status: 400 },
+        );
+      }
+
+      const duration = toKlingDuration(req.durationSeconds ?? 8);
+      const aspectRatio = toKlingAspectRatio(req.aspectRatio ?? "16:9");
+
+      let taskId: string;
+      let modeUsed: "generate" | "extend";
+
+      if (videoMode === "extend" && sourceVideo) {
+        // Kling extend: 이전 영상 video_id 필요
+        console.log("[generate-video] Kling EXTEND", { sourceVideo: sourceVideo.slice(0, 60) });
+        const result = await klingExtend(context.env, {
+          video_id: sourceVideo,
+          prompt: req.prompt,
+          negative_prompt: req.negativePrompt,
+          cfg_scale: 0.5,
+        });
+        taskId = result.taskId;
+        modeUsed = "extend";
+      } else {
+        // Kling generate (text-to-video or image-to-video)
+        console.log("[generate-video] Kling GENERATE", {
+          hasFirstFrame: !!req.firstFrameBase64,
+          duration,
+          aspectRatio,
+        });
+        const result = await klingGenerate(context.env, {
+          prompt: req.prompt,
+          negative_prompt: req.negativePrompt,
+          model_name: "kling-v1-5",
+          mode: "std",
+          aspect_ratio: aspectRatio,
+          duration,
+          cfg_scale: 0.5,
+          ...(req.firstFrameBase64 ? { image: req.firstFrameBase64 } : {}),
+          ...(req.lastFrameBase64  ? { image_tail: req.lastFrameBase64 } : {}),
+        });
+        taskId = result.taskId;
+        modeUsed = "generate";
+      }
+
+      return Response.json({
+        operationName: taskId, // 통합 job ID 필드
+        taskId,
+        engine: "kling",
+        modeUsed,
+        sourceVideo: sourceVideo || undefined,
+        status: "RUNNING",
+      });
     }
 
     // ── 모델 선택 ────────────────────────────────────────────────────────────
@@ -229,9 +316,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const data = await res.json() as { name: string };
 
+    const veoModeUsed: "generate" | "extend" = instance.video
+      ? "extend"   // Scene Extension = extend
+      : videoMode === "generate" ? "generate" : "extend";
+
     return Response.json({
       operationName: data.name,
       model,
+      engine: "veo",
+      modeUsed: veoModeUsed,
+      ...(sourceVideo && { sourceVideo }),
       status: "RUNNING",
       ...(warnings.length > 0 && { warning: warnings.join("; ") }),
     });
