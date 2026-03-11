@@ -15,6 +15,8 @@ import type { VideoPromptJson } from "./_video-prompt-json";
 export interface SequenceGlobalIntent {
   sceneType: "cinematic_sequence" | "montage" | "single_take" | "dialogue" | "action" | "transition";
   styleId: string;
+  style?: string;
+  medium?: string;
   durationSec: number;
   aspectRatio: "16:9" | "9:16";
   directorId?: string;
@@ -57,6 +59,7 @@ export interface ShotPlan {
   timingBeat?: string;
   visualDirectives: string[];
   negativeDirectives: string[];
+  visualMedium?: string;
   moodLighting: string;
   transitionFromPrev?: string;
   shotCategory?: string;
@@ -143,9 +146,17 @@ function extractMotivation(movement?: string): string | undefined {
   return match ? match[1] : undefined;
 }
 
+/** 3D/CGI drift 방지 negatives */
+const MAP_MEDIUM_LOCK_NEGATIVES = [
+  "no real landscape", "no CGI terrain", "no 3D rendered globe",
+  "no satellite photo", "no game-map look", "no miniature model",
+  "no diorama", "no plastic surface", "no fantasy illustration",
+  "no 3D render", "no CGI", "no glossy render",
+];
+
 export function buildSequencePlanFromCuts(
   cuts: ServerCut[],
-  opts: { styleId?: string; aspectRatio?: "16:9" | "9:16"; directorId?: string } = {},
+  opts: { styleId?: string; style?: string; medium?: string; aspectRatio?: "16:9" | "9:16"; directorId?: string } = {},
 ): SequencePlan {
   const shots: ShotPlan[] = [];
   const cutToShotMap: Record<number, string[]> = {};
@@ -158,9 +169,18 @@ export function buildSequencePlanFromCuts(
     const shotId = `shot_${i + 1}`;
 
     const negatives: string[] = [];
-    if (cut.shotCategory === "map-graphic") negatives.push("no 3D globe", "no landscape painting", "no readable text");
+    if (cut.shotCategory === "map-graphic") {
+      negatives.push("no 3D globe", "no landscape painting", "no readable text");
+      negatives.push(...MAP_MEDIUM_LOCK_NEGATIVES);
+    }
     if (cut.shotCategory === "environment") negatives.push("no text overlay", "no UI element");
     if (cut.shotCategory === "character-driven") negatives.push("no deformed face", "no extra limbs");
+
+    // cinematic realism + terrain/map → 3D/CGI drift 차단
+    const promptText = (cut.sceneDescription || "") + " " + (cut.videoPromptJson?.styleSuffix || "");
+    if (/cinematic\s*realism/i.test(promptText) && /\b(3D|topograph|terrain|map|relief|globe)\b/i.test(promptText)) {
+      negatives.push(...MAP_MEDIUM_LOCK_NEGATIVES.filter(n => !negatives.includes(n)));
+    }
 
     const shot: ShotPlan = json ? {
       shotId,
@@ -240,6 +260,8 @@ export function buildSequencePlanFromCuts(
     globalIntent: {
       sceneType,
       styleId: opts.styleId || "live-action",
+      style: opts.style,
+      medium: opts.medium,
       durationSec: currentTime,
       aspectRatio: opts.aspectRatio || "16:9",
       directorId: opts.directorId,

@@ -480,6 +480,86 @@ assert(noLightLog.droppedFields.some(f => f.includes("moodLighting")), "moodLigh
 
 console.log(`  ✓ ${passed - prevPassed7} loss tracking assertions passed`);
 
+// ─── 8. Global style/medium 필드 ────────────────────────────────
+
+section("8. Global style/medium 필드");
+
+const prevPassed8 = passed;
+
+const planWithMedium = buildSequencePlan(cuts, {
+  styleId: "cinematic-realism",
+  style: "cinematic realism",
+  medium: "physical relief map surface",
+  aspectRatio: "16:9",
+});
+assert(planWithMedium.globalIntent.style === "cinematic realism", "globalIntent.style 전달됨");
+assert(planWithMedium.globalIntent.medium === "physical relief map surface", "globalIntent.medium 전달됨");
+
+// Serialized output에 medium 포함
+const serializedMedium = serializeSequencePlan(planWithMedium);
+assert(serializedMedium.globalPrompt.includes("physical relief map surface"), "globalPrompt에 medium 포함");
+assert(serializedMedium.globalPrompt.includes("cinematic realism"), "globalPrompt에 style 포함");
+assert(serializedMedium.globalPrompt.includes("[GLOBAL]"), "globalPrompt에 [GLOBAL] 섹션");
+
+console.log(`  ✓ ${passed - prevPassed8} style/medium assertions passed`);
+
+// ─── 9. 3D/CGI negative 자동 주입 ──────────────────────────────
+
+section("9. 3D/CGI negative 자동 주입 (map-graphic)");
+
+const prevPassed9 = passed;
+
+// map-graphic shot → 3D/CGI negative 자동 포함
+const mapCut: Cut = {
+  cutNumber: 1,
+  durationSec: 8,
+  sceneDescription: "유라시아 지형도에서 빨간 영역이 확산",
+  cameraDirection: "overhead slow push",
+  moodLighting: "cool diffused daylight from above",
+  imagePrompt: "",
+  endImagePrompt: "",
+  videoPrompt: "overhead view of a 3D topographic map of Eurasia",
+  extendPrompt: "",
+  transitionHint: "",
+  characterConsistency: "",
+  charactersInScene: [],
+  shotCategory: "map-graphic",
+  videoPromptJson: {
+    shotSize: "WS",
+    cameraAngle: "overhead",
+    cameraMovement: "slow push-in",
+    subjectBlocking: "map fills frame",
+    subjectAction: "crimson glow expands from Mongolian steppe region",
+    actionBeat: "red area spreads outward",
+    bodySignal: "",
+    revealed: "expanding territory",
+    withheld: "",
+    timingBeat: "0s-4s: glow begins. 4s-8s: spreads across steppe",
+    transitionFromPrev: "",
+    characterRef: "",
+    moodLighting: "cool diffused daylight from above",
+    styleSuffix: "cinematic realism, 16:9, no readable text, no watermark",
+    locationCue: "physical relief map of Eurasia",
+    situationCue: "crimson territory expansion",
+    emotionalAnchor: "",
+  },
+};
+
+const mapPlan = buildSequencePlan([mapCut], { styleId: "cinematic-realism" });
+const mapShot = mapPlan.shots[0];
+
+// map-graphic 카테고리 → 3D/CGI negative 자동 주입
+assert(mapShot.negativeDirectives.some(n => n.includes("CGI")), "map-graphic shot: CGI negative 존재");
+assert(mapShot.negativeDirectives.some(n => n.includes("3D")), "map-graphic shot: 3D negative 존재");
+assert(mapShot.negativeDirectives.some(n => n.includes("diorama")), "map-graphic shot: diorama negative 존재");
+assert(mapShot.negativeDirectives.some(n => n.includes("game-map")), "map-graphic shot: game-map negative 존재");
+
+// serialized에도 반영
+const mapSerial = serializeSequencePlan(mapPlan);
+assert(mapSerial.globalNegative.includes("CGI"), "global negative에 CGI 포함");
+
+console.log(`  ✓ ${passed - prevPassed9} 3D/CGI negative assertions passed`);
+
 // ═══════════════════════════════════════════════════════════════════
 // 결과 요약
 // ═══════════════════════════════════════════════════════════════════

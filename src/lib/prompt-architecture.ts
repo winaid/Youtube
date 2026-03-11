@@ -30,20 +30,26 @@ export const GENRE_TEMPLATES: Record<string, GenreTemplate> = {
   "map-graphic": {
     id: "map-graphic",
     subjectAnchorExample: "A flat antique paper map laid on a table surface",
-    sceneLockExample: "The camera looks down at a paper map surface, not a landscape",
+    sceneLockExample: "The camera looks down at a physical map surface, not a landscape, not a 3D render",
     commonNegatives: [
       "landscape", "tree", "forest", "mountain", "river", "watercolor scenery",
       "ink painting", "sumi-e", "nature scene", "birds", "cranes", "heron",
       "human figure", "battlefield", "readable text", "calligraphy",
       "boxes", "rectangular overlay", "UI panels", "floating panels",
       "poster", "infographic", "labels", "signboards",
+      "3D render", "CGI", "glossy render", "game map", "strategy game UI",
+      "miniature diorama", "plastic terrain model", "fantasy map",
+      "real landscape", "satellite photo", "3D globe",
     ],
     commonDriftPatterns: [
       "map → landscape painting", "map → ruins/gothic architecture",
       "map → fantasy illustration", "map → sumi-e/ink wash scenery",
+      "map → 3D rendered terrain", "map → game-map look",
+      "map → miniature diorama", "map → CGI globe",
     ],
     notConstraints: [
-      "not a landscape", "not a painting of nature", "not a watercolor scene",
+      "not a landscape", "not a 3D render", "not a CGI scene",
+      "not a game map", "not a miniature diorama",
     ],
   },
   "product-shot": {
@@ -183,6 +189,16 @@ export const FAILURE_MODES: FailureMode[] = [
     trigger: /\b(map|cartograph|atlas|globe|parchment|territorial)\b/i,
     negatives: ["landscape", "nature scene", "watercolor scenery", "ink painting", "sumi-e", "birds", "cranes", "forest", "mountain"],
     description: "map → landscape/nature drift",
+  },
+  {
+    trigger: /\b(3D\s+topograph\w*|3D\s+map|3D\s+terrain|3D\s+relief|topographic\s+3D|rendered\s+terrain)\b/i,
+    negatives: ["3D render", "CGI", "glossy render", "game map", "strategy game UI", "miniature diorama", "plastic terrain model", "fantasy map", "3D globe"],
+    description: "3D/CGI terrain drift — cinematic realism 오염",
+  },
+  {
+    trigger: /\b(relief\s+map|terrain\s+map|physical\s+map|contour\s+map)\b/i,
+    negatives: ["real landscape", "CGI render", "3D render", "game-map look", "miniature diorama", "satellite photo", "glossy surface", "plastic model"],
+    description: "relief map → 3D/landscape drift",
   },
   {
     trigger: /\b(product|device|phone|smartphone|laptop|gadget|bottle|package|tablet|watch|earbuds?|headphones?)\b/i,
@@ -394,10 +410,17 @@ export function buildSceneLock(input: PromptLayerInput): string {
   // 장르 기반 scene lock
   if (genre) {
     parts.push(genre.sceneLockExample);
-    // "not X" 제약 (첫 2개만)
-    for (const constraint of genre.notConstraints.slice(0, 2)) {
+    // "not X" 제약 (첫 3개 — CGI/3D 방지 포함)
+    for (const constraint of genre.notConstraints.slice(0, 3)) {
       parts.push(constraint);
     }
+  }
+
+  // cinematic realism + 지도/지형 씬: 매체 고정
+  const isCinematicRealism = /cinematic\s*realism/i.test(input.scenePrompt + " " + (input.animationMode || ""));
+  const isMapTerrain = /\b(map|terrain|topograph|relief|globe|continent|territorial)\b/i.test(input.scenePrompt);
+  if (isCinematicRealism && isMapTerrain) {
+    parts.push("The image remains a physical map surface, not a real landscape and not a CGI render");
   }
 
   return parts.join(". ");
@@ -534,8 +557,8 @@ export function buildNegativePrompt(input: PromptLayerInput): string {
       .forEach(n => negatives.add(n));
   }
 
-  // 최대 20개 (Veo가 너무 긴 negative는 무시)
-  const arr = [...negatives].slice(0, 20);
+  // 최대 30개 (map-graphic 등 anti-drift 필수 negative가 많은 장르 대응)
+  const arr = [...negatives].slice(0, 30);
   return arr.length > 0 ? `Avoid: ${arr.join(", ")}` : "";
 }
 
@@ -614,6 +637,78 @@ export function assessAndCorrectDrift(
   return { riskLevel, riskScore, issues, correctedPrompt };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// 5-b. Prompt Rewrite Rules — camera conflict / 3D-CGI drift 자동 교정
+// ─────────────────────────────────────────────────────────────────
+
+/** 카메라 충돌 패턴: wide + close-up 같은 모순이 한 문장에 섞인 경우 */
+const CAMERA_CONFLICT_PATTERNS: Array<{ a: RegExp; b: RegExp; description: string }> = [
+  { a: /\b(wide|wide\s+shot|aerial|bird.?s?\s+eye|overhead)\b/i, b: /\b(close.?up|medium\s+shot|MCU|CU|ECU)\b/i, description: "wide + close-up conflict" },
+  { a: /\b(high.?angle|overhead|top.?down)\b/i, b: /\b(low.?angle|worm.?s?\s+eye|from\s+below)\b/i, description: "high-angle + low-angle conflict" },
+];
+
+/** 3D/CGI 표현이 cinematic realism 프롬프트에 섞인 패턴 */
+const CGI_CONTAMINATION_PATTERNS = /\b(3D\s+topograph|3D\s+map|3D\s+terrain|3D\s+rendered?|CGI\s+(?:render|terrain|landscape)|game[\s-]?map|strategy\s+game|mini(?:ature)?\s+diorama|glossy\s+(?:3D|render)|plastic\s+(?:terrain|model|surface))\b/gi;
+
+/** cinematic realism 대체 표현 */
+const CGI_TO_CINEMATIC_MAP: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\b3D\s+topograph(?:ic)?\s+map\b/gi, replacement: "physical relief map surface with terrain contours" },
+  { pattern: /\b3D\s+terrain\b/gi, replacement: "physical terrain surface" },
+  { pattern: /\b3D\s+map\b/gi, replacement: "physical map surface" },
+  { pattern: /\b3D\s+rendered?\b/gi, replacement: "cinematic" },
+  { pattern: /\bCGI\s+(?:render|terrain|landscape)\b/gi, replacement: "cinematic physical surface" },
+  { pattern: /\bgame[\s-]?map\b/gi, replacement: "physical map" },
+  { pattern: /\bstrategy\s+game\b/gi, replacement: "overhead view" },
+  { pattern: /\bmini(?:ature)?\s+diorama\b/gi, replacement: "physical map surface" },
+  { pattern: /\bglossy\s+(?:3D|render)\b/gi, replacement: "diffused natural surface" },
+  { pattern: /\bplastic\s+(?:terrain|model|surface)\b/gi, replacement: "physical map surface" },
+];
+
+/**
+ * 프롬프트에서 camera conflict와 3D/CGI contamination을 감지하고 교정.
+ */
+export function rewritePromptConflicts(prompt: string, opts?: {
+  shotCategory?: string;
+  isCinematicRealism?: boolean;
+}): { rewritten: string; corrections: string[] } {
+  let text = prompt;
+  const corrections: string[] = [];
+
+  // 1. Camera conflict 감지 — 한 문장에 상충하는 framing이 있으면 첫 번째만 유지
+  for (const conflict of CAMERA_CONFLICT_PATTERNS) {
+    if (conflict.a.test(text) && conflict.b.test(text)) {
+      // 더 먼저 등장하는 쪽을 유지하고 뒤쪽을 제거
+      const posA = text.search(conflict.a);
+      const posB = text.search(conflict.b);
+      if (posA < posB) {
+        text = text.replace(conflict.b, "");
+        corrections.push(`Camera conflict resolved: kept early "${text.match(conflict.a)?.[0]}", removed later conflicting framing`);
+      } else {
+        text = text.replace(conflict.a, "");
+        corrections.push(`Camera conflict resolved: kept early "${text.match(conflict.b)?.[0]}", removed later conflicting framing`);
+      }
+    }
+  }
+
+  // 2. 3D/CGI contamination in cinematic realism
+  const isCinematicRealism = opts?.isCinematicRealism
+    ?? /cinematic\s*realism/i.test(prompt);
+  if (isCinematicRealism) {
+    for (const { pattern, replacement } of CGI_TO_CINEMATIC_MAP) {
+      const match = text.match(pattern);
+      if (match) {
+        text = text.replace(pattern, replacement);
+        corrections.push(`CGI drift corrected: "${match[0]}" → "${replacement}"`);
+      }
+    }
+  }
+
+  // 3. 정리
+  text = text.replace(/,\s*,/g, ",").replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim();
+
+  return { rewritten: text, corrections };
+}
+
 /**
  * 위험도 높은 프롬프트를 자동 교정.
  * subject anchor 보강 + 위험 단어 제거 + scene lock 삽입.
@@ -671,7 +766,21 @@ export function assemblePromptV2(
 ): AssembledPromptV2 {
   // 0. 드리프트 위험도 평가 + 자동 교정
   const drift = assessAndCorrectDrift(input.scenePrompt, input);
-  const effectivePrompt = drift.correctedPrompt || input.scenePrompt;
+  let effectivePrompt = drift.correctedPrompt || input.scenePrompt;
+
+  // 0-b. Prompt rewrite — camera conflict / 3D-CGI drift 자동 교정
+  const isCinematicRealism = /cinematic\s*realism/i.test(
+    effectivePrompt + " " + (input.animationMode || ""),
+  );
+  const rewrite = rewritePromptConflicts(effectivePrompt, {
+    shotCategory: input.shotCategory,
+    isCinematicRealism,
+  });
+  if (rewrite.corrections.length > 0) {
+    effectivePrompt = rewrite.rewritten;
+    drift.issues.push(...rewrite.corrections);
+  }
+
   const effectiveInput = { ...input, scenePrompt: effectivePrompt };
 
   // 1. 위험 단어 제어

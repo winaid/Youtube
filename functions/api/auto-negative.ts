@@ -73,6 +73,24 @@ const MAP_SCENE_NEGATIVES = [
   "embedded signage",
 ];
 
+// Cinematic realism + 3D/CGI drift prevention
+// Injected when "cinematic realism" style is detected alongside terrain/map content
+const CINEMATIC_REALISM_ANTI_3D_NEGATIVES = [
+  "3D render",
+  "CGI",
+  "glossy render",
+  "game map",
+  "strategy game UI",
+  "miniature diorama",
+  "plastic terrain model",
+  "fantasy map",
+  "3D globe",
+  "rendered terrain",
+  "game-map look",
+  "satellite imagery",
+  "real landscape photo",
+];
+
 function generateLocalNegative(videoPrompt: string, sceneDescription: string, isMapScene?: boolean): string {
   const combined = (videoPrompt + " " + sceneDescription).toLowerCase();
   const negatives = new Set<string>(UNIVERSAL_NEGATIVES);
@@ -89,6 +107,15 @@ function generateLocalNegative(videoPrompt: string, sceneDescription: string, is
   const detectedMapScene = isMapScene || /\b(map|terrain|topograph|cartograph|satellite|aerial\s+view|bird.?s?\s+eye|globe|continent|border|region|territory)\b/i.test(combined);
   if (detectedMapScene) {
     for (const neg of MAP_SCENE_NEGATIVES) {
+      negatives.add(neg);
+    }
+  }
+
+  // Cinematic realism + terrain/map: 3D/CGI drift 방지
+  const isCinematicRealism = /cinematic\s*realism/i.test(combined);
+  const has3DTrigger = /\b(3d|topograph|terrain|map|relief|globe|continent|render)/i.test(combined);
+  if (isCinematicRealism && (detectedMapScene || has3DTrigger)) {
+    for (const neg of CINEMATIC_REALISM_ANTI_3D_NEGATIVES) {
       negatives.add(neg);
     }
   }

@@ -24,6 +24,10 @@ export interface SequenceGlobalIntent {
   sceneType: "cinematic_sequence" | "montage" | "single_take" | "dialogue" | "action" | "transition";
   /** 스타일 ID (style-catalog 참조) */
   styleId: string;
+  /** 스타일 설명 (자연어) — e.g. "cinematic realism" */
+  style?: string;
+  /** 시각 매체 — e.g. "physical relief map surface", "live-action footage" */
+  medium?: string;
   /** 전체 영상 길이 (초) */
   durationSec: number;
   /** 화면비 */
@@ -100,6 +104,8 @@ export interface ShotPlan {
   visualDirectives: string[];
   /** 부정 지시어 (하지 말 것) */
   negativeDirectives: string[];
+  /** 시각 매체 고정 — e.g. "realistic physical map surface" */
+  visualMedium?: string;
   /** 조명/무드 */
   moodLighting: string;
   /** 이전 shot과의 전환 */
@@ -163,6 +169,7 @@ function cutToShotPlan(cut: Cut, index: number): ShotPlan {
       timingBeat: json.timingBeat || undefined,
       visualDirectives: buildVisualDirectives(json),
       negativeDirectives: buildNegativeDirectives(cut),
+      visualMedium: undefined, // populated at sequence level if specified
       moodLighting: json.moodLighting || cut.moodLighting || "",
       transitionFromPrev: json.transitionFromPrev || cut.transitionHint || undefined,
       shotCategory: cut.shotCategory,
@@ -193,6 +200,7 @@ function cutToShotPlan(cut: Cut, index: number): ShotPlan {
     action: cut.videoPrompt?.slice(0, 60) || "",
     visualDirectives: [],
     negativeDirectives: [],
+    visualMedium: undefined,
     moodLighting: cut.moodLighting || "",
     transitionFromPrev: cut.transitionHint || undefined,
     shotCategory: cut.shotCategory,
@@ -205,6 +213,8 @@ export function buildSequencePlan(
   cuts: Cut[],
   opts: {
     styleId?: string;
+    style?: string;
+    medium?: string;
     aspectRatio?: "16:9" | "9:16";
     directorId?: string;
   } = {},
@@ -236,6 +246,8 @@ export function buildSequencePlan(
     globalIntent: {
       sceneType: inferSceneType(cuts),
       styleId: opts.styleId || "live-action",
+      style: opts.style,
+      medium: opts.medium,
       durationSec: totalDuration,
       aspectRatio: opts.aspectRatio || "16:9",
       directorId: opts.directorId,
@@ -296,11 +308,27 @@ function buildVisualDirectives(json: VideoPromptJson): string[] {
   return directives;
 }
 
+/** 3D/CGI drift 방지 — cinematic realism 모드에서 자동 주입 */
+const CINEMATIC_REALISM_ANTI_3D: string[] = [
+  "no 3D render", "no CGI", "no glossy render", "no game map",
+  "no strategy game UI", "no miniature diorama", "no plastic terrain model",
+  "no fantasy map", "no infographic", "no title card", "no labels", "no readable text",
+];
+
+/** 지도/지형 씬에서 매체 고정 negative */
+const MAP_MEDIUM_LOCK_NEGATIVES: string[] = [
+  "no real landscape", "no CGI terrain", "no 3D rendered globe",
+  "no satellite photo", "no game-map look", "no miniature model",
+  "no diorama", "no plastic surface", "no fantasy illustration",
+];
+
 function buildNegativeDirectives(cut: Cut): string[] {
   const neg: string[] = [];
   // shotCategory별 기본 negative
   if (cut.shotCategory === "map-graphic") {
     neg.push("no 3D globe", "no landscape painting", "no readable text");
+    // 지도 씬: 3D/CGI drift 방지 강화
+    neg.push(...MAP_MEDIUM_LOCK_NEGATIVES);
   }
   if (cut.shotCategory === "environment") {
     neg.push("no text overlay", "no UI element");
@@ -308,7 +336,17 @@ function buildNegativeDirectives(cut: Cut): string[] {
   if (cut.shotCategory === "character-driven") {
     neg.push("no deformed face", "no extra limbs");
   }
-  return neg;
+
+  // cinematic realism 스타일에서 3D/CGI drift 자동 차단
+  const promptText = (cut.videoPrompt || "") + " " + (cut.sceneDescription || "");
+  const styleSuffix = cut.videoPromptJson?.styleSuffix || "";
+  const isCinematicRealism = /cinematic\s+realism/i.test(promptText + " " + styleSuffix);
+  const has3DTrigger = /\b(3D|topograph|terrain|map|relief|globe|continent)\b/i.test(promptText);
+  if (isCinematicRealism && has3DTrigger) {
+    neg.push(...CINEMATIC_REALISM_ANTI_3D);
+  }
+
+  return [...new Set(neg)];
 }
 
 function extractSequenceContinuity(cuts: Cut[], shots: ShotPlan[]): SequenceContinuity {
@@ -615,12 +653,19 @@ export function serializeSequencePlan(
 ): SerializedSequence {
   const logs: SerializationLog[] = [];
 
-  // Global prompt
+  // Global prompt — style + medium lock 포함
   const globalParts: string[] = [];
-  globalParts.push(`[GLOBAL STYLE] ${plan.globalIntent.styleId}`);
-  globalParts.push(`[DURATION] ${plan.globalIntent.durationSec}s total, ${plan.shots.length} shots`);
-  globalParts.push(`[ASPECT] ${plan.globalIntent.aspectRatio}`);
-  const globalPrompt = globalParts.join(" | ");
+  globalParts.push(`[GLOBAL]`);
+  globalParts.push(`style: ${plan.globalIntent.style || plan.globalIntent.styleId}`);
+  if (plan.globalIntent.medium) {
+    globalParts.push(`medium: ${plan.globalIntent.medium}`);
+  }
+  globalParts.push(`duration: ${plan.globalIntent.durationSec}s total, ${plan.shots.length} shots`);
+  globalParts.push(`aspect: ${plan.globalIntent.aspectRatio}`);
+  if (plan.continuity.mustAvoid.length > 0) {
+    globalParts.push(`avoid: ${plan.continuity.mustAvoid.join(", ")}`);
+  }
+  const globalPrompt = globalParts.join("\n");
 
   // Continuity prompt
   const contParts: string[] = [];
@@ -713,7 +758,7 @@ export function serializeSequencePlan(
   ])];
   const globalNegative = allNeg.join(", ");
 
-  // Flattened prompt — shot 경계가 명확한 직렬화
+  // Flattened prompt — deterministic serialization preserving shot boundaries
   const flatLines: string[] = [];
   flatLines.push(globalPrompt);
   flatLines.push("");
@@ -726,6 +771,7 @@ export function serializeSequencePlan(
     flatLines.push(`subject: ${shot.subject.primary}`);
     if (shot.action) flatLines.push(`action: ${shot.action}`);
     if (shot.environment) flatLines.push(`environment: ${shot.environment}`);
+    if (shot.visualMedium) flatLines.push(`medium: ${shot.visualMedium}`);
     if (shot.moodLighting) flatLines.push(`lighting: ${shot.moodLighting}`);
     if (sp.negative) flatLines.push(`avoid: ${sp.negative}`);
     flatLines.push("");
@@ -999,6 +1045,7 @@ export function videoPromptJsonToShotPlan(
     timingBeat: json.timingBeat || undefined,
     visualDirectives: buildVisualDirectives(json),
     negativeDirectives: [],
+    visualMedium: undefined,
     moodLighting: json.moodLighting || "",
     transitionFromPrev: json.transitionFromPrev || undefined,
     locationCue: json.locationCue,

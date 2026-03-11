@@ -54,6 +54,35 @@ export interface ExtendPromptJson {
   styleSuffix: string;
 }
 
+// ─── Cinematic Realism Medium Enforcement ─────────────────────────────────────
+
+function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): void {
+  const fullText = parts.join(" ") + " " + json.styleSuffix;
+  const isCinematicRealism = /cinematic\s*realism/i.test(fullText);
+  if (!isCinematicRealism) return;
+
+  const isMapTerrain = /\b(map|terrain|topograph|relief|globe|continent|territorial|border|region)\b/i.test(fullText);
+
+  // 1. 먼저 3D/CGI 표현 치환
+  for (let i = 0; i < parts.length; i++) {
+    parts[i] = parts[i]
+      .replace(/\b3D\s+topograph(?:ic)?\s+map\b/gi, "physical relief map surface with terrain contours")
+      .replace(/\b3D\s+terrain\b/gi, "physical terrain surface")
+      .replace(/\b3D\s+map\b/gi, "physical map surface")
+      .replace(/\b3D\s+rendered?\b/gi, "cinematic")
+      .replace(/\bCGI\s+(?:render|terrain|landscape)\b/gi, "cinematic physical surface")
+      .replace(/\bgame[\s-]?map\b/gi, "physical map")
+      .replace(/\bmini(?:ature)?\s+diorama\b/gi, "physical map surface")
+      .replace(/\bglossy\s+(?:3D|render)\b/gi, "diffused natural surface")
+      .replace(/\bplastic\s+(?:terrain|model|surface)\b/gi, "physical map surface");
+  }
+
+  // 2. 매체 고정 문장 삽입 (치환 후)
+  if (isMapTerrain) {
+    parts.push("The image remains a physical map surface, not a real landscape and not a CGI render");
+  }
+}
+
 // ─── Veo 렌더러 ───────────────────────────────────────────────────────────────
 
 export function renderVeoPromptFromJson(json: VideoPromptJson): string {
@@ -90,6 +119,9 @@ export function renderVeoPromptFromJson(json: VideoPromptJson): string {
 
   // 9. Style suffix
   parts.push(json.styleSuffix);
+
+  // 10. Cinematic realism medium enforcement — 3D/CGI drift 방지
+  enforceCinematicRealismMedium(parts, json);
 
   return parts.filter(Boolean).join(". ");
 }
@@ -129,6 +161,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();
   parts.push(cleanSuffix);
+  enforceCinematicRealismMedium(parts, json);
   return parts.filter(Boolean).join(". ");
 }
 
