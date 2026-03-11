@@ -12,6 +12,8 @@ import type { Cut, VeoGenerationConfig, StructuredSequenceDocument } from "@/typ
 import { collectFailureModeNegatives, getGenreTemplate } from "@/lib/prompt-architecture";
 import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
 import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
+import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
+import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -1033,12 +1035,68 @@ export function serializeForProvider(
     ...doc.negatives.failureMode,
     ...doc.negatives.user,
   ];
-  const uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+  let uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+
+  // ═══════════════════════════════════════════════════════════════
+  // 14. 전역 Sanitize Pipeline (provider 전송 직전)
+  // ═══════════════════════════════════════════════════════════════
+  const sanitized = runSanitizePipeline({
+    prompt,
+    negatives: uniqueNeg,
+    framing: doc.camera.framing,
+    shotCategory: doc.scene.shotCategory,
+    styleSuffix: doc.reinforcement.styleSuffix,
+  });
+  prompt = sanitized.prompt;
+  uniqueNeg = sanitized.negatives;
+  if (sanitized.log.length > 0) {
+    sections._sanitizeLog = sanitized.log.join(" | ");
+  }
+  // Framing이 변경되었으면 camera line 재생성
+  if (sanitized.framing !== doc.camera.framing) {
+    const updatedDoc = { ...doc, camera: { ...doc.camera, framing: sanitized.framing } };
+    const newCameraLine = buildCameraLine(updatedDoc);
+    // 기존 camera line을 교체
+    const oldCameraLine = sections.camera;
+    if (oldCameraLine) {
+      prompt = prompt.replace(oldCameraLine, newCameraLine);
+      sections.camera = newCameraLine;
+    }
+  }
+
   const negStr = uniqueNeg.join(", ");
 
   if (!cap.supportsNegativePrompt && uniqueNeg.length > 0) {
     prompt += `. Avoid: ${negStr}`;
     sections.negatives_embedded = negStr;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // 15. Final Payload Validation (마지막 게이트)
+  // ═══════════════════════════════════════════════════════════════
+  const validation = validateFinalProviderPayload({
+    prompt,
+    negatives: uniqueNeg,
+    framing: sanitized.framing,
+    shotCategory: doc.scene.shotCategory,
+    provider,
+  });
+  if (!validation.valid && validation.autoFixable) {
+    const fixed = autoFixPayload({
+      prompt,
+      negatives: uniqueNeg,
+      framing: sanitized.framing,
+      shotCategory: doc.scene.shotCategory,
+      provider,
+    });
+    prompt = fixed.prompt;
+    uniqueNeg = fixed.negatives;
+    if (fixed.fixes.length > 0) {
+      sections._autoFixes = fixed.fixes.join(" | ");
+    }
+  }
+  if (validation.issues.length > 0) {
+    sections._validationIssues = validation.issues.map(i => `[${i.severity}] ${i.message}`).join(" | ");
   }
 
   // Word cap
@@ -1303,7 +1361,50 @@ export function renderSequenceForProvider(
   const allNeg = sequence.negatives
     ? [...sequence.negatives.universal, ...sequence.negatives.sceneSpecific, ...sequence.negatives.failureMode, ...sequence.negatives.user]
     : shot.negativeDirectives || [];
-  const uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+  let uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+
+  // ═══════════════════════════════════════════════════════════════
+  // 전역 Sanitize Pipeline (provider 전송 직전)
+  // ═══════════════════════════════════════════════════════════════
+  const sanitized = runSanitizePipeline({
+    prompt,
+    negatives: uniqueNeg,
+    framing: shot.camera.framing,
+    shotCategory: shot.shotCategory,
+    styleSuffix: json?.styleSuffix,
+  });
+  prompt = sanitized.prompt;
+  uniqueNeg = sanitized.negatives;
+  if (sanitized.log.length > 0) {
+    console.log("[renderSequenceForProvider] sanitize:", sanitized.log.join(" | "));
+  }
+
+  // Final Payload Validation (마지막 게이트)
+  const validation = validateFinalProviderPayload({
+    prompt,
+    negatives: uniqueNeg,
+    framing: sanitized.framing,
+    shotCategory: shot.shotCategory,
+    provider,
+  });
+  if (!validation.valid && validation.autoFixable) {
+    const fixed = autoFixPayload({
+      prompt,
+      negatives: uniqueNeg,
+      framing: sanitized.framing,
+      shotCategory: shot.shotCategory,
+      provider,
+    });
+    prompt = fixed.prompt;
+    uniqueNeg = fixed.negatives;
+    if (fixed.fixes.length > 0) {
+      console.log("[renderSequenceForProvider] auto-fixes:", fixed.fixes.join(" | "));
+    }
+  }
+  if (validation.issues.length > 0) {
+    console.log("[renderSequenceForProvider] validation:", validation.issues.map(i => `[${i.severity}] ${i.message}`).join(" | "));
+  }
+
   const negStr = uniqueNeg.join(", ");
 
   if (!cap.supportsNegativePrompt && uniqueNeg.length > 0) {

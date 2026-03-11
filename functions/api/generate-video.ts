@@ -15,6 +15,7 @@ import {
   renderKlingPromptFromJson,
   renderKlingExtendPromptFromJson,
 } from "./_video-prompt-json";
+import { serverSanitizeAndValidate } from "./_prompt-sanitizer";
 
 type Env = GeminiEnv & KlingEnv;
 
@@ -120,7 +121,29 @@ function serializeSequenceToPrompt(
   const allNeg = seq.negatives
     ? [...seq.negatives.universal, ...seq.negatives.sceneSpecific, ...seq.negatives.failureMode, ...seq.negatives.user]
     : (shot.negativeDirectives || []);
-  const uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+  let uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+
+  // ═══════════════════════════════════════════════════════════════
+  // 전역 Sanitize Pipeline (서버 마지막 직렬화 지점)
+  // ═══════════════════════════════════════════════════════════════
+  const sanitizeResult = serverSanitizeAndValidate({
+    prompt,
+    negatives: uniqueNeg,
+    framing: shot.camera.framing,
+    shotCategory: shot.shotCategory,
+    styleSuffix: seq.videoPromptJson?.styleSuffix,
+    provider,
+  });
+  prompt = sanitizeResult.prompt;
+  uniqueNeg = sanitizeResult.negatives;
+  if (sanitizeResult.log.length > 0) {
+    console.log("[serializeSequenceToPrompt] sanitize:", {
+      cutNumber: seq.cutNumber,
+      log: sanitizeResult.log,
+      valid: sanitizeResult.valid,
+    });
+  }
+
   const negStr = uniqueNeg.join(", ");
 
   // Veo: embed negatives (no separate negative prompt field)
@@ -234,6 +257,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       finalPromptForProvider = renderVeoPromptFromJson(req.videoPromptJson);
       usedPath = "videoPromptJson";
       fallbackReason = "no structuredSequence";
+
+      // Legacy path도 전역 sanitize pipeline 적용
+      const legacySanitize = serverSanitizeAndValidate({
+        prompt: finalPromptForProvider,
+        negatives: req.negativePrompt ? req.negativePrompt.split(",").map(s => s.trim()) : [],
+        framing: req.videoPromptJson.shotSize || "MS",
+        shotCategory: undefined, // legacy path에는 shotCategory 없음
+        styleSuffix: req.videoPromptJson.styleSuffix,
+        provider: "veo",
+      });
+      finalPromptForProvider = legacySanitize.prompt;
+      if (legacySanitize.log.length > 0) {
+        console.log("[generate-video] videoPromptJson legacy sanitize:", legacySanitize.log);
+      }
+
       console.log("[generate-video] videoPromptJson fallback (legacy)", {
         cutNumber: req.cutNumber,
         serializedLen: finalPromptForProvider.length,
@@ -246,6 +284,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       finalPromptForProvider = req.prompt;
       usedPath = "prompt_legacy";
       fallbackReason = "no structuredSequence, no videoPromptJson";
+
+      // Legacy prompt string도 기본 pos/neg sanitize 적용
+      const legacySanitize = serverSanitizeAndValidate({
+        prompt: finalPromptForProvider,
+        negatives: req.negativePrompt ? req.negativePrompt.split(",").map(s => s.trim()) : [],
+        framing: "MS",
+        shotCategory: undefined,
+        provider: "veo",
+      });
+      finalPromptForProvider = legacySanitize.prompt;
+      if (legacySanitize.log.length > 0) {
+        console.log("[generate-video] legacy prompt sanitize:", legacySanitize.log);
+      }
+
       console.log("[generate-video] legacy prompt string fallback", {
         cutNumber: req.cutNumber,
         serializedLen: finalPromptForProvider.length,
