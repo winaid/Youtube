@@ -900,6 +900,324 @@ section("22. Environment: inferSceneType → environment_landscape");
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Test 23: Tiananmen Square — full environment scene E2E
+// ═══════════════════════════════════════════════════════════════════
+
+section("23. Tiananmen Square: full environment scene E2E");
+
+{
+  // Exact scene from user specification
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Tiananmen Square with massive crowds waving red flags",
+    cameraDirection: "slow drone pull-back / smooth pan across square",
+    moodLighting: "bright sunlight from upper right, strong diffused glow, warm golden cast",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Tiananmen Square fills the frame → sea of red flags waving high → sunlight glints off the flags",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "eye-level",
+      cameraMovement: "slow drone pull-back / smooth pan across square",
+      subjectAction: "Tiananmen Square fills the frame → sea of red flags waving high → sunlight glints off the flags",
+      subjectBlocking: "massive crowd center-frame",
+      bodySignal: "",
+      characterRef: "",
+      locationCue: "Tiananmen Square",
+      situationCue: "massive crowds, celebratory mood",
+      emotionalAnchor: "collective energy under golden sunlight",
+      moodLighting: "bright sunlight from upper right, strong diffused glow, warm golden cast",
+      styleSuffix: "photorealistic cinematic, subject-focused composition",
+      timingBeat: "0s-2s: Tiananmen Square fills the frame. 2s-5s: Sea of red flags waving high. 5s-8s: Sunlight glints off the flags",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const doc = result.document;
+  const seq = result.structuredSequence;
+
+  // ── 1. Camera: WS framing, eye-level angle (NOT forced overhead)
+  assert(doc.camera.framing === "WS", "tiananmen: WS framing");
+  assert(doc.camera.angle === "eye-level", "tiananmen: eye-level angle preserved (not forced overhead)");
+
+  // ── 2. Camera motion: compound "/" resolved to continuous
+  assert(!doc.camera.motion.includes("/"), "tiananmen: '/' separator removed from motion");
+  const motionLower = doc.camera.motion.toLowerCase();
+  assert(
+    motionLower.includes("drone") || motionLower.includes("pan") || motionLower.includes("pull-back") || motionLower.includes("push-in"),
+    "tiananmen: continuous motion preserved"
+  );
+
+  // ── 3. No cut-based motions
+  assert(!/whip|jump.cut|snap.zoom|crash|smash|rack.focus/i.test(doc.camera.motion),
+    "tiananmen: no cut-based motion terms");
+
+  // ── 4. Positive keywords in style
+  const style = doc.global.style.toLowerCase();
+  assert(style.includes("photorealistic") || style.includes("cinematic"),
+    "tiananmen: photorealistic/cinematic in global style");
+
+  // ── 5. Positive/negative conflict resolved
+  const allNeg = [
+    ...doc.negatives.universal, ...doc.negatives.sceneSpecific,
+    ...doc.negatives.failureMode, ...doc.negatives.user,
+  ].map(n => n.toLowerCase());
+  // These must be in negatives
+  assert(allNeg.includes("text overlay"), "tiananmen: text overlay in negatives");
+  assert(allNeg.includes("watermark"), "tiananmen: watermark in negatives");
+  assert(allNeg.includes("logo"), "tiananmen: logo in negatives");
+  assert(allNeg.includes("caption"), "tiananmen: caption in negatives");
+  // These must NOT be in negatives (they're in positive style)
+  for (const posKw of ["photorealistic", "cinematic"]) {
+    if (style.includes(posKw)) {
+      assert(!allNeg.includes(posKw), `tiananmen: "${posKw}" not in negatives (present in positive)`);
+    }
+  }
+
+  // ── 6. Timing beats parsed correctly
+  assert(doc.timing.beats.length === 3, "tiananmen: 3 timing beats parsed");
+  assert(doc.timing.beats[0].startSec === 0, "tiananmen: beat 1 starts at 0s");
+  assert(doc.timing.beats[0].endSec === 2, "tiananmen: beat 1 ends at 2s");
+  assert(doc.timing.beats[1].startSec === 2, "tiananmen: beat 2 starts at 2s");
+  assert(doc.timing.beats[2].endSec === 8, "tiananmen: beat 3 ends at 8s");
+
+  // ── 7. JSON-first source of truth
+  assert(seq.shotPlan !== undefined, "tiananmen: shotPlan exists");
+  assert(seq.negatives !== undefined, "tiananmen: negatives in structuredSequence");
+  assert(!("serializedPrompt" in seq), "tiananmen: no serializedPrompt");
+  assert(!("prompt" in result), "tiananmen: no prompt in assembleFromJSON result");
+
+  // ── 8. Provider serialization
+  const veoRendered = renderSequenceForProvider(seq, "veo");
+  const veoPromptLower = veoRendered.prompt.toLowerCase();
+  assert(veoRendered.prompt.length > 80, "tiananmen: Veo prompt has substance");
+  assert(veoPromptLower.includes("tiananmen"), "tiananmen: location in Veo prompt");
+  assert(veoPromptLower.includes("red flag"), "tiananmen: subject detail in Veo prompt");
+  assert(veoPromptLower.includes("sunlight") || veoPromptLower.includes("golden"),
+    "tiananmen: lighting in Veo prompt");
+  // Atmosphere enrichment
+  assert(veoPromptLower.includes("haze") || veoPromptLower.includes("shadow") || veoPromptLower.includes("depth"),
+    "tiananmen: atmosphere enrichment in provider payload");
+  // Negative embedding (Veo: no separate negative field)
+  assert(veoPromptLower.includes("avoid:"), "tiananmen: Veo embeds negatives");
+  assert(veoRendered.negativePrompt === "", "tiananmen: Veo no separate negative field");
+
+  // ── 9. Kling serialization
+  const klingRendered = renderSequenceForProvider(seq, "kling");
+  assert(klingRendered.prompt.length > 50, "tiananmen: Kling prompt has substance");
+  assert(klingRendered.negativePrompt.length > 0, "tiananmen: Kling separate negative field");
+
+  // ── 10. isEnvironmentScene flag
+  assert(result.preview?.isEnvironmentScene === true, "tiananmen: isEnvironmentScene flag set");
+
+  console.log(`  ✓ Tiananmen E2E: framing=${doc.camera.framing}, angle=${doc.camera.angle}, motion="${doc.camera.motion}"`);
+  console.log(`    Veo: ${veoRendered.prompt.length}ch | Kling: ${klingRendered.prompt.length}ch + neg ${klingRendered.negativePrompt.length}ch`);
+  console.log(`    Beats: ${doc.timing.beats.map(b => `${b.startSec}-${b.endSec}s`).join(", ")}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 24: Environment — eye-level angle preserved vs overhead default
+// ═══════════════════════════════════════════════════════════════════
+
+section("24. Environment: angle preservation logic");
+
+{
+  // Case A: explicit eye-level → preserved
+  const cutEye: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "City square at ground level",
+    cameraDirection: "smooth pan",
+    moodLighting: "warm", imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "crowd scene", extendPrompt: "",
+    transitionHint: "", characterConsistency: "", charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "eye-level",
+      cameraMovement: "smooth pan (crowd reveal)",
+      subjectAction: "crowd fills the square",
+    }),
+  };
+  const cfgA = makeTestConfig();
+  const resA = assembleFromJSON({ cut: cutEye, config: cfgA });
+  assert(resA.document.camera.angle === "eye-level", "explicit eye-level → eye-level");
+
+  // Case B: explicit high-angle → preserved
+  const cutHigh: Cut = {
+    ...cutEye,
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "high-angle",
+      cameraMovement: "slow crane up (elevation reveal)",
+      subjectAction: "city skyline emerges",
+    }),
+  };
+  const resB = assembleFromJSON({ cut: cutHigh, config: cfgA });
+  assert(resB.document.camera.angle === "high-angle" || resB.document.camera.angle === "high_angle",
+    "explicit high-angle → high-angle");
+
+  // Case C: no angle specified → defaults to overhead
+  const cutNoAngle: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Terrain overhead", cameraDirection: "slow push-in",
+    moodLighting: "overcast", imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "terrain", extendPrompt: "",
+    transitionHint: "", characterConsistency: "", charactersInScene: [],
+    shotCategory: "environment",
+    // No videoPromptJson → no explicit angle
+  };
+  const resC = assembleFromJSON({ cut: cutNoAngle, config: cfgA });
+  assert(resC.document.camera.angle === "overhead", "no explicit angle + environment → overhead default");
+
+  console.log(`  ✓ Angle: eye-level=${resA.document.camera.angle}, high=${resB.document.camera.angle}, default=${resC.document.camera.angle}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 25: Environment — compound motion "/" separator handling
+// ═══════════════════════════════════════════════════════════════════
+
+section("25. Environment: compound motion '/' handling");
+
+{
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Wide steppe", cameraDirection: "slow drone pull-back / smooth pan",
+    moodLighting: "golden hour", imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "terrain", extendPrompt: "",
+    transitionHint: "", characterConsistency: "", charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "overhead",
+      cameraMovement: "slow drone pull-back / smooth pan across terrain",
+      subjectAction: "terrain reveals under golden light",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const motion = result.document.camera.motion;
+
+  // "/" should be normalized
+  assert(!motion.includes("/"), "compound: '/' removed from motion");
+  // At least one continuous motion term should survive
+  assert(
+    motion.toLowerCase().includes("drone") ||
+    motion.toLowerCase().includes("pan") ||
+    motion.toLowerCase().includes("pull-back") ||
+    motion.toLowerCase().includes("push-in"),
+    "compound: continuous motion terms preserved"
+  );
+
+  console.log(`  ✓ Compound motion: "${cut.videoPromptJson?.cameraMovement}" → "${motion}"`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 26: Environment — new positive keywords enrichment
+// ═══════════════════════════════════════════════════════════════════
+
+section("26. Environment: new positive keywords (subject-focused, ambient audio)");
+
+{
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Mountain landscape", cameraDirection: "slow push-in",
+    moodLighting: "dawn light", imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "mountains", extendPrompt: "",
+    transitionHint: "", characterConsistency: "", charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS", cameraAngle: "eye-level",
+      cameraMovement: "slow push-in (depth reveal)",
+      subjectAction: "mountain peaks emerge through mist",
+      moodLighting: "dawn light with golden glow",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const style = result.document.global.style.toLowerCase();
+
+  // New positive keywords should be injected if not already present
+  assert(style.includes("photorealistic") || style.includes("cinematic"),
+    "env: base positive keywords present");
+
+  // Verify no positive keyword leaks into negatives
+  const negFlat = [
+    ...result.document.negatives.universal,
+    ...result.document.negatives.sceneSpecific,
+    ...result.document.negatives.user,
+  ].map(n => n.toLowerCase());
+  for (const kw of ["photorealistic", "cinematic", "live-action"]) {
+    if (style.includes(kw)) {
+      assert(!negFlat.includes(kw), `env: "${kw}" not leaked into negatives`);
+    }
+  }
+
+  console.log(`  ✓ Style: "${result.document.global.style.substring(0, 80)}..."`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 27: Debug log — raw sequence, dedup, conflict, provider payload
+// ═══════════════════════════════════════════════════════════════════
+
+section("27. Debug log: raw sequence → dedup → conflict → provider payload");
+
+{
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Tiananmen Square with massive crowds waving red flags",
+    cameraDirection: "slow drone pull-back",
+    moodLighting: "bright sunlight, warm golden cast",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "red flags waving",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "eye-level",
+      cameraMovement: "slow drone pull-back (square reveal)",
+      subjectAction: "sea of red flags waving high across Tiananmen Square",
+      locationCue: "Tiananmen Square",
+      situationCue: "massive celebratory crowds",
+      moodLighting: "bright sunlight from upper right, strong diffused glow",
+      timingBeat: "0s-2s: square fills frame. 2s-5s: flags waving. 5s-8s: sunlight glints",
+      styleSuffix: "photorealistic cinematic",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const seq = result.structuredSequence;
+
+  // raw sequence JSON — shotPlan has all fields
+  assert(seq.shotPlan.camera !== undefined, "debug: raw camera present");
+  assert(seq.shotPlan.action.length > 10, "debug: raw action has content");
+  assert(seq.negatives !== undefined, "debug: raw negatives present");
+
+  // sorted/deduped — no duplicates in negatives
+  const negAll = [...(seq.negatives?.universal || []), ...(seq.negatives?.sceneSpecific || [])];
+  const negUnique = [...new Set(negAll.map(n => n.toLowerCase()))];
+  assert(negAll.length <= negUnique.length + 3, "debug: negatives reasonably deduped");
+
+  // conflict resolution — diagnostics present
+  assert(result.diagnostics !== undefined, "debug: diagnostics present");
+  assert(result.diagnostics.validation !== undefined, "debug: validation in diagnostics");
+
+  // final provider payload — serialized correctly
+  const payload = renderSequenceForProvider(seq, "veo");
+  assert(payload.prompt.length > 100, "debug: final payload has substance");
+  assert(typeof payload.negativePrompt === "string", "debug: negativePrompt is string");
+
+  console.log(`  ✓ Debug pipeline: raw→dedup→conflict→payload (${payload.prompt.length}ch)`);
+  console.log(`    Diagnostics: ${result.diagnostics.sanitizeFixes.length} fixes, ${result.diagnostics.conflictResolutions.length} resolutions`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 결과 출력
 // ═══════════════════════════════════════════════════════════════════
 

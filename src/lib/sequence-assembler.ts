@@ -186,13 +186,17 @@ const ENVIRONMENT_CONTINUOUS_MOTIONS = [
   "slow push-in", "smooth pan", "gentle drift", "slow pull-back",
   "slow crane up", "slow crane down", "slow orbit", "floating drift",
   "subtle dolly", "slow sweep", "gradual tilt up", "gradual tilt down",
+  "slow drone", "drone pull-back", "drone push-in",
 ];
 
 /** Environment 씬에서 금지되는 cut 기반 카메라 지시 */
 const ENVIRONMENT_BANNED_MOTIONS = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut)\b/i;
 
 /** Environment positive 키워드 (반드시 포함) */
-const ENVIRONMENT_POSITIVE_KEYWORDS = ["photorealistic", "cinematic", "live-action"];
+const ENVIRONMENT_POSITIVE_KEYWORDS = [
+  "photorealistic", "cinematic", "live-action",
+  "subject-focused composition", "natural diegetic sound", "ambient audio",
+];
 
 /** Environment negative 키워드 (반드시 배제) */
 const ENVIRONMENT_NEGATIVE_KEYWORDS = [
@@ -211,9 +215,17 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
 
   const isEnvironmentScene = cut.shotCategory === "environment";
 
+  // Environment: WS framing 강제, 단 angle은 videoPromptJson의 명시적 값을 존중
   const framing = isEnvironmentScene ? "WS" : (json?.shotSize || "MS");
-  const angle = isEnvironmentScene ? "overhead" : (json?.cameraAngle || "eye-level");
+  const angle = isEnvironmentScene
+    ? (json?.cameraAngle || "overhead")  // 명시적 angle 있으면 사용, 없으면 overhead 기본
+    : (json?.cameraAngle || "eye-level");
   let motion = json?.cameraMovement || cut.cameraDirection || "slow push-in";
+
+  // Environment: compound motion 정규화 — "/" 구분자를 ", " 로 변환하여 연속 모션화
+  if (isEnvironmentScene && motion.includes("/")) {
+    motion = motion.split("/").map(s => s.trim()).filter(Boolean).join(", ");
+  }
 
   // Environment: cut 기반 모션 제거, 연속 모션만 허용
   if (isEnvironmentScene) {
@@ -631,13 +643,13 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
       fixes.push(`Environment: replaced cut-based motion "${old}" → "slow push-in"`);
     }
 
-    // Force wide framing for environment
+    // Force wide framing for environment (angle은 명시적 값 유지)
     const closeFramings = ["ECU", "CU", "MCU"];
     if (closeFramings.includes(result.camera.framing.toUpperCase())) {
       const old = result.camera.framing;
       result.camera.framing = "WS";
-      result.camera.angle = "overhead";
-      fixes.push(`Environment: replaced close framing "${old}" → "WS" overhead`);
+      // angle은 이미 설정된 값을 유지 — overhead 강제 안 함
+      fixes.push(`Environment: replaced close framing "${old}" → "WS"`);
     }
 
     // Remove positive/negative overlaps

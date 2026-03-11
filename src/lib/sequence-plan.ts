@@ -1127,12 +1127,12 @@ export function resolveFramingConflicts(plan: SequencePlan): ConflictResolutionR
   const ENVIRONMENT_BANNED = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut|cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to)\b/gi;
   for (const shot of result.shots) {
     if (shot.shotCategory === "environment") {
-      // Force wide framing
+      // Force wide framing (angle은 기존 값 유지 — eye-level 환경 씬 지원)
       if (CLOSE_FRAMINGS.has(shot.camera.framing) || shot.camera.framing === "MCU") {
         const old = shot.camera.framing;
         shot.camera.framing = "WS";
-        shot.camera.angle = "overhead";
-        resolutions.push(`${shot.shotId}: environment ${old} → WS overhead`);
+        // angle은 기존 값을 존중 — Tiananmen 같은 지면 환경 씬에서 eye-level 유지
+        resolutions.push(`${shot.shotId}: environment ${old} → WS`);
       }
       // Remove cut-based motions
       const oldMotion = shot.camera.motion;
