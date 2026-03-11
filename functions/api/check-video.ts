@@ -666,6 +666,31 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     console.log("[check-video] Veo poll response structure:", safeStringify(structure));
     console.log("[check-video] Veo poll response (sanitized):", safeStringify(sanitizeForLog(data)));
 
+    // ── provider raw response shape 상세 로그 (URI 추적용) ────────────────
+    {
+      const resp = isRecord(data.response) ? data.response : undefined;
+      const gvr = resp && isRecord(resp.generateVideoResponse) ? resp.generateVideoResponse : undefined;
+      const samples = gvr?.generatedSamples ?? resp?.generatedSamples ?? data.generatedSamples;
+      const videos = resp?.generatedVideos ?? data.generatedVideos;
+      const firstSample = isArray(samples) && samples.length > 0 && isRecord(samples[0]) ? samples[0] : undefined;
+      const firstVideo = firstSample && isRecord(firstSample.video) ? firstSample.video : undefined;
+
+      console.log("[check-video] 🔍 ASSET EXTRACTION DIAGNOSTIC", {
+        cutNumber,
+        hasSamples: isArray(samples),
+        sampleCount: isArray(samples) ? samples.length : 0,
+        hasVideos: isArray(videos),
+        videoCount: isArray(videos) ? (videos as unknown[]).length : 0,
+        firstSampleKeys: firstSample ? Object.keys(firstSample) : [],
+        firstVideoKeys: firstVideo ? Object.keys(firstVideo) : [],
+        firstVideoUri: firstVideo && isString(firstVideo.uri) ? firstVideo.uri.slice(0, 80) : "(없음)",
+        firstVideoGcsUri: firstVideo && isString(firstVideo.gcsUri) ? firstVideo.gcsUri.slice(0, 80) : "(없음)",
+        hasBase64: firstVideo ? isString(firstVideo.bytesBase64Encoded) : false,
+        base64Len: firstVideo && isString(firstVideo.bytesBase64Encoded) ? firstVideo.bytesBase64Encoded.length : 0,
+        authMethod: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "SERVICE_ACCOUNT" : "API_KEY",
+      });
+    }
+
     // RAI 필터 체크
     const rai = detectRaiFiltering(data);
     if (rai.filtered) {

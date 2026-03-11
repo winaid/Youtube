@@ -8,6 +8,7 @@ export interface GeminiEnv {
   GOOGLE_CLOUD_API_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_API_KEY_2?: string;
+  GOOGLE_CLOUD_PROJECT_ID?: string; // API Key 모드에서 project ID 지정용
 }
 
 // === OAuth2 서비스 계정 인증 ===
@@ -134,7 +135,12 @@ export function buildVeoUrl(env: GeminiEnv, model: string, method = "predictLong
     const sa = parseServiceAccount(env.GOOGLE_SERVICE_ACCOUNT_JSON);
     return `https://${location}-aiplatform.googleapis.com/v1/projects/${sa.project_id}/locations/${location}/publishers/google/models/${model}:${method}`;
   }
-  // API Key fallback — Service Account 없이 Veo 호출 시 GCS URI 미반환 가능
+  // API Key fallback — project ID가 있으면 v1 + project 경로 사용 (GCS URI 반환 가능)
+  // project ID 없으면 v1beta (GCS URI 미반환 → base64 인라인)
+  const projectId = env.GOOGLE_CLOUD_PROJECT_ID;
+  if (projectId) {
+    return `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:${method}`;
+  }
   return `https://${location}-aiplatform.googleapis.com/v1beta/publishers/google/models/${model}:${method}`;
 }
 
@@ -157,6 +163,8 @@ export function buildVeoFetchUrl(env: GeminiEnv, operationName: string): string 
       const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON) as { project_id: string };
       projectId = sa.project_id;
     } catch { /* ignore */ }
+  } else if (env.GOOGLE_CLOUD_PROJECT_ID) {
+    projectId = env.GOOGLE_CLOUD_PROJECT_ID;
   }
 
   const host = `${location}-aiplatform.googleapis.com`;

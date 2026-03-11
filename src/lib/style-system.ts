@@ -682,17 +682,23 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // ── MAP SCENE PROTECTION ──────────────────────────────────
   // map-graphic 장면에서는 스타일 페르소나/강화를 억제하고
   // cartographic 보호 규칙을 적용 (산수화/학/동양풍 drift 방지)
-  const MAP_SCENE_POSITIVE = "Flat uninterrupted map surface, continuous parchment texture, territorial overlays, coastlines, borders, trade routes, paper texture, ink diffusion on aged paper. No inserted objects, no floating panels, no boxed annotations, no embedded signage.";
+  const MAP_SCENE_POSITIVE = "Wide shot, eye-level view of a flat antique paper map filling the frame. The image is clearly a historical map, not a landscape. Aged parchment texture, ornate compass rose, faded black ink coastlines and borders, territorial overlays, trade routes, subtle paper wear and grain, ink diffusion on aged paper. Cold daylight from upper right, soft diffused glow. No inserted objects, no floating panels, no boxed annotations, no embedded signage, no readable text, no labels.";
   const MAP_SCENE_NEGATIVES = [
-    "cranes", "birds", "mountain landscape", "scenic painting",
-    "nature tableau", "decorative East Asian motifs",
-    "animals", "flying creatures", "landscape reinterpretation",
-    "brush painting scenery", "traditional painting composition",
-    // ── 사각형 아티팩트 방지 (rectangular artifact suppression) ──
+    // ── 풍경/자연 drift 차단 ──
+    "landscape", "tree", "forest", "mountain", "river",
+    "watercolor scenery", "ink painting", "sumi-e", "nature scene",
+    "cranes", "birds", "heron", "animals", "flying creatures",
+    "scenic painting", "nature tableau", "brush painting scenery",
+    "traditional painting composition", "countryside illustration",
+    "mountain landscape", "misty peaks", "decorative East Asian motifs",
+    // ── 인물/전쟁 drift 차단 ──
+    "human figure", "battlefield", "portrait",
+    // ── 텍스트/UI 아티팩트 차단 ──
+    "readable text", "subtitles", "calligraphy", "poster",
     "boxes", "rectangular overlay", "UI panels", "text boxes",
     "labels", "signboards", "framed inserts", "infographic elements",
     "cartouche", "decorative panels", "floating panels",
-    "boxed annotations", "title boxes", "caption boxes",
+    "boxed annotations", "title boxes", "caption boxes", "modern UI",
   ];
 
   // ── BLOCK 0: STYLE PERSONA (아트디렉터 페르소나) ──────────
@@ -745,7 +751,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   });
   // ⚠️ MAP SCENE: 카메라를 항상 top-down으로 강제
   const cameraBlock = isMapScene
-    ? "Static top-down overhead view looking directly down at flat map surface, very slow gentle zoom in"
+    ? "Eye-level view looking at flat antique paper map surface. 0-2s: close detailed view of the map, aged parchment texture, faded ink coastlines, ornate compass rose. 2-5s: territorial color emphasis gradually becomes visually dominant with gentle stain-like spread. 5-8s: camera slowly zooms out to reveal more of the full map while preserving the same antique map surface and composition."
     : cameraResult.cameraBlock;
 
   // ── BLOCK 4: SCENE CONTENT ─────────────────────────────────
@@ -777,8 +783,13 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
 
     // 지도 장면 앵커 강화: scene block 맨 앞에 cartographic 프레이밍 삽입
     if (!/\b(map|cartograph|parchment|top.?down|overhead|territorial)\b/i.test(sceneBlock)) {
-      sceneBlock = `Overhead view of an old parchment map surface. ${sceneBlock}`;
+      sceneBlock = `Flat antique historical paper map filling the frame, clearly seen as a paper map and not a natural landscape. ${sceneBlock}`;
     }
+    // scene block에 landscape/nature/watercolor 표현이 남아있으면 추가 제거
+    sceneBlock = sceneBlock
+      .replace(/\bwatercolor\s+(landscape|scenery|painting)\b/gi, "aged parchment texture")
+      .replace(/\bink\s+(wash|painting)\s+(landscape|scenery|mountain)\b/gi, "ink diffusion on aged paper")
+      .replace(/\bsumi-e\s+style\b/gi, "historical cartographic style");
   }
 
   // Temporal beats 삽입
@@ -799,7 +810,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     }
   }
   if (isMapScene) {
-    reinforcementBlock = "Maintain cartographic top-down view throughout. No landscape reinterpretation. No animals or decorative creatures. No rectangular overlays, no floating panels, no text boxes, no labels, no framed inserts, no infographic elements.";
+    reinforcementBlock = "This is a historical paper map, NOT a landscape or nature scene. Maintain flat antique map surface throughout. The map must look like a document on a table, not a real landscape. No landscape reinterpretation, no watercolor painting, no ink wash scenery. No animals or decorative creatures. No rectangular overlays, no floating panels, no text boxes, no labels, no framed inserts, no infographic elements. No trees, no mountains, no forests, no rivers as real scenery.";
   }
 
   // ── BLOCK 6: NEGATIVE ──────────────────────────────────────
@@ -823,8 +834,8 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const uniqueNeg = negParts.join(", ").split(",")
     .map(s => s.trim().toLowerCase()).filter(Boolean)
     .filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
-  // 핵심 제한 (Veo가 너무 긴 negative는 무시) — map scene은 사각형 아티팩트 보호까지 포함하여 20개 허용
-  const negativeBlock = uniqueNeg.slice(0, isMapScene ? 20 : 8).join(", ");
+  // 핵심 제한 (Veo가 너무 긴 negative는 무시) — map scene은 사각형 아티팩트 + 풍경 drift 보호까지 포함하여 25개 허용
+  const negativeBlock = uniqueNeg.slice(0, isMapScene ? 25 : 8).join(", ");
 
   // ── BLOCK 7: AUDIO ──────────────────────────────────────────
   const hasAudioRef = /\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(sceneBlock);

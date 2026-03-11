@@ -485,6 +485,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ...(sourceVideo && { sourceVideo }),
       status: "RUNNING",
       ...(warnings.length > 0 && { warning: warnings.join("; ") }),
+      // 진단용: 클라이언트가 GCS URI 반환 가능 여부를 미리 알 수 있도록
+      _diag: {
+        authMethod,
+        urlVersion,
+        urlHasProject,
+        veoMode,
+        sceneExtensionAttempted: veoMode === "SCENE_EXTENSION",
+      },
     });
   } catch (error) {
     console.error("[generate-video] 처리 오류:", error);

@@ -413,9 +413,21 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             const selectedIdx = variantsToPreserve ? merged.length - 1 : 0; // 새 컷 선택
             clipUpdate.variants = merged;
             clipUpdate.selectedVariant = selectedIdx;
-            clipUpdate.videoUri = newVariants[0].videoUri;
-            clipUpdate.rawVideoUri = newVariants[0].rawVideoUri;
-            clipUpdate.seed = newVariants[0].seed;
+
+            // URI가 있는 variant를 우선 선택 (Scene Extension을 위해)
+            const variantWithUri = newVariants.find(v =>
+              v.rawVideoUri && (v.rawVideoUri.startsWith("gs://") || v.rawVideoUri.startsWith("https://"))
+            );
+            const bestVariant = variantWithUri || newVariants[0];
+            clipUpdate.videoUri = bestVariant.videoUri;
+            clipUpdate.rawVideoUri = bestVariant.rawVideoUri;
+            clipUpdate.seed = bestVariant.seed;
+
+            if (variantWithUri && variantWithUri !== newVariants[0]) {
+              console.log(`[CUT ${cutNumber}] URI가 있는 variant 선택 (Scene Extension 우선):`, {
+                selectedUri: variantWithUri.rawVideoUri?.slice(0, 60),
+              });
+            }
           } else if (variantsToPreserve && clipUpdate.videoUri) {
             // 단일 결과 + 컷 추가 모드: 기존 + 새 컷 합치기
             const newVariant: VideoVariant = { videoUri: clipUpdate.videoUri, rawVideoUri: clipUpdate.rawVideoUri, seed: clipUpdate.seed };
@@ -442,18 +454,28 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
               : ruri === "" ? "EMPTY(base64) ✗"
               : "DATA_URI ✗";
             const willExtend = ruri.length > 0 && !ruri.startsWith("data:");
+            const hasLastFrame = !!clipUpdate.videoUri; // lastFrame 캡처 가능 여부
+            // continuity 점수: SCENE_EXTENSION > IMAGE_TO_VIDEO > TEXT_TO_VIDEO
+            const continuityScore = willExtend ? 100 : hasLastFrame ? 60 : 0;
             console.log(`[CUT ${cutNumber}] COMPLETED`, {
               sourceCutId: cutNumber,
               parentCutId: cutNumber - 1,
               rawVideoUri: ruri ? `${ruri.slice(0, 80)}…` : "(empty)",
               rawVideoUriType: ruriType,
               nextCutWillExtend: willExtend ? "✓ Scene Extension 가능" : "✗ Scene Extension 불가 → image/text fallback",
+              nextCutContinuityScore: continuityScore,
+              nextCutFallback: willExtend ? "SCENE_EXTENSION" : hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame)" : "TEXT_TO_VIDEO (연속성 없음)",
               seed: clipUpdate.seed,
             });
             if (!willExtend) {
               console.warn(
-                `[CUT ${cutNumber}] rawVideoUri가 유효한 GCS/HTTPS URI가 아님 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
-                `rawVideoUri="${ruri.slice(0, 60)}"`
+                `[CUT ${cutNumber}] ⚠️ rawVideoUri가 유효한 GCS/HTTPS URI가 아님 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
+                {
+                  rawVideoUri: `"${ruri.slice(0, 60)}"`,
+                  fallback: hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame 사용)" : "TEXT_TO_VIDEO (연속성 완전 손실)",
+                  continuityScore,
+                  possibleFix: "GOOGLE_SERVICE_ACCOUNT_JSON 또는 GOOGLE_CLOUD_PROJECT_ID 환경변수 설정으로 GCS URI 반환 가능",
+                }
               );
             }
           }
@@ -975,6 +997,24 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           ? rawPrevUri
           : undefined;
 
+      // ── Scene Extension 실패 시 lastFrame 기반 IMAGE_TO_VIDEO fallback 보장 ──
+      // previousVideoUri가 없고 firstFrameBase64도 없으면 → 이전 컷의 lastFrame 재캡처 시도
+      if (cutNumber > 1 && !previousVideoUri && !firstFrameBase64 && prevClip?.videoUri) {
+        console.warn(`[CUT ${cutNumber}] Scene Extension 불가 + firstFrame 없음 → lastFrame 긴급 캡처`);
+        try {
+          const emergencyFrame = await captureVideoLastFrame(prevClip.videoUri);
+          if (emergencyFrame) {
+            firstFrameBase64 = emergencyFrame;
+            updateClip(cutNumber - 1, { lastFrameBase64: emergencyFrame });
+            console.log(`[CUT ${cutNumber}] lastFrame 긴급 캡처 성공 → IMAGE_TO_VIDEO fallback 확보`);
+          } else {
+            console.error(`[CUT ${cutNumber}] lastFrame 긴급 캡처 실패 — TEXT_TO_VIDEO로 생성 (연속성 없음)`);
+          }
+        } catch (captureErr) {
+          console.error(`[CUT ${cutNumber}] lastFrame 긴급 캡처 예외:`, captureErr);
+        }
+      }
+
       // ── 요청 직전 진단 로그 ─────────────────────────────────────────────────
       // mode: 실제 어떤 방식으로 생성하는지 명시
       const requestMode = previousVideoUri
@@ -1222,6 +1262,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         modeUsed?: "generate" | "extend";
         sourceVideo?: string;
         warning?: string;
+        _diag?: {
+          authMethod?: string;
+          urlVersion?: string;
+          urlHasProject?: boolean;
+          veoMode?: string;
+          sceneExtensionAttempted?: boolean;
+        };
       };
 
       updateClip(cutNumber, {
@@ -1233,6 +1280,20 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       if (data.warning) {
         console.warn(`CUT ${cutNumber} warning:`, data.warning);
+      }
+
+      // 서버 진단 정보 로그 — GCS URI 반환 가능 여부 사전 파악
+      if (data._diag) {
+        const d = data._diag;
+        console.log(`[CUT ${cutNumber}] 서버 진단`, {
+          authMethod: d.authMethod,
+          urlVersion: d.urlVersion,
+          urlHasProject: d.urlHasProject,
+          veoMode: d.veoMode,
+          sceneExtensionAttempted: d.sceneExtensionAttempted,
+          gcsUriExpected: d.authMethod === "SERVICE_ACCOUNT" || d.urlHasProject
+            ? "✓ GCS URI 반환 예상" : "✗ base64 반환 가능성 높음 — GOOGLE_CLOUD_PROJECT_ID 환경변수 확인 필요",
+        });
       }
 
       // ── 타이밍: generateCut 전체 (API 응답까지) ──────────────────────────
