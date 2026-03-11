@@ -376,6 +376,7 @@ export interface VideoClip {
   selectedVariant?: number; // 선택된 변형 인덱스
   retryCount?: number; // Enhancement: auto-retry tracking
   verification?: PromptVerification; // Enhancement: prompt quality score
+  qualityChecklist?: { items: Array<{ id: string; label: string; passed: boolean; detail?: string }>; passCount: number; totalCount: number };
   // 멀티 프로바이더
   engineUsed?: "veo" | "kling";      // 실제 사용된 엔진
   modeUsed?: VideoMode;              // 실제 사용된 모드

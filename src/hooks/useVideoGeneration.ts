@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { saveVideoRecord } from "@/lib/video-history";
 import { assemblePrompt } from "@/lib/style-system";
+import { generateQualityChecklist, sanitizeRenderedPrompt } from "@/lib/video-prompt-json";
 import {
   Cut,
   VideoClip,
@@ -801,7 +802,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           durationSec: cfg.durationSeconds,
         });
 
-        prompt = assembled.finalPrompt;
+        prompt = sanitizeRenderedPrompt(assembled.finalPrompt);
+
+        // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────
+        if (cut.videoPromptJson) {
+          const checklist = generateQualityChecklist(prompt, cut.videoPromptJson);
+          updateClip(cutNumber, { qualityChecklist: checklist });
+          console.log(`[CUT ${cutNumber}] 📋 QUALITY CHECKLIST`, {
+            pass: `${checklist.passCount}/${checklist.totalCount}`,
+            failed: checklist.items.filter(i => !i.passed).map(i => i.id),
+          });
+        }
 
         // ── 블록별 디버그 로그 ──────────────────────────────────────────
         console.log(`[CUT ${cutNumber}] 📝 STYLE SYSTEM`, {
@@ -1307,6 +1318,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       selectedVariant: undefined,
       retryCount: 0,
       verification: undefined,
+      qualityChecklist: undefined,
     });
   }, [updateClip]);
 

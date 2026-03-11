@@ -320,6 +320,51 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
+                {/* 품질 체크리스트 (사전 검증) */}
+                {clip.qualityChecklist && (
+                  <div className="px-3 pb-2">
+                    <div className="bg-gray-50 rounded p-2 space-y-0.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-medium" style={{ color: "#555" }}>
+                          프롬프트 품질 체크
+                        </span>
+                        <span
+                          className="text-[10px] font-mono font-bold"
+                          style={{
+                            color: clip.qualityChecklist.passCount === clip.qualityChecklist.totalCount
+                              ? "#16a34a"
+                              : clip.qualityChecklist.passCount >= clip.qualityChecklist.totalCount - 1
+                              ? "#d97706"
+                              : "#dc2626",
+                          }}
+                        >
+                          {clip.qualityChecklist.passCount}/{clip.qualityChecklist.totalCount}
+                        </span>
+                      </div>
+                      {clip.qualityChecklist.items.map((item) => (
+                        <div key={item.id} className="flex items-start gap-1">
+                          <span className="text-[10px] flex-shrink-0 mt-px">
+                            {item.passed ? "✅" : "❌"}
+                          </span>
+                          <div className="min-w-0">
+                            <span
+                              className="text-[9px]"
+                              style={{ color: item.passed ? "#16a34a" : "#dc2626" }}
+                            >
+                              {item.label}
+                            </span>
+                            {!item.passed && item.detail && (
+                              <p className="text-[8px] text-muted-foreground mt-0.5">
+                                {item.detail}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Seed */}
                 {clip.seed && (
                   <div className="px-3 pb-2">

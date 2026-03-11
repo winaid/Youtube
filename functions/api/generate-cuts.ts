@@ -708,8 +708,14 @@ extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
 cameraDirection (≤55 chars English):
   Format: "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
 
-moodLighting (≤55 chars English):
-  Format: "[lighting type]. [color grade reflecting emotionalDelta]."
+moodLighting (≤55 chars English — 반드시 구체적 광원 포함):
+  Format: "[light source] + [direction] + [quality]. [color grade]."
+  예: "cold neon spill from storefront signs, casting blue pools on wet asphalt"
+  예: "overcast daylight diffused through clinic window, soft flat illumination"
+  예: "harsh side light from flickering fluorescent tube, cool white with green cast"
+  예: "warm backlight through fog, silhouetting figure, amber-orange rim"
+  BANNED: "dramatic lighting" / "moody atmosphere" 같은 추상어만으로 끝내기 금지
+  필수: light source(광원) + direction(방향/위치) + quality(질감/강도)
 
 ## MULTI-SHOT 규칙 (씬 내부 비트를 서브샷으로 구현 — Kling과 Veo 공통)
 각 씬마다 "multiShot" 배열을 생성하라. 배열은 sceneBeat1/2/3에 대응하는 2~3개 서브샷이다.

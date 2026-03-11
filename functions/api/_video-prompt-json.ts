@@ -3,6 +3,11 @@
  *
  * generate-cuts.ts, generate-video.ts에서 import하여 사용.
  * src/lib/video-prompt-json.ts와 동일 타입/렌더러 (서버용 복제)
+ *
+ * 렌더링 원칙:
+ * - 비시각 메타태그(REVEALED/WITHHELD/END_HOOK 등) = 내부 planning 전용, 최종 프롬프트 제외
+ * - characterRef 비어있으면 캐릭터 관련 필드 일체 생략
+ * - 모든 출력은 Veo/Kling이 실제 렌더링할 수 있는 시각 정보만
  */
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -15,8 +20,8 @@ export interface VideoPromptJson {
   subjectAction: string;
   actionBeat: string;
   bodySignal: string;
-  revealed: string;
-  withheld: string;
+  revealed: string;       // internal planning only — 렌더링에 포함하지 않음
+  withheld: string;       // internal planning only — 렌더링에 포함하지 않음
   timingBeat: string;
   transitionFromPrev: string;
   characterRef: string;
@@ -39,8 +44,8 @@ export interface ExtendPromptJson {
   characterRef: string;
   newAction: string;
   behavioralShift: string;
-  newlyRevealed: string;
-  stillWithheld: string;
+  newlyRevealed: string;  // internal planning only
+  stillWithheld: string;  // internal planning only
   timingBeat: string;
   styleSuffix: string;
 }
@@ -49,34 +54,50 @@ export interface ExtendPromptJson {
 
 export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
-  parts.push(`SHOT_SIZE:${json.shotSize}`);
-  parts.push(`CAMERA_ANGLE:${json.cameraAngle}`);
-  parts.push(`CAMERA_PROGRESSION:${json.cameraMovement}`);
-  if (json.characterRef) parts.push(json.characterRef);
-  parts.push(`SUBJECT_BLOCKING:${json.subjectBlocking}`);
-  parts.push(`SUBJECT_ACROSS_SCENE:${json.subjectAction}`);
-  if (json.bodySignal) parts.push(`BODY_SIGNAL:${json.bodySignal}`);
-  if (json.revealed) parts.push(`REVEALED:${json.revealed}`);
-  if (json.withheld) parts.push(`WITHHELD:${json.withheld}`);
-  parts.push(json.timingBeat);
-  if (json.transitionFromPrev) parts.push(`TRANSITION_FROM_PREV:${json.transitionFromPrev}`);
+  const hasCharacter = !!json.characterRef;
+
+  // Shot/Camera
+  parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
+  if (json.cameraMovement && json.cameraMovement !== "static") {
+    parts.push(json.cameraMovement);
+  }
+
+  // Character (있을 때만)
+  if (hasCharacter) parts.push(json.characterRef);
+
+  // Scene action
+  if (json.subjectAction) parts.push(json.subjectAction);
+
+  // Body signal (캐릭터 있을 때만)
+  if (hasCharacter && json.bodySignal) parts.push(json.bodySignal);
+
+  // Lighting
+  if (json.moodLighting) parts.push(json.moodLighting);
+
+  // Temporal beats
+  if (json.timingBeat) parts.push(json.timingBeat);
+
+  // Style suffix
   parts.push(json.styleSuffix);
+
   return parts.filter(Boolean).join(". ");
 }
 
 export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
-  parts.push(`PREV SCENE ENDS: ${json.prevSceneEnd.shotType} — subject was ${json.prevSceneEnd.subjectAction}`);
-  if (json.prevSceneEnd.bodySignal) parts.push(`body showed ${json.prevSceneEnd.bodySignal}`);
-  parts.push(`→ ${json.transition.toUpperCase()}`);
-  parts.push(`NEW SCENE: SHOT_SIZE:${json.newShot.shotSize} | CAMERA_ANGLE:${json.newShot.cameraAngle} | CAMERA_PROGRESSION:${json.newShot.cameraMovement}`);
+
+  parts.push(`Continuing from ${json.prevSceneEnd.shotType} shot — ${json.prevSceneEnd.subjectAction}`);
+  parts.push(`${json.transition} to`);
+  parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
+  if (json.newShot.cameraMovement && json.newShot.cameraMovement !== "static") {
+    parts.push(json.newShot.cameraMovement);
+  }
   if (json.characterRef) parts.push(json.characterRef);
-  parts.push(`SCENE ACTION: ${json.newAction}`);
-  if (json.behavioralShift) parts.push(`BEHAVIORAL SHIFT: ${json.behavioralShift}`);
-  if (json.newlyRevealed) parts.push(`NEWLY REVEALED: ${json.newlyRevealed}`);
-  if (json.stillWithheld) parts.push(`STILL WITHHELD: ${json.stillWithheld}`);
-  parts.push(json.timingBeat);
+  parts.push(json.newAction);
+  if (json.behavioralShift) parts.push(json.behavioralShift);
+  if (json.timingBeat) parts.push(json.timingBeat);
   parts.push(json.styleSuffix);
+
   return parts.filter(Boolean).join(". ");
 }
 
@@ -90,7 +111,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     parts.push(movement);
   }
   if (json.characterRef) parts.push(json.characterRef);
-  parts.push(json.subjectAction);
+  if (json.subjectAction) parts.push(json.subjectAction);
   if (json.bodySignal) parts.push(json.bodySignal);
   if (json.moodLighting) parts.push(json.moodLighting);
   const cleanSuffix = json.styleSuffix

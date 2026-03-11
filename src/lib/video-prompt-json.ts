@@ -212,52 +212,181 @@ export function validateVideoPromptJson(json: VideoPromptJson): ValidationResult
   };
 }
 
+// ─── 품질 점수 최적화 체크리스트 ─────────────────────────────────────────────
+
+export interface QualityCheckItem {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface QualityChecklist {
+  items: QualityCheckItem[];
+  passCount: number;
+  totalCount: number;
+}
+
+/** 비시각 메타태그 패턴 — 최종 렌더링 전에 제거해야 하는 내부 planning 언어 */
+const NON_VISUAL_META_TAGS = /\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL|CAMERA_PROGRESSION|SHOT_SIZE|CAMERA_ANGLE)\s*:/i;
+
+/** 추상 조명 표현 패턴 — 구체적 광원 정보 없이 분위기만 서술 */
+const ABSTRACT_LIGHTING = /^(dramatic|moody|atmospheric|cinematic|dark|bright|warm|cool|soft|harsh)\s+(light|lighting|mood|atmosphere)$/i;
+
+/** 정적 행동 패턴 — 캐릭터가 아무것도 안 하는 상태 */
+const STATIC_ACTION = /\b(stands?\s|standing\s|motionless|remains\s|stationary|facing\s+camera|watches?\s+quietly)\b/i;
+
+/**
+ * 최종 렌더링된 프롬프트에 대한 품질 체크리스트 생성
+ * verify-prompt.ts 채점 기준에 맞춰 사전 검증
+ */
+export function generateQualityChecklist(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  opts?: { shotCategory?: string; characterRole?: string },
+): QualityChecklist {
+  const items: QualityCheckItem[] = [];
+  const isCharacterless = !json.characterRef || opts?.characterRole === "absent";
+
+  // 1. 캐릭터 없는 씬에 character placeholder가 없는지
+  const hasUnneededChar = isCharacterless && /\b(character|person|figure|subject)\b/i.test(renderedPrompt);
+  items.push({
+    id: "no-char-placeholder",
+    label: "캐릭터 없는 씬에 character placeholder 없음",
+    passed: !hasUnneededChar,
+    detail: hasUnneededChar ? "characterless 씬인데 character/person/figure 언급 발견" : undefined,
+  });
+
+  // 2. 비시각 메타태그 없는지
+  const hasMetaTags = NON_VISUAL_META_TAGS.test(renderedPrompt);
+  items.push({
+    id: "no-meta-tags",
+    label: "비시각 메타태그(REVEALED/WITHHELD 등) 없음",
+    passed: !hasMetaTags,
+    detail: hasMetaTags ? "내부 planning 태그가 최종 프롬프트에 남아있음" : undefined,
+  });
+
+  // 3. 구체적 조명 정보 있는지
+  const lightingText = json.moodLighting || "";
+  const hasAbstractOnly = ABSTRACT_LIGHTING.test(lightingText.trim());
+  const hasConcreteLight = lightingText.length > 15 && !hasAbstractOnly;
+  items.push({
+    id: "concrete-lighting",
+    label: "구체적 광원/방향/질감 포함",
+    passed: hasConcreteLight,
+    detail: !hasConcreteLight ? `조명: "${lightingText}" — 광원+방향+질감 필요` : undefined,
+  });
+
+  // 4. 씬 진행/카메라 움직임 있는지
+  const hasTemporal = /\d+s[-–]?\d+s/.test(renderedPrompt) || /first|then|finally/i.test(renderedPrompt);
+  items.push({
+    id: "visual-progression",
+    label: "시간 진행(temporal beat) 포함",
+    passed: hasTemporal,
+    detail: !hasTemporal ? "0s-2s: ... 형태의 시간 비트가 없음" : undefined,
+  });
+
+  // 5. 씬 타입과 프롬프트가 일치하는지
+  const sceneTypeMatched = (() => {
+    if (!opts?.shotCategory) return true;
+    if (opts.shotCategory === "character-driven") return !!json.characterRef;
+    if (opts.shotCategory === "environment" || opts.shotCategory === "transition-atmosphere") return !json.characterRef || json.characterRef === "";
+    return true;
+  })();
+  items.push({
+    id: "scene-type-match",
+    label: "씬 타입과 프롬프트 일치",
+    passed: sceneTypeMatched,
+    detail: !sceneTypeMatched ? `shotCategory=${opts?.shotCategory}인데 characterRef 불일치` : undefined,
+  });
+
+  // 6. 정적 행동 없는지 (캐릭터 있는 경우)
+  const hasStaticAction = !isCharacterless && STATIC_ACTION.test(renderedPrompt);
+  items.push({
+    id: "no-static-action",
+    label: "정적 행동(stands/motionless) 없음",
+    passed: !hasStaticAction,
+    detail: hasStaticAction ? "standing/motionless 같은 정적 행동 발견" : undefined,
+  });
+
+  // 7. 프롬프트 길이 적정 (80~350 words)
+  const wordCount = renderedPrompt.split(/\s+/).length;
+  const goodLength = wordCount >= 80 && wordCount <= 350;
+  items.push({
+    id: "prompt-length",
+    label: "프롬프트 길이 적정 (80-350 words)",
+    passed: goodLength,
+    detail: !goodLength ? `현재 ${wordCount} words` : undefined,
+  });
+
+  return {
+    items,
+    passCount: items.filter(i => i.passed).length,
+    totalCount: items.length,
+  };
+}
+
+/**
+ * 렌더링된 프롬프트에서 비시각 메타태그를 정리하는 sanitizer
+ * renderVeoPromptFromJson 호출 후 최종 정리용
+ */
+export function sanitizeRenderedPrompt(prompt: string): string {
+  return prompt
+    // 메타태그 키:값 형태 제거
+    .replace(/\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL)\s*:[^.]*\.\s*/gi, "")
+    // 이중 마침표/공백 정리
+    .replace(/\.\s*\./g, ".")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 // ─── Veo 렌더러 ───────────────────────────────────────────────────────────────
 
 /**
  * VideoPromptJson → Veo 3.1 호환 프롬프트 문자열
- * Veo는 자연어 프롬프트를 선호 — 구조화된 필드를 영어 자연어로 연결
+ *
+ * 설계 원칙:
+ * - 비시각 메타태그(REVEALED/WITHHELD/END_HOOK/SUBJECT_ACROSS_SCENE 등) 제거
+ * - 모든 요소는 Veo가 실제로 렌더링할 수 있는 시각 정보만
+ * - characterRef가 비어있으면 캐릭터 관련 필드 일체 생략
+ * - 조명은 source + direction + quality 수준으로 구체화
  */
 export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
+  const hasCharacter = !!json.characterRef;
 
-  // Shot/Camera 블록 — 씬 오프닝 기준
-  parts.push(`SHOT_SIZE:${json.shotSize}`);
-  parts.push(`CAMERA_ANGLE:${json.cameraAngle}`);
-  parts.push(`CAMERA_PROGRESSION:${json.cameraMovement}`);
+  // 1. Shot/Camera — 씬 시작 기준 + 진행
+  parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
+  if (json.cameraMovement && json.cameraMovement !== "static") {
+    parts.push(json.cameraMovement);
+  }
 
-  // Character (있을 때만)
-  if (json.characterRef) {
+  // 2. Character (있을 때만)
+  if (hasCharacter) {
     parts.push(json.characterRef);
   }
 
-  // Blocking
-  parts.push(`SUBJECT_BLOCKING:${json.subjectBlocking}`);
-
-  // Scene progression — 핵심: 씬 안에서 일어나는 행동 arc
-  parts.push(`SUBJECT_ACROSS_SCENE:${json.subjectAction}`);
-
-  if (json.bodySignal) {
-    parts.push(`BODY_SIGNAL:${json.bodySignal}`);
+  // 3. Scene action — 시각적 행동 arc (자연어)
+  if (json.subjectAction) {
+    parts.push(json.subjectAction);
   }
 
-  // Reveal/Withhold
-  if (json.revealed) {
-    parts.push(`REVEALED:${json.revealed}`);
-  }
-  if (json.withheld) {
-    parts.push(`WITHHELD:${json.withheld}`);
+  // 4. Body signal (캐릭터 있을 때만)
+  if (hasCharacter && json.bodySignal) {
+    parts.push(json.bodySignal);
   }
 
-  // Scene timing beats — 씬 내부 진행의 핵심 구조
-  parts.push(json.timingBeat);
-
-  // Transition
-  if (json.transitionFromPrev) {
-    parts.push(`TRANSITION_FROM_PREV:${json.transitionFromPrev}`);
+  // 5. Lighting — 구체적 광원 정보
+  if (json.moodLighting) {
+    parts.push(json.moodLighting);
   }
 
-  // Style suffix
+  // 6. Temporal beats — 핵심 구조 (Veo가 시간 진행을 따라감)
+  if (json.timingBeat) {
+    parts.push(json.timingBeat);
+  }
+
+  // 7. Style suffix (no text/watermark 등)
   parts.push(json.styleSuffix);
 
   return parts.filter(Boolean).join(". ");
@@ -270,16 +399,16 @@ export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
 
   // Previous scene context
-  parts.push(`PREV SCENE ENDS: ${json.prevSceneEnd.shotType} — subject was ${json.prevSceneEnd.subjectAction}`);
-  if (json.prevSceneEnd.bodySignal) {
-    parts.push(`body showed ${json.prevSceneEnd.bodySignal}`);
-  }
+  parts.push(`Continuing from ${json.prevSceneEnd.shotType} shot — ${json.prevSceneEnd.subjectAction}`);
 
   // Transition
-  parts.push(`→ ${json.transition.toUpperCase()}`);
+  parts.push(`${json.transition} to`);
 
   // New scene
-  parts.push(`NEW SCENE: SHOT_SIZE:${json.newShot.shotSize} | CAMERA_ANGLE:${json.newShot.cameraAngle} | CAMERA_PROGRESSION:${json.newShot.cameraMovement}`);
+  parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
+  if (json.newShot.cameraMovement && json.newShot.cameraMovement !== "static") {
+    parts.push(json.newShot.cameraMovement);
+  }
 
   // Character (있을 때만)
   if (json.characterRef) {
@@ -287,21 +416,16 @@ export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
   }
 
   // Scene action
-  parts.push(`SCENE ACTION: ${json.newAction}`);
+  parts.push(json.newAction);
 
   if (json.behavioralShift) {
-    parts.push(`BEHAVIORAL SHIFT: ${json.behavioralShift}`);
-  }
-
-  if (json.newlyRevealed) {
-    parts.push(`NEWLY REVEALED: ${json.newlyRevealed}`);
-  }
-  if (json.stillWithheld) {
-    parts.push(`STILL WITHHELD: ${json.stillWithheld}`);
+    parts.push(json.behavioralShift);
   }
 
   // Timing
-  parts.push(json.timingBeat);
+  if (json.timingBeat) {
+    parts.push(json.timingBeat);
+  }
 
   // Style suffix
   parts.push(json.styleSuffix);
