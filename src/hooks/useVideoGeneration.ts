@@ -343,7 +343,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         consecutiveErrors = 0;
 
         // ── JSON 파싱 (실패해도 재시도)
-        let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; seed?: string; variants?: VideoVariant[]; noRetry?: boolean };
+        let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; canonicalVideoUri?: string | null; needsUpload?: boolean; seed?: string; variants?: VideoVariant[]; noRetry?: boolean };
         try {
           data = await res.json();
         } catch (parseErr) {
@@ -435,6 +435,65 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             clipUpdate.selectedVariant = clipUpdate.variants.length - 1;
           }
 
+          // ── canonicalVideoUri: 서버 제공 또는 업로드 후 획득 ──────────────
+          if (data.canonicalVideoUri) {
+            // 서버(check-video)가 직접 GCS/HTTPS URI를 반환한 경우
+            clipUpdate.canonicalVideoUri = data.canonicalVideoUri;
+            console.log(`[CUT ${cutNumber}] canonicalVideoUri (서버 제공):`, data.canonicalVideoUri.slice(0, 80));
+          } else if (data.needsUpload && clipUpdate.videoUri) {
+            // base64만 있고 canonical URI 없음 → R2/GCS 업로드 시도
+            console.log(`[CUT ${cutNumber}] needsUpload=true → /api/upload-video 호출`);
+            try {
+              // videoUri가 data: URI(base64 인라인)인 경우 base64 데이터 추출
+              const videoDataUri = clipUpdate.videoUri;
+              let base64Data = "";
+              if (videoDataUri.startsWith("data:")) {
+                base64Data = videoDataUri.replace(/^data:[^;]+;base64,/, "");
+              } else if (videoDataUri.startsWith("/api/proxy-video")) {
+                // 프록시 URL인 경우 base64 추출 불가 → 업로드 스킵
+                console.warn(`[CUT ${cutNumber}] videoUri가 프록시 URL — 업로드 스킵`);
+              }
+
+              if (base64Data.length > 1000) {
+                const uploadRes = await fetch("/api/upload-video", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    base64Data,
+                    mimeType: "video/mp4",
+                    cutNumber,
+                    sessionId: operationName.split("/").slice(-1)[0] || "default",
+                  }),
+                });
+
+                if (uploadRes.ok) {
+                  const uploadData = await uploadRes.json() as {
+                    canonicalVideoUri?: string;
+                    proxyUri?: string;
+                    storage?: string;
+                    key?: string;
+                  };
+                  if (uploadData.canonicalVideoUri) {
+                    clipUpdate.canonicalVideoUri = uploadData.canonicalVideoUri;
+                    console.log(`[CUT ${cutNumber}] canonicalVideoUri (업로드):`, {
+                      uri: uploadData.canonicalVideoUri.slice(0, 80),
+                      storage: uploadData.storage,
+                    });
+                  } else if (uploadData.proxyUri) {
+                    // R2에 업로드했지만 도메인 없음 → proxyUri로 대체
+                    console.log(`[CUT ${cutNumber}] R2 업로드 성공 (도메인 없음) — proxyUri 사용:`, uploadData.proxyUri);
+                  }
+                } else {
+                  const errText = await uploadRes.text().catch(() => "");
+                  console.warn(`[CUT ${cutNumber}] upload-video 실패 (${uploadRes.status}):`, errText.slice(0, 200));
+                }
+              }
+            } catch (uploadErr) {
+              // 업로드 실패는 생성 성공에 영향 없음 — Scene Extension만 불가
+              console.warn(`[CUT ${cutNumber}] upload-video 오류:`, uploadErr instanceof Error ? uploadErr.message : uploadErr);
+            }
+          }
+
           updateClip(cutNumber, clipUpdate);
 
           // ── 타이밍: 폴링 완료 ──────────────────────────────────────────────────
@@ -448,20 +507,24 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
           // ── 완료 후 진단 로그 ───────────────────────────────────────────────
           {
+            const curi = clipUpdate.canonicalVideoUri ?? "";
             const ruri = clipUpdate.rawVideoUri ?? "";
-            const ruriType = ruri.startsWith("gs://") ? "GCS ✓"
+            const effectiveUri = curi || ruri;
+            const ruriType = curi.startsWith("gs://") ? "CANONICAL_GCS ✓"
+              : curi.startsWith("https://") ? "CANONICAL_HTTPS ✓"
+              : ruri.startsWith("gs://") ? "GCS ✓"
               : ruri.startsWith("https://") ? "HTTPS ✓"
               : ruri === "" ? "EMPTY(base64) ✗"
               : "DATA_URI ✗";
-            const willExtend = ruri.length > 0 && !ruri.startsWith("data:");
-            const hasLastFrame = !!clipUpdate.videoUri; // lastFrame 캡처 가능 여부
-            // continuity 점수: SCENE_EXTENSION > IMAGE_TO_VIDEO > TEXT_TO_VIDEO
+            const willExtend = effectiveUri.length > 0 && !effectiveUri.startsWith("data:");
+            const hasLastFrame = !!clipUpdate.videoUri;
             const continuityScore = willExtend ? 100 : hasLastFrame ? 60 : 0;
             console.log(`[CUT ${cutNumber}] COMPLETED`, {
               sourceCutId: cutNumber,
               parentCutId: cutNumber - 1,
+              canonicalVideoUri: curi ? `${curi.slice(0, 80)}…` : "(없음)",
               rawVideoUri: ruri ? `${ruri.slice(0, 80)}…` : "(empty)",
-              rawVideoUriType: ruriType,
+              effectiveUriType: ruriType,
               nextCutWillExtend: willExtend ? "✓ Scene Extension 가능" : "✗ Scene Extension 불가 → image/text fallback",
               nextCutContinuityScore: continuityScore,
               nextCutFallback: willExtend ? "SCENE_EXTENSION" : hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame)" : "TEXT_TO_VIDEO (연속성 없음)",
@@ -469,12 +532,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             });
             if (!willExtend) {
               console.warn(
-                `[CUT ${cutNumber}] ⚠️ rawVideoUri가 유효한 GCS/HTTPS URI가 아님 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
+                `[CUT ${cutNumber}] ⚠️ Scene Extension용 URI 없음 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
                 {
+                  canonicalVideoUri: curi || "(없음)",
                   rawVideoUri: `"${ruri.slice(0, 60)}"`,
                   fallback: hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame 사용)" : "TEXT_TO_VIDEO (연속성 완전 손실)",
                   continuityScore,
-                  possibleFix: "GOOGLE_SERVICE_ACCOUNT_JSON 또는 GOOGLE_CLOUD_PROJECT_ID 환경변수 설정으로 GCS URI 반환 가능",
+                  possibleFix: "R2 (VIDEO_BUCKET 바인딩) 또는 GOOGLE_SERVICE_ACCOUNT_JSON 설정으로 업로드 가능",
                 }
               );
             }
@@ -486,7 +550,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             saveVideoRecord({
               operationName,
               engine,
-              gcsUri: clipUpdate.rawVideoUri || "",
+              gcsUri: clipUpdate.canonicalVideoUri || clipUpdate.rawVideoUri || "",
               proxyUri: clipUpdate.videoUri || "",
               prompt: cut?.videoPrompt?.slice(0, 500) || "",
               mode: isExtend ? "extend" : "generate",
@@ -978,12 +1042,15 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       const finalRefImages = Array.from(refImageSet).slice(0, 3);
 
       // Scene Extension URI 결정:
-      // rawVideoUri가 data: URI(base64 인라인)이면 Scene Extension 불가 + 수 MB 요청 낭비 → 제거
+      // 우선순위: canonicalVideoUri (업로드된 안정 URI) > rawVideoUri (provider 직접 반환)
+      // data: URI(base64 인라인)는 Scene Extension 불가 + 수 MB 요청 낭비 → 제거
+      const canonicalPrevUri = cutNumber > 1 ? prevClip?.canonicalVideoUri : undefined;
       const rawPrevUri = cutNumber > 1 ? prevClip?.rawVideoUri : undefined;
       const previousVideoUri =
-        rawPrevUri && !rawPrevUri.startsWith("data:") && rawPrevUri.length > 0
-          ? rawPrevUri
-          : undefined;
+        canonicalPrevUri  // 1순위: 업로드 후 획득한 안정 URI (gs:// 또는 https://)
+        || (rawPrevUri && !rawPrevUri.startsWith("data:") && rawPrevUri.length > 0
+          ? rawPrevUri   // 2순위: provider가 직접 반환한 GCS/HTTPS URI
+          : undefined);
 
       // ── Scene Extension 실패 시 lastFrame 기반 IMAGE_TO_VIDEO fallback 보장 ──
       // previousVideoUri가 없고 firstFrameBase64도 없으면 → 이전 컷의 lastFrame 재캡처 시도
@@ -1016,9 +1083,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         const extensionSkipReason: string[] = [];
         if (!prevClip) extensionSkipReason.push("이전 컷 클립 없음");
         else if (prevClip.status !== "completed") extensionSkipReason.push(`이전 컷 상태: ${prevClip.status}`);
-        if (!rawPrevUri) extensionSkipReason.push("rawVideoUri 없음 (이전 컷 응답에 GCS/HTTPS URI 미포함)");
-        else if (rawPrevUri === "") extensionSkipReason.push("rawVideoUri 빈 문자열 (Veo가 base64로 응답 → GCS URI 미반환)");
-        else if (rawPrevUri.startsWith("data:")) extensionSkipReason.push("rawVideoUri가 data: URI (base64 인라인 → Scene Extension 불가)");
+        if (!canonicalPrevUri && !rawPrevUri) extensionSkipReason.push("canonicalVideoUri + rawVideoUri 모두 없음 (업로드 실패 + GCS/HTTPS URI 미반환)");
+        else if (!canonicalPrevUri && rawPrevUri === "") extensionSkipReason.push("canonicalVideoUri 없음 + rawVideoUri 빈 문자열 (업로드 실패 + Veo base64 응답)");
+        else if (!canonicalPrevUri && rawPrevUri?.startsWith("data:")) extensionSkipReason.push("canonicalVideoUri 없음 + rawVideoUri가 data: URI (업로드 실패)");
 
         console.warn(
           `[CUT ${cutNumber}] ⚠️ ${requestMode} — Scene Extension 실패 (연속성 약화)`,
@@ -1027,12 +1094,10 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             fallbackMode: requestMode,
             prevClipExists: !!prevClip,
             prevClipStatus: prevClip?.status,
+            canonicalVideoUri: canonicalPrevUri || "(없음)",
             rawVideoUri: rawPrevUri ? `${rawPrevUri.slice(0, 60)}…` : "(없음)",
-            rawVideoUriType: rawPrevUri
-              ? (rawPrevUri.startsWith("gs://") ? "GCS ✓" : rawPrevUri.startsWith("https://") ? "HTTPS ✓" : rawPrevUri === "" ? "EMPTY ✗" : "DATA_URI ✗")
-              : "(없음)",
             firstFrameBase64: firstFrameBase64 ? `(${firstFrameBase64.length}자) → IMAGE_TO_VIDEO fallback` : "(없음) → TEXT_TO_VIDEO fallback",
-            fix: "GOOGLE_SERVICE_ACCOUNT_JSON 인증 사용 시 us-central1 엔드포인트에서 GCS URI 반환됨",
+            fix: "VIDEO_BUCKET(R2) 바인딩 또는 GOOGLE_SERVICE_ACCOUNT_JSON 설정으로 업로드/GCS URI 가능",
           }
         );
       }
@@ -1043,6 +1108,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         parentCutId: cutNumber > 1 ? cutNumber - 1 : null,
         mode: requestMode,
         previousVideoUri: previousVideoUri ? `${previousVideoUri.slice(0, 60)}…` : null,
+        previousVideoUriSource: canonicalPrevUri ? "canonicalVideoUri" : rawPrevUri ? "rawVideoUri" : "none",
         hasFirstFrame: !!firstFrameBase64,
         hasLastFrame: !!lastFrameBase64,
         promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),

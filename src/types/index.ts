@@ -367,6 +367,7 @@ export interface VideoClip {
   operationName?: string;
   videoUri?: string;
   rawVideoUri?: string; // Veo 원본 URI (Scene Extension용)
+  canonicalVideoUri?: string; // 업로드 후 안정적 URI (gs:// 또는 https://) — Scene Extension 최우선
   lastFrameBase64?: string; // 완료 직후 캡처한 마지막 프레임 (다음 컷 continuity용)
   seed?: string;
   error?: string;
