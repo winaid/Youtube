@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Cut, CharacterSeed } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson } from "@/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -131,6 +131,172 @@ function EditableField({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+// ── JSON 구조화 프롬프트 뷰 ──────────────────────────────────────
+const JSON_FIELD_LABELS: Record<string, string> = {
+  shotSize: "샷 사이즈",
+  cameraAngle: "카메라 앵글",
+  cameraMovement: "카메라 움직임",
+  subjectBlocking: "피사체 배치",
+  subjectAction: "피사체 동작",
+  actionBeat: "액션 비트",
+  bodySignal: "바디 시그널",
+  revealed: "공개 정보",
+  withheld: "보류 정보",
+  timingBeat: "타이밍 비트",
+  transitionFromPrev: "전환",
+  characterRef: "캐릭터 외형",
+  moodLighting: "조명/무드",
+  styleSuffix: "스타일",
+  locationCue: "장소 단서",
+  situationCue: "상황 단서",
+  emotionalAnchor: "감정 앵커",
+};
+
+const JSON_FIELD_COLORS: Record<string, string> = {
+  shotSize: "#787fff",
+  cameraAngle: "#787fff",
+  cameraMovement: "#787fff",
+  subjectBlocking: "#e09900",
+  subjectAction: "#e09900",
+  actionBeat: "#e09900",
+  bodySignal: "#c4b800",
+  revealed: "#22c55e",
+  withheld: "#ef4444",
+  timingBeat: "#7c3aed",
+  transitionFromPrev: "#6b5ce7",
+  characterRef: "#e09900",
+  moodLighting: "#c4b800",
+  styleSuffix: "#787fff",
+  locationCue: "#22c55e",
+  situationCue: "#22c55e",
+  emotionalAnchor: "#ef4444",
+};
+
+function JsonPromptView({
+  json,
+  label,
+  color,
+  onSaveField,
+}: {
+  json: VideoPromptJson;
+  label: string;
+  color: string;
+  onSaveField?: (field: string, value: string) => void;
+}) {
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const fields = Object.entries(json).filter(
+    ([, v]) => typeof v === "string" && v.trim().length > 0
+  ) as [string, string][];
+
+  const handleCopyAll = async () => {
+    const text = fields
+      .map(([k, v]) => `${JSON_FIELD_LABELS[k] || k}: ${v}`)
+      .join("\n");
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium" style={{ color }}>{label}</span>
+          <Badge
+            variant="outline"
+            className="text-[9px] py-0 px-1"
+            style={{ borderColor: color, color }}
+          >
+            JSON
+          </Badge>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={handleCopyAll}
+        >
+          {copied ? "복사됨!" : "전체 복사"}
+        </Button>
+      </div>
+      <div
+        className="rounded-lg p-2 space-y-1"
+        style={{ background: `${color}08`, border: `1px solid ${color}20` }}
+      >
+        {fields.map(([key, value]) => {
+          const fieldColor = JSON_FIELD_COLORS[key] || "#666";
+          const fieldLabel = JSON_FIELD_LABELS[key] || key;
+
+          if (editingField === key) {
+            return (
+              <div key={key} className="space-y-1">
+                <span className="text-[10px] font-semibold" style={{ color: fieldColor }}>
+                  {fieldLabel}
+                </span>
+                <Textarea
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  rows={2}
+                  className="text-xs font-mono"
+                  style={{ background: `${fieldColor}10` }}
+                />
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 text-[10px]"
+                    style={{ color: "#22c55e" }}
+                    onClick={() => {
+                      onSaveField?.(key, editDraft);
+                      setEditingField(null);
+                    }}
+                  >
+                    저장
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 text-[10px]"
+                    onClick={() => setEditingField(null)}
+                  >
+                    취소
+                  </Button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={key}
+              className="flex gap-2 items-start group cursor-pointer hover:bg-white/50 rounded px-1 py-0.5 transition-colors"
+              onClick={() => {
+                if (onSaveField) {
+                  setEditingField(key);
+                  setEditDraft(value);
+                }
+              }}
+            >
+              <span
+                className="text-[10px] font-semibold shrink-0 mt-0.5"
+                style={{ color: fieldColor, minWidth: 72 }}
+              >
+                {fieldLabel}
+              </span>
+              <span className="text-[11px] font-mono leading-relaxed text-gray-700 break-all">
+                {value}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -435,13 +601,30 @@ export default function CutCard({
                 bgColor="#22c55e10"
                 onSave={(v) => handleFieldSave("endImagePrompt", v)}
               />
-              <EditableField
-                label={`Video Prompt (${cut.durationSec}초)`}
-                value={cut.videoPrompt}
-                color="#c4b800"
-                bgColor="#fff78720"
-                onSave={(v) => handleFieldSave("videoPrompt", v)}
-              />
+              {/* Video Prompt: JSON 뷰 (있으면) + raw string 토글 */}
+              {cut.videoPromptJson ? (
+                <JsonPromptView
+                  json={cut.videoPromptJson}
+                  label={`Video Prompt (${cut.durationSec}초)`}
+                  color="#c4b800"
+                  onSaveField={(field, value) => {
+                    if (onUpdate && cut.videoPromptJson) {
+                      onUpdate({
+                        ...cut,
+                        videoPromptJson: { ...cut.videoPromptJson, [field]: value },
+                      });
+                    }
+                  }}
+                />
+              ) : (
+                <EditableField
+                  label={`Video Prompt (${cut.durationSec}초)`}
+                  value={cut.videoPrompt}
+                  color="#c4b800"
+                  bgColor="#fff78720"
+                  onSave={(v) => handleFieldSave("videoPrompt", v)}
+                />
+              )}
               {cut.cutNumber > 1 && (
                 <EditableField
                   label="Veo Extend Prompt (이전 클립 연장)"
