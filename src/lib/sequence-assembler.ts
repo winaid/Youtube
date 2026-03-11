@@ -31,6 +31,12 @@ export interface ProviderCapability {
    *         false일 때는 마지막 전송 직전에 renderSequenceForProvider()로 직렬화할 뿐.
    */
   acceptsStructuredPayload: boolean;
+  /**
+   * supportsStructuredSequence = true → structuredSequence를 JSON 그대로 전달
+   * false → 마지막 단계에서만 serializeSequenceForProvider(sequence) 호출
+   * serialize 결과는 source of truth가 아니며, debug preview 용으로만 사용
+   */
+  supportsStructuredSequence: boolean;
   supportsNegativePrompt: boolean;
   supportsShotMetadata: boolean;
   maxPromptWords: number;
@@ -41,6 +47,7 @@ export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
   veo: {
     id: "veo",
     acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
+    supportsStructuredSequence: false, // string-only → serializeSequenceForProvider() 호출
     supportsNegativePrompt: false,
     supportsShotMetadata: false,
     maxPromptWords: 250,
@@ -49,6 +56,7 @@ export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
   kling: {
     id: "kling",
     acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
+    supportsStructuredSequence: false, // string-only → serializeSequenceForProvider() 호출
     supportsNegativePrompt: true,
     supportsShotMetadata: false,
     maxPromptWords: 300,
@@ -83,6 +91,10 @@ export interface SingleShotDocument {
     characterRef?: string;
     environment: string;
     lightingDirection: string;
+    /** ambient sound/atmosphere description */
+    ambient: string;
+    /** dominant color / mood anchor */
+    colorAnchor: string;
     mustPersist: string[];
   };
 
@@ -440,6 +452,8 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
       characterRef: continuityCharRef,
       environment: continuityEnv,
       lightingDirection: continuityLight,
+      ambient: "natural diegetic sound, ambient audio",
+      colorAnchor: json?.moodLighting?.match(/\b(golden|warm|cold|blue|amber|neutral|desaturated|saturated|muted|vivid|sepia)\b/i)?.[0] || "neutral",
       mustPersist: [continuityCharRef, continuityEnv].filter(Boolean) as string[],
     },
 
@@ -1127,6 +1141,18 @@ export function serializeForProvider(
 // 8. assembleFromJSON — 메인 파이프라인
 // ═══════════════════════════════════════════════════════════════════
 
+/** Pipeline logging trace — raw → normalized → final */
+export interface PipelineTrace {
+  /** Step 1: Raw document from buildShotDocument */
+  rawSnapshot: { framing: string; motion: string; shotCategory?: string; negativeCount: number };
+  /** Step 2-4: After validate → sanitize → resolveConflicts */
+  sanitizedSnapshot: { fixes: string[]; resolutions: string[] };
+  /** Step 5: After normalizeSequence */
+  normalizedSnapshot: { sceneType: string | null; log: string[]; warnings: string[]; blocked: boolean };
+  /** Step 6: Final serialized preview (debug only) */
+  finalSnapshot: { wordCount: number; truncated: boolean; validationIssues: number };
+}
+
 export interface AssembleFromJSONResult {
   /** JSON-first source of truth — 이것이 유일한 1급 산출물 */
   structuredSequence: StructuredSequenceDocument;
@@ -1139,6 +1165,8 @@ export interface AssembleFromJSONResult {
     conflictResolutions: string[];
     driftWarning?: string;
   };
+  /** 파이프라인 단계별 trace (raw → normalized → final) */
+  pipelineTrace: PipelineTrace;
   /** 디버그 전용 프리뷰 — source of truth 아님, 저장/전송 금지 */
   preview?: {
     renderedPrompt: string;
@@ -1170,6 +1198,14 @@ export function assembleFromJSON(input: {
 
   // Step 1: Build JSON document
   const rawDoc = buildShotDocument(input);
+
+  // Pipeline trace — raw snapshot
+  const rawSnapshot = {
+    framing: rawDoc.camera.framing,
+    motion: rawDoc.camera.motion,
+    shotCategory: rawDoc.scene.shotCategory,
+    negativeCount: rawDoc.negatives.universal.length + rawDoc.negatives.sceneSpecific.length + rawDoc.negatives.failureMode.length + rawDoc.negatives.user.length,
+  };
 
   // Step 2: Validate
   const validation = validateShotDocument(rawDoc);
@@ -1259,6 +1295,25 @@ export function assembleFromJSON(input: {
   // 이 값은 저장하거나 body에 넣으면 안 된다.
   const serializedPreview = serializeForProvider(normalizedDoc, provider);
 
+  // Pipeline trace — step-by-step snapshot for debugging
+  const pipelineTrace: PipelineTrace = {
+    rawSnapshot,
+    sanitizedSnapshot: { fixes: sanitizeFixes, resolutions: conflictResolutions },
+    normalizedSnapshot: {
+      sceneType: normalizedDoc.scene.shotCategory || null,
+      log: normalizeLog,
+      warnings: normalizeWarnings,
+      blocked: normalized.blocked,
+    },
+    finalSnapshot: {
+      wordCount: serializedPreview.wordCount,
+      truncated: serializedPreview.debug.truncated,
+      validationIssues: serializedPreview.debug.sections._validationIssues
+        ? serializedPreview.debug.sections._validationIssues.split(" | ").length
+        : 0,
+    },
+  };
+
   return {
     structuredSequence,
     document: normalizedDoc,
@@ -1268,6 +1323,7 @@ export function assembleFromJSON(input: {
       conflictResolutions: [...conflictResolutions, ...normalizeWarnings],
       driftWarning,
     },
+    pipelineTrace,
     preview: {
       renderedPrompt: serializedPreview.prompt,
       renderedNegative: serializedPreview.negativePrompt,

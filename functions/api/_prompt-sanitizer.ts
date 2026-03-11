@@ -27,6 +27,7 @@ interface SceneTypeRule {
   replacements: Array<{ pattern: RegExp; replacement: string }>;
   allowedFramings?: string[];
   requiredElements?: Array<{ check: RegExp; fallback: string }>;
+  positiveKeywords?: string[];
 }
 
 const SCENE_RULES: Record<string, SceneTypeRule> = {
@@ -58,6 +59,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel)\b/i, fallback: "textured ground surface" },
       { check: /\b(scale|vast|expansive|stretching|towering|immense|panoramic|sprawling|depth)\b/i, fallback: "sense of vast scale" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound", "ambient audio"],
   },
   crowd: {
     banned: [/\bindividual\s+face\s+detail\b/gi, /\bsingle\s+person\s+portrait\b/gi, /\bECU\b/g],
@@ -66,17 +68,26 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { pattern: /\bsingle\s+person\b/gi, replacement: "crowd movement" },
     ],
     allowedFramings: ["WS", "LS", "MLS", "MS"],
+    positiveKeywords: ["photorealistic", "cinematic", "natural diegetic sound"],
   },
   map_visualization: {
     banned: [
       /\blandscape\s+photograph\b/gi, /\breal\s+terrain\b/gi,
       /\bdrone\s+footage\b/gi, /\bcharacter\b/gi, /\bperson\b/gi, /\bface\b/gi,
+      /\bgeneric\s+noise\b/gi, /\babstract\s+(?:pattern|shape|form|visual)\b/gi,
     ],
     replacements: [
       { pattern: /\breal\s+terrain\b/gi, replacement: "map terrain surface" },
       { pattern: /\bdrone\s+footage\b/gi, replacement: "aerial map view" },
+      { pattern: /\babstract\s+visual\b/gi, replacement: "minimalist data visualization" },
     ],
     allowedFramings: ["WS", "LS"],
+    requiredElements: [
+      { check: /\b(terrain|elevation|contour|topograph|ridge|plateau|valley|mountain|coast|river|relief)\b/i, fallback: "3D topographic relief map with contour lines" },
+      { check: /\b(light|shadow|illuminat|glow|ambient)\b/i, fallback: "soft directional lighting on map surface" },
+      { check: /\b(haze|atmosphere|fog|mist|depth|ambient)\b/i, fallback: "subtle atmospheric depth" },
+    ],
+    positiveKeywords: ["cinematic", "3D topographic relief map", "minimalist digital data visualization"],
   },
   product: { banned: [], replacements: [], allowedFramings: ["CU", "MCU", "ECU", "MS"] },
   portrait: {
@@ -104,6 +115,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(standing|sitting|kneeling|crouching|leaning|expression|gaze|stare|frown|smile|stern)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden)\b/i, fallback: "" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound"],
   },
   "character-driven": {
     banned: [],
@@ -115,6 +127,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(standing|sitting|kneeling|crouching|leaning|expression|gaze|stare|frown|smile|stern|posture)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden)\b/i, fallback: "" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound"],
   },
   "cinematic_sequence": { banned: [], replacements: [] },
   "object-detail": { banned: [/\bwide\s+establishing\b/gi, /\baerial\b/gi], replacements: [], allowedFramings: ["CU", "MCU", "ECU", "MS"] },
@@ -326,6 +339,34 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     if (missing.length > 0) {
       prompt = prompt.trim() + ". " + missing.join(", ");
       log.push(`[crowd-detail] Added ${missing.length} missing: ${missing.join(", ")}`);
+    }
+  }
+
+  // ── Step 5b: Map visualization coverage ──────────────────────
+  if (sceneType === "map_visualization") {
+    const mapElements = SCENE_RULES.map_visualization.requiredElements || [];
+    const mapAdditions: string[] = [];
+    for (const { check, fallback } of mapElements) {
+      if (!check.test(prompt) && fallback) mapAdditions.push(fallback);
+    }
+    if (mapAdditions.length > 0) {
+      prompt = prompt.trim() + ". " + mapAdditions.join(", ");
+      log.push(`[map-detail] Added ${mapAdditions.length} missing: ${mapAdditions.join(", ")}`);
+    }
+  }
+
+  // ── Step 5c: Positive keyword enforcement ───────────────────
+  if (sceneType) {
+    const rule = SCENE_RULES[sceneType];
+    if (rule?.positiveKeywords) {
+      const fullText = (input.styleSuffix ? `${prompt} ${input.styleSuffix}` : prompt).toLowerCase();
+      const missingPositives = rule.positiveKeywords.filter(kw =>
+        !fullText.includes(kw.toLowerCase()) && !negatives.some(n => n.toLowerCase() === kw.toLowerCase())
+      );
+      if (missingPositives.length > 0) {
+        prompt = prompt.trim() + ". " + missingPositives.join(", ");
+        log.push(`[positive] Added ${missingPositives.length} positive keywords: ${missingPositives.join(", ")}`);
+      }
     }
   }
 

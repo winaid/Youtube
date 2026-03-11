@@ -10,6 +10,7 @@
  * 3. resolveCameraConflicts
  * 4. rewriteTemporalFlowForSceneType
  * 5. ensureEnvironmentDetailCoverage
+ * 6. enforcePositiveKeywords (scene-type별 positive 강제)
  */
 
 import {
@@ -17,6 +18,7 @@ import {
   resolveSceneType,
   applySceneTypeVocabularyRules,
   ensureDescriptiveCoverage,
+  enforcePositiveKeywords,
 } from "@/lib/scene-type-rules";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -409,6 +411,22 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
   prompt = envResult.text;
   if (envResult.additions.length > 0) {
     log.push(`[env-detail] Added ${envResult.additions.length} missing elements: ${envResult.additions.join(", ")}`);
+  }
+
+  // 6. Positive keyword enforcement (scene-type별 필수 positive 추가)
+  if (sceneType) {
+    const fullText = input.styleSuffix ? `${prompt} ${input.styleSuffix}` : prompt;
+    const positiveResult = enforcePositiveKeywords(fullText, sceneType);
+    if (positiveResult.additions.length > 0) {
+      // pos/neg 충돌이 없는 항목만 추가
+      const safeAdditions = positiveResult.additions.filter(kw =>
+        !negatives.some(n => n.toLowerCase() === kw.toLowerCase())
+      );
+      if (safeAdditions.length > 0) {
+        prompt = prompt.trim() + ". " + safeAdditions.join(", ");
+        log.push(`[positive] Added ${safeAdditions.length} positive keywords: ${safeAdditions.join(", ")}`);
+      }
+    }
   }
 
   // 최종 정리

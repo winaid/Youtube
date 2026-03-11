@@ -8,7 +8,7 @@
  * 하나라도 FAIL이면 전송하지 않고 에러를 반환해야 한다.
  */
 
-import { resolveSceneType } from "@/lib/scene-type-rules";
+import { resolveSceneType, getSceneTypeRule } from "@/lib/scene-type-rules";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Validation Rules
@@ -310,6 +310,48 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
         rule: "crowd_coverage_insufficient",
         severity: "warning",
         message: `Crowd scene coverage ${covered}/3. Missing: ${missing.join(", ")}`,
+      });
+    }
+  }
+
+  // ── Rule 13: Positive keyword coverage ───────────────────────
+  if (sceneType) {
+    const rule = getSceneTypeRule(sceneType);
+    if (rule.positiveKeywords && rule.positiveKeywords.length > 0) {
+      const promptAndStyle = promptLower;
+      const missing = rule.positiveKeywords.filter(kw => !promptAndStyle.includes(kw.toLowerCase()));
+      if (missing.length >= Math.ceil(rule.positiveKeywords.length / 2)) {
+        issues.push({
+          rule: "positive_keywords_missing",
+          severity: "warning",
+          message: `Missing ${missing.length}/${rule.positiveKeywords.length} positive keywords for ${sceneType}: ${missing.join(", ")}`,
+        });
+      }
+    }
+  }
+
+  // ── Rule 14: Map visualization concrete cues ────────────────
+  if (sceneType === "map_visualization") {
+    const concreteChecks = [
+      { name: "terrain_detail", p: /\b(terrain|elevation|contour|topograph|ridge|plateau|valley|mountain|coast|river|relief)\b/i },
+      { name: "lighting", p: /\b(light|shadow|illuminat|glow|ambient)\b/i },
+      { name: "atmosphere", p: /\b(haze|atmosphere|fog|mist|depth|ambient)\b/i },
+    ];
+    const covered = concreteChecks.filter(c => c.p.test(input.prompt)).length;
+    if (covered < 2) {
+      const missingCues = concreteChecks.filter(c => !c.p.test(input.prompt)).map(c => c.name);
+      issues.push({
+        rule: "map_concrete_cues_missing",
+        severity: "warning",
+        message: `Map visualization missing concrete visual cues: ${missingCues.join(", ")} (${covered}/3)`,
+      });
+    }
+    // abstract term check
+    if (/\babstract\s+(?:pattern|shape|form|concept)\b/i.test(input.prompt)) {
+      issues.push({
+        rule: "map_abstract_terms",
+        severity: "warning",
+        message: "Map visualization contains abstract terms — use concrete visual cues instead",
       });
     }
   }

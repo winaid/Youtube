@@ -41,6 +41,8 @@ export interface SceneTypeRule {
   maxActionDensity?: number;
   /** 선호 카메라 모션 (이 씬 타입에 적합한 모션 키워드) */
   preferredMotions?: string[];
+  /** 반드시 포함해야 하는 positive 키워드 (없으면 추가) */
+  positiveKeywords?: string[];
 }
 
 const SCENE_RULES: Record<string, SceneTypeRule> = {
@@ -76,6 +78,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave)\b/i, fallback: "textured ground surface" },
       { check: /\b(scale|vast|expansive|stretching|towering|immense|panoramic|sprawling|depth)\b/i, fallback: "sense of vast scale" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound", "ambient audio"],
   },
 
   crowd: {
@@ -98,6 +101,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(flag|banner|smoke|dust|confetti|torch|lantern|sign|placard)\b/i, fallback: "flags and dust in the air" },
       { check: /\b(above|below|within|amid|through|over|across|surrounding|encircl)\b/i, fallback: "camera positioned above the crowd" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "natural diegetic sound"],
   },
 
   map_visualization: {
@@ -111,14 +115,24 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       /\bcharacter\b/gi,
       /\bperson\b/gi,
       /\bface\b/gi,
+      /\bgeneric\s+noise\b/gi,
+      /\babstract\s+(?:pattern|shape|form|visual)\b/gi,
+      /\bhistorical\s+period\s+implied\b/gi,
     ],
     replacements: [
       { pattern: /\breal\s+terrain\b/gi, replacement: "map terrain surface" },
       { pattern: /\blandscape\s+photograph\b/gi, replacement: "map visualization" },
       { pattern: /\bdrone\s+footage\b/gi, replacement: "aerial map view" },
+      { pattern: /\babstract\s+visual\b/gi, replacement: "minimalist data visualization" },
     ],
     allowedFramings: ["WS", "LS"],
-    requiredElements: [],
+    requiredElements: [
+      { check: /\b(terrain|elevation|contour|topograph|ridge|plateau|valley|mountain|coast|river|relief)\b/i, fallback: "3D topographic relief map with contour lines" },
+      { check: /\b(light|shadow|illuminat|glow|backlit|ambient|soft\s+light)\b/i, fallback: "soft directional lighting on map surface" },
+      { check: /\b(haze|atmosphere|fog|mist|particle|depth|ambient)\b/i, fallback: "subtle atmospheric depth" },
+    ],
+    maxActionDensity: 1,
+    positiveKeywords: ["cinematic", "3D topographic relief map", "minimalist digital data visualization"],
   },
 
   product: {
@@ -149,6 +163,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(expression|gaze|stare|frown|smile|stern|weary|determined|eyes|lips|brow)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|Rembrandt|split\s+light)\b/i, fallback: "" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition"],
   },
 
   battle: {
@@ -164,6 +179,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(smoke|dust|fire|flame|debris|explosion|spark|flash)\b/i, fallback: "smoke and dust filling the air" },
       { check: /\b(weapon|sword|spear|rifle|cannon|shield|arrow|blade)\b/i, fallback: "" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "natural diegetic sound"],
   },
 
   person: {
@@ -179,6 +195,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(standing|sitting|kneeling|crouching|leaning|hunched|upright|slumped|expression|gaze|stare|frown|smile|stern|weary|determined)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden\s+hour|blue\s+hour)\b/i, fallback: "" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound"],
   },
 
   "character-driven": {
@@ -195,6 +212,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(standing|sitting|kneeling|crouching|leaning|hunched|upright|slumped|expression|gaze|stare|frown|smile|stern|weary|determined|posture)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden\s+hour|blue\s+hour)\b/i, fallback: "" },
     ],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound"],
   },
 
   "object-detail": {
@@ -318,6 +336,34 @@ export function applySceneTypeVocabularyRules(
     .trim();
 
   return { text: result, removals, replacements: replacementLog, framingChange };
+}
+
+/**
+ * 씬 타입별 positive 키워드 강제.
+ * prompt에 해당 키워드가 없으면 추가해야 할 목록을 반환.
+ */
+export function enforcePositiveKeywords(
+  text: string,
+  sceneType: SceneType,
+): { additions: string[]; alreadyPresent: string[] } {
+  const rule = getSceneTypeRule(sceneType);
+  if (!rule.positiveKeywords || rule.positiveKeywords.length === 0) {
+    return { additions: [], alreadyPresent: [] };
+  }
+
+  const textLower = text.toLowerCase();
+  const additions: string[] = [];
+  const alreadyPresent: string[] = [];
+
+  for (const kw of rule.positiveKeywords) {
+    if (textLower.includes(kw.toLowerCase())) {
+      alreadyPresent.push(kw);
+    } else {
+      additions.push(kw);
+    }
+  }
+
+  return { additions, alreadyPresent };
 }
 
 /**

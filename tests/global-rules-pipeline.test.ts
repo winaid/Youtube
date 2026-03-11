@@ -37,6 +37,7 @@ import {
   resolveSceneType,
   applySceneTypeVocabularyRules,
   ensureDescriptiveCoverage,
+  enforcePositiveKeywords,
 } from "../src/lib/scene-type-rules";
 
 import {
@@ -427,6 +428,123 @@ console.log("\n[13] Map visualization — medium lock");
   assert(!result.text.includes("real terrain"), "Real terrain removed for map visualization");
   assert(!result.text.includes("character"), "Character removed for map visualization");
   assert(result.framingChange?.to === "WS", "Framing forced to WS for map visualization");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 14. Positive keyword enforcement
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[14] Positive keyword enforcement");
+{
+  // Environment scene should require photorealistic, cinematic, etc.
+  const envResult = enforcePositiveKeywords(
+    "A vast mountain landscape with overcast sky",
+    "environment",
+  );
+  assert(envResult.additions.length > 0, `Environment missing ${envResult.additions.length} positive keywords`);
+  assert(envResult.additions.includes("photorealistic"), "photorealistic missing for environment");
+  assert(envResult.additions.includes("cinematic"), "cinematic missing for environment");
+  assert(envResult.additions.includes("subject-focused composition"), "subject-focused composition missing");
+  assert(envResult.additions.includes("natural diegetic sound"), "natural diegetic sound missing");
+
+  // Text already containing positives should not re-add
+  const alreadyHas = enforcePositiveKeywords(
+    "photorealistic cinematic vast mountain with ambient audio and subject-focused composition, natural diegetic sound",
+    "environment",
+  );
+  assert(alreadyHas.additions.length === 0, `All positives already present, additions=${alreadyHas.additions.length}`);
+  assert(alreadyHas.alreadyPresent.length >= 4, `${alreadyHas.alreadyPresent.length} positives detected`);
+
+  // Character scene positives
+  const charResult = enforcePositiveKeywords("An elderly man sitting alone", "person");
+  assert(charResult.additions.includes("photorealistic"), "photorealistic missing for person scene");
+  assert(charResult.additions.includes("cinematic"), "cinematic missing for person scene");
+
+  // Map scene should NOT require photorealistic (different positive set)
+  const mapResult = enforcePositiveKeywords("A terrain relief map", "map_visualization");
+  assert(!mapResult.additions.includes("photorealistic"), "Map should NOT require photorealistic");
+  assert(mapResult.additions.includes("cinematic"), "Map should require cinematic");
+
+  // Pipeline integration — runSanitizePipeline adds positives
+  const pipeResult = runSanitizePipeline({
+    prompt: "vast mountain landscape with overcast sky and soft light over rocky terrain",
+    negatives: ["text overlay", "watermark", "logo", "blurry", "low quality"],
+    framing: "WS",
+    shotCategory: "environment",
+  });
+  assert(pipeResult.prompt.includes("cinematic"), "Pipeline added cinematic to environment");
+  assert(pipeResult.prompt.includes("subject-focused composition"), "Pipeline added subject-focused composition");
+  // Check that positives that conflict with negatives are NOT added
+  assert(pipeResult.log.some(l => l.includes("[positive]")), "Pipeline logged positive additions");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 15. Map visualization — concrete cues & enhanced rules
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[15] Map visualization — concrete cues");
+{
+  // Banned abstract terms
+  const absResult = applySceneTypeVocabularyRules(
+    "An abstract pattern with generic noise on the map",
+    "map_visualization",
+    "WS",
+  );
+  assert(!absResult.text.includes("generic noise"), "Generic noise removed from map");
+  assert(!absResult.text.includes("abstract pattern"), "Abstract pattern removed from map");
+
+  // Required elements (terrain, lighting, atmosphere)
+  const coverage = ensureDescriptiveCoverage("A flat map view", "map_visualization");
+  assert(coverage.additions.length > 0, `Map missing ${coverage.additions.length} concrete cues`);
+  assert(coverage.additions.some(a => a.includes("topographic")), "Topographic relief suggested for map");
+
+  // Validator detects missing concrete cues
+  const valResult = validateFinalProviderPayload({
+    prompt: "A simple map view with some colors",
+    negatives: ["watermark"],
+    framing: "WS",
+    shotCategory: "map-graphic",
+    provider: "veo",
+  });
+  const mapCueIssue = valResult.issues.find(i => i.rule === "map_concrete_cues_missing");
+  assert(!!mapCueIssue, "Validator detects missing map concrete cues");
+
+  // Validator detects abstract terms
+  const absValResult = validateFinalProviderPayload({
+    prompt: "An abstract pattern showing terrain with light and atmosphere",
+    negatives: ["watermark"],
+    framing: "WS",
+    shotCategory: "map-graphic",
+    provider: "veo",
+  });
+  const absIssue = absValResult.issues.find(i => i.rule === "map_abstract_terms");
+  assert(!!absIssue, "Validator detects abstract terms in map");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 16. Positive keyword validation in final validator
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[16] Positive keyword validation");
+{
+  // Environment scene missing most positives
+  const valResult = validateFinalProviderPayload({
+    prompt: "A vast mountain with overcast sky and soft light",
+    negatives: ["watermark"],
+    framing: "WS",
+    shotCategory: "environment",
+    provider: "veo",
+  });
+  const posIssue = valResult.issues.find(i => i.rule === "positive_keywords_missing");
+  assert(!!posIssue, "Validator detects missing positive keywords for environment");
+
+  // Environment scene with all positives should pass
+  const fullResult = validateFinalProviderPayload({
+    prompt: "photorealistic cinematic vast mountain with subject-focused composition, natural diegetic sound, ambient audio, overcast sky, soft light, atmospheric haze, rocky terrain, sense of vast scale",
+    negatives: ["watermark"],
+    framing: "WS",
+    shotCategory: "environment",
+    provider: "veo",
+  });
+  const noPosIssue = fullResult.issues.find(i => i.rule === "positive_keywords_missing");
+  assert(!noPosIssue, "No positive keyword issue when all are present");
 }
 
 // ═══════════════════════════════════════════════════════════════════
