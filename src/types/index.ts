@@ -380,6 +380,7 @@ export interface VideoClip {
   retryCount?: number; // Enhancement: auto-retry tracking
   verification?: PromptVerification; // Enhancement: prompt quality score
   qualityChecklist?: { items: Array<{ id: string; label: string; passed: boolean; detail?: string }>; passCount: number; totalCount: number };
+  finalPrompt?: string; // 실제 API에 전송된 최종 merged prompt (디버그용)
   // 멀티 프로바이더
   engineUsed?: "veo" | "kling";      // 실제 사용된 엔진
   modeUsed?: VideoMode;              // 실제 사용된 모드

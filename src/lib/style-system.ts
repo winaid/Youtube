@@ -475,6 +475,9 @@ export interface PromptAssemblyInput {
 
   /** 영상 길이 (초) — temporal beats용 */
   durationSec: number;
+
+  /** 장면 유형 — map-graphic 등 특수 보호 규칙 적용용 */
+  shotCategory?: string;
 }
 
 export interface AssembledPrompt {
@@ -626,6 +629,30 @@ function sanitizeTextContent(prompt: string): string {
   return s;
 }
 
+// ── 스타일 블록 캐시 ─────────────────────────────────────────────────────
+// assemblePrompt()가 동일 animationMode에 대해 반복 호출될 때
+// buildStyleEnforcementBlock / getStyleRenderingRules 결과를 캐시하여 재계산 방지
+const _styleEnforcementCache = new Map<string, ReturnType<typeof buildStyleEnforcementBlock>>();
+const _styleRenderingCache = new Map<string, ReturnType<typeof getStyleRenderingRules>>();
+
+function getCachedEnforcement(styleId: string) {
+  let cached = _styleEnforcementCache.get(styleId);
+  if (!cached) {
+    cached = buildStyleEnforcementBlock(styleId);
+    _styleEnforcementCache.set(styleId, cached);
+  }
+  return cached;
+}
+
+function getCachedRenderingRules(styleId: string) {
+  let cached = _styleRenderingCache.get(styleId);
+  if (!cached) {
+    cached = getStyleRenderingRules(styleId);
+    _styleRenderingCache.set(styleId, cached);
+  }
+  return cached;
+}
+
 /**
  * 메인 프롬프트 조립 함수.
  *
@@ -640,30 +667,46 @@ function sanitizeTextContent(prompt: string): string {
  */
 export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const preset = input.animationMode ? STYLE_PRESETS[input.animationMode] : undefined;
+  const isMapScene = input.shotCategory === "map-graphic";
+
+  // ── MAP SCENE PROTECTION ──────────────────────────────────
+  // map-graphic 장면에서는 스타일 페르소나/강화를 억제하고
+  // cartographic 보호 규칙을 적용 (산수화/학/동양풍 drift 방지)
+  const MAP_SCENE_POSITIVE = "Flat top-down cartographic view, parchment surface, territorial overlays, coastlines, borders, trade routes, paper texture, ink diffusion on aged paper.";
+  const MAP_SCENE_NEGATIVES = [
+    "cranes", "birds", "mountain landscape", "scenic painting",
+    "nature tableau", "decorative East Asian motifs",
+    "animals", "flying creatures", "landscape reinterpretation",
+    "brush painting scenery", "traditional painting composition",
+  ];
 
   // ── BLOCK 0: STYLE PERSONA (아트디렉터 페르소나) ──────────
   // 스타일 페르소나가 프롬프트 최상단에서 모델의 "미적 판단 기준"을 설정
+  // ⚠️ map scene에서는 페르소나를 억제 (지도→산수화 drift 방지)
   let personaBlock = "";
-  if (input.animationMode) {
-    const enforcement = buildStyleEnforcementBlock(input.animationMode);
+  if (input.animationMode && !isMapScene) {
+    const enforcement = getCachedEnforcement(input.animationMode);
     personaBlock = enforcement.personaBlock;
   }
 
   // ── BLOCK 1: STYLE IDENTITY ───────────────────────────────
+  // ⚠️ map scene에서는 스타일 블록 대신 cartographic 보호 블록 삽입
   let styleBlock = "";
-  if (preset) {
+  if (isMapScene) {
+    styleBlock = MAP_SCENE_POSITIVE;
+  } else if (preset) {
     styleBlock = preset.globalStyleBlock;
   }
 
   // ── BLOCK 2: CONSISTENCY (character + environment + rendering rules) ─────────
   const consistencyParts: string[] = [];
-  if (preset) {
+  if (preset && !isMapScene) {
     consistencyParts.push(preset.characterStyleRule);
     consistencyParts.push(preset.environmentStyleRule);
   }
-  // 스타일별 렌더링 규칙 추가
-  if (input.animationMode) {
-    const rules = getStyleRenderingRules(input.animationMode);
+  // 스타일별 렌더링 규칙 추가 (map scene 제외)
+  if (input.animationMode && !isMapScene) {
+    const rules = getCachedRenderingRules(input.animationMode);
     if (rules.sequenceRules && input.styleIntensity > 30) {
       consistencyParts.push(rules.sequenceRules);
     }
@@ -698,16 +741,18 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   sceneBlock = sanitizeTextContent(sceneBlock);
 
   // ── BLOCK 5: STYLE REINFORCEMENT ───────────────────────────
+  // ⚠️ map scene에서는 스타일 강화를 건너뜀 (지도→풍경 drift 방지)
   let reinforcementBlock = "";
-  if (preset && input.styleIntensity > 20) {
+  if (preset && input.styleIntensity > 20 && !isMapScene) {
     if (input.styleIntensity <= 50) {
-      // 낮은 강도: reinforcement 앞 절반만
       const parts = preset.reinforcement.split(".").map(s => s.trim()).filter(Boolean);
       reinforcementBlock = parts.slice(0, 1).join(". ") + ".";
     } else {
-      // 높은 강도: 전체 reinforcement
       reinforcementBlock = preset.reinforcement;
     }
+  }
+  if (isMapScene) {
+    reinforcementBlock = "Maintain cartographic top-down view throughout. No landscape reinterpretation. No animals or decorative creatures.";
   }
 
   // ── BLOCK 6: NEGATIVE ──────────────────────────────────────
@@ -721,14 +766,18 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   if (input.userNegativePrompt?.trim()) {
     negParts.push(input.userNegativePrompt);
   }
+  // map scene 전용 negative 주입
+  if (isMapScene) {
+    negParts.push(MAP_SCENE_NEGATIVES.join(", "));
+  }
 
   // 중복 제거
   const seen = new Set<string>();
   const uniqueNeg = negParts.join(", ").split(",")
     .map(s => s.trim().toLowerCase()).filter(Boolean)
     .filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
-  // 핵심 8개로 제한 (Veo가 너무 긴 negative는 무시)
-  const negativeBlock = uniqueNeg.slice(0, 8).join(", ");
+  // 핵심 제한 (Veo가 너무 긴 negative는 무시) — map scene은 보호 항목이 많아 12개 허용
+  const negativeBlock = uniqueNeg.slice(0, isMapScene ? 12 : 8).join(", ");
 
   // ── BLOCK 7: AUDIO ──────────────────────────────────────────
   const hasAudioRef = /\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(sceneBlock);

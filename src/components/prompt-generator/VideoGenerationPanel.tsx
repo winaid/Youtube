@@ -440,6 +440,20 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
+                {/* Final Merged Prompt (실제 API 전송 프롬프트) */}
+                {clip.finalPrompt && (
+                  <div className="px-3 pb-2">
+                    <details className="group">
+                      <summary className="text-[10px] font-medium cursor-pointer select-none" style={{ color: "#555" }}>
+                        최종 프롬프트 (API 전송용) <span className="text-[9px] font-normal text-muted-foreground">({clip.finalPrompt.split(/\s+/).length}w)</span>
+                      </summary>
+                      <pre className="mt-1 bg-gray-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed" style={{ color: "#333", maxHeight: 200, overflowY: "auto" }}>
+                        {clip.finalPrompt}
+                      </pre>
+                    </details>
+                  </div>
+                )}
+
                 {/* Seed */}
                 {clip.seed && (
                   <div className="px-3 pb-2">

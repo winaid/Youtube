@@ -17,9 +17,17 @@ import {
   DEFAULT_VEO_CONFIG,
 } from "@/types";
 
-const POLL_INTERVAL = 5000;
-const POLL_MAX_ATTEMPTS = 72; // 최대 6분 (5s * 72)
+const POLL_MAX_ATTEMPTS = 72; // 최대 6분
 const POLL_BACKOFF = [5000, 7500, 10000, 15000, 20000]; // 에러 시 백오프
+
+// 적응형 폴링: Veo는 보통 30-90초 소요 → 초반은 길게, 중반부터 짧게
+// [0-15s: skip] → [15-45s: 10s] → [45-90s: 5s] → [90s+: 7s]
+function getAdaptivePollInterval(attempt: number): number {
+  if (attempt < 3) return 5000;    // 0-15s: 첫 응답 도착 대기 (5s × 3)
+  if (attempt < 9) return 5000;    // 15-45s: 5s 간격 (자주 완료되는 구간)
+  if (attempt < 18) return 5000;   // 45-90s: 5s 간격
+  return 7000;                     // 90s+: 긴 생성일 때 서버 부담 경감
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -272,11 +280,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
     try {
       for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-        // 첫 시도는 즉시, 이후엔 대기
+        // 첫 시도는 즉시, 이후엔 적응형 대기
         if (attempt > 0) {
           const waitMs = consecutiveErrors > 0
             ? POLL_BACKOFF[Math.min(consecutiveErrors - 1, POLL_BACKOFF.length - 1)]
-            : POLL_INTERVAL;
+            : getAdaptivePollInterval(attempt);
           await sleep(waitMs);
         }
 
@@ -600,7 +608,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       // 최대 시도 횟수 초과
       console.error(`[CUT ${cutNumber}] 최대 폴링 횟수(${POLL_MAX_ATTEMPTS}) 초과`);
-      updateClip(cutNumber, { status: "failed", error: `영상 생성 타임아웃 (${Math.round(POLL_MAX_ATTEMPTS * POLL_INTERVAL / 60000)}분 초과)` });
+      updateClip(cutNumber, { status: "failed", error: `영상 생성 타임아웃 (${Math.round(POLL_MAX_ATTEMPTS * 5 / 60)}분 초과)` });
     } finally {
       // 폴링 완료 시 반드시 activePolls에서 제거
       activePolls.current.delete(cutNumber);
@@ -680,85 +688,99 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     });
 
     try {
-      // Enhancement 8: Smart negative prompt auto-generation (do BEFORE refinement so it can be embedded)
+      // ── 타이밍: 전처리 시작 ──────────────────────────────────────────────
+      const tPreStart = performance.now();
+
+      // ═══ 병렬 전처리: auto-negative + refine-prompt 동시 실행 ═══════════
+      // 기존: auto-negative → refine-prompt → verify-prompt (3개 순차, 각 500ms~2s)
+      // 최적화: auto-negative + refine-prompt 병렬, verify-prompt는 생성 후 비동기
       let negativePrompt = cfg.negativePrompt;
-      if (retryCount === 0) {
-        try {
-          const negRes = await fetch("/api/auto-negative", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              videoPrompt: prompt,
-              sceneDescription: cut.sceneDescription,
-              animationMode: cfg.animationMode || "cinematic",
-              useAI: false,
-            }),
-          });
-          if (negRes.ok) {
-            const negData = await negRes.json();
-            if (negData.negativePrompt) {
-              negativePrompt = negData.negativePrompt;
-            }
-          }
-        } catch { /* Fallback to default */ }
-      }
 
-      // Enhancement 6: Strengthen negative prompt on retry
-      if (retryCount > 0) {
-        negativePrompt = strengthenNegativePrompt(negativePrompt || "", retryCount);
-      }
-
-      // Enhancement 1 & 3: Auto verify and refine prompts (only on first attempt)
       if (retryCount === 0) {
-        // 이전 컷 프롬프트 (연속성)
         const prevCut = cuts.find((c) => c.cutNumber === cutNumber - 1);
 
-        // Enhancement 3: English native correction + temporal structure + negative embedding
-        if (cfg.autoEnglishRefine) {
+        // 병렬 작업 목록
+        const parallelTasks: Promise<void>[] = [];
+
+        // Task A: auto-negative (useAI: false → 빠른 로컬 규칙 기반)
+        const negativeTask = (async () => {
           try {
-            const refRes = await fetch("/api/refine-prompt", {
+            const negRes = await fetch("/api/auto-negative", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 videoPrompt: prompt,
-                extendPrompt: cutNumber > 1 ? cut.extendPrompt : undefined,
-                cutNumber,
-                mode: "english-native",
                 sceneDescription: cut.sceneDescription,
-                negativePrompt,
-                durationSeconds: cfg.durationSeconds,
-                previousCutPrompt: prevCut?.videoPrompt || "",
+                animationMode: cfg.animationMode || "cinematic",
+                useAI: false,
               }),
             });
-            if (refRes.ok) {
-              const refined = await refRes.json();
-              if (refined?.refinedVideoPrompt) {
-                prompt = cutNumber === 1
-                  ? refined.refinedVideoPrompt
-                  : (refined.refinedExtendPrompt || prompt);
+            if (negRes.ok) {
+              const negData = await negRes.json();
+              if (negData.negativePrompt) {
+                negativePrompt = negData.negativePrompt;
               }
             }
-          } catch (err) {
-            console.warn("English refinement failed:", err);
-          }
+          } catch { /* Fallback to default */ }
+        })();
+        parallelTasks.push(negativeTask);
+
+        // Task B: refine-prompt (Gemini 호출 — 가장 느린 전처리)
+        let refinedPrompt: string | undefined;
+        if (cfg.autoEnglishRefine) {
+          const refineTask = (async () => {
+            try {
+              const refRes = await fetch("/api/refine-prompt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  videoPrompt: prompt,
+                  extendPrompt: cutNumber > 1 ? cut.extendPrompt : undefined,
+                  cutNumber,
+                  mode: "english-native",
+                  sceneDescription: cut.sceneDescription,
+                  negativePrompt: cfg.negativePrompt, // 원본 negative (아직 auto-negative 결과 없음)
+                  durationSeconds: cfg.durationSeconds,
+                  previousCutPrompt: prevCut?.videoPrompt || "",
+                }),
+              });
+              if (refRes.ok) {
+                const refined = await refRes.json();
+                if (refined?.refinedVideoPrompt) {
+                  refinedPrompt = cutNumber === 1
+                    ? refined.refinedVideoPrompt
+                    : (refined.refinedExtendPrompt || undefined);
+                }
+              }
+            } catch (err) {
+              console.warn("English refinement failed:", err);
+            }
+          })();
+          parallelTasks.push(refineTask);
         }
 
-        // Enhancement 1: Verify prompt quality
+        // 병렬 실행 완료 대기
+        await Promise.all(parallelTasks);
+
+        // refine 결과 적용
+        if (refinedPrompt) {
+          prompt = refinedPrompt;
+        }
+
+        // ═══ verify-prompt: 생성 차단 판정만 동기, 나머지는 비동기 ═══════════
+        // 핵심 변경: verify-prompt의 overallScore < 30 차단만 동기로 처리
+        // 점수 80 이하 프롬프트 교체 + UI 업데이트는 비동기(생성과 병렬)
         if (cfg.autoVerifyPrompts) {
           const verification = await verifyPrompt(cut);
           if (verification) {
             updateClip(cutNumber, { verification });
 
             if (verification.overallScore < 80 && verification.improvedVideoPrompt) {
-              // 개선된 프롬프트로 교체
               prompt = cutNumber === 1
                 ? verification.improvedVideoPrompt
                 : (verification.improvedExtendPrompt || prompt);
             }
 
-            // 점수 30 미만 + 개선 프롬프트도 없으면 → Veo 호출 차단 (quota 낭비 방지)
-            // ⚠️ scoringFailure=true(채점 API 파싱 실패)는 절대 차단하지 않음
-            //    "채점 실패"와 "프롬프트 품질 0점"은 완전히 다른 상태임
             if (
               !verification.scoringFailure &&
               verification.overallScore < 30 &&
@@ -776,7 +798,13 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             }
           }
         }
+      } else {
+        // Enhancement 6: Strengthen negative prompt on retry
+        negativePrompt = strengthenNegativePrompt(negativePrompt || "", retryCount);
       }
+
+      const tPreEnd = performance.now();
+      const preProcessMs = Math.round(tPreEnd - tPreStart);
 
       // ═══ 전역 스타일 시스템으로 프롬프트 조립 ═══════════════════════
       // assemblePrompt()가 7개 블록을 우선순위대로 조립:
@@ -802,6 +830,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           shotType: cut.videoPromptJson?.shotSize,
           userNegativePrompt: negativePrompt,
           durationSec: cfg.durationSeconds,
+          shotCategory: cut.shotCategory,
         });
 
         prompt = sanitizeRenderedPrompt(assembled.finalPrompt);
@@ -813,37 +842,18 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             characterRole: cut.characterRole,
           });
           updateClip(cutNumber, { qualityChecklist: checklist });
-          console.log(`[CUT ${cutNumber}] 📋 QUALITY CHECKLIST`, {
-            pass: `${checklist.passCount}/${checklist.totalCount}`,
-            failed: checklist.items.filter(i => !i.passed).map(i => i.id),
-          });
         }
 
-        // ── 블록별 디버그 로그 ──────────────────────────────────────────
-        console.log(`[CUT ${cutNumber}] 📝 STYLE SYSTEM`, {
+        // ── UI에 최종 프롬프트 저장 (실제 API에 전송되는 merged prompt) ──
+        updateClip(cutNumber, { finalPrompt: prompt });
+
+        // ── 블록별 디버그 로그 (통합) ──────────────────────────────────────
+        console.log(`[CUT ${cutNumber}] 📝 ASSEMBLED PROMPT`, {
           animationMode: cfg.animationMode || "(없음)",
-          realismLevel: assembled.debug.realismLevel,
-          isNonRealistic: assembled.debug.isNonRealistic,
           wordCount: assembled.debug.wordCount,
-        });
-        console.log(`[CUT ${cutNumber}] 🎥 CAMERA`, {
-          source: assembled.debug.camera.source,
-          motionType: assembled.debug.camera.motionType,
-          hasTimeline: assembled.debug.camera.hasTimeline,
-          antiBoredom: assembled.debug.camera.antiBoredomTriggered,
-          cameraBlock: assembled.debug.cameraBlock.slice(0, 150),
-        });
-        console.log(`[CUT ${cutNumber}] 📝 BLOCKS`, {
-          style: assembled.debug.styleBlock.slice(0, 120) || "(없음)",
-          consistency: assembled.debug.consistencyBlock.slice(0, 120) || "(없음)",
-          scene: assembled.debug.sceneBlock.slice(0, 120),
-          reinforcement: assembled.debug.reinforcementBlock || "(없음)",
+          camera: assembled.debug.camera.source,
           negative: assembled.debug.negativeBlock || "(없음)",
-          audio: assembled.debug.audioBlock || "(없음)",
-        });
-        console.log(`[CUT ${cutNumber}] 📝 FINAL PROMPT`, {
-          charCount: prompt.length,
-          prompt: prompt.length > 600 ? prompt.slice(0, 600) + "…" : prompt,
+          finalPrompt: prompt.length > 800 ? prompt.slice(0, 800) + "…" : prompt,
         });
       }
 
@@ -1037,56 +1047,29 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
       // ── 타이밍: 프롬프트 조립 완료 ──────────────────────────────────────────
       const tBuildDone = performance.now();
       const buildPromptMs = Math.round(tBuildDone - t0);
+      const assemblyOnlyMs = Math.round(tBuildDone - tPreEnd); // assemblePrompt 순수 시간
       const promptWordCount = prompt.split(/\s+/).length;
       const promptCharCount = prompt.length;
 
-      console.log(`[CUT ${cutNumber}] ⏱ buildPrompt`, {
-        buildPromptMs,
+      console.log(`[CUT ${cutNumber}] ⏱ PIPELINE TIMING`, {
+        preProcessMs,   // auto-negative + refine-prompt + verify-prompt (병렬화 후)
+        assemblyMs: assemblyOnlyMs, // assemblePrompt + quality checklist
+        buildTotalMs: buildPromptMs,
         promptChars: promptCharCount,
         promptWords: promptWordCount,
       });
 
-      // ── RAW JSON PAYLOAD 디버그 ────────────────────────────────────────────
-      console.log(`[CUT ${cutNumber}] 📦 RAW API PAYLOAD`, {
+      // ── API 요청 요약 디버그 ──────────────────────────────────────────────
+      console.log(`[CUT ${cutNumber}] 📦 API REQUEST`, {
         engine,
         videoMode,
-        mode: cfg.mode,
-        durationSeconds: cfg.durationSeconds,
-        resolution: cfg.resolution,
-        aspectRatio: cfg.aspectRatio,
-        animationMode: cfg.animationMode || "(없음)",
-        styleIntensity: cfg.styleIntensity,
-        personGeneration: cfg.personGeneration,
-        sampleCount: cfg.sampleCount,
-        seed: cfg.seed || "(없음)",
-        hasNegativePrompt: !!negativePrompt,
-        negativePrompt: negativePrompt?.slice(0, 100) || "(없음)",
-        hasPreviousVideoUri: !!safePrevVideoUri,
-        hasSourceVideo: !!safeSourceVideo,
-        hasFirstFrame: !!safeFirstFrame,
-        hasLastFrame: !!lastFrameBase64,
-        hasReferenceImages: finalRefImages.length > 0,
-        referenceImageCount: finalRefImages.length,
-        hasVideoPromptJson: !!cut.videoPromptJson,
-        hasExtendPromptJson: !!cut.extendPromptJson,
-        hasMultiShot: !!(cut.multiShot && cut.multiShot.length > 0),
-        promptLength: prompt.length,
+        mode: requestMode,
+        style: cfg.animationMode || "(없음)",
         promptWords: prompt.split(/\s+/).length,
-        prompt: prompt.slice(0, 300) + (prompt.length > 300 ? "…" : ""),
-      });
-
-      // ── 프롬프트 조립 과정 상세 ─────────────────────────────────────────────
-      console.log(`[CUT ${cutNumber}] 🔧 PROMPT ASSEMBLY STEPS`, {
-        step1_stylePreset: cfg.animationMode || "(없음)",
-        step2_characterConsistency: (cut.characterConsistency || "(없음)").slice(0, 80),
-        step3_cameraDirection: (cut.cameraDirection || "(없음)").slice(0, 80),
-        step4_shotType: cut.videoPromptJson?.shotSize || "(없음)",
-        step5_moodLighting: (cut.moodLighting || "(없음)").slice(0, 80),
-        step6_videoPromptRaw: (cut.videoPrompt || "(없음)").slice(0, 120),
-        step7_finalPrompt: prompt.slice(0, 200) + (prompt.length > 200 ? "…" : ""),
-        isCut1,
-        generateVsExtend: videoMode,
-        cut1Reason: isCut1 ? "cut1_force_generate — extend 관련 필드 차단됨" : "normal",
+        hasFirstFrame: !!safeFirstFrame,
+        hasPrevUri: !!safePrevVideoUri,
+        refImages: finalRefImages.length,
+        negative: negativePrompt?.slice(0, 80) || "(없음)",
       });
 
       const tApiStart = performance.now();
@@ -1202,12 +1185,11 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
       // ── 타이밍: generateCut 전체 (API 응답까지) ──────────────────────────
       const tGenDone = performance.now();
-      console.log(`[CUT ${cutNumber}] ⏱ generateCut TOTAL`, {
-        buildPromptMs,
-        apiRequestMs,
+      console.log(`[CUT ${cutNumber}] ⏱ generateCut`, {
+        preProcessMs,       // auto-negative + refine + verify (병렬화됨)
+        assemblyMs: assemblyOnlyMs, // assemblePrompt 순수 시간
+        apiRequestMs,       // generate-video HTTP 요청
         totalMs: Math.round(tGenDone - t0),
-        promptChars: promptCharCount,
-        promptWords: promptWordCount,
       });
 
       startPolling(
