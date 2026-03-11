@@ -34,10 +34,18 @@ export interface ValidatePayloadInput {
   negatives: string[];
   /** 선언된 프레이밍 */
   framing: string;
+  /** 카메라 모션 */
+  motion?: string;
   /** 씬 타입 */
   shotCategory?: string;
   /** Provider */
   provider: "veo" | "kling";
+  /** characterRef (있으면 검증) */
+  characterRef?: string;
+  /** action 텍스트 (있으면 overload/consistency 검증) */
+  actionText?: string;
+  /** shot duration */
+  durationSec?: number;
 }
 
 // ── 중점 검사 단어 ────────────────────────────────────────────────
@@ -205,9 +213,110 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
     });
   }
 
+  // ── Rule 9: Invalid characterRef ──────────────────────────────
+  if (input.characterRef) {
+    const charRef = input.characterRef.trim();
+    // placeholder/empty check
+    if (/^(none|n\/a|unknown|placeholder|default|tbd)$/i.test(charRef)) {
+      issues.push({
+        rule: "invalid_character_ref",
+        severity: "warning",
+        message: `Placeholder characterRef: "${charRef}"`,
+      });
+    }
+    // modern generic in historical context
+    const isHistorical = /\b(ancient|medieval|dynasty|empire|kingdom|century|era|historical|colonial|wartime|revolution)\b/i.test(input.prompt);
+    const isModernGeneric = /\b(casual\s+modern|t[\s-]?shirt|jeans|sneakers|hoodie|baseball\s+cap)\b/i.test(charRef);
+    if (isHistorical && isModernGeneric) {
+      issues.push({
+        rule: "character_ref_era_mismatch",
+        severity: "error",
+        message: `Modern/generic characterRef in historical scene context`,
+      });
+    }
+    // environment scene with portrait characterRef
+    if (sceneType === "environment" && /\b(close[\s-]?up|portrait|head[\s-]?shot|facial)\b/i.test(charRef)) {
+      issues.push({
+        rule: "character_ref_scene_mismatch",
+        severity: "warning",
+        message: `Environment scene with close-up/portrait characterRef`,
+      });
+    }
+  }
+
+  // ── Rule 10: Overloaded shot detection ─────────────────────────
+  if (input.actionText) {
+    const transitionWords = (input.actionText.match(/\b(then|and\s+then|followed\s+by|before|after\s+which|subsequently|next|finally|meanwhile|simultaneously|while|as\s+(?:he|she|they|the))\b/gi) || []).length;
+    const maxDensity = sceneType === "environment" ? 1 : sceneType === "crowd" ? 2 : 3;
+    if (transitionWords > maxDensity) {
+      issues.push({
+        rule: "overloaded_shot",
+        severity: "warning",
+        message: `Action density ${transitionWords} exceeds max ${maxDensity} for ${sceneType || "unknown"} scene — consider splitting shot`,
+      });
+    }
+  }
+
+  // ── Rule 11: Camera-action consistency ─────────────────────────
+  if (input.motion && input.actionText) {
+    const isStatic = !input.motion || input.motion === "static" || /\bstatic\b/i.test(input.motion);
+    const actionStages = (input.actionText.match(/\b(then|and\s+then|followed\s+by|subsequently|next|finally)\b/gi) || []).length;
+    if (isStatic && actionStages >= 3) {
+      issues.push({
+        rule: "camera_action_inconsistent",
+        severity: "warning",
+        message: `Static camera with ${actionStages} action stages — camera should track or simplify action`,
+      });
+    }
+    // wide shot + micro expressions
+    if (["WS", "LS"].includes(framingUpper) && /\b(whisper|murmur|tear\s+rolls?|micro[\s-]?expression|subtle\s+smile)\b/i.test(input.actionText)) {
+      issues.push({
+        rule: "camera_action_inconsistent",
+        severity: "warning",
+        message: "Wide framing cannot capture micro-expressions — tighten framing or simplify",
+      });
+    }
+  }
+
+  // ── Rule 12: Scene-type descriptive coverage ───────────────────
+  if (sceneType === "character-driven" || sceneType === "person") {
+    const charChecks = [
+      { name: "age", p: /\b(young|old|elderly|middle[\s-]?aged|teen|child|adult|aged)\b/i },
+      { name: "clothing", p: /\b(wearing|dressed|cloth|garment|robe|suit|armor|uniform|tunic|cloak|gown|outfit|coat)\b/i },
+      { name: "posture", p: /\b(standing|sitting|kneeling|crouching|leaning|expression|gaze|stare|frown|smile|stern)\b/i },
+      { name: "light", p: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden)\b/i },
+    ];
+    const covered = charChecks.filter(c => c.p.test(input.prompt)).length;
+    if (covered < 2) {
+      const missing = charChecks.filter(c => !c.p.test(input.prompt)).map(c => c.name);
+      issues.push({
+        rule: "char_coverage_insufficient",
+        severity: "warning",
+        message: `Character scene coverage ${covered}/4. Missing: ${missing.join(", ")}`,
+      });
+    }
+  }
+
+  if (sceneType === "crowd") {
+    const crowdChecks = [
+      { name: "scale", p: /\b(vast|hundreds|thousands|massive|dense|packed|filling)\b/i },
+      { name: "movement", p: /\b(march|flow|surge|wave|drift|push|stream|pour|mill|sway|chant|rally)\b/i },
+      { name: "env_motion", p: /\b(flag|banner|smoke|dust|confetti|torch|lantern)\b/i },
+    ];
+    const covered = crowdChecks.filter(c => c.p.test(input.prompt)).length;
+    if (covered < 2) {
+      const missing = crowdChecks.filter(c => !c.p.test(input.prompt)).map(c => c.name);
+      issues.push({
+        rule: "crowd_coverage_insufficient",
+        severity: "warning",
+        message: `Crowd scene coverage ${covered}/3. Missing: ${missing.join(", ")}`,
+      });
+    }
+  }
+
   const errorCount = issues.filter(i => i.severity === "error").length;
   const autoFixable = issues.some(i =>
-    ["pos_neg_conflict", "env_banned_vocab", "camera_multi_framing", "temporal_fragmented", "duplicate_negatives", "env_framing_too_close"].includes(i.rule)
+    ["pos_neg_conflict", "env_banned_vocab", "camera_multi_framing", "temporal_fragmented", "duplicate_negatives", "env_framing_too_close", "character_ref_era_mismatch", "character_ref_scene_mismatch"].includes(i.rule)
   );
 
   return {

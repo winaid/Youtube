@@ -18,6 +18,7 @@ export type SceneType =
   | "product"
   | "portrait"
   | "character-driven"
+  | "cinematic_sequence"
   | "object-detail"
   | "transition-atmosphere";
 
@@ -36,6 +37,10 @@ export interface SceneTypeRule {
   allowedMotionPattern?: RegExp;
   /** 필수 포함 어휘 패턴 (없으면 추가) */
   requiredElements?: Array<{ check: RegExp; fallback: string }>;
+  /** shot 당 최대 action density (transition word 기준) */
+  maxActionDensity?: number;
+  /** 선호 카메라 모션 (이 씬 타입에 적합한 모션 키워드) */
+  preferredMotions?: string[];
 }
 
 const SCENE_RULES: Record<string, SceneTypeRule> = {
@@ -62,6 +67,8 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
     ],
     allowedFramings: ["WS", "LS", "MLS"],
     allowedMotionPattern: /\b(slow|gentle|smooth|gradual|floating|subtle|drone|flyover|aerial|sweep|orbit|crane|drift|pull[\s-]?back|push[\s-]?in|pan|tilt)\b/i,
+    maxActionDensity: 1,
+    preferredMotions: ["slow push-in", "smooth pan", "drone flyover", "gentle drift", "slow crane up", "aerial sweep"],
     requiredElements: [
       { check: /\b(sky|cloud|sun|moon|star|dawn|dusk|twilight|overcast|clear\s+sky)\b/i, fallback: "overcast sky with diffused light" },
       { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit)\b/i, fallback: "soft natural light from above" },
@@ -83,8 +90,13 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { pattern: /\bsingle\s+person\b/gi, replacement: "crowd movement" },
     ],
     allowedFramings: ["WS", "LS", "MLS", "MS"],
+    maxActionDensity: 2,
+    preferredMotions: ["wide panoramic sweep", "slow crane up", "drone flyover", "steady tracking"],
     requiredElements: [
-      { check: /\b(mass|crowd|group|swarm|throng|multitude|gathering|assembly)\b/i, fallback: "crowd in collective motion" },
+      { check: /\b(mass|crowd|group|swarm|throng|multitude|gathering|assembly|hundreds|thousands)\b/i, fallback: "crowd in collective motion" },
+      { check: /\b(march|flow|surge|wave|drift|push|stream|pour|mill|sway|chant|rally|move)\b/i, fallback: "collective rhythmic movement" },
+      { check: /\b(flag|banner|smoke|dust|confetti|torch|lantern|sign|placard)\b/i, fallback: "flags and dust in the air" },
+      { check: /\b(above|below|within|amid|through|over|across|surrounding|encircl)\b/i, fallback: "camera positioned above the crowd" },
     ],
   },
 
@@ -130,7 +142,13 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
     ],
     replacements: [],
     allowedFramings: ["CU", "MCU", "MS", "ECU"],
-    requiredElements: [],
+    maxActionDensity: 1,
+    preferredMotions: ["locked", "subtle push-in", "gentle breathing motion"],
+    requiredElements: [
+      { check: /\b(young|old|elderly|middle[\s-]?aged|teen|child|adult|aged|youthful|mature)\b/i, fallback: "" },
+      { check: /\b(expression|gaze|stare|frown|smile|stern|weary|determined|eyes|lips|brow)\b/i, fallback: "" },
+      { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|Rembrandt|split\s+light)\b/i, fallback: "" },
+    ],
   },
 
   battle: {
@@ -140,19 +158,43 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       /\btranquil\b/gi,
     ],
     replacements: [],
-    requiredElements: [],
+    maxActionDensity: 4,
+    preferredMotions: ["dynamic tracking", "handheld", "rapid pan", "crash zoom", "following"],
+    requiredElements: [
+      { check: /\b(smoke|dust|fire|flame|debris|explosion|spark|flash)\b/i, fallback: "smoke and dust filling the air" },
+      { check: /\b(weapon|sword|spear|rifle|cannon|shield|arrow|blade)\b/i, fallback: "" },
+    ],
   },
 
   person: {
-    banned: [],
+    banned: [
+      /\bwide\s+establishing\s+(?:only|shot)\b/gi,
+    ],
     replacements: [],
-    requiredElements: [],
+    maxActionDensity: 3,
+    preferredMotions: ["slow push-in", "gentle dolly", "locked medium", "subtle tracking"],
+    requiredElements: [
+      { check: /\b(young|old|elderly|middle[\s-]?aged|teen|child|adult|aged|youthful|mature)\b/i, fallback: "adult figure" },
+      { check: /\b(wearing|dressed|cloth|garment|robe|suit|armor|uniform|tunic|cloak|gown|outfit|coat|jacket|shirt|dress)\b/i, fallback: "" },
+      { check: /\b(standing|sitting|kneeling|crouching|leaning|hunched|upright|slumped|expression|gaze|stare|frown|smile|stern|weary|determined)\b/i, fallback: "" },
+      { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden\s+hour|blue\s+hour)\b/i, fallback: "" },
+    ],
   },
 
   "character-driven": {
-    banned: [],
+    banned: [
+      /\bwide[\s-]?medium[\s-]?close[\s-]?up\s+all\b/gi,
+    ],
     replacements: [],
-    requiredElements: [],
+    maxActionDensity: 3,
+    preferredMotions: ["slow push-in", "gentle dolly", "locked medium", "slow orbit", "subtle tracking"],
+    requiredElements: [
+      { check: /\b(young|old|elderly|middle[\s-]?aged|teen|child|adult|aged|youthful|mature)\b/i, fallback: "adult figure" },
+      { check: /\b(hair|bald|shaved|turban|hood|hat|crown|helmet|head[\s-]?cover|braids?|ponytail)\b/i, fallback: "" },
+      { check: /\b(wearing|dressed|cloth|garment|robe|suit|armor|uniform|tunic|cloak|gown|outfit|coat|jacket)\b/i, fallback: "" },
+      { check: /\b(standing|sitting|kneeling|crouching|leaning|hunched|upright|slumped|expression|gaze|stare|frown|smile|stern|weary|determined|posture)\b/i, fallback: "" },
+      { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden\s+hour|blue\s+hour)\b/i, fallback: "" },
+    ],
   },
 
   "object-detail": {
@@ -167,9 +209,21 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
     ],
   },
 
+  "cinematic_sequence": {
+    banned: [],
+    replacements: [],
+    maxActionDensity: 3,
+    preferredMotions: ["slow push-in", "dolly", "steady tracking", "crane", "orbit"],
+    requiredElements: [
+      { check: /\b(light|shadow|backlit|sidelit|illuminat|golden|blue\s+hour)\b/i, fallback: "" },
+    ],
+  },
+
   "transition-atmosphere": {
     banned: [],
     replacements: [],
+    maxActionDensity: 1,
+    preferredMotions: ["slow dissolve", "gentle drift", "floating", "gradual"],
     requiredElements: [],
   },
 };
@@ -183,6 +237,8 @@ const SHOT_CATEGORY_MAP: Record<string, SceneType> = {
   "crowd": "crowd",
   "person": "person",
   "character-driven": "character-driven",
+  "cinematic_sequence": "cinematic_sequence",
+  "cinematic-sequence": "cinematic_sequence",
   "battle": "battle",
   "map-graphic": "map_visualization",
   "map_visualization": "map_visualization",

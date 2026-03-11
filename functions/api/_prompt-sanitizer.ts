@@ -20,7 +20,7 @@
 type SceneType =
   | "environment" | "crowd" | "person" | "battle"
   | "map_visualization" | "product" | "portrait"
-  | "character-driven" | "object-detail" | "transition-atmosphere";
+  | "character-driven" | "cinematic_sequence" | "object-detail" | "transition-atmosphere";
 
 interface SceneTypeRule {
   banned: RegExp[];
@@ -79,17 +79,52 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
     allowedFramings: ["WS", "LS"],
   },
   product: { banned: [], replacements: [], allowedFramings: ["CU", "MCU", "ECU", "MS"] },
-  portrait: { banned: [], replacements: [], allowedFramings: ["CU", "MCU", "MS", "ECU"] },
-  battle: { banned: [], replacements: [] },
-  person: { banned: [], replacements: [] },
-  "character-driven": { banned: [], replacements: [] },
-  "object-detail": { banned: [], replacements: [], allowedFramings: ["CU", "MCU", "ECU", "MS"] },
+  portrait: {
+    banned: [/\bwide\s+establishing\b/gi, /\baerial\s+flyover\b/gi, /\bdrone\s+shot\b/gi],
+    replacements: [],
+    allowedFramings: ["CU", "MCU", "MS", "ECU"],
+    requiredElements: [
+      { check: /\b(expression|gaze|stare|frown|smile|stern|weary|determined|eyes|lips)\b/i, fallback: "" },
+      { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat)\b/i, fallback: "" },
+    ],
+  },
+  battle: {
+    banned: [/\bpeaceful\b/gi, /\bserene\b/gi, /\btranquil\b/gi],
+    replacements: [],
+    requiredElements: [
+      { check: /\b(smoke|dust|fire|flame|debris|explosion|spark)\b/i, fallback: "smoke and dust filling the air" },
+    ],
+  },
+  person: {
+    banned: [],
+    replacements: [],
+    requiredElements: [
+      { check: /\b(young|old|elderly|middle[\s-]?aged|teen|child|adult|aged|youthful|mature)\b/i, fallback: "adult figure" },
+      { check: /\b(wearing|dressed|cloth|garment|robe|suit|armor|uniform|tunic|cloak|gown|outfit|coat)\b/i, fallback: "" },
+      { check: /\b(standing|sitting|kneeling|crouching|leaning|expression|gaze|stare|frown|smile|stern)\b/i, fallback: "" },
+      { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden)\b/i, fallback: "" },
+    ],
+  },
+  "character-driven": {
+    banned: [],
+    replacements: [],
+    requiredElements: [
+      { check: /\b(young|old|elderly|middle[\s-]?aged|teen|child|adult|aged|youthful|mature)\b/i, fallback: "adult figure" },
+      { check: /\b(hair|bald|shaved|turban|hood|hat|crown|helmet|head[\s-]?cover|braids?)\b/i, fallback: "" },
+      { check: /\b(wearing|dressed|cloth|garment|robe|suit|armor|uniform|tunic|cloak|gown|outfit)\b/i, fallback: "" },
+      { check: /\b(standing|sitting|kneeling|crouching|leaning|expression|gaze|stare|frown|smile|stern|posture)\b/i, fallback: "" },
+      { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden)\b/i, fallback: "" },
+    ],
+  },
+  "cinematic_sequence": { banned: [], replacements: [] },
+  "object-detail": { banned: [/\bwide\s+establishing\b/gi, /\baerial\b/gi], replacements: [], allowedFramings: ["CU", "MCU", "ECU", "MS"] },
   "transition-atmosphere": { banned: [], replacements: [] },
 };
 
 const SHOT_CATEGORY_MAP: Record<string, SceneType> = {
   "environment": "environment", "crowd": "crowd", "person": "person",
   "character-driven": "character-driven", "battle": "battle",
+  "cinematic_sequence": "cinematic_sequence", "cinematic-sequence": "cinematic_sequence",
   "map-graphic": "map_visualization", "map_visualization": "map_visualization",
   "product": "product", "portrait": "portrait",
   "object-detail": "object-detail", "transition-atmosphere": "transition-atmosphere",
@@ -255,7 +290,7 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     }
   }
 
-  // ── Step 5: Environment detail coverage ────────────────────────
+  // ── Step 5: Descriptive coverage by scene type ──────────────────
   if (sceneType === "environment") {
     const envElements = SCENE_RULES.environment.requiredElements || [];
     const additions: string[] = [];
@@ -265,6 +300,32 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     if (additions.length > 0) {
       prompt = prompt.trim() + ". " + additions.join(", ");
       log.push(`[env-detail] Added ${additions.length} missing: ${additions.join(", ")}`);
+    }
+  }
+
+  // Character scene coverage
+  if (sceneType === "character-driven" || sceneType === "person") {
+    const charChecks = (SCENE_RULES[sceneType]?.requiredElements || []);
+    const missing: string[] = [];
+    for (const { check, fallback } of charChecks) {
+      if (!check.test(prompt) && fallback) missing.push(fallback);
+    }
+    if (missing.length > 0) {
+      prompt = prompt.trim() + ". " + missing.join(", ");
+      log.push(`[char-detail] Added ${missing.length} missing: ${missing.join(", ")}`);
+    }
+  }
+
+  // Crowd scene coverage
+  if (sceneType === "crowd") {
+    const crowdChecks = (SCENE_RULES.crowd?.requiredElements || []);
+    const missing: string[] = [];
+    for (const { check, fallback } of crowdChecks) {
+      if (!check.test(prompt) && fallback) missing.push(fallback);
+    }
+    if (missing.length > 0) {
+      prompt = prompt.trim() + ". " + missing.join(", ");
+      log.push(`[crowd-detail] Added ${missing.length} missing: ${missing.join(", ")}`);
     }
   }
 

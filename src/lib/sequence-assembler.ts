@@ -14,6 +14,7 @@ import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
 import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
 import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
+import { normalizeSequence } from "@/lib/sequence-normalizer";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -1179,18 +1180,33 @@ export function assembleFromJSON(input: {
   // Step 4: Resolve conflicts
   const { doc: resolvedDoc, resolutions: conflictResolutions } = resolveConflicts(sanitizedDoc);
 
-  // Drift warning (validation 기반 — 직렬화 없이 판단)
+  // Step 5: Normalize (전역 정규화 — sceneType 추론, characterRef 정리, 과부하 감지, coverage 보강)
+  const normalized = normalizeSequence(resolvedDoc);
+  const normalizedDoc = normalized.doc;
+  const normalizeLog = normalized.log;
+  const normalizeWarnings = normalized.warnings;
+
+  // Drift warning (validation + normalize 결과 통합)
   let driftWarning: string | undefined;
   const errors = validation.issues.filter(i => i.severity === "error");
   if (errors.length >= 3) {
     driftWarning = `HIGH RISK (${errors.length} errors): ${errors.map(e => e.message).join("; ")}`;
   }
+  if (normalized.blocked) {
+    driftWarning = normalized.blockReason || driftWarning;
+  }
+  if (normalizeWarnings.length > 0 && !driftWarning) {
+    const overloadWarnings = normalizeWarnings.filter(w => w.includes("[overload]"));
+    if (overloadWarnings.length > 0) {
+      driftWarning = `OVERLOADED SHOT: ${overloadWarnings.join("; ")}`;
+    }
+  }
 
   const allNeg = [
-    ...resolvedDoc.negatives.universal,
-    ...resolvedDoc.negatives.sceneSpecific,
-    ...resolvedDoc.negatives.failureMode,
-    ...resolvedDoc.negatives.user,
+    ...normalizedDoc.negatives.universal,
+    ...normalizedDoc.negatives.sceneSpecific,
+    ...normalizedDoc.negatives.failureMode,
+    ...normalizedDoc.negatives.user,
   ];
 
   // Build StructuredSequenceDocument — 유일한 1급 산출물
@@ -1207,14 +1223,14 @@ export function assembleFromJSON(input: {
         startSec: 0,
         endSec: input.config.durationSeconds || 8,
         shotType: "medium_action" as const,
-        camera: { framing: resolvedDoc.camera.framing as "MS", angle: "eye_level" as const, motion: resolvedDoc.camera.motion },
-        subject: { primary: resolvedDoc.subject.primary },
-        environment: resolvedDoc.scene.environment,
-        action: resolvedDoc.subject.action,
+        camera: { framing: normalizedDoc.camera.framing as "MS", angle: "eye_level" as const, motion: normalizedDoc.camera.motion },
+        subject: { primary: normalizedDoc.subject.primary },
+        environment: normalizedDoc.scene.environment,
+        action: normalizedDoc.subject.action,
         visualDirectives: [],
         negativeDirectives: [...new Set(allNeg)].slice(0, 30),
-        moodLighting: resolvedDoc.scene.moodLighting,
-        shotCategory: input.cut.shotCategory,
+        moodLighting: normalizedDoc.scene.moodLighting,
+        shotCategory: normalizedDoc.scene.shotCategory || input.cut.shotCategory,
         characterRole: input.cut.characterRole,
       };
 
@@ -1224,10 +1240,10 @@ export function assembleFromJSON(input: {
     shotPlan,
     videoPromptJson: input.cut.videoPromptJson,
     negatives: {
-      universal: resolvedDoc.negatives.universal,
-      sceneSpecific: [...new Set(resolvedDoc.negatives.sceneSpecific)],
-      failureMode: [...new Set(resolvedDoc.negatives.failureMode)],
-      user: resolvedDoc.negatives.user,
+      universal: normalizedDoc.negatives.universal,
+      sceneSpecific: [...new Set(normalizedDoc.negatives.sceneSpecific)],
+      failureMode: [...new Set(normalizedDoc.negatives.failureMode)],
+      user: normalizedDoc.negatives.user,
     },
     validation: {
       valid: validation.valid,
@@ -1235,21 +1251,21 @@ export function assembleFromJSON(input: {
       warnings: validation.issues.filter(i => i.severity === "warning").length,
       issues: validation.issues.map(i => ({ rule: i.rule, severity: i.severity, message: i.message })),
     },
-    sanitizeFixes,
-    conflictResolutions,
+    sanitizeFixes: [...sanitizeFixes, ...normalizeLog],
+    conflictResolutions: [...conflictResolutions, ...normalizeWarnings],
   };
 
   // Preview — 디버그 전용. source of truth 아님.
   // 이 값은 저장하거나 body에 넣으면 안 된다.
-  const serializedPreview = serializeForProvider(resolvedDoc, provider);
+  const serializedPreview = serializeForProvider(normalizedDoc, provider);
 
   return {
     structuredSequence,
-    document: resolvedDoc,
+    document: normalizedDoc,
     diagnostics: {
       validation,
-      sanitizeFixes,
-      conflictResolutions,
+      sanitizeFixes: [...sanitizeFixes, ...normalizeLog],
+      conflictResolutions: [...conflictResolutions, ...normalizeWarnings],
       driftWarning,
     },
     preview: {
@@ -1258,8 +1274,8 @@ export function assembleFromJSON(input: {
       wordCount: serializedPreview.wordCount,
       sections: serializedPreview.debug.sections,
       truncated: serializedPreview.debug.truncated,
-      isMapScene: resolvedDoc.scene.shotCategory === "map-graphic",
-      isEnvironmentScene: resolvedDoc.scene.shotCategory === "environment",
+      isMapScene: normalizedDoc.scene.shotCategory === "map-graphic",
+      isEnvironmentScene: normalizedDoc.scene.shotCategory === "environment",
     },
   };
 }
