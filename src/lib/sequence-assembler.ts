@@ -204,6 +204,167 @@ const ENVIRONMENT_NEGATIVE_KEYWORDS = [
   "UI element", "text label", "caption", "HUD",
 ];
 
+// ═══════════════════════════════════════════════════════════════════
+// 2-A. 공통 Scene-Type 규칙 (Shared Helpers)
+//
+// 충돌 검사 / negative sanitization / scene-type rules는
+// 시스템 전반 공통이어야 한다. 장면별로 바뀌는 것은 shot content 뿐.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Environment 씬인지 판별 */
+export function isEnvironmentScene(shotCategory?: string): boolean {
+  return shotCategory === "environment";
+}
+
+/** Environment 연속 모션 유효성 검사 */
+export function isEnvironmentContinuousMotion(motion: string): boolean {
+  return ENVIRONMENT_CONTINUOUS_MOTIONS.some(m => motion.toLowerCase().includes(m));
+}
+
+/** Environment banned motion regex (exported for sequence-plan.ts) */
+export const ENVIRONMENT_BANNED_MOTIONS_RE = ENVIRONMENT_BANNED_MOTIONS;
+
+/**
+ * Environment 카메라 규칙 강제 적용.
+ * - WS framing 강제 (close framing 거부)
+ * - cut 기반 모션 제거, 연속 모션만 허용
+ * - "/" compound motion 정규화
+ * - angle은 명시적 값 존중, 없으면 overhead 기본
+ */
+export function enforceEnvironmentCamera(input: {
+  framing: string;
+  angle: string;
+  motion: string;
+  explicitAngle?: string;
+}): { framing: string; angle: string; motion: string; fixes: string[] } {
+  const fixes: string[] = [];
+  let { framing, angle, motion } = input;
+
+  // Compound motion "/" → ", "
+  if (motion.includes("/")) {
+    motion = motion.split("/").map(s => s.trim()).filter(Boolean).join(", ");
+    fixes.push(`Normalized compound motion "/" → ", "`);
+  }
+
+  // Remove cut-based motions
+  const shotBoundaryTerms = /\b(cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to|jump\s+cut)\b/gi;
+  const beforeBoundary = motion;
+  motion = motion.replace(ENVIRONMENT_BANNED_MOTIONS, "").replace(shotBoundaryTerms, "").replace(/\s{2,}/g, " ").trim();
+  if (motion !== beforeBoundary) {
+    fixes.push(`Removed cut-based motion terms`);
+  }
+
+  // Validate continuous motion
+  if (motion && motion !== "static" && !isEnvironmentContinuousMotion(motion)) {
+    fixes.push(`Replaced non-continuous motion "${motion}" → "slow push-in"`);
+    motion = "slow push-in";
+  }
+  if (!motion) {
+    motion = "slow push-in";
+    fixes.push(`Empty motion after cleanup → default slow push-in`);
+  }
+
+  // Force wide framing
+  const closeFramings = ["ECU", "CU", "MCU"];
+  if (closeFramings.includes(framing.toUpperCase())) {
+    fixes.push(`Replaced close framing "${framing}" → "WS"`);
+    framing = "WS";
+  }
+
+  // Angle: respect explicit, default to overhead
+  if (input.explicitAngle) {
+    angle = input.explicitAngle;
+  }
+
+  return { framing, angle, motion, fixes };
+}
+
+/**
+ * Environment atmosphere 보강.
+ * moodLighting에 shadow/haze가 없으면 추가.
+ */
+export function enrichAtmosphereForScene(
+  shotCategory: string | undefined,
+  moodLighting: string | undefined,
+): string[] {
+  if (shotCategory !== "environment") return [];
+  const parts: string[] = [];
+  if (!moodLighting?.toLowerCase().includes("shadow")) {
+    parts.push("gentle shadows over terrain");
+  }
+  if (!moodLighting?.toLowerCase().includes("haze")) {
+    parts.push("subtle ambient haze emphasizing depth and elevation");
+  }
+  return parts;
+}
+
+/**
+ * Positive/Negative 충돌 제거.
+ * positive style 텍스트에 포함된 negative 키워드를 negative 목록에서 제거.
+ */
+export function sanitizeNegativesAgainstPositive(
+  negatives: string[],
+  positiveText: string,
+): { cleaned: string[]; removed: string[] } {
+  const posLower = positiveText.toLowerCase();
+  const removed: string[] = [];
+  const cleaned = negatives.filter(neg => {
+    if (neg.length > 4 && posLower.includes(neg.toLowerCase())) {
+      removed.push(neg);
+      return false;
+    }
+    return true;
+  });
+  return { cleaned, removed };
+}
+
+/**
+ * Environment positive/negative 충돌 제거.
+ * ENVIRONMENT_POSITIVE_KEYWORDS가 positive style과 negative 양쪽에 있으면 negative에서 제거.
+ */
+export function sanitizeEnvironmentNegatives(
+  negatives: string[],
+  positiveText: string,
+): { cleaned: string[]; removed: string[] } {
+  const posLower = positiveText.toLowerCase();
+  const removed: string[] = [];
+  const cleaned = negatives.filter(neg => {
+    const lc = neg.toLowerCase();
+    if (ENVIRONMENT_POSITIVE_KEYWORDS.some(kw => kw.toLowerCase() === lc) && posLower.includes(lc)) {
+      removed.push(neg);
+      return false;
+    }
+    return true;
+  });
+  return { cleaned, removed };
+}
+
+/**
+ * Environment negative 키워드 강화.
+ * 기존 목록에 environment 전용 negative가 없으면 추가.
+ */
+export function enrichEnvironmentNegatives(negatives: string[]): string[] {
+  const result = [...negatives];
+  for (const neg of ENVIRONMENT_NEGATIVE_KEYWORDS) {
+    if (!result.includes(neg)) result.push(neg);
+  }
+  return result;
+}
+
+/**
+ * Environment positive 키워드 강화.
+ * globalStyle에 environment positive 키워드가 없으면 추가.
+ */
+export function enrichEnvironmentPositives(globalStyle: string): string {
+  let result = globalStyle;
+  for (const kw of ENVIRONMENT_POSITIVE_KEYWORDS) {
+    if (!result.toLowerCase().includes(kw)) {
+      result = `${result} ${kw}`.trim();
+    }
+  }
+  return result;
+}
+
 export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocument {
   const { cut, config, prevCut } = input;
   const json = cut.videoPromptJson;
@@ -213,30 +374,20 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   const styleId = styleEntry?.id || config.animationMode || "live-action";
   const styleLabel = styleEntry?.positivePrompt || config.animationMode || "";
 
-  const isEnvironmentScene = cut.shotCategory === "environment";
+  const isEnv = isEnvironmentScene(cut.shotCategory);
 
-  // Environment: WS framing 강제, 단 angle은 videoPromptJson의 명시적 값을 존중
-  const framing = isEnvironmentScene ? "WS" : (json?.shotSize || "MS");
-  const angle = isEnvironmentScene
-    ? (json?.cameraAngle || "overhead")  // 명시적 angle 있으면 사용, 없으면 overhead 기본
-    : (json?.cameraAngle || "eye-level");
+  // Camera: environment 씬이면 공통 규칙 적용
+  let framing = isEnv ? "WS" : (json?.shotSize || "MS");
+  let angle = isEnv ? (json?.cameraAngle || "overhead") : (json?.cameraAngle || "eye-level");
   let motion = json?.cameraMovement || cut.cameraDirection || "slow push-in";
 
-  // Environment: compound motion 정규화 — "/" 구분자를 ", " 로 변환하여 연속 모션화
-  if (isEnvironmentScene && motion.includes("/")) {
-    motion = motion.split("/").map(s => s.trim()).filter(Boolean).join(", ");
-  }
-
-  // Environment: cut 기반 모션 제거, 연속 모션만 허용
-  if (isEnvironmentScene) {
-    if (ENVIRONMENT_BANNED_MOTIONS.test(motion)) {
-      motion = "slow push-in";
-    }
-    // 연속 모션이 아닌 경우 기본값으로 대체
-    const isValid = ENVIRONMENT_CONTINUOUS_MOTIONS.some(m => motion.toLowerCase().includes(m));
-    if (!isValid && motion !== "static") {
-      motion = "slow push-in";
-    }
+  if (isEnv) {
+    const cam = enforceEnvironmentCamera({
+      framing, angle, motion, explicitAngle: json?.cameraAngle || undefined,
+    });
+    framing = cam.framing;
+    angle = cam.angle;
+    motion = cam.motion;
   }
 
   const primarySubject = json?.subjectAction || cut.sceneDescription;
@@ -251,12 +402,8 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     ? config.negativePrompt.split(",").map(s => s.trim()).filter(Boolean)
     : [];
 
-  // Environment: 추가 negative 강화
-  if (isEnvironmentScene) {
-    for (const neg of ENVIRONMENT_NEGATIVE_KEYWORDS) {
-      if (!universalNeg.includes(neg)) universalNeg.push(neg);
-    }
-  }
+  // Environment: 추가 negative 강화 (공통 헬퍼)
+  const finalUniversalNeg = isEnv ? enrichEnvironmentNegatives(universalNeg) : universalNeg;
 
   const continuitySubject = prevCut?.videoPromptJson?.subjectAction || prevCut?.sceneDescription || primarySubject;
   const continuityCharRef = prevCut?.characterConsistency || characterRef;
@@ -270,15 +417,8 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     mediumLock = "physical map surface — not a landscape, not a 3D render, not a CGI scene";
   }
 
-  // Environment: globalStyle에 photorealistic cinematic 보장
-  let globalStyle = styleLabel;
-  if (isEnvironmentScene) {
-    for (const kw of ENVIRONMENT_POSITIVE_KEYWORDS) {
-      if (!globalStyle.toLowerCase().includes(kw)) {
-        globalStyle = `${globalStyle} ${kw}`.trim();
-      }
-    }
-  }
+  // Environment: globalStyle에 positive 키워드 보장 (공통 헬퍼)
+  const globalStyle = isEnv ? enrichEnvironmentPositives(styleLabel) : styleLabel;
 
   return {
     shotId: `shot_${cut.cutNumber}`,
@@ -340,7 +480,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     },
 
     negatives: {
-      universal: universalNeg,
+      universal: finalUniversalNeg,
       sceneSpecific: [...new Set(sceneNeg)],
       failureMode: [...new Set(failureNeg)],
       user: userNeg,
@@ -564,19 +704,14 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
   }
   result.timing.beats = dedupedBeats;
 
-  // Fix 3: Remove positive/negative conflicts
-  const positiveText = `${result.global.style} ${result.reinforcement.styleSuffix}`.toLowerCase();
-  const filterConflicts = (negArr: string[]) => {
-    return negArr.filter(neg => {
-      if (neg.length > 4 && positiveText.includes(neg.toLowerCase())) {
-        fixes.push(`Removed conflicting negative "${neg}" (present in positive style)`);
-        return false;
-      }
-      return true;
-    });
-  };
-  result.negatives.failureMode = filterConflicts(result.negatives.failureMode);
-  result.negatives.sceneSpecific = filterConflicts(result.negatives.sceneSpecific);
+  // Fix 3: Remove positive/negative conflicts (공통 헬퍼)
+  const positiveText = `${result.global.style} ${result.reinforcement.styleSuffix}`;
+  const fmResult = sanitizeNegativesAgainstPositive(result.negatives.failureMode, positiveText);
+  result.negatives.failureMode = fmResult.cleaned;
+  for (const r of fmResult.removed) fixes.push(`Removed conflicting negative "${r}" (present in positive style)`);
+  const ssResult = sanitizeNegativesAgainstPositive(result.negatives.sceneSpecific, positiveText);
+  result.negatives.sceneSpecific = ssResult.cleaned;
+  for (const r of ssResult.removed) fixes.push(`Removed conflicting negative "${r}" (present in positive style)`);
 
   // Fix 4: Clean 3D/CGI in cinematic realism
   const isCR = /cinematic\s*realism/i.test(result.global.style + " " + result.global.styleId);
@@ -634,39 +769,24 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
     fixes.push("Added medium lock for map scene");
   }
 
-  // Fix 8: Environment scene — enforce continuous camera motion
-  if (result.scene.shotCategory === "environment") {
-    // Remove cut-based motions
-    if (ENVIRONMENT_BANNED_MOTIONS.test(result.camera.motion)) {
-      const old = result.camera.motion;
-      result.camera.motion = "slow push-in";
-      fixes.push(`Environment: replaced cut-based motion "${old}" → "slow push-in"`);
+  // Fix 8: Environment scene — 공통 헬퍼로 카메라 + negative 규칙 적용
+  if (isEnvironmentScene(result.scene.shotCategory)) {
+    const cam = enforceEnvironmentCamera({
+      framing: result.camera.framing, angle: result.camera.angle, motion: result.camera.motion,
+    });
+    if (cam.framing !== result.camera.framing || cam.motion !== result.camera.motion) {
+      result.camera.framing = cam.framing;
+      result.camera.motion = cam.motion;
+      for (const f of cam.fixes) fixes.push(`Environment: ${f}`);
     }
 
-    // Force wide framing for environment (angle은 명시적 값 유지)
-    const closeFramings = ["ECU", "CU", "MCU"];
-    if (closeFramings.includes(result.camera.framing.toUpperCase())) {
-      const old = result.camera.framing;
-      result.camera.framing = "WS";
-      // angle은 이미 설정된 값을 유지 — overhead 강제 안 함
-      fixes.push(`Environment: replaced close framing "${old}" → "WS"`);
+    // Remove positive/negative overlaps (공통 헬퍼)
+    const posText = result.global.style;
+    for (const layer of ["universal", "sceneSpecific", "user"] as const) {
+      const envResult = sanitizeEnvironmentNegatives(result.negatives[layer], posText);
+      result.negatives[layer] = envResult.cleaned;
+      for (const r of envResult.removed) fixes.push(`Environment: removed conflicting negative "${r}" (also in positive)`);
     }
-
-    // Remove positive/negative overlaps
-    const posText = result.global.style.toLowerCase();
-    const filterEnvConflicts = (negArr: string[]) => {
-      return negArr.filter(neg => {
-        const lc = neg.toLowerCase();
-        if (ENVIRONMENT_POSITIVE_KEYWORDS.includes(lc) && posText.includes(lc)) {
-          fixes.push(`Environment: removed conflicting negative "${neg}" (also in positive)`);
-          return false;
-        }
-        return true;
-      });
-    };
-    result.negatives.universal = filterEnvConflicts(result.negatives.universal);
-    result.negatives.sceneSpecific = filterEnvConflicts(result.negatives.sceneSpecific);
-    result.negatives.user = filterEnvConflicts(result.negatives.user);
   }
 
   return { doc: result, fixes };
@@ -701,18 +821,15 @@ export function resolveConflicts(doc: SingleShotDocument): {
     }
   }
 
-  // Resolution 2a: Environment scene — continuous camera only
-  if (result.scene.shotCategory === "environment") {
-    // Remove shot boundary terms from motion
-    const shotBoundaryTerms = /\b(cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to|jump\s+cut)\b/gi;
-    const oldMotion = result.camera.motion;
-    result.camera.motion = oldMotion.replace(shotBoundaryTerms, "").replace(/\s{2,}/g, " ").trim();
-    if (result.camera.motion !== oldMotion) {
-      resolutions.push(`Environment: removed shot boundary terms from motion: "${oldMotion}" → "${result.camera.motion}"`);
-    }
-    if (!result.camera.motion) {
-      result.camera.motion = "slow push-in";
-      resolutions.push("Environment: empty motion after cleanup → default slow push-in");
+  // Resolution 2a: Environment scene — 공통 헬퍼로 연속 카메라 강제
+  if (isEnvironmentScene(result.scene.shotCategory)) {
+    const cam = enforceEnvironmentCamera({
+      framing: result.camera.framing, angle: result.camera.angle, motion: result.camera.motion,
+    });
+    if (cam.motion !== result.camera.motion || cam.framing !== result.camera.framing) {
+      result.camera.framing = cam.framing;
+      result.camera.motion = cam.motion;
+      for (const f of cam.fixes) resolutions.push(`Environment: ${f}`);
     }
   }
 
@@ -860,21 +977,12 @@ export function serializeForProvider(
     sections.moodLighting = doc.scene.moodLighting;
   }
 
-  // 6b. Environment atmosphere enrichment
-  if (doc.scene.shotCategory === "environment") {
-    const atmosphereParts: string[] = [];
-    // 조명이 이미 있으면 shadow/haze 보강만
-    if (!doc.scene.moodLighting?.toLowerCase().includes("shadow")) {
-      atmosphereParts.push("gentle shadows over terrain");
-    }
-    if (!doc.scene.moodLighting?.toLowerCase().includes("haze")) {
-      atmosphereParts.push("subtle ambient haze emphasizing depth and elevation");
-    }
-    if (atmosphereParts.length > 0) {
-      const atmo = atmosphereParts.join(", ");
-      parts.push(atmo);
-      sections.atmosphere = atmo;
-    }
+  // 6b. Environment atmosphere enrichment (공통 헬퍼)
+  const atmosphereParts = enrichAtmosphereForScene(doc.scene.shotCategory, doc.scene.moodLighting);
+  if (atmosphereParts.length > 0) {
+    const atmo = atmosphereParts.join(", ");
+    parts.push(atmo);
+    sections.atmosphere = atmo;
   }
 
   // 7. Timing beats
@@ -1166,18 +1274,9 @@ export function renderSequenceForProvider(
   // Mood/Lighting
   if (shot.moodLighting) parts.push(shot.moodLighting);
 
-  // Environment atmosphere enrichment (renderSequenceForProvider)
-  const isEnvScene = shot.shotCategory === "environment";
-  if (isEnvScene) {
-    const atmos: string[] = [];
-    if (!shot.moodLighting?.toLowerCase().includes("shadow")) {
-      atmos.push("gentle shadows over terrain");
-    }
-    if (!shot.moodLighting?.toLowerCase().includes("haze")) {
-      atmos.push("subtle ambient haze emphasizing depth and elevation");
-    }
-    if (atmos.length > 0) parts.push(atmos.join(", "));
-  }
+  // Environment atmosphere enrichment (공통 헬퍼)
+  const atmos = enrichAtmosphereForScene(shot.shotCategory, shot.moodLighting);
+  if (atmos.length > 0) parts.push(atmos.join(", "));
 
   // Timing beat
   if (shot.timingBeat) parts.push(shot.timingBeat);

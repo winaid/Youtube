@@ -22,19 +22,19 @@ import {
   resolvePosNegConflicts,
   enforceCinematicRealism,
   runSequencePipeline,
-  type SequencePlan,
-  type ShotPlan,
+  SequencePlan,
+  ShotPlan,
 } from "../src/lib/sequence-plan";
 
 import {
   assembleFromJSON,
   renderSequenceForProvider,
   PROVIDER_CAPABILITIES,
-  type AssembleFromJSONResult,
+  AssembleFromJSONResult,
 } from "../src/lib/sequence-assembler";
 
-import type { Cut, VideoPromptJson, StructuredSequenceDocument, VeoGenerationConfig } from "../src/types";
-import { computeAssetStatus, type VideoRecord } from "../src/lib/video-history";
+import { Cut, VideoPromptJson, StructuredSequenceDocument, VeoGenerationConfig } from "../src/types";
+import { computeAssetStatus, VideoRecord } from "../src/lib/video-history";
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
 

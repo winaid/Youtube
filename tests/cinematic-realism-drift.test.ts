@@ -12,7 +12,7 @@
  */
 
 import { rewritePromptConflicts, assemblePromptV2, collectFailureModeNegatives, buildSceneLock, buildNegativePrompt } from "../src/lib/prompt-architecture";
-import { renderVeoPromptFromJson, renderKlingPromptFromJson, type VideoPromptJson } from "../src/lib/video-prompt-json";
+import { renderVeoPromptFromJson, renderKlingPromptFromJson, VideoPromptJson } from "../src/lib/video-prompt-json";
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
 

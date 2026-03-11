@@ -13,6 +13,11 @@
  */
 
 import type { VideoPromptJson, ExtendPromptJson, Cut } from "@/types";
+import {
+  isEnvironmentScene,
+  enforceEnvironmentCamera,
+  ENVIRONMENT_BANNED_MOTIONS_RE,
+} from "@/lib/sequence-assembler";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. SequencePlan JSON Schema
@@ -330,7 +335,7 @@ function buildNegativeDirectives(cut: Cut): string[] {
     // 지도 씬: 3D/CGI drift 방지 강화
     neg.push(...MAP_MEDIUM_LOCK_NEGATIVES);
   }
-  if (cut.shotCategory === "environment") {
+  if (isEnvironmentScene(cut.shotCategory)) {
     neg.push("no text overlay", "no UI element", "no caption", "no HUD", "no logo", "no subtitle");
   }
   if (cut.shotCategory === "character-driven") {
@@ -390,7 +395,7 @@ function extractSequenceContinuity(cuts: Cut[], shots: ShotPlan[]): SequenceCont
 function inferSceneType(cuts: Cut[]): SequenceGlobalIntent["sceneType"] {
   if (cuts.length === 1) return "single_take";
   const categories = cuts.map(c => c.shotCategory).filter(Boolean);
-  const envCount = categories.filter(c => c === "environment").length;
+  const envCount = categories.filter(c => isEnvironmentScene(c)).length;
   if (envCount >= cuts.length * 0.6) return "environment_landscape";
   const charDriven = categories.filter(c => c === "character-driven").length;
   if (charDriven >= cuts.length * 0.6) return "dialogue";
@@ -1123,23 +1128,16 @@ export function resolveFramingConflicts(plan: SequencePlan): ConflictResolutionR
     }
   }
 
-  // 4. Environment scene — enforce continuous camera, remove cut-based motion
-  const ENVIRONMENT_BANNED = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut|cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to)\b/gi;
+  // 4. Environment scene — 공통 헬퍼로 연속 카메라 강제
   for (const shot of result.shots) {
-    if (shot.shotCategory === "environment") {
-      // Force wide framing (angle은 기존 값 유지 — eye-level 환경 씬 지원)
-      if (CLOSE_FRAMINGS.has(shot.camera.framing) || shot.camera.framing === "MCU") {
-        const old = shot.camera.framing;
-        shot.camera.framing = "WS";
-        // angle은 기존 값을 존중 — Tiananmen 같은 지면 환경 씬에서 eye-level 유지
-        resolutions.push(`${shot.shotId}: environment ${old} → WS`);
-      }
-      // Remove cut-based motions
-      const oldMotion = shot.camera.motion;
-      shot.camera.motion = oldMotion.replace(ENVIRONMENT_BANNED, "").replace(/\s{2,}/g, " ").trim();
-      if (!shot.camera.motion) shot.camera.motion = "slow push-in";
-      if (shot.camera.motion !== oldMotion) {
-        resolutions.push(`${shot.shotId}: environment cut-based motion → "${shot.camera.motion}"`);
+    if (isEnvironmentScene(shot.shotCategory)) {
+      const cam = enforceEnvironmentCamera({
+        framing: shot.camera.framing, angle: shot.camera.angle, motion: shot.camera.motion,
+      });
+      if (cam.framing !== shot.camera.framing || cam.motion !== shot.camera.motion) {
+        shot.camera.framing = cam.framing as typeof shot.camera.framing;
+        shot.camera.motion = cam.motion;
+        for (const f of cam.fixes) resolutions.push(`${shot.shotId}: environment ${f}`);
       }
     }
   }

@@ -19,8 +19,8 @@ import {
   evaluateSequenceFidelity,
   shotPlanToVideoPromptJson,
   videoPromptJsonToShotPlan,
-  type SequencePlan,
-  type ShotPlan,
+  SequencePlan,
+  ShotPlan,
 } from "../src/lib/sequence-plan";
 import type { Cut, VideoPromptJson } from "../src/types";
 
