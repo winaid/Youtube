@@ -27,6 +27,10 @@ export interface VideoPromptJson {
   characterRef: string;
   moodLighting: string;
   styleSuffix: string;
+  // ── 즉시 인식 가능성 (Instant Readability) 3-pillar ──
+  locationCue?: string;       // 장소 정체성 시각 단서
+  situationCue?: string;      // 상황 증거 시각 단서
+  emotionalAnchor?: string;   // 감정/갈등 앵커
 }
 
 export interface ExtendPromptJson {
@@ -56,28 +60,35 @@ export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   const hasCharacter = !!json.characterRef;
 
-  // Shot/Camera
+  // 1. Shot/Camera
   parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
   if (json.cameraMovement && json.cameraMovement !== "static") {
     parts.push(json.cameraMovement);
   }
 
-  // Character (있을 때만)
+  // 2. Location establishing — 장소 즉시 인식
+  if (json.locationCue) parts.push(json.locationCue);
+
+  // 3. Situation evidence — 상황 시각적 증거
+  if (json.situationCue) parts.push(json.situationCue);
+
+  // 4. Character (있을 때만)
   if (hasCharacter) parts.push(json.characterRef);
 
-  // Scene action
+  // 5. Emotional anchor + Scene action
+  if (json.emotionalAnchor) parts.push(json.emotionalAnchor);
   if (json.subjectAction) parts.push(json.subjectAction);
 
-  // Body signal (캐릭터 있을 때만)
+  // 6. Body signal (캐릭터 있을 때만)
   if (hasCharacter && json.bodySignal) parts.push(json.bodySignal);
 
-  // Lighting
+  // 7. Lighting
   if (json.moodLighting) parts.push(json.moodLighting);
 
-  // Temporal beats
+  // 8. Temporal beats
   if (json.timingBeat) parts.push(json.timingBeat);
 
-  // Style suffix
+  // 9. Style suffix
   parts.push(json.styleSuffix);
 
   return parts.filter(Boolean).join(". ");

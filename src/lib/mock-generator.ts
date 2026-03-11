@@ -139,25 +139,32 @@ function generateFallbackCuts(
     moodLighting: "golden hour warm lighting, soft shadows",
     imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} start frame, highly detailed, cinematic quality`,
     endImagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} end frame, camera moved to final position, highly detailed, cinematic quality`,
-    videoPrompt: cutDuration === 4
-      ? `Medium shot, slow dolly in. ${charDesc}. 0s-1s: establishing scene, ${veoStyle}. 1s-3s: subtle movement, ${directorStyle} tone. 3s-4s: emotional beat. Warm key light. ${director.name} style, cinematic. No text, no watermark`
-      : cutDuration === 6
-        ? `Medium shot, slow dolly in. ${charDesc}. 0s-2s: establishing scene, ${veoStyle}. 2s-4s: subtle movement, ${directorStyle} tone. 4s-6s: emotional beat, camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`
-        : cutDuration === 10
-          ? `Medium shot, slow dolly in. ${charDesc}. 0s-3s: establishing scene, ${veoStyle}. 3s-7s: subtle movement, ${directorStyle} tone. 7s-10s: emotional beat, camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`
-          : cutDuration === 15
-            ? `Medium shot, slow dolly in. ${charDesc}. 0s-4s: establishing scene, ${veoStyle}. 4s-10s: subtle movement, ${directorStyle} tone. 10s-15s: emotional beat, camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`
-            : `Medium shot, slow dolly in. ${charDesc}. 0s-2s: establishing scene, ${veoStyle}. 2s-5s: subtle movement, ${directorStyle} tone. 5s-8s: emotional beat, slight camera push. Warm key light. ${director.name} style, cinematic. No text, no watermark`,
-    extendPrompt: i > 0
-      ? cutDuration === 4
-        ? `Continue from previous scene. ${charDesc}. 0s-1s: transition from last cut. 1s-3s: main action, ${directorStyle} tone, ${veoStyle}. 3s-4s: beat resolves. Same character maintained. No text, no watermark`
+    videoPrompt: (() => {
+      // establishing→evidence→anchor 구조 (즉시 인식 가능성)
+      const beat = cutDuration === 4
+        ? { b1: "0s-1s", b2: "1s-3s", b3: "3s-4s" }
         : cutDuration === 6
-          ? `Continue from previous scene. ${charDesc}. 0s-2s: transition from last cut. 2s-4s: main action, ${directorStyle} tone, ${veoStyle}. 4s-6s: beat resolves. Same character maintained. No text, no watermark`
+          ? { b1: "0s-2s", b2: "2s-4s", b3: "4s-6s" }
           : cutDuration === 10
-            ? `Continue from previous scene. ${charDesc}. 0s-3s: transition from last cut. 3s-7s: main action, ${directorStyle} tone, ${veoStyle}. 7s-10s: beat resolves. Same character maintained. No text, no watermark`
+            ? { b1: "0s-3s", b2: "3s-7s", b3: "7s-10s" }
             : cutDuration === 15
-              ? `Continue from previous scene. ${charDesc}. 0s-4s: transition from last cut. 4s-10s: main action, ${directorStyle} tone, ${veoStyle}. 10s-15s: beat resolves. Same character maintained. No text, no watermark`
-              : `Continue from previous scene. ${charDesc}. 0s-2s: transition from last cut. 2s-5s: main action, ${directorStyle} tone, ${veoStyle}. 5s-8s: beat resolves. Same character maintained. No text, no watermark`
+              ? { b1: "0s-4s", b2: "4s-10s", b3: "10s-15s" }
+              : { b1: "0s-2s", b2: "2s-5s", b3: "5s-8s" };
+      return `Wide shot, eye-level, slow dolly in. ${beat.b1}: LOCATION — establishing space, identifiable location objects, ${veoStyle}. ${beat.b2}: SITUATION — visual evidence of current state, ${directorStyle} tone. ${beat.b3}: EMOTION — ${charDesc}, concrete physical action revealing feeling. Warm key light from upper left, soft diffused. ${director.name} style, cinematic. No text, no watermark`;
+    })(),
+    extendPrompt: i > 0
+      ? (() => {
+        const beat = cutDuration === 4
+          ? { b1: "0s-1s", b2: "1s-3s", b3: "3s-4s" }
+          : cutDuration === 6
+            ? { b1: "0s-2s", b2: "2s-4s", b3: "4s-6s" }
+            : cutDuration === 10
+              ? { b1: "0s-3s", b2: "3s-7s", b3: "7s-10s" }
+              : cutDuration === 15
+                ? { b1: "0s-4s", b2: "4s-10s", b3: "10s-15s" }
+                : { b1: "0s-2s", b2: "2s-5s", b3: "5s-8s" };
+        return `Continue from previous scene. ${beat.b1}: LOCATION — new angle on location-defining objects, ${veoStyle}. ${beat.b2}: SITUATION — situation evidence with ${directorStyle} tone. ${beat.b3}: EMOTION — ${charDesc}, emotional anchor through physical action. Same character maintained. No text, no watermark`;
+      })()
       : "",
     transitionHint: i < cutCount - 1 ? "디졸브 - 다음 장면으로 자연스럽게 전환" : "페이드 아웃 - 마무리",
     characterConsistency: `캐릭터 시드 char-1 고정: ${characterSeeds[0].appearanceKo}. 모든 장면에서 동일한 외형 유지. ${directorStyle} 톤 일관성 유지.`,

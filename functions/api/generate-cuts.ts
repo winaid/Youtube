@@ -1010,9 +1010,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         transitionHint: n < targetCuts ? "디졸브" : "페이드 아웃",
         shotCategory: "character-driven",
         characterRole: "protagonist",
-        sceneBeat1: "establishing space and atmosphere",
-        sceneBeat2: "subject enters or key detail emerges",
-        sceneBeat3: "reveal or emotional shift",
+        locationCue: "identifiable location objects",
+        situationCue: "visible situation evidence",
+        emotionalAnchor: "emotional focal point through action",
+        sceneBeat1: "location-identifying objects and space",
+        sceneBeat2: "situation evidence becomes visible",
+        sceneBeat3: "emotional anchor enters or is revealed",
         endHook: "visual tension toward next scene",
       });
     }
@@ -1134,6 +1137,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         characterRef:    charRefForCut,
         moodLighting:    moodLighting,
         styleSuffix:     noTextSuffix,
+        // ── 즉시 인식 가능성 3-pillar (outline에서 전달) ──
+        locationCue:     outline.locationCue || "",
+        situationCue:    outline.situationCue || "",
+        emotionalAnchor: outline.emotionalAnchor || "",
       };
 
       let extendPromptJson: ExtendPromptJson | undefined;

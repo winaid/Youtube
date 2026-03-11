@@ -38,6 +38,13 @@ export interface VideoPromptJson {
   moodLighting: string;
   /** 스타일 접미사 */
   styleSuffix: string;    // veoStyle + directorStyle + aspect ratio + no text/watermark
+  // ── 즉시 인식 가능성 (Instant Readability) 3-pillar ──
+  /** 장소 정체성 시각 단서 */
+  locationCue?: string;       // e.g. "dental chair and overhead lamp"
+  /** 상황 증거 시각 단서 */
+  situationCue?: string;      // e.g. "empty waiting room, no patients"
+  /** 감정/갈등 앵커 */
+  emotionalAnchor?: string;   // e.g. "doctor slumps alone at desk"
 }
 
 /** Scene Extension용 프롬프트 JSON */
@@ -89,6 +96,10 @@ export interface BuildVideoPromptJsonInput {
   characterRef: string;
   moodLighting: string;
   styleSuffix: string;
+  // Instant Readability 3-pillar
+  locationCue?: string;
+  situationCue?: string;
+  emotionalAnchor?: string;
 }
 
 export function buildVideoPromptJson(input: BuildVideoPromptJsonInput): VideoPromptJson {
@@ -107,6 +118,9 @@ export function buildVideoPromptJson(input: BuildVideoPromptJsonInput): VideoPro
     characterRef:       input.characterRef,
     moodLighting:       input.moodLighting,
     styleSuffix:        input.styleSuffix,
+    locationCue:        input.locationCue || "",
+    situationCue:       input.situationCue || "",
+    emotionalAnchor:    input.emotionalAnchor || "",
   };
 }
 
@@ -343,7 +357,7 @@ export function generateQualityChecklist(
     detail: !goodDensity ? `환경 디테일 카테고리 ${detailCount}/5 — 구체적 오브젝트/질감/현상 추가 필요` : undefined,
   });
 
-  // 9. 즉시 인식 가능성 — 장소 정체성 오브젝트 존재 여부
+  // 9. 즉시 인식 가능성 — 장소 정체성 오브젝트 존재 여부 (WHERE)
   const locationObjects = [
     /\b(desk|reception|counter|register|checkout)\b/i,
     /\b(chair|seat|bench|stool|sofa|couch)\b/i,
@@ -355,14 +369,69 @@ export function generateQualityChecklist(
     /\b(street|sidewalk|crosswalk|curb|storefront|awning)\b/i,
     /\b(car|vehicle|steering|dashboard|windshield|headlight)\b/i,
     /\b(bed|pillow|blanket|nightstand|bedroom|mattress)\b/i,
+    /\b(waiting\s+room|operatory|lobby|hallway|corridor|entrance)\b/i,
+    /\b(warehouse|factory|workshop|garage|studio|gym)\b/i,
   ];
   const locationObjCount = locationObjects.filter(p => p.test(renderedPrompt)).length;
   const hasLocationIdentity = locationObjCount >= 1;
   items.push({
     id: "location-identity",
-    label: "장소 정체성 오브젝트 포함 (즉시 인식)",
+    label: "장소 정체성 오브젝트 포함 (WHERE 즉시 인식)",
     passed: hasLocationIdentity,
     detail: !hasLocationIdentity ? "장소를 즉시 인식할 수 있는 고유 오브젝트가 없음 — WHERE가 불명확" : undefined,
+  });
+
+  // 9b. 즉시 인식 가능성 — 상황 증거 존재 여부 (WHAT)
+  const situationEvidence = [
+    /\b(empty|vacant|deserted|abandoned|unused|idle|untouched|unoccupied)\b/i,
+    /\b(crowded|packed|busy|bustling|queue|line|waiting)\b/i,
+    /\b(broken|damaged|cracked|torn|crumpled|shattered|ruined)\b/i,
+    /\b(closed|locked|shut|sealed|blocked|barred)\b/i,
+    /\b(off|dark|dim|unlit|flickering|dying|fading)\b/i,
+    /\b(new|fresh|pristine|polished|gleaming|bright|clean)\b/i,
+    /\b(overflowing|stacked|piled|scattered|cluttered|messy)\b/i,
+    /\b(alone|solo|single|isolated|solitary|only)\b/i,
+    /\b(ringing|buzzing|dripping|silent|still|quiet)\b/i,
+  ];
+  const situationCount = situationEvidence.filter(p => p.test(renderedPrompt)).length;
+  const hasSituationEvidence = situationCount >= 1;
+  items.push({
+    id: "situation-evidence",
+    label: "상황 증거 포함 (WHAT 즉시 인식)",
+    passed: hasSituationEvidence,
+    detail: !hasSituationEvidence ? "현재 상황을 보여주는 시각적 증거가 없음 — WHAT이 불명확 (empty/crowded/broken/closed 등)" : undefined,
+  });
+
+  // 9c. 즉시 인식 가능성 — 감정/갈등 앵커 존재 여부 (WHO/EMOTION)
+  const emotionalAnchors = [
+    /\b(slump|slouch|lean|hunch|droop|sag|collapse)\b/i,
+    /\b(grip|clench|squeeze|press|tap|drum|fidget)\b/i,
+    /\b(sigh|exhale|breath|gasp|swallow|gulp)\b/i,
+    /\b(stare|gaze|glance|look\s+away|avert|dart)\b/i,
+    /\b(tremble|shake|shiver|quiver|twitch)\b/i,
+    /\b(smile|grin|frown|scowl|grimace|wince)\b/i,
+    /\b(turn\s+away|step\s+back|pull\s+back|reach|extend)\b/i,
+    /\b(crumple|tear|drop|throw|push\s+aside)\b/i,
+    /\b(pause|hesitate|freeze|stop|halt|falter)\b/i,
+  ];
+  // 캐릭터 없는 씬에서는 환경 변화가 감정 앵커 역할
+  const envEmotionalAnchors = [
+    /\b(flickering|dying|fading|dimming|brightening)\b/i,
+    /\b(closing|opening|swinging|creaking|settling)\b/i,
+    /\b(withered|wilting|blooming|growing|decaying)\b/i,
+  ];
+  const hasEmotionalAnchor = isCharacterless
+    ? envEmotionalAnchors.some(p => p.test(renderedPrompt))
+    : emotionalAnchors.some(p => p.test(renderedPrompt));
+  items.push({
+    id: "emotional-anchor",
+    label: "감정/갈등 앵커 포함 (WHO/EMOTION 즉시 인식)",
+    passed: hasEmotionalAnchor,
+    detail: !hasEmotionalAnchor
+      ? (isCharacterless
+          ? "환경 변화를 통한 감정 앵커가 없음 — 분위기만으로는 감정이 전달되지 않음"
+          : "인물의 구체적 신체 행동이 없음 — 감정이 보이지 않음 (slump/grip/sigh/stare 등)")
+      : undefined,
   });
 
   // 10. 시퀀스 비트 구조 — 3개 시간 비트(0s-2s, 2s-5s 등) 존재 여부
@@ -439,48 +508,63 @@ export function sanitizeRenderedPrompt(prompt: string): string {
 /**
  * VideoPromptJson → Veo 3.1 호환 프롬프트 문자열
  *
- * 설계 원칙:
- * - 비시각 메타태그(REVEALED/WITHHELD/END_HOOK/SUBJECT_ACROSS_SCENE 등) 제거
- * - 모든 요소는 Veo가 실제로 렌더링할 수 있는 시각 정보만
- * - characterRef가 비어있으면 캐릭터 관련 필드 일체 생략
- * - 조명은 source + direction + quality 수준으로 구체화
+ * 설계 원칙 (즉시 인식 가능성 우선):
+ * 1. establishing → evidence → anchor 순서로 구성
+ *    - BEAT1: 장소 정체성 (WHERE) — 보자마자 어디인지 인식
+ *    - BEAT2: 상황 증거 (WHAT) — 무슨 상황인지 시각적 증거
+ *    - BEAT3: 감정/갈등 앵커 (WHO/EMOTION) — 인물 행동으로 감정 전달
+ * 2. 비시각 메타태그 제거, characterRef 비면 캐릭터 생략
+ * 3. 조명은 source + direction + quality 구체화
  */
 export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   const hasCharacter = !!json.characterRef;
 
-  // 1. Shot/Camera — 씬 시작 기준 + 진행
+  // 1. Shot/Camera — 씬 시작 기준
   parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
   if (json.cameraMovement && json.cameraMovement !== "static") {
     parts.push(json.cameraMovement);
   }
 
-  // 2. Character (있을 때만)
+  // 2. Location establishing — 장소 정체성이 즉시 인식되는 오브젝트
+  if (json.locationCue) {
+    parts.push(json.locationCue);
+  }
+
+  // 3. Situation evidence — 상황을 보여주는 시각적 증거
+  if (json.situationCue) {
+    parts.push(json.situationCue);
+  }
+
+  // 4. Character (있을 때만)
   if (hasCharacter) {
     parts.push(json.characterRef);
   }
 
-  // 3. Scene action — 시각적 행동 arc (자연어)
+  // 5. Emotional anchor + Scene action — 감정/갈등이 집약되는 행동
+  if (json.emotionalAnchor) {
+    parts.push(json.emotionalAnchor);
+  }
   if (json.subjectAction) {
     parts.push(json.subjectAction);
   }
 
-  // 4. Body signal (캐릭터 있을 때만)
+  // 6. Body signal (캐릭터 있을 때만)
   if (hasCharacter && json.bodySignal) {
     parts.push(json.bodySignal);
   }
 
-  // 5. Lighting — 구체적 광원 정보
+  // 7. Lighting — 구체적 광원 정보
   if (json.moodLighting) {
     parts.push(json.moodLighting);
   }
 
-  // 6. Temporal beats — 핵심 구조 (Veo가 시간 진행을 따라감)
+  // 8. Temporal beats — establishing→evidence→anchor 시간 구조
   if (json.timingBeat) {
     parts.push(json.timingBeat);
   }
 
-  // 7. Style suffix (no text/watermark 등)
+  // 9. Style suffix (no text/watermark 등)
   parts.push(json.styleSuffix);
 
   return parts.filter(Boolean).join(". ");
@@ -629,5 +713,8 @@ export function parseVideoPromptString(prompt: string): VideoPromptJson {
     characterRef:       "", // string에서 자동 추출 어려움
     moodLighting:       "",
     styleSuffix:        "",
+    locationCue:        "",
+    situationCue:       "",
+    emotionalAnchor:    "",
   };
 }

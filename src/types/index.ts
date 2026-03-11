@@ -163,6 +163,10 @@ export interface VideoPromptJson {
   characterRef: string;       // 캐릭터 외형 (절대 수정 금지)
   moodLighting: string;       // 조명/무드
   styleSuffix: string;        // 스타일 + no text/watermark
+  // ── 즉시 인식 가능성 (Instant Readability) 3-pillar ──
+  locationCue?: string;       // 장소 정체성 시각 단서 (예: "dental chair and overhead lamp")
+  situationCue?: string;      // 상황 증거 시각 단서 (예: "empty waiting room, no patients")
+  emotionalAnchor?: string;   // 감정/갈등 앵커 (예: "doctor slumps alone at desk")
 }
 
 /** Scene Extension용 프롬프트 JSON */
