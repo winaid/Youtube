@@ -1,6 +1,8 @@
 import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
-type Env = GeminiEnv;
+interface ProxyEnv extends GeminiEnv {
+  VIDEO_BUCKET?: R2Bucket;
+}
 
 /**
  * gs://bucket/path/to/object → GCS JSON API 다운로드 URL로 변환.
@@ -17,13 +19,38 @@ function gcsUriToHttps(uri: string): string {
   return `https://storage.googleapis.com/download/storage/v1/b/${bucket}/o/${encodeURIComponent(object)}?alt=media`;
 }
 
-export const onRequestGet: PagesFunction<Env> = async (context) => {
+export const onRequestGet: PagesFunction<ProxyEnv> = async (context) => {
   try {
     const url = new URL(context.request.url);
+
+    // ── R2 key 기반 서빙 (upload-video.ts에서 R2에 저장한 영상) ──
+    const r2key = url.searchParams.get("r2key");
+    if (r2key) {
+      if (!context.env.VIDEO_BUCKET) {
+        return new Response("VIDEO_BUCKET R2 binding not configured", { status: 501 });
+      }
+
+      const obj = await context.env.VIDEO_BUCKET.get(r2key);
+      if (!obj) {
+        console.warn(`[proxy-video] R2 object not found: ${r2key}`);
+        return new Response("Video not found in R2", { status: 404 });
+      }
+
+      return new Response(obj.body, {
+        headers: {
+          "Content-Type": obj.httpMetadata?.contentType || "video/mp4",
+          "Content-Length": String(obj.size),
+          "Cache-Control": "public, max-age=3600",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // ── GCS URI 기반 프록시 (기존 로직) ──
     const videoUri = url.searchParams.get("uri");
 
     if (!videoUri) {
-      return new Response("uri parameter is required", { status: 400 });
+      return new Response("uri or r2key parameter is required", { status: 400 });
     }
 
     // gs:// → GCS JSON API URL 변환 (Cloudflare Workers는 gs:// 미지원)

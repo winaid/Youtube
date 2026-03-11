@@ -1,0 +1,19 @@
+# Cloudflare Pages Functions 설정
+# R2 바인딩: 영상 업로드 스토리지 (Scene Extension용 canonical URI 생성)
+#
+# 사전 준비:
+#   1. Cloudflare 대시보드 > R2 > Create bucket > 이름: "video-uploads"
+#   2. (선택) R2 Custom Domain 설정 → VIDEO_BUCKET_DOMAIN 환경변수에 입력
+#   3. npx wrangler pages deploy 또는 Cloudflare Pages 자동 배포
+#
+# R2 버킷 CLI 생성:
+#   npx wrangler r2 bucket create video-uploads
+
+# Pages Functions에서 R2 접근용 바인딩
+[[r2_buckets]]
+binding = "VIDEO_BUCKET"
+bucket_name = "video-uploads"
+
+# 환경변수 (민감 정보는 Cloudflare 대시보드에서 설정)
+# [vars]
+# VIDEO_BUCKET_DOMAIN = "videos.yourdomain.com"  # R2 커스텀 도메인 (선택)
