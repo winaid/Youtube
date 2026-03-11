@@ -72,6 +72,7 @@ const ANTI_PHOTO = [
 // ──────────────────────────────────────────────────────────────────────────
 
 import { STYLE_CATALOG, getAllStyles, getStyleByLegacyMode, getStyleById, buildStyleEnforcementBlock, getStyleRenderingRules } from "@/data/style-catalog";
+import { assemblePromptV2, type ContinuityInput } from "@/lib/prompt-architecture";
 
 /**
  * 카탈로그의 positivePrompt에서 StylePreset의 각 블록을 파생.
@@ -666,308 +667,91 @@ function getCachedRenderingRules(styleId: string) {
 /**
  * 메인 프롬프트 조립 함수.
  *
- * 프롬프트 우선순위 (위→아래):
- * 1. 전체 스타일 정체성 (globalStyleBlock)
- * 2. 캐릭터/배경 일관성 (characterStyleRule + characterConsistency)
- * 3. 카메라 모션 (자동 프리셋 + 8초 타임라인)
- * 4. 장면 액션 (scenePrompt — 메타 필드 자연어 변환)
- * 5. 스타일 강화 리마인더 (reinforcement)
- * 6. 네거티브 (negativeBlock + anti-photorealism)
- * 7. 오디오 힌트
+ * v2: 6계층 SUBJECT-FIRST 아키텍처
+ * 순서: SUBJECT ANCHOR → SCENE LOCK → VISUAL → ACTION → CONTINUITY → (style) → NEGATIVE
+ *
+ * 핵심 원칙:
+ * - 첫 문장은 반드시 "무엇이 화면에 존재하는지"를 설명
+ * - style/mood 표현은 subject/scene/action 완성 후 마지막에만 약하게
+ * - 위험 단어(symbolic, dreamlike 등)는 subject anchor 없이 단독 사용 불가
+ * - 장르별 실패 패턴 자동 감지 + negative 주입
  */
 export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const preset = input.animationMode ? STYLE_PRESETS[input.animationMode] : undefined;
   const isMapScene = input.shotCategory === "map-graphic";
 
-  // ── MAP SCENE PROTECTION ──────────────────────────────────
-  // map-graphic 장면에서는 스타일 페르소나/강화를 억제하고
-  // cartographic 보호 규칙을 적용 (산수화/학/동양풍 drift 방지)
-  const MAP_SCENE_POSITIVE = "Wide shot, eye-level view of a flat antique paper map filling the frame. The image is clearly a historical map, not a landscape. Aged parchment texture, ornate compass rose, faded black ink coastlines and borders, territorial overlays, trade routes, subtle paper wear and grain, ink diffusion on aged paper. Cold daylight from upper right, soft diffused glow. No inserted objects, no floating panels, no boxed annotations, no embedded signage, no readable text, no labels.";
-  const MAP_SCENE_NEGATIVES = [
-    // ── 풍경/자연 drift 차단 ──
-    "landscape", "tree", "forest", "mountain", "river",
-    "watercolor scenery", "ink painting", "sumi-e", "nature scene",
-    "cranes", "birds", "heron", "animals", "flying creatures",
-    "scenic painting", "nature tableau", "brush painting scenery",
-    "traditional painting composition", "countryside illustration",
-    "mountain landscape", "misty peaks", "decorative East Asian motifs",
-    // ── 인물/전쟁 drift 차단 ──
-    "human figure", "battlefield", "portrait",
-    // ── 텍스트/UI 아티팩트 차단 ──
-    "readable text", "subtitles", "calligraphy", "poster",
-    "boxes", "rectangular overlay", "UI panels", "text boxes",
-    "labels", "signboards", "framed inserts", "infographic elements",
-    "cartouche", "decorative panels", "floating panels",
-    "boxed annotations", "title boxes", "caption boxes", "modern UI",
-  ];
+  // ── 6계층 아키텍처로 위임 ──────────────────────────────────
 
-  // ── BLOCK 0: STYLE PERSONA — 제거됨 ──────────────────────
-  // 페르소나 블록은 Veo에게 불필요한 메타 지시문이며
-  // 씬 프롬프트의 워드 예산을 낭비함. 제거하여 씬 내용 우선 배치.
-
-  // ── BLOCK 1: STYLE IDENTITY ───────────────────────────────
-  // ⚠️ map scene에서는 스타일 블록 대신 cartographic 보호 블록 삽입
-  let styleBlock = "";
-  if (isMapScene) {
-    styleBlock = MAP_SCENE_POSITIVE;
-  } else if (preset) {
-    styleBlock = preset.globalStyleBlock;
-  }
-
-  // ── BLOCK 2: CONSISTENCY (character + environment + rendering rules) ─────────
-  const consistencyParts: string[] = [];
+  // 스타일 힌트 (최소화 — 첫 문장만)
+  let styleHint = "";
   if (preset && !isMapScene) {
-    consistencyParts.push(preset.characterStyleRule);
-    consistencyParts.push(preset.environmentStyleRule);
+    const sentences = preset.globalStyleBlock.split(". ").filter(Boolean);
+    styleHint = sentences[0] || "";
   }
-  // 스타일별 렌더링 규칙 추가 (map scene 제외)
-  if (input.animationMode && !isMapScene) {
-    const rules = getCachedRenderingRules(input.animationMode);
-    if (rules.sequenceRules && input.styleIntensity > 30) {
-      consistencyParts.push(rules.sequenceRules);
-    }
-  }
+
+  // continuity 입력 구성 (객체 기반)
+  const continuityData: ContinuityInput = {};
   if (input.characterConsistency) {
-    consistencyParts.push(input.characterConsistency);
+    continuityData.characterConsistency = input.characterConsistency;
+    // characterConsistency에서 primarySubject 추출 시도
+    const subjectMatch = input.characterConsistency.match(/^([^,.]+)/);
+    if (subjectMatch) continuityData.primarySubject = subjectMatch[1].trim();
   }
   if (input.moodLighting) {
-    consistencyParts.push(input.moodLighting);
-  }
-  const consistencyBlock = consistencyParts.join(" ");
-
-  // ── BLOCK 3: CAMERA MOTION ──────────────────────────────────
-  // 카메라 모션 시스템: shotType + 감정 감지 + 스타일 연동
-  const cameraResult = resolveCameraMotion({
-    cameraDirection: input.cameraDirection,
-    shotType: input.shotType,
-    scenePrompt: input.scenePrompt,
-    animationMode: input.animationMode,
-    durationSec: input.durationSec,
-  });
-  // ⚠️ MAP SCENE: 카메라를 항상 top-down으로 강제
-  const cameraBlock = isMapScene
-    ? "Eye-level view looking at flat antique paper map surface. 0-2s: close detailed view of the map, aged parchment texture, faded ink coastlines, ornate compass rose. 2-5s: territorial color emphasis gradually becomes visually dominant with gentle stain-like spread. 5-8s: camera slowly zooms out to reveal more of the full map while preserving the same antique map surface and composition."
-    : cameraResult.cameraBlock;
-
-  // ── BLOCK 4: SCENE CONTENT ─────────────────────────────────
-  // 메타 필드를 자연어로 변환
-  let sceneBlock = naturalizeMetaFields(input.scenePrompt);
-
-  // ⚠️ MAP SCENE: scene content에서 drift 유발 표현 + 사각형 아티팩트 유발 표현 강제 제거
-  if (isMapScene) {
-    // 지도 장면에서 풍경/동물 표현이 scene prompt에 침투했을 경우 제거
-    sceneBlock = sceneBlock
-      .replace(/\b(crane|cranes|heron|herons)\b(?!\s*(shot|angle|camera|move))/gi, "")
-      .replace(/\b(birds?\s+fly|flying\s+birds?|soaring\s+birds?)\b/gi, "")
-      .replace(/\b(mountain\s+landscape|scenic\s+painting|nature\s+tableau)\b/gi, "")
-      .replace(/\b(brush\s*stroke\s+mountains?|misty\s+peaks?|ink\s+wash\s+mountains?)\b/gi, "")
-      // ── 사각형 아티팩트 유발 표현 제거 (label/sign/frame/panel 계열) ──
-      .replace(/\b(labeled|labelled)\s+[\w\s]{1,30}/gi, "")
-      .replace(/\bcountry\s+names?\b/gi, "colored territorial regions")
-      .replace(/\b(title\s+box|text\s+box|info\s*box)\b/gi, "")
-      .replace(/\b(infographic|info\s*graphic)\s*[\w\s]*/gi, "")
-      .replace(/\b(overlay\s+(?:panel|box|frame|insert))\b/gi, "")
-      .replace(/\bUI[\s-]?like\b/gi, "")
-      .replace(/\b(framed?\s+inserts?|inset\s+panels?|inset\s+maps?)\b/gi, "")
-      .replace(/\b(caption|captions|captioned)\b/gi, "")
-      .replace(/\b(plaque|plaques|cartouche)\b/gi, "")
-      .replace(/\b(marker|markers)\b(?!\s*(pen|line))/gi, "location indicator")
-      .replace(/\b(signboard|sign\s*board|sign\s*post)\b/gi, "")
-      .replace(/\blabels?\b/gi, "")
-      .replace(/,\s*,/g, ",").replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim();
-
-    // 지도 장면 앵커 강화: scene block 맨 앞에 cartographic 프레이밍 삽입
-    if (!/\b(map|cartograph|parchment|top.?down|overhead|territorial)\b/i.test(sceneBlock)) {
-      sceneBlock = `Flat antique historical paper map filling the frame, clearly seen as a paper map and not a natural landscape. ${sceneBlock}`;
-    }
-    // scene block에 landscape/nature/watercolor 표현이 남아있으면 추가 제거
-    sceneBlock = sceneBlock
-      .replace(/\bwatercolor\s+(landscape|scenery|painting)\b/gi, "aged parchment texture")
-      .replace(/\bink\s+(wash|painting)\s+(landscape|scenery|mountain)\b/gi, "ink diffusion on aged paper")
-      .replace(/\bsumi-e\s+style\b/gi, "historical cartographic style");
+    continuityData.lightingDirection = input.moodLighting;
   }
 
-  // Temporal beats 삽입
-  sceneBlock = ensureTemporalBeats(sceneBlock, input.durationSec);
+  // 메타 필드 자연어 변환
+  const naturalizedPrompt = naturalizeMetaFields(input.scenePrompt);
 
   // 텍스트 콘텐츠 sanitize
-  sceneBlock = sanitizeTextContent(sceneBlock);
+  const sanitizedPrompt = sanitizeTextContent(naturalizedPrompt);
 
-  // ── BLOCK 5: STYLE REINFORCEMENT ───────────────────────────
-  // ⚠️ map scene에서는 스타일 강화를 건너뜀 (지도→풍경 drift 방지)
-  let reinforcementBlock = "";
-  if (preset && input.styleIntensity > 20 && !isMapScene) {
-    if (input.styleIntensity <= 50) {
-      const parts = preset.reinforcement.split(".").map(s => s.trim()).filter(Boolean);
-      reinforcementBlock = parts.slice(0, 1).join(". ") + ".";
-    } else {
-      reinforcementBlock = preset.reinforcement;
-    }
-  }
-  if (isMapScene) {
-    reinforcementBlock = "This is a historical paper map, NOT a landscape or nature scene. Maintain flat antique map surface throughout. The map must look like a document on a table, not a real landscape. No landscape reinterpretation, no watercolor painting, no ink wash scenery. No animals or decorative creatures. No rectangular overlays, no floating panels, no text boxes, no labels, no framed inserts, no infographic elements. No trees, no mountains, no forests, no rivers as real scenery.";
-  }
-
-  // ── BLOCK 6: NEGATIVE ──────────────────────────────────────
-  const negParts: string[] = [];
-  if (preset) {
-    negParts.push(preset.negativeBlock);
-    if (preset.isNonRealistic) {
-      negParts.push(ANTI_PHOTO.join(", "));
-    }
-  }
-  if (input.userNegativePrompt?.trim()) {
-    negParts.push(input.userNegativePrompt);
-  }
-  // map scene 전용 negative 주입
-  if (isMapScene) {
-    negParts.push(MAP_SCENE_NEGATIVES.join(", "));
-  }
-
-  // 중복 제거
-  const seen = new Set<string>();
-  const uniqueNeg = negParts.join(", ").split(",")
-    .map(s => s.trim().toLowerCase()).filter(Boolean)
-    .filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
-  // 핵심 제한 (Veo가 너무 긴 negative는 무시) — map scene은 사각형 아티팩트 + 풍경 drift 보호까지 포함하여 25개 허용
-  const negativeBlock = uniqueNeg.slice(0, isMapScene ? 25 : 8).join(", ");
-
-  // ── BLOCK 7: AUDIO ──────────────────────────────────────────
-  const hasAudioRef = /\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(sceneBlock);
-  const audioBlock = hasAudioRef ? "" : "Diegetic sound, ambient audio.";
-
-  // ── 조립 ───────────────────────────────────────────────────
-  // 핵심 원칙: Veo는 프롬프트 앞부분에 더 높은 가중치를 줌.
-  // 따라서 씬 내용(사용자 의도)을 최우선 배치하고,
-  // 스타일/카메라는 간결한 supporting context로 뒤에 배치.
-  const blocks: string[] = [];
-
-  // 1. 씬 내용 (최우선 — 사용자가 원하는 장면의 핵심)
-  blocks.push(sceneBlock);
-
-  // 2. 카메라 모션 (시각적 연출)
-  if (cameraBlock) blocks.push(`Camera: ${cameraBlock}`);
-
-  // 3. 스타일 정체성 (간결하게 — 첫 문장만)
-  if (styleBlock) {
-    // 스타일 블록이 너무 길면 첫 2문장만 사용하여 씬 프롬프트 공간 확보
-    const styleSentences = styleBlock.split(". ").filter(Boolean);
-    const compactStyle = styleSentences.length > 2
-      ? styleSentences.slice(0, 2).join(". ") + "."
-      : styleBlock;
-    blocks.push(compactStyle);
-  }
-
-  // 4. 일관성 규칙 (간결하게)
-  if (consistencyBlock) {
-    // 일관성 블록도 과도하면 압축
-    const consistencyWords = consistencyBlock.split(/\s+/);
-    if (consistencyWords.length > 40) {
-      blocks.push(consistencyWords.slice(0, 40).join(" "));
-    } else {
-      blocks.push(consistencyBlock);
-    }
-  }
-
-  // 5. 스타일 강화 (map scene이나 높은 styleIntensity에서만)
-  if (reinforcementBlock) blocks.push(reinforcementBlock);
-
-  let prompt = blocks.join(" ");
+  const result = assemblePromptV2(
+    {
+      scenePrompt: sanitizedPrompt,
+      shotCategory: input.shotCategory,
+      shotType: input.shotType,
+      cameraDirection: input.cameraDirection,
+      durationSec: input.durationSec,
+      animationMode: input.animationMode,
+      styleIntensity: input.styleIntensity,
+      userNegativePrompt: input.userNegativePrompt,
+    },
+    Object.keys(continuityData).length > 0 ? continuityData : undefined,
+    styleHint,
+  );
 
   // ── 안티-보어덤 최종 검사 ────────────────────────────────────
-  const boredCheck = antiBoredCheck(prompt, input.animationMode);
+  const boredCheck = antiBoredCheck(result.finalPrompt, input.animationMode);
   const antiBoredomTriggered = boredCheck.wasStatic;
-  prompt = boredCheck.corrected;
+  const finalPrompt = boredCheck.corrected;
 
-  // ── 워드 캡 (negative/audio 전에) ──────────────────────────
-  // Veo 3.1은 긴 프롬프트를 잘 처리함 → 200단어까지 허용
-  const words = prompt.split(/\s+/);
-  if (words.length > 210) {
-    prompt = words.slice(0, 200).join(" ");
-    if (!/no text overlay/i.test(prompt)) {
-      prompt += ". No text overlay, no watermark";
-    }
-  }
-
-  // 6. 네거티브
-  if (negativeBlock && !prompt.includes("Avoid:")) {
-    prompt = `${prompt}. Avoid: ${negativeBlock}`;
-  }
-
-  // 7. 오디오
-  if (audioBlock) {
-    prompt = `${prompt}. ${audioBlock}`;
-  }
-
-  const finalWordCount = prompt.split(/\s+/).length;
-
-  // ── PREFLIGHT DRIFT DETECTION ──────────────────────────────
-  // map scene인데 최종 prompt에 풍경/동물 표현이 남아있으면 drift 경고
+  // ── drift warning 매핑 ──────────────────────────────────────
   let driftWarning: string | undefined;
-  if (isMapScene) {
-    const driftTerms = [
-      /\bcrane(?!s?\s*(shot|angle|camera|move))\b/i,
-      /\bbird\b/i,
-      /\bheron\b/i,
-      /\bmountain\s+landscape\b/i,
-      /\bscenic\s+painting\b/i,
-      /\bnature\s+tableau\b/i,
-      /\bbrush\s*stroke\s+mountain/i,
-      /\bink\s+wash\s+mountain/i,
-      /\bflying\s+(creature|animal|bird)/i,
-      /\btraditional\s+painting\s+composition/i,
-      /\bmisty\s+peak/i,
-    ];
-    // ── 사각형 아티팩트 유발 표현 감지 (preflight validation) ──
-    const rectArtifactTerms = [
-      /\blabels?\b/i,
-      /\blabeled\b/i,
-      /\bsign(?:board|post|age)?\b(?!\s*(language|al|ificant|ed\s+contract))/i,
-      /\bframed?\s+(?:insert|object|panel|box)/i,
-      /\bpanel[\s-]?like\s+insert/i,
-      /\binfographic\s+overlay/i,
-      /\bcountry\s+names?\s+(rendered|displayed|shown|written|visible)/i,
-      /\btitle\s+box/i,
-      /\bcaption\s+box/i,
-      /\btext\s+box/i,
-      /\bUI[\s-]?panel/i,
-      /\bcartouche\b/i,
-      /\bplaque\b/i,
-    ];
-    const found = driftTerms
-      .filter(re => re.test(prompt))
-      .map(re => { const m = prompt.match(re); return m?.[0] ?? ""; })
-      .filter(Boolean);
-    const rectFound = rectArtifactTerms
-      .filter(re => re.test(prompt))
-      .map(re => { const m = prompt.match(re); return m?.[0] ?? ""; })
-      .filter(Boolean);
-    if (found.length > 0) {
-      driftWarning = `MAP SCENE DRIFT DETECTED: "${found.join('", "')}" — 지도 장면에 풍경/동물 표현이 포함됨. 생성 결과가 산수화/학으로 드리프트될 위험 높음.`;
-    } else if (rectFound.length > 0) {
-      driftWarning = `MAP SCENE RECT ARTIFACT RISK: "${rectFound.join('", "')}" — 지도 장면에 사각형 아티팩트를 유발하는 표현(label/sign/frame/panel)이 감지됨. 모델이 읽을 수 없는 텍스트 박스나 UI 패널을 생성할 위험 높음.`;
-    }
+  if (result.driftAssessment.riskLevel === "high") {
+    driftWarning = `DRIFT RISK HIGH (score=${result.driftAssessment.riskScore}): ${result.driftAssessment.issues.join("; ")}`;
   }
 
   return {
-    finalPrompt: prompt,
+    finalPrompt,
     driftWarning,
     debug: {
-      styleBlock,
-      consistencyBlock,
-      cameraBlock,
-      sceneBlock: sceneBlock.slice(0, 200) + (sceneBlock.length > 200 ? "…" : ""),
-      reinforcementBlock,
-      negativeBlock,
-      audioBlock,
-      wordCount: finalWordCount,
+      styleBlock: result.layers.styleHint,
+      consistencyBlock: result.layers.continuityLock,
+      cameraBlock: input.cameraDirection || "",
+      sceneBlock: result.layers.subjectAnchor.slice(0, 200),
+      reinforcementBlock: result.layers.sceneLock,
+      negativeBlock: result.layers.negativePrompt,
+      audioBlock: "",
+      wordCount: result.wordCount,
       realismLevel: preset?.dimensions.realismLevel ?? "unknown",
       isNonRealistic: preset?.isNonRealistic ?? false,
       isMapScene,
       camera: {
-        source: isMapScene ? "map-override" : cameraResult.debug.source,
-        motionType: isMapScene ? "static-topdown" : cameraResult.debug.motionType,
-        hasTimeline: cameraResult.debug.hasTimeline,
+        source: input.cameraDirection ? "user-direction" : "auto",
+        motionType: "subject-first",
+        hasTimeline: /\d+s/.test(result.layers.temporalAction),
         antiBoredomTriggered,
       },
     },

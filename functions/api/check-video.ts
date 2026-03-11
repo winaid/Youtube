@@ -836,18 +836,54 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
     console.log("[check-video] ⏱ timing", { checkTotalMs, fetchMs, cutNumber });
 
+    // ── canonicalVideoUri 결정 ─────────────────────────────────
+    // 우선순위:
+    // 1. provider direct gs:// URI (Scene Extension 최적)
+    // 2. provider direct https:// URI
+    // 3. 업로드된 URI (base64 → R2/GCS 업로드 후)
+    // 4. null (업로드 불가)
+    const canonicalVideoUri = (() => {
+      // GCS URI가 있으면 최우선
+      const gcsVariant = variants.find(v => v.rawVideoUri?.startsWith("gs://"));
+      if (gcsVariant) return gcsVariant.rawVideoUri;
+      // HTTPS URI가 있으면 차선
+      const httpsVariant = variants.find(v => v.rawVideoUri?.startsWith("https://"));
+      if (httpsVariant) return httpsVariant.rawVideoUri;
+      // 없으면 null — 클라이언트가 upload-video로 업로드 필요
+      return null;
+    })();
+
+    // base64만 있고 canonical URI 없으면 클라이언트에 업로드 필요 알림
+    const needsUpload = !canonicalVideoUri && variants.some(v => v.resultKind === "base64");
+
+    if (needsUpload) {
+      console.warn("[check-video] ⚠️ canonicalVideoUri 없음 — 클라이언트에서 upload-video 호출 필요", {
+        cutNumber,
+        variantCount: variants.length,
+        kinds: variants.map(v => v.resultKind),
+        authMethod: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "SERVICE_ACCOUNT" : "API_KEY",
+        hint: "base64 영상을 R2/GCS에 업로드하면 다음 컷에서 Scene Extension 사용 가능",
+      });
+    }
+
     return Response.json({
       status: "COMPLETED",
       videoUri: variants[0].videoUri,
       rawVideoUri: variants[0].rawVideoUri,
+      canonicalVideoUri,
       seed: variants[0].seed,
       variants,
       sampleCount: variants.length,
+      // 클라이언트에 업로드 필요 여부 알림
+      needsUpload,
       // 진단용: Scene Extension 가능 여부
       _diag: {
         sceneExtensionReady,
         primaryUriType,
         extractedKinds: videoResults.map(r => r.kind),
+        canonicalVideoUri: canonicalVideoUri ? canonicalVideoUri.slice(0, 80) : null,
+        needsUpload,
+        authMethod: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "SERVICE_ACCOUNT" : "API_KEY",
       },
     });
   } catch (error) {

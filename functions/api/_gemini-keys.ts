@@ -239,14 +239,34 @@ export async function fetchWithAuth(
   // 1) 서비스 계정 OAuth2
   if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     try {
-      const token = await getAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
-      const headers = new Headers(init.headers);
-      headers.set("Authorization", `Bearer ${token}`);
-      return fetch(url, { ...init, headers });
+      // SA JSON 유효성 사전 검증
+      const saJson = env.GOOGLE_SERVICE_ACCOUNT_JSON;
+      if (!saJson.trim().startsWith("{")) {
+        console.error("[fetchWithAuth] ⚠️ GOOGLE_SERVICE_ACCOUNT_JSON이 JSON 형식이 아닙니다. 값 시작:", saJson.slice(0, 30));
+        console.error("[fetchWithAuth] 힌트: 환경변수 값이 올바른 JSON인지 확인하세요. 따옴표로 감싸거나, Base64 인코딩된 값은 먼저 디코딩해야 합니다.");
+      } else {
+        const token = await getAccessToken(saJson);
+        const headers = new Headers(init.headers);
+        headers.set("Authorization", `Bearer ${token}`);
+        console.log("[fetchWithAuth] ✓ Service Account OAuth2 인증 성공");
+        return fetch(url, { ...init, headers });
+      }
     } catch (err) {
-      console.error("Service account auth failed:", err instanceof Error ? err.message : err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("[fetchWithAuth] ⚠️ Service Account 인증 실패 — API Key로 fallback", {
+        error: errMsg,
+        saJsonLength: env.GOOGLE_SERVICE_ACCOUNT_JSON.length,
+        saJsonStart: env.GOOGLE_SERVICE_ACCOUNT_JSON.slice(0, 20),
+        hint: errMsg.includes("Token exchange failed")
+          ? "서비스 계정 키가 만료되었거나 비활성화됨. Google Cloud Console에서 새 키 생성 필요"
+          : errMsg.includes("importKey")
+            ? "private_key 형식 오류. PEM 형식(-----BEGIN PRIVATE KEY-----)인지 확인"
+            : "JSON 형식, client_email, private_key 필드 확인 필요",
+      });
       // fallback to API keys
     }
+  } else {
+    console.warn("[fetchWithAuth] GOOGLE_SERVICE_ACCOUNT_JSON 미설정 — API Key만 사용 가능 (GCS URI 미반환)");
   }
 
   // 2) API Key fallback
