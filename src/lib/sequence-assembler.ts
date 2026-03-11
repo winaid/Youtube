@@ -179,6 +179,27 @@ function parseTimingBeats(timingBeat?: string, durationSec: number = 8): TimingB
   return beats;
 }
 
+// ── Environment/Landscape 상수 ──
+
+/** Environment 씬에서 허용되는 연속 카메라 모션 (cut 기반 모션 불가) */
+const ENVIRONMENT_CONTINUOUS_MOTIONS = [
+  "slow push-in", "smooth pan", "gentle drift", "slow pull-back",
+  "slow crane up", "slow crane down", "slow orbit", "floating drift",
+  "subtle dolly", "slow sweep", "gradual tilt up", "gradual tilt down",
+];
+
+/** Environment 씬에서 금지되는 cut 기반 카메라 지시 */
+const ENVIRONMENT_BANNED_MOTIONS = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut)\b/i;
+
+/** Environment positive 키워드 (반드시 포함) */
+const ENVIRONMENT_POSITIVE_KEYWORDS = ["photorealistic", "cinematic", "live-action"];
+
+/** Environment negative 키워드 (반드시 배제) */
+const ENVIRONMENT_NEGATIVE_KEYWORDS = [
+  "text overlay", "watermark", "logo", "subtitle", "blurry", "low quality",
+  "UI element", "text label", "caption", "HUD",
+];
+
 export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocument {
   const { cut, config, prevCut } = input;
   const json = cut.videoPromptJson;
@@ -188,9 +209,23 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   const styleId = styleEntry?.id || config.animationMode || "live-action";
   const styleLabel = styleEntry?.positivePrompt || config.animationMode || "";
 
-  const framing = json?.shotSize || "MS";
-  const angle = json?.cameraAngle || "eye-level";
-  const motion = json?.cameraMovement || cut.cameraDirection || "slow push-in";
+  const isEnvironmentScene = cut.shotCategory === "environment";
+
+  const framing = isEnvironmentScene ? "WS" : (json?.shotSize || "MS");
+  const angle = isEnvironmentScene ? "overhead" : (json?.cameraAngle || "eye-level");
+  let motion = json?.cameraMovement || cut.cameraDirection || "slow push-in";
+
+  // Environment: cut 기반 모션 제거, 연속 모션만 허용
+  if (isEnvironmentScene) {
+    if (ENVIRONMENT_BANNED_MOTIONS.test(motion)) {
+      motion = "slow push-in";
+    }
+    // 연속 모션이 아닌 경우 기본값으로 대체
+    const isValid = ENVIRONMENT_CONTINUOUS_MOTIONS.some(m => motion.toLowerCase().includes(m));
+    if (!isValid && motion !== "static") {
+      motion = "slow push-in";
+    }
+  }
 
   const primarySubject = json?.subjectAction || cut.sceneDescription;
   const characterRef = json?.characterRef || cut.characterConsistency || undefined;
@@ -204,6 +239,13 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     ? config.negativePrompt.split(",").map(s => s.trim()).filter(Boolean)
     : [];
 
+  // Environment: 추가 negative 강화
+  if (isEnvironmentScene) {
+    for (const neg of ENVIRONMENT_NEGATIVE_KEYWORDS) {
+      if (!universalNeg.includes(neg)) universalNeg.push(neg);
+    }
+  }
+
   const continuitySubject = prevCut?.videoPromptJson?.subjectAction || prevCut?.sceneDescription || primarySubject;
   const continuityCharRef = prevCut?.characterConsistency || characterRef;
   const continuityEnv = prevCut?.videoPromptJson?.locationCue || cut.sceneDescription.slice(0, 80);
@@ -216,12 +258,22 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     mediumLock = "physical map surface — not a landscape, not a 3D render, not a CGI scene";
   }
 
+  // Environment: globalStyle에 photorealistic cinematic 보장
+  let globalStyle = styleLabel;
+  if (isEnvironmentScene) {
+    for (const kw of ENVIRONMENT_POSITIVE_KEYWORDS) {
+      if (!globalStyle.toLowerCase().includes(kw)) {
+        globalStyle = `${globalStyle} ${kw}`.trim();
+      }
+    }
+  }
+
   return {
     shotId: `shot_${cut.cutNumber}`,
     cutNumber: cut.cutNumber,
 
     global: {
-      style: styleLabel,
+      style: globalStyle,
       styleId,
       medium: mediumLock ? "physical map surface" : undefined,
       aspectRatio: config.aspectRatio,
@@ -435,6 +487,32 @@ export function validateShotDocument(doc: SingleShotDocument): ValidationResult 
     });
   }
 
+  // Rule 11: Environment scene — cut-based camera banned
+  if (doc.scene.shotCategory === "environment") {
+    if (ENVIRONMENT_BANNED_MOTIONS.test(doc.camera.motion)) {
+      issues.push({
+        rule: "environment_cut_motion",
+        severity: "error",
+        message: `Environment scene uses cut-based motion "${doc.camera.motion}" — must use continuous motion`,
+        field: "camera.motion",
+      });
+    }
+
+    // Rule 12: Environment — positive/negative conflict check
+    const posText = doc.global.style.toLowerCase();
+    const allNegLower = [...doc.negatives.universal, ...doc.negatives.sceneSpecific].map(n => n.toLowerCase());
+    for (const posKw of ENVIRONMENT_POSITIVE_KEYWORDS) {
+      if (allNegLower.includes(posKw) && posText.includes(posKw)) {
+        issues.push({
+          rule: "environment_pos_neg_overlap",
+          severity: "error",
+          message: `"${posKw}" in both positive style and negatives`,
+          field: "negatives",
+        });
+      }
+    }
+  }
+
   return {
     valid: issues.filter(i => i.severity === "error").length === 0,
     issues,
@@ -544,6 +622,41 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
     fixes.push("Added medium lock for map scene");
   }
 
+  // Fix 8: Environment scene — enforce continuous camera motion
+  if (result.scene.shotCategory === "environment") {
+    // Remove cut-based motions
+    if (ENVIRONMENT_BANNED_MOTIONS.test(result.camera.motion)) {
+      const old = result.camera.motion;
+      result.camera.motion = "slow push-in";
+      fixes.push(`Environment: replaced cut-based motion "${old}" → "slow push-in"`);
+    }
+
+    // Force wide framing for environment
+    const closeFramings = ["ECU", "CU", "MCU"];
+    if (closeFramings.includes(result.camera.framing.toUpperCase())) {
+      const old = result.camera.framing;
+      result.camera.framing = "WS";
+      result.camera.angle = "overhead";
+      fixes.push(`Environment: replaced close framing "${old}" → "WS" overhead`);
+    }
+
+    // Remove positive/negative overlaps
+    const posText = result.global.style.toLowerCase();
+    const filterEnvConflicts = (negArr: string[]) => {
+      return negArr.filter(neg => {
+        const lc = neg.toLowerCase();
+        if (ENVIRONMENT_POSITIVE_KEYWORDS.includes(lc) && posText.includes(lc)) {
+          fixes.push(`Environment: removed conflicting negative "${neg}" (also in positive)`);
+          return false;
+        }
+        return true;
+      });
+    };
+    result.negatives.universal = filterEnvConflicts(result.negatives.universal);
+    result.negatives.sceneSpecific = filterEnvConflicts(result.negatives.sceneSpecific);
+    result.negatives.user = filterEnvConflicts(result.negatives.user);
+  }
+
   return { doc: result, fixes };
 }
 
@@ -573,6 +686,21 @@ export function resolveConflicts(doc: SingleShotDocument): {
     result.camera.motion = oldMotion.replace(cp, "").replace(/\s{2,}/g, " ").trim();
     if (result.camera.motion !== oldMotion) {
       resolutions.push(`Removed conflicting framing from motion: "${oldMotion}" -> "${result.camera.motion}"`);
+    }
+  }
+
+  // Resolution 2a: Environment scene — continuous camera only
+  if (result.scene.shotCategory === "environment") {
+    // Remove shot boundary terms from motion
+    const shotBoundaryTerms = /\b(cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to|jump\s+cut)\b/gi;
+    const oldMotion = result.camera.motion;
+    result.camera.motion = oldMotion.replace(shotBoundaryTerms, "").replace(/\s{2,}/g, " ").trim();
+    if (result.camera.motion !== oldMotion) {
+      resolutions.push(`Environment: removed shot boundary terms from motion: "${oldMotion}" → "${result.camera.motion}"`);
+    }
+    if (!result.camera.motion) {
+      result.camera.motion = "slow push-in";
+      resolutions.push("Environment: empty motion after cleanup → default slow push-in");
     }
   }
 
@@ -720,6 +848,23 @@ export function serializeForProvider(
     sections.moodLighting = doc.scene.moodLighting;
   }
 
+  // 6b. Environment atmosphere enrichment
+  if (doc.scene.shotCategory === "environment") {
+    const atmosphereParts: string[] = [];
+    // 조명이 이미 있으면 shadow/haze 보강만
+    if (!doc.scene.moodLighting?.toLowerCase().includes("shadow")) {
+      atmosphereParts.push("gentle shadows over terrain");
+    }
+    if (!doc.scene.moodLighting?.toLowerCase().includes("haze")) {
+      atmosphereParts.push("subtle ambient haze emphasizing depth and elevation");
+    }
+    if (atmosphereParts.length > 0) {
+      const atmo = atmosphereParts.join(", ");
+      parts.push(atmo);
+      sections.atmosphere = atmo;
+    }
+  }
+
   // 7. Timing beats
   const beatsLine = doc.timing.beats
     .map(b => `${b.startSec}s-${b.endSec}s: ${b.description}`)
@@ -823,6 +968,7 @@ export interface AssembleFromJSONResult {
     sections: Record<string, string>;
     truncated: boolean;
     isMapScene: boolean;
+    isEnvironmentScene: boolean;
   };
 }
 
@@ -875,6 +1021,8 @@ export function assembleFromJSON(input: {
         input.cut.videoPromptJson,
         input.cut.cutNumber - 1,
         input.config.durationSeconds || 8,
+        0,
+        { shotCategory: input.cut.shotCategory, characterRole: input.cut.characterRole },
       )
     : {
         shotId: `shot_${input.cut.cutNumber}`,
@@ -888,6 +1036,8 @@ export function assembleFromJSON(input: {
         visualDirectives: [],
         negativeDirectives: [...new Set(allNeg)].slice(0, 30),
         moodLighting: resolvedDoc.scene.moodLighting,
+        shotCategory: input.cut.shotCategory,
+        characterRole: input.cut.characterRole,
       };
 
   const structuredSequence: StructuredSequenceDocument = {
@@ -931,6 +1081,7 @@ export function assembleFromJSON(input: {
       sections: serializedPreview.debug.sections,
       truncated: serializedPreview.debug.truncated,
       isMapScene: resolvedDoc.scene.shotCategory === "map-graphic",
+      isEnvironmentScene: resolvedDoc.scene.shotCategory === "environment",
     },
   };
 }
@@ -1002,6 +1153,19 @@ export function renderSequenceForProvider(
 
   // Mood/Lighting
   if (shot.moodLighting) parts.push(shot.moodLighting);
+
+  // Environment atmosphere enrichment (renderSequenceForProvider)
+  const isEnvScene = shot.shotCategory === "environment";
+  if (isEnvScene) {
+    const atmos: string[] = [];
+    if (!shot.moodLighting?.toLowerCase().includes("shadow")) {
+      atmos.push("gentle shadows over terrain");
+    }
+    if (!shot.moodLighting?.toLowerCase().includes("haze")) {
+      atmos.push("subtle ambient haze emphasizing depth and elevation");
+    }
+    if (atmos.length > 0) parts.push(atmos.join(", "));
+  }
 
   // Timing beat
   if (shot.timingBeat) parts.push(shot.timingBeat);

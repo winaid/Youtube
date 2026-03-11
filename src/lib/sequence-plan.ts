@@ -21,7 +21,7 @@ import type { VideoPromptJson, ExtendPromptJson, Cut } from "@/types";
 /** 시퀀스 전역 의도 */
 export interface SequenceGlobalIntent {
   /** 씬 유형 */
-  sceneType: "cinematic_sequence" | "montage" | "single_take" | "dialogue" | "action" | "transition";
+  sceneType: "cinematic_sequence" | "montage" | "single_take" | "dialogue" | "action" | "transition" | "environment_landscape";
   /** 스타일 ID (style-catalog 참조) */
   styleId: string;
   /** 스타일 설명 (자연어) — e.g. "cinematic realism" */
@@ -331,7 +331,7 @@ function buildNegativeDirectives(cut: Cut): string[] {
     neg.push(...MAP_MEDIUM_LOCK_NEGATIVES);
   }
   if (cut.shotCategory === "environment") {
-    neg.push("no text overlay", "no UI element");
+    neg.push("no text overlay", "no UI element", "no caption", "no HUD", "no logo", "no subtitle");
   }
   if (cut.shotCategory === "character-driven") {
     neg.push("no deformed face", "no extra limbs");
@@ -390,6 +390,8 @@ function extractSequenceContinuity(cuts: Cut[], shots: ShotPlan[]): SequenceCont
 function inferSceneType(cuts: Cut[]): SequenceGlobalIntent["sceneType"] {
   if (cuts.length === 1) return "single_take";
   const categories = cuts.map(c => c.shotCategory).filter(Boolean);
+  const envCount = categories.filter(c => c === "environment").length;
+  if (envCount >= cuts.length * 0.6) return "environment_landscape";
   const charDriven = categories.filter(c => c === "character-driven").length;
   if (charDriven >= cuts.length * 0.6) return "dialogue";
   const transition = categories.filter(c => c === "transition-atmosphere").length;
@@ -1023,12 +1025,13 @@ export function videoPromptJsonToShotPlan(
   shotIndex: number,
   durationSec: number,
   startSec: number = 0,
+  opts?: { shotCategory?: string; characterRole?: string },
 ): ShotPlan {
   return {
     shotId: `shot_${shotIndex + 1}`,
     startSec,
     endSec: startSec + durationSec,
-    shotType: mapShotType(json.shotSize),
+    shotType: mapShotType(json.shotSize, opts?.shotCategory),
     camera: {
       framing: normalizeFraming(json.shotSize),
       angle: normalizeAngle(json.cameraAngle),
@@ -1048,6 +1051,8 @@ export function videoPromptJsonToShotPlan(
     visualMedium: undefined,
     moodLighting: json.moodLighting || "",
     transitionFromPrev: json.transitionFromPrev || undefined,
+    shotCategory: opts?.shotCategory,
+    characterRole: opts?.characterRole,
     locationCue: json.locationCue,
     situationCue: json.situationCue,
     emotionalAnchor: json.emotionalAnchor,
@@ -1115,6 +1120,27 @@ export function resolveFramingConflicts(plan: SequencePlan): ConflictResolutionR
       shot.camera.framing = "WS";
       shot.camera.angle = "overhead";
       resolutions.push(`${shot.shotId}: map-graphic ${old} → WS overhead`);
+    }
+  }
+
+  // 4. Environment scene — enforce continuous camera, remove cut-based motion
+  const ENVIRONMENT_BANNED = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut|cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to)\b/gi;
+  for (const shot of result.shots) {
+    if (shot.shotCategory === "environment") {
+      // Force wide framing
+      if (CLOSE_FRAMINGS.has(shot.camera.framing) || shot.camera.framing === "MCU") {
+        const old = shot.camera.framing;
+        shot.camera.framing = "WS";
+        shot.camera.angle = "overhead";
+        resolutions.push(`${shot.shotId}: environment ${old} → WS overhead`);
+      }
+      // Remove cut-based motions
+      const oldMotion = shot.camera.motion;
+      shot.camera.motion = oldMotion.replace(ENVIRONMENT_BANNED, "").replace(/\s{2,}/g, " ").trim();
+      if (!shot.camera.motion) shot.camera.motion = "slow push-in";
+      if (shot.camera.motion !== oldMotion) {
+        resolutions.push(`${shot.shotId}: environment cut-based motion → "${shot.camera.motion}"`);
+      }
     }
   }
 

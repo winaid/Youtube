@@ -607,6 +607,299 @@ section("16. Provider capability: acceptsStructuredPayload 의미");
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Test 17: Environment/Landscape — continuous camera only
+// ═══════════════════════════════════════════════════════════════════
+
+section("17. Environment/Landscape: continuous camera enforcement");
+
+{
+  // Environment cut with cut-based motion should be sanitized
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Eurasian steppe map with red highlight spreading",
+    cameraDirection: "whip pan across terrain",
+    moodLighting: "soft diffused overcast daylight",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Red highlight gradually spreading across steppe",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "CU",  // Should be overridden to WS for environment
+      cameraAngle: "eye-level",
+      cameraMovement: "whip pan (dramatic reveal)",
+      subjectAction: "red highlight emerges in central steppe",
+      locationCue: "Eurasian steppe terrain",
+      moodLighting: "soft diffused overcast daylight casting gentle shadows",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const doc = result.document;
+
+  // Camera should be WS, not CU
+  assert(doc.camera.framing === "WS", "environment: CU → WS");
+  // Camera should use continuous motion
+  assert(!doc.camera.motion.toLowerCase().includes("whip"), "environment: whip pan removed");
+  assert(doc.camera.motion.includes("push-in") || doc.camera.motion.includes("pan") || doc.camera.motion.includes("drift"),
+    "environment: continuous motion applied");
+
+  // Verify in structuredSequence
+  const seq = result.structuredSequence;
+  assert(seq.shotPlan !== undefined, "environment: shotPlan exists");
+
+  console.log(`  ✓ Environment scene: framing=${doc.camera.framing}, motion="${doc.camera.motion}"`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 18: Environment — positive/negative conflict dedup
+// ═══════════════════════════════════════════════════════════════════
+
+section("18. Environment: positive/negative conflict dedup");
+
+{
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Wide steppe landscape with overcast sky",
+    cameraDirection: "slow push-in",
+    moodLighting: "overcast diffused light",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Terrain contours visible under soft light",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "overhead",
+      cameraMovement: "slow push-in (revealing terrain)",
+      subjectAction: "terrain contours emerge under soft light",
+      moodLighting: "soft diffused overcast daylight",
+      styleSuffix: "photorealistic cinematic, live-action footage",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+
+  // Global style should include photorealistic, cinematic, live-action
+  const style = result.document.global.style.toLowerCase();
+  assert(style.includes("photorealistic") || style.includes("cinematic"),
+    "environment: positive keywords in style");
+
+  // Negatives should NOT include photorealistic/cinematic/live-action
+  const allNeg = [
+    ...result.document.negatives.universal,
+    ...result.document.negatives.sceneSpecific,
+    ...result.document.negatives.failureMode,
+    ...result.document.negatives.user,
+  ].map(n => n.toLowerCase());
+
+  // Check that positive keywords are not in negatives
+  for (const kw of ["photorealistic", "cinematic", "live-action"]) {
+    if (style.includes(kw)) {
+      assert(!allNeg.includes(kw), `environment: "${kw}" not in negatives when in positive`);
+    }
+  }
+
+  // Standard negatives should remain
+  assert(allNeg.includes("text overlay"), "environment: text overlay in negatives");
+  assert(allNeg.includes("watermark"), "environment: watermark in negatives");
+  assert(allNeg.includes("blurry"), "environment: blurry in negatives");
+
+  console.log(`  ✓ Positive/negative conflict resolved — no overlap`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 19: Environment — atmosphere detail enrichment in serialization
+// ═══════════════════════════════════════════════════════════════════
+
+section("19. Environment: atmosphere enrichment in serialized output");
+
+{
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Steppe terrain with red highlight",
+    cameraDirection: "slow push-in",
+    moodLighting: "soft diffused overcast daylight",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Red highlight on steppe",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "overhead",
+      cameraMovement: "slow push-in (terrain reveal)",
+      subjectAction: "red highlight gradually spreading across steppe",
+      locationCue: "physical relief map of Eurasian steppe",
+      moodLighting: "soft diffused overcast daylight",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const seq = result.structuredSequence;
+
+  // Serialize for Veo
+  const rendered = renderSequenceForProvider(seq, "veo");
+  const prompt = rendered.prompt.toLowerCase();
+
+  // Should contain atmosphere details
+  assert(prompt.includes("haze") || prompt.includes("shadow") || prompt.includes("depth"),
+    "environment: atmosphere enrichment present");
+
+  // Should NOT contain cut-based terms
+  assert(!prompt.includes("whip pan"), "environment: no whip pan in output");
+  assert(!prompt.includes("jump cut"), "environment: no jump cut in output");
+  assert(!prompt.includes("snap zoom"), "environment: no snap zoom in output");
+
+  // preview also shows it's environment
+  assert(result.preview?.isEnvironmentScene === true, "environment: isEnvironmentScene flag set");
+
+  console.log(`  ✓ Atmosphere enrichment in serialized prompt`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 20: Environment — JSON-first source of truth (sequence JSON structure)
+// ═══════════════════════════════════════════════════════════════════
+
+section("20. Environment: JSON-first sequence structure");
+
+{
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Eurasian steppe map",
+    cameraDirection: "slow push-in",
+    moodLighting: "soft diffused overcast daylight",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Red highlight on steppe",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: makeVideoPromptJson({
+      shotSize: "WS",
+      cameraAngle: "overhead",
+      cameraMovement: "slow push-in (terrain reveal)",
+      subjectAction: "red highlight emerges in central steppe and gradually spreads",
+      locationCue: "physical relief map of Eurasian steppe",
+      moodLighting: "soft diffused overcast daylight casting gentle shadows over terrain",
+      styleSuffix: "photorealistic cinematic",
+    }),
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+  const seq = result.structuredSequence;
+
+  // Validate the JSON structure matches the expected env schema
+  assert(seq.shotPlan.camera !== undefined, "env: camera in shotPlan");
+  assert(seq.shotPlan.subject !== undefined, "env: subject in shotPlan");
+  assert(seq.shotPlan.action !== undefined, "env: action in shotPlan");
+  assert(seq.negatives !== undefined, "env: negatives present");
+
+  // Negatives should include environment standard set
+  const negFlat = [
+    ...(seq.negatives?.universal || []),
+    ...(seq.negatives?.sceneSpecific || []),
+  ].map(n => n.toLowerCase());
+  assert(negFlat.includes("text overlay"), "env: text overlay negative");
+  assert(negFlat.includes("watermark"), "env: watermark negative");
+  assert(negFlat.includes("blurry"), "env: blurry negative");
+  assert(negFlat.includes("low quality"), "env: low quality negative");
+
+  // No serializedPrompt anywhere
+  assert(!("serializedPrompt" in seq), "env: no serializedPrompt in sequence");
+  assert(!JSON.stringify(seq).includes("serializedPrompt"), "env: no serializedPrompt in full JSON");
+
+  // Source of truth is structuredSequence, not a string
+  assert(!("prompt" in result), "env: no prompt in result");
+  assert(result.structuredSequence !== undefined, "env: structuredSequence is source of truth");
+
+  console.log(`  ✓ Environment JSON-first structure validated`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 21: Environment — sequence-plan resolveFramingConflicts for env scenes
+// ═══════════════════════════════════════════════════════════════════
+
+section("21. Environment: resolveFramingConflicts for environment shots");
+
+{
+  const cuts: Cut[] = [];
+  for (let i = 0; i < 3; i++) {
+    cuts.push({
+      cutNumber: i + 1, durationSec: 8,
+      sceneDescription: `Landscape scene ${i + 1}`,
+      cameraDirection: "slow push-in",
+      moodLighting: "overcast light",
+      imagePrompt: "", endImagePrompt: "",
+      videoPrompt: `Landscape ${i + 1}`,
+      extendPrompt: "",
+      transitionHint: i > 0 ? "smooth continuation" : "",
+      characterConsistency: "",
+      charactersInScene: [],
+      shotCategory: "environment",
+      videoPromptJson: makeVideoPromptJson({
+        shotSize: "CU",  // Should be forced to WS for environment
+        cameraMovement: "crash zoom (drama)",  // Should be sanitized
+        subjectAction: `terrain detail ${i + 1}`,
+      }),
+    });
+  }
+
+  const plan = buildSequencePlan(cuts);
+  const { plan: resolved, resolutions } = resolveFramingConflicts(plan);
+
+  // All environment shots should be WS
+  for (const shot of resolved.shots) {
+    assert(shot.camera.framing === "WS", `env shot ${shot.shotId}: framing is WS`);
+  }
+
+  // Cut-based motions should be removed
+  for (const shot of resolved.shots) {
+    assert(!shot.camera.motion.toLowerCase().includes("crash"), `env shot ${shot.shotId}: no crash zoom`);
+  }
+
+  assert(resolutions.length > 0, "env: framing resolutions occurred");
+  console.log(`  ✓ Environment shots: ${resolutions.length} resolutions applied`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 22: Environment — inferSceneType detects environment_landscape
+// ═══════════════════════════════════════════════════════════════════
+
+section("22. Environment: inferSceneType → environment_landscape");
+
+{
+  const cuts: Cut[] = [];
+  for (let i = 0; i < 3; i++) {
+    cuts.push({
+      cutNumber: i + 1, durationSec: 8,
+      sceneDescription: `Landscape ${i + 1}`,
+      cameraDirection: "slow pan",
+      moodLighting: "natural",
+      imagePrompt: "", endImagePrompt: "",
+      videoPrompt: `Terrain ${i + 1}`,
+      extendPrompt: "",
+      transitionHint: "",
+      characterConsistency: "",
+      charactersInScene: [],
+      shotCategory: "environment",
+    });
+  }
+
+  const plan = buildSequencePlan(cuts);
+  assert(plan.globalIntent.sceneType === "environment_landscape",
+    "3 environment cuts → environment_landscape sceneType");
+  console.log(`  ✓ inferSceneType: environment_landscape`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 결과 출력
 // ═══════════════════════════════════════════════════════════════════
 
