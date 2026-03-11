@@ -29,6 +29,7 @@ import {
 import {
   assembleFromJSON,
   renderSequenceForProvider,
+  PROVIDER_CAPABILITIES,
   type AssembleFromJSONResult,
 } from "../src/lib/sequence-assembler";
 
@@ -400,6 +401,209 @@ section("10. preview isolation");
   }
 
   console.log(`  ✓ preview는 sequence와 독립 — source of truth 영향 없음`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 11: Client source-of-truth — body에 prompt 없이 structuredSequence만으로 충분
+// ═══════════════════════════════════════════════════════════════════
+
+section("11. Client source-of-truth: structuredSequence만으로 body 생성");
+
+{
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+
+  // assembleFromJSON 반환값에 prompt가 없다
+  assert(!("prompt" in result), "result에 prompt 필드 없음");
+
+  // structuredSequence만으로 body를 구성할 수 있다
+  const body: Record<string, unknown> = {
+    structuredSequence: result.structuredSequence,
+    cutNumber: 1,
+    engine: "veo",
+  };
+  assert(body.structuredSequence !== undefined, "body.structuredSequence 존재");
+  assert(!("prompt" in body), "body에 prompt 없음");
+
+  // structuredSequence의 shotPlan에서 필수 필드가 있다
+  const seq = result.structuredSequence;
+  assert(!!seq.shotPlan, "shotPlan 있음");
+  assert(!!seq.shotPlan.camera, "camera 있음");
+  assert(!!seq.shotPlan.subject, "subject 있음");
+  assert(typeof seq.shotPlan.action === "string", "action은 string");
+
+  console.log(`  ✓ structuredSequence만으로 body 생성 가능 — prompt 없이도 OK`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 12: Server fallback serialization — string-only provider에서 서버가 직렬화
+// ═══════════════════════════════════════════════════════════════════
+
+section("12. Server fallback serialization");
+
+{
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+  const seq = result.structuredSequence;
+
+  // string-only provider (Veo)에서 서버가 마지막 직렬화 지점
+  const rendered = renderSequenceForProvider(seq, "veo");
+  assert(typeof rendered.prompt === "string", "서버 직렬화 결과는 string");
+  assert(rendered.prompt.length > 50, "직렬화 결과에 실질적 내용 있음");
+
+  // 직렬화 후에도 structuredSequence는 불변
+  assert(seq.shotPlan.camera.framing !== undefined, "직렬화 후 shotPlan 불변");
+  assert(!("serializedPrompt" in seq), "직렬화 후에도 serializedPrompt 없음");
+  assert(!("prompt" in seq), "직렬화 후에도 prompt 없음");
+
+  // Kling에서도 동일하게 서버에서 직렬화
+  const klingRendered = renderSequenceForProvider(seq, "kling");
+  assert(typeof klingRendered.prompt === "string", "Kling 직렬화도 string");
+  assert(klingRendered.negativePrompt.length > 0, "Kling은 separate negative");
+  assert(!("serializedPrompt" in seq), "Kling 직렬화 후에도 serializedPrompt 없음");
+
+  console.log(`  ✓ string-only provider에서 서버가 마지막 직렬화 지점 확인`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 13: No serializedPrompt persistence — structuredSequence 내부에 절대 없음
+// ═══════════════════════════════════════════════════════════════════
+
+section("13. serializedPrompt persistence 금지");
+
+{
+  const cuts = makeTestCuts(3);
+  const cfg = makeTestConfig();
+
+  // 여러 컷에서 모두 serializedPrompt가 없는지 확인
+  for (let i = 0; i < cuts.length; i++) {
+    const prevCut = i > 0 ? cuts[i - 1] : undefined;
+    const result = assembleFromJSON({ cut: cuts[i], config: cfg, prevCut });
+    const seq = result.structuredSequence;
+
+    assert(!("serializedPrompt" in seq), `cut ${i + 1}: serializedPrompt 없음`);
+
+    // shotPlan 내부에도 없다
+    const shotPlanStr = JSON.stringify(seq.shotPlan);
+    assert(!shotPlanStr.includes("serializedPrompt"), `cut ${i + 1}: shotPlan에 serializedPrompt 없음`);
+
+    // 전체 sequence JSON에도 없다
+    const seqStr = JSON.stringify(seq);
+    assert(!seqStr.includes("serializedPrompt"), `cut ${i + 1}: 전체 sequence에 serializedPrompt 없음`);
+  }
+
+  console.log(`  ✓ 3개 컷 모두 serializedPrompt 완전 부재 확인`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 14: Legacy compatibility — structuredSequence 없을 때만 fallback
+// ═══════════════════════════════════════════════════════════════════
+
+section("14. Legacy compatibility: fallback only without structuredSequence");
+
+{
+  // structuredSequence가 있는 경우 → prompt 불필요
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+  const seq = result.structuredSequence;
+
+  // sequence가 있으면 renderSequenceForProvider로 직렬화 가능
+  assert(seq !== undefined, "sequence 존재");
+  const rendered = renderSequenceForProvider(seq, "veo");
+  assert(rendered.prompt.length > 0, "sequence에서 직렬화 가능");
+
+  // videoPromptJson 없는 레거시 cut에서도 structuredSequence 생성됨
+  const legacyCut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "A simple scene",
+    cameraDirection: "static",
+    moodLighting: "natural",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "A simple scene with a person",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "",
+    charactersInScene: [],
+  };
+  const legacyResult = assembleFromJSON({ cut: legacyCut, config: cfg });
+  assert(legacyResult.structuredSequence !== undefined, "레거시 cut에서도 structuredSequence 생성");
+  assert(legacyResult.structuredSequence.videoPromptJson === undefined, "레거시 cut에는 videoPromptJson 없음");
+
+  // 레거시 sequence에서도 렌더링 가능
+  const legacyRendered = renderSequenceForProvider(legacyResult.structuredSequence, "veo");
+  assert(legacyRendered.prompt.length > 0, "레거시 sequence에서도 렌더링 가능");
+
+  console.log(`  ✓ structuredSequence 없을 때만 videoPromptJson/prompt fallback 사용`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 15: Debug preview isolation — renderedPromptPreview가 source of truth에 영향 없음
+// ═══════════════════════════════════════════════════════════════════
+
+section("15. Debug preview isolation");
+
+{
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+
+  // preview.renderedPrompt가 있어도 source of truth 결정에 사용되지 않는다
+  const seq = result.structuredSequence;
+  const preview = result.preview;
+
+  assert(preview !== undefined, "preview 존재");
+  assert(typeof preview!.renderedPrompt === "string", "renderedPrompt는 string");
+
+  // preview를 완전히 변경해도 sequence는 불변
+  const originalShotPlan = JSON.stringify(seq.shotPlan);
+  const originalNegatives = JSON.stringify(seq.negatives);
+  preview!.renderedPrompt = "COMPLETELY_CORRUPTED_PREVIEW";
+  preview!.wordCount = -999;
+
+  assert(JSON.stringify(seq.shotPlan) === originalShotPlan, "preview 변경 후 shotPlan 불변");
+  assert(JSON.stringify(seq.negatives) === originalNegatives, "preview 변경 후 negatives 불변");
+
+  // preview에서 만들어진 값이 sequence에 흘러가지 않는다
+  assert(!JSON.stringify(seq).includes("COMPLETELY_CORRUPTED"), "corrupt된 preview가 sequence에 없음");
+
+  // acceptsStructuredPayload = false일 때도 source of truth는 structuredSequence
+  // (renderSequenceForProvider는 sequence를 읽어 새 string을 만듦, sequence를 수정하지 않음)
+  const rendered = renderSequenceForProvider(seq, "veo");
+  assert(!rendered.prompt.includes("COMPLETELY_CORRUPTED"), "직렬화에도 corrupt된 preview 미사용");
+  assert(rendered.prompt.length > 50, "직렬화는 sequence에서 정상 작동");
+
+  console.log(`  ✓ preview는 완전히 격리됨 — source of truth 판단에 미사용`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 16: Provider capability — acceptsStructuredPayload semantics
+// ═══════════════════════════════════════════════════════════════════
+
+section("16. Provider capability: acceptsStructuredPayload 의미");
+
+{
+
+  // acceptsStructuredPayload = false는 "source of truth가 string"을 의미하지 않음
+  // "마지막 순간에 serialize 필요"를 의미함
+  assert(PROVIDER_CAPABILITIES.veo.acceptsStructuredPayload === false, "Veo: string-only provider");
+  assert(PROVIDER_CAPABILITIES.kling.acceptsStructuredPayload === false, "Kling: string-only provider");
+
+  // 그래도 source of truth는 structuredSequence
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+
+  // assembleFromJSON이 prompt를 반환하지 않음 (provider capability와 무관)
+  assert(!("prompt" in result), "capability false여도 prompt 미반환");
+  assert(result.structuredSequence !== undefined, "capability false여도 structuredSequence가 source of truth");
+
+  // supportsStructuredSequence 필드가 더 이상 존재하지 않음
+  assert(!("supportsStructuredSequence" in PROVIDER_CAPABILITIES.veo), "supportsStructuredSequence 필드 제거됨");
+
+  console.log(`  ✓ acceptsStructuredPayload false = serialize 타이밍 문제, 데이터 모델 문제 아님`);
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -599,11 +599,14 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
               });
             } else {
               const cut = cuts.find((c) => c.cutNumber === cutNumber);
+              // structuredSequence를 1급 저장 대상으로 포함
+              const clipForRecord = state.clips.find(c => c.cutNumber === cutNumber);
               const saved = saveVideoRecord({
                 operationName,
                 engine,
                 gcsUri,
                 proxyUri,
+                // prompt는 legacy 호환용 fallback일 뿐. source of truth는 structuredSequence.
                 prompt: cut?.videoPrompt?.slice(0, 500) || "",
                 mode: isExtend ? "extend" : "generate",
                 durationSec: cut?.durationSec || 8,
@@ -611,6 +614,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                 sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
                 seed: clipUpdate.seed,
                 status: "completed",
+                structuredSequence: clipForRecord?.structuredSequence,
               });
               console.log(`[CUT ${cutNumber}] ✅ 영상 기록 저장됨 (id: ${saved.id})`);
             }
@@ -907,9 +911,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         // 병렬 실행 완료 대기
         await Promise.all(parallelTasks);
 
-        // refine 결과 적용
+        // refine 결과 적용 (legacyPrompt는 safety fallback 전용)
         if (refinedPrompt) {
-          prompt = refinedPrompt;
+          legacyPrompt = refinedPrompt;
         }
 
         // ═══ verify-prompt: 생성 차단 판정만 동기, 나머지는 비동기 ═══════════
@@ -987,11 +991,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         updateClip(cutNumber, { qualityChecklist: checklist });
       }
 
-      // ── UI에 structuredSequence 저장 (source of truth) ──
-      // finalPrompt는 디버그 preview만 — source of truth 아님
+      // ── UI에 structuredSequence 저장 (유일한 source of truth) ──
+      // fallbackRenderedPrompt는 디버그 미리보기 전용 — source of truth 아님
       updateClip(cutNumber, {
         structuredSequence: sequence,
-        finalPrompt: assembled.preview?.renderedPrompt || "(structured sequence — no string render)",
+        fallbackRenderedPrompt: assembled.preview?.renderedPrompt,
+        finalPrompt: assembled.preview?.renderedPrompt, // deprecated alias
         assembledDebug: assembled.preview ? {
           styleBlock: assembled.document.reinforcement.styleSuffix,
           consistencyBlock: assembled.document.continuity.characterRef || "",
@@ -1727,7 +1732,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
               shotId: shot.shotId,
               generated: clip?.status === "completed",
               engineUsed: clip?.engineUsed,
-              finalPrompt: clip?.finalPrompt || "",
+              // deprecated: fidelity eval에서 finalPrompt는 fallback preview일 뿐
+              finalPrompt: clip?.fallbackRenderedPrompt || clip?.finalPrompt || "",
               verification: clip?.verification ? {
                 overallScore: clip.verification.overallScore,
                 issues: clip.verification.issues,

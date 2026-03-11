@@ -19,7 +19,15 @@ import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
 
 export interface ProviderCapability {
   id: "veo" | "kling";
-  supportsStructuredSequence: boolean;
+  /**
+   * Provider가 structured JSON payload를 직접 이해하는지 여부.
+   *
+   * false = provider가 string prompt만 받을 수 있음.
+   *         그러나 이것은 데이터 모델의 문제가 아니라 serialize 타이밍의 문제.
+   *         source of truth는 언제나 StructuredSequenceDocument이며,
+   *         false일 때는 마지막 전송 직전에 renderSequenceForProvider()로 직렬화할 뿐.
+   */
+  acceptsStructuredPayload: boolean;
   supportsNegativePrompt: boolean;
   supportsShotMetadata: boolean;
   maxPromptWords: number;
@@ -29,7 +37,7 @@ export interface ProviderCapability {
 export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
   veo: {
     id: "veo",
-    supportsStructuredSequence: false,
+    acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
     supportsNegativePrompt: false,
     supportsShotMetadata: false,
     maxPromptWords: 250,
@@ -37,7 +45,7 @@ export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
   },
   kling: {
     id: "kling",
-    supportsStructuredSequence: false,
+    acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
     supportsNegativePrompt: true,
     supportsShotMetadata: false,
     maxPromptWords: 300,

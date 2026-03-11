@@ -150,7 +150,8 @@ function serializeSequenceToPrompt(
 
 interface GenerateVideoRequest {
   // ── 공통 ──────────────────────────────────────────────────────────────────
-  prompt: string;
+  /** @deprecated legacy fallback. source of truth는 structuredSequence. */
+  prompt?: string;
   engine?: "veo" | "kling" | "auto";   // 사용할 엔진 (default: veo)
   videoMode?: "generate" | "extend";   // generate: 독립 생성, extend: 이전 영상 이어서
   sourceVideo?: string;                // extend 모드의 소스 (Veo: gs:// URI, Kling: task_id/video_id)
@@ -200,58 +201,71 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const req = await context.request.json() as GenerateVideoRequest;
 
     // ── JSON-first 프롬프트 해석 ─────────────────────────────────────────────
-    // 서버가 마지막 직렬화 지점이다.
-    // 우선순위: structuredSequence > videoPromptJson > prompt (legacy)
-    // structuredSequence가 있으면 서버에서 직렬화한다.
-    // req.prompt는 legacy fallback transport field일 뿐 source of truth가 아니다.
+    // 서버가 "마지막 직렬화 지점"이다.
+    // source of truth: structuredSequence (1급) > videoPromptJson (legacy) > prompt (legacy fallback)
+    //
+    // finalPromptForProvider는 일시적 transport payload일 뿐이며,
+    // 저장하거나 source of truth로 취급하면 안 된다.
+    // structuredSequence가 있으면 여기서 provider에 맞춰 직렬화한다.
+    let finalPromptForProvider: string | undefined;
     let usedPath: "structuredSequence" | "videoPromptJson" | "prompt_legacy" = "prompt_legacy";
     let fallbackReason: string | undefined;
+    const hasStructuredSequence = !!req.structuredSequence?.shotPlan;
 
-    if (req.structuredSequence?.shotPlan) {
-      // 1순위: structuredSequence — 서버에서 직렬화
+    if (hasStructuredSequence) {
+      // 1순위: structuredSequence — 서버에서 마지막 직렬화
       // 엔진 결정 전이므로 일단 Veo로 직렬화 (아래에서 Kling이면 재직렬화)
-      const serialized = serializeSequenceToPrompt(req.structuredSequence, "veo");
-      req.prompt = serialized.prompt;
+      const serialized = serializeSequenceToPrompt(req.structuredSequence!, "veo");
+      finalPromptForProvider = serialized.prompt;
       usedPath = "structuredSequence";
-      console.log("[generate-video] structuredSequence → 서버 직렬화", {
+      console.log("[generate-video] structuredSequence → 서버 직렬화 (last-mile)", {
         cutNumber: req.cutNumber,
-        shotId: req.structuredSequence.shotId,
-        promptLen: req.prompt.length,
-        validation: req.structuredSequence.validation,
-        hasVideoPromptJson: !!req.structuredSequence.videoPromptJson,
-        hasNegatives: !!req.structuredSequence.negatives,
+        shotId: req.structuredSequence!.shotId,
+        serializedLen: finalPromptForProvider.length,
+        serializedPreview: finalPromptForProvider.slice(0, 120),
+        validation: req.structuredSequence!.validation,
+        hasVideoPromptJson: !!req.structuredSequence!.videoPromptJson,
+        hasNegatives: !!req.structuredSequence!.negatives,
+        structuredPath: true,
+        stringFallback: false,
       });
     } else if (req.videoPromptJson && !req.prompt) {
-      // 2순위: videoPromptJson (legacy)
-      req.prompt = renderVeoPromptFromJson(req.videoPromptJson);
+      // 2순위: videoPromptJson (legacy — structuredSequence 없는 구 클라이언트)
+      finalPromptForProvider = renderVeoPromptFromJson(req.videoPromptJson);
       usedPath = "videoPromptJson";
       fallbackReason = "no structuredSequence";
-      console.log("[generate-video] videoPromptJson fallback", {
+      console.log("[generate-video] videoPromptJson fallback (legacy)", {
         cutNumber: req.cutNumber,
-        promptLen: req.prompt.length,
+        serializedLen: finalPromptForProvider.length,
         fallbackReason,
+        structuredPath: false,
+        stringFallback: true,
       });
     } else if (req.prompt) {
-      // 3순위: prompt string (legacy)
+      // 3순위: prompt string (legacy — 최후 fallback)
+      finalPromptForProvider = req.prompt;
       usedPath = "prompt_legacy";
       fallbackReason = "no structuredSequence, no videoPromptJson";
       console.log("[generate-video] legacy prompt string fallback", {
         cutNumber: req.cutNumber,
-        promptLen: req.prompt.length,
+        serializedLen: finalPromptForProvider.length,
         fallbackReason,
+        structuredPath: false,
+        stringFallback: true,
       });
     }
 
-    if (!req.prompt) {
-      return Response.json({ error: "prompt is required — structuredSequence, videoPromptJson, or prompt must be provided" }, { status: 400 });
+    if (!finalPromptForProvider) {
+      return Response.json({ error: "structuredSequence, videoPromptJson, or prompt must be provided" }, { status: 400 });
     }
 
     // 서버 경로 진단 로그
-    console.log("[generate-video] source-of-truth path:", {
+    console.log("[generate-video] source-of-truth resolution:", {
       usedPath,
-      fallbackReason: fallbackReason || "none",
-      finalPromptLen: req.prompt.length,
-      finalPromptPreview: req.prompt.slice(0, 120),
+      hasStructuredSequence,
+      fallbackReason: fallbackReason || "none (structured path)",
+      finalPromptLen: finalPromptForProvider.length,
+      finalPromptPreview: finalPromptForProvider.slice(0, 120),
     });
 
     // durationSeconds 타입 검증 및 정규화
@@ -310,25 +324,30 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         );
       }
 
-      // Kling: structuredSequence가 있으면 Kling 전용으로 재직렬화
-      if (req.structuredSequence?.shotPlan) {
-        const klingResult = serializeSequenceToPrompt(req.structuredSequence, "kling");
-        req.prompt = klingResult.prompt;
-        // Kling은 별도 negative prompt 지원
+      // Kling: structuredSequence가 있으면 Kling 전용으로 재직렬화 (마지막 직렬화 지점)
+      let klingNegativePrompt = req.negativePrompt || "";
+      if (hasStructuredSequence) {
+        const klingResult = serializeSequenceToPrompt(req.structuredSequence!, "kling");
+        finalPromptForProvider = klingResult.prompt;
         if (klingResult.negativePrompt) {
-          req.negativePrompt = klingResult.negativePrompt;
+          klingNegativePrompt = klingResult.negativePrompt;
         }
-        console.log("[generate-video] Kling: structuredSequence → 서버 재직렬화", {
-          promptLen: req.prompt.length,
+        console.log("[generate-video] Kling: structuredSequence → 서버 재직렬화 (last-mile)", {
+          promptLen: finalPromptForProvider.length,
           negativeLen: klingResult.negativePrompt.length,
+          structuredPath: true,
+          stringFallback: false,
         });
       } else {
         // Legacy fallback: videoPromptJson
         const klingJson = req.videoPromptJson;
         if (klingJson) {
-          req.prompt = renderKlingPromptFromJson(klingJson);
-          console.log("[generate-video] Kling: videoPromptJson fallback 렌더링", {
-            promptLen: req.prompt.length,
+          finalPromptForProvider = renderKlingPromptFromJson(klingJson);
+          console.log("[generate-video] Kling: videoPromptJson fallback 렌더링 (legacy)", {
+            promptLen: finalPromptForProvider.length,
+            structuredPath: false,
+            stringFallback: true,
+            fallbackReason: "no structuredSequence",
           });
         }
       }
@@ -372,8 +391,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           console.log("[Kling] EXTEND mode (last-frame → image-to-video)", { frameLen: validLast.length });
           const result = await klingExtend(context.env, {
             lastFrameBase64: validLast,
-            prompt:          req.prompt,
-            negative_prompt: req.negativePrompt,
+            prompt:          finalPromptForProvider,
+            negative_prompt: klingNegativePrompt,
             duration,
             aspect_ratio:    aspectRatio,
           });
@@ -415,8 +434,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             imageTailLen:    validLast.length,
           });
           const result = await klingGenerate(context.env, {
-            prompt:          req.prompt,
-            negative_prompt: req.negativePrompt,
+            prompt:          finalPromptForProvider,
+            negative_prompt: klingNegativePrompt,
             aspect_ratio:    aspectRatio,
             duration,
             ...(validFirst ? { image:      validFirst } : {}),
@@ -471,7 +490,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // Scene Extension이 최우선: 사용자가 "이전 영상을 입력으로 넣어 이어서 생성"을 원하므로
     // previousVideoUri(gs://) 가 있으면 반드시 video input으로 넣음.
     // firstFrameBase64(프레임 기반 image-to-video)는 이전 영상이 없을 때 continuity 보조 수단.
-    const instance: Record<string, unknown> = { prompt: req.prompt };
+    const instance: Record<string, unknown> = { prompt: finalPromptForProvider };
 
     if (hasValidPrevUri) {
       // Scene Extension: 이전 컷 비디오를 직접 입력 (true extend)
@@ -658,13 +677,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const serverTotalMs = Date.now() - tServerStart;
     const veoApiMs = tVeoEnd - tVeoStart;
-    const promptLen = typeof req.prompt === "string" ? req.prompt.length : 0;
+    const promptLen = finalPromptForProvider.length;
 
     console.log("[generate-video] ⏱ timing", {
       serverTotalMs,
       veoApiMs,
       promptChars: promptLen,
-      promptWords: promptLen > 0 ? req.prompt.split(/\s+/).length : 0,
+      promptWords: promptLen > 0 ? finalPromptForProvider.split(/\s+/).length : 0,
       mode: veoMode,
       cutNumber: cutNumberRaw,
     });

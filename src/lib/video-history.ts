@@ -21,6 +21,7 @@ export interface VideoRecord {
   gcsUri: string;            // rawVideoUri (gs:// 또는 https://)
   proxyUri: string;          // 재생 가능한 프록시 URI
   canonicalVideoUri?: string; // 안정적 URI (Scene Extension용)
+  /** @deprecated legacy 호환용. source of truth는 structuredSequence. */
   prompt: string;
   mode: "generate" | "extend";
   durationSec: number;
@@ -33,6 +34,11 @@ export interface VideoRecord {
   status: "completed" | "failed";
   /** 자산 생명 주기 상태 — 생성 상태(status)와 분리 추적 */
   assetStatus?: VideoAssetStatus;
+  /**
+   * JSON-first source of truth — 생성 시점의 구조화된 시퀀스 문서.
+   * 저장 우선순위: structuredSequence > prompt (legacy fallback)
+   */
+  structuredSequence?: Record<string, unknown>;
   createdAt: number;
 }
 

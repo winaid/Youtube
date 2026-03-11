@@ -440,21 +440,50 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
-                {/* Final Merged Prompt + Debug Blocks (실제 API 전송 프롬프트) */}
-                {clip.finalPrompt && (
+                {/* Structured Sequence (source of truth) + Provider Payload Preview */}
+                {(clip.structuredSequence || clip.finalPrompt || clip.fallbackRenderedPrompt) && (
                   <div className="px-3 pb-2">
                     <details className="group">
                       <summary className="text-[10px] font-medium cursor-pointer select-none" style={{ color: "#555" }}>
-                        최종 프롬프트 (API 전송용)
-                        <span className="text-[9px] font-normal text-muted-foreground ml-1">({clip.finalPrompt.split(/\s+/).length}w)</span>
+                        시퀀스 디버그
+                        {clip.structuredSequence && <Badge className="ml-1 text-[8px]" style={{ background: "#16a34a20", color: "#16a34a" }}>JSON-first</Badge>}
                         {clip.assembledDebug?.isMapScene && (
                           <Badge className="ml-1 text-[8px]" style={{ background: "#0891b220", color: "#0891b2" }}>MAP</Badge>
                         )}
                       </summary>
                       <div className="mt-1 space-y-1">
-                        <pre className="bg-gray-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed" style={{ color: "#333", maxHeight: 200, overflowY: "auto" }}>
-                          {clip.finalPrompt}
-                        </pre>
+                        {/* 1급: Structured Sequence JSON */}
+                        {clip.structuredSequence && (
+                          <details className="ml-1" open>
+                            <summary className="text-[9px] cursor-pointer font-medium" style={{ color: "#16a34a" }}>구조화된 시퀀스 (source of truth)</summary>
+                            <pre className="bg-green-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#333", maxHeight: 200, overflowY: "auto" }}>
+                              {JSON.stringify({
+                                shotId: clip.structuredSequence.shotId,
+                                shotPlan: {
+                                  camera: clip.structuredSequence.shotPlan?.camera,
+                                  subject: clip.structuredSequence.shotPlan?.subject,
+                                  action: clip.structuredSequence.shotPlan?.action,
+                                  environment: clip.structuredSequence.shotPlan?.environment,
+                                  moodLighting: clip.structuredSequence.shotPlan?.moodLighting,
+                                },
+                                validation: clip.structuredSequence.validation,
+                              }, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                        {/* 2급: Provider Payload Preview (string fallback) */}
+                        {(clip.fallbackRenderedPrompt || clip.finalPrompt) && (
+                          <details className="ml-1">
+                            <summary className="text-[9px] cursor-pointer text-muted-foreground">
+                              provider payload preview (string fallback)
+                              <span className="text-[8px] ml-1">({(clip.fallbackRenderedPrompt || clip.finalPrompt || "").split(/\s+/).length}w)</span>
+                            </summary>
+                            <pre className="bg-gray-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#666", maxHeight: 160, overflowY: "auto" }}>
+                              {clip.fallbackRenderedPrompt || clip.finalPrompt}
+                            </pre>
+                          </details>
+                        )}
+                        {/* 3급: 블록별 분해 */}
                         {clip.assembledDebug && (
                           <details className="ml-1">
                             <summary className="text-[9px] cursor-pointer text-muted-foreground">블록별 분해</summary>

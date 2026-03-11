@@ -439,7 +439,14 @@ export interface VideoClip {
   retryCount?: number; // Enhancement: auto-retry tracking
   verification?: PromptVerification; // Enhancement: prompt quality score
   qualityChecklist?: { items: Array<{ id: string; label: string; passed: boolean; detail?: string }>; passCount: number; totalCount: number };
-  finalPrompt?: string; // 실제 API에 전송된 최종 merged prompt (디버그용)
+  /**
+   * @deprecated source of truth는 structuredSequence.
+   * 이 필드는 디버그 미리보기 용도로만 존재하며, 생성/저장 경로에서 사용 금지.
+   * provider가 string-only일 때 서버에서 마지막 순간에 직렬화한 결과의 preview.
+   */
+  fallbackRenderedPrompt?: string;
+  /** @deprecated Use fallbackRenderedPrompt. 이전 이름 호환용. */
+  finalPrompt?: string;
   assembledDebug?: { // 프롬프트 조립 블록별 분해 (디버그용)
     styleBlock: string;
     consistencyBlock: string;
@@ -460,7 +467,8 @@ export interface VideoClip {
   sceneExtensionEligible?: boolean;  // canonicalVideoUri가 있어서 다음 컷 Scene Extension 가능 여부
   // ── JSON-first asset 추적 ──
   assetStatus?: AssetStatus;         // 자산 생명 주기 상태 (생성 상태와 분리)
-  structuredSequence?: StructuredSequenceDocument; // JSON-first source of truth
+  /** JSON-first source of truth — 모든 생성/저장/디버그의 1급 데이터 */
+  structuredSequence?: StructuredSequenceDocument;
 }
 
 // ===== AI 피드백 리뷰 =====
