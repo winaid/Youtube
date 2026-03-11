@@ -180,6 +180,9 @@ export interface ExtendPromptJson {
   styleSuffix: string;
 }
 
+/** 씬 타입 분류 (품질 평가 기준 선택에 사용) */
+export type SceneType = "character" | "environment" | "object-detail" | "map-graphic" | "transition-abstract";
+
 export interface Cut {
   cutNumber: number;
   durationSec: number;
@@ -194,6 +197,9 @@ export interface Cut {
   characterConsistency: string;
   charactersInScene: string[];
   multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (durationSec >= 10 시 생성)
+  // 씬 타입 분류
+  shotCategory?: string;    // character-driven | environment | object-detail | map-graphic | transition-atmosphere
+  characterRole?: string;   // protagonist | background | silhouette | partial | absent
   // JSON 기반 프롬프트 — string 필드와 공존 (점진적 마이그레이션)
   videoPromptJson?: VideoPromptJson;
   extendPromptJson?: ExtendPromptJson;
@@ -328,6 +334,8 @@ export interface VideoVariant {
 
 export interface PromptVerification {
   overallScore: number;
+  /** 감지된 씬 타입 */
+  detectedSceneType?: SceneType;
   scores: {
     characterDescription: number;
     cameraMovement: number;
@@ -335,6 +343,8 @@ export interface PromptVerification {
     lightingMood: number;
     veoCompatibility: number;
   };
+  /** 씬 타입별 세부 점수 (0-10 각) — character 씬과 map 씬의 기준이 다름 */
+  sceneTypeScores?: Record<string, number>;
   /** Gemini 원본 6축 점수 (0-10 각) */
   rawScores?: {
     promptMatch: number;       // 프롬프트 일치도

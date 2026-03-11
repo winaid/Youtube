@@ -250,7 +250,7 @@ interface CharacterSeed {
 }
 
 /** 컷 카테고리: 피사체 중심 분류 */
-type ShotCategory = "character-driven" | "environment" | "object-detail" | "transition-atmosphere";
+type ShotCategory = "character-driven" | "environment" | "object-detail" | "map-graphic" | "transition-atmosphere";
 /** 캐릭터 역할: 컷 내 인물의 비중 */
 type CharacterRole = "protagonist" | "background" | "silhouette" | "partial" | "absent";
 
@@ -422,10 +422,10 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 - cameraMovement: ≤10 words 영어
 - subjectAction: 영어 ≤12 words — 이 씬에서 일어나는 핵심 행동/변화 (금지: stands, watches, feels)
 - transitionHint: ≤10자
-- shotCategory: "character-driven" | "environment" | "object-detail" | "transition-atmosphere"
-  (먼저 결정: 이 씬에 캐릭터가 꼭 필요한가? 정보/분위기/공간 씬은 인물 없이 설계)
+- shotCategory: "character-driven" | "environment" | "object-detail" | "map-graphic" | "transition-atmosphere"
+  (먼저 결정: 이 씬에 캐릭터가 꼭 필요한가? 정보/분위기/공간/지도 씬은 인물 없이 설계. 지도/항공/인포그래픽 씬은 "map-graphic" 사용)
 - characterRole: "protagonist" | "background" | "silhouette" | "partial" | "absent"
-  ⚠️ shotCategory가 environment/object-detail/transition-atmosphere이면 characterRole="absent" 권장
+  ⚠️ shotCategory가 environment/object-detail/map-graphic/transition-atmosphere이면 characterRole="absent" 권장
   ⚠️ characterRole이 "absent"가 아닌 경우 subjectAction은 반드시 구체적 행동 포함 (standing/motionless 금지)
 - locationCue: 영어 ≤8 words — 장소를 즉시 인식시키는 핵심 시각 오브젝트 (예: "dental chair and overhead lamp", "restaurant kitchen with steel counters")
 - situationCue: 영어 ≤8 words — 현재 상황을 즉시 보여주는 증거 (예: "empty waiting room, no patients", "long queue outside the door")
@@ -491,7 +491,7 @@ JSON만 출력:
     "slow push-in on detail",
   ];
 
-  const validCategories: ShotCategory[] = ["character-driven", "environment", "object-detail", "transition-atmosphere"];
+  const validCategories: ShotCategory[] = ["character-driven", "environment", "object-detail", "map-graphic", "transition-atmosphere"];
   const validRoles: CharacterRole[] = ["protagonist", "background", "silhouette", "partial", "absent"];
 
   const outlines: CutOutline[] = Array.isArray(parsed.outlines)

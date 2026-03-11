@@ -617,6 +617,12 @@ function sanitizeTextContent(prompt: string): string {
   if (!/no text overlay/i.test(s)) {
     s += ". No text overlay, no watermark";
   }
+  // 동양화풍 등 문자 오해 방지: 강화된 텍스트 억제
+  if (/east.?asian|ink.?wash|sumi|oriental|asian.?paint|수묵|동양/i.test(s)) {
+    if (!/no calligraphy/i.test(s)) {
+      s += ". No text, no letters, no labels, no calligraphy, no Chinese characters, no Korean characters, no Japanese characters, no typographic marks, no readable symbols";
+    }
+  }
   return s;
 }
 

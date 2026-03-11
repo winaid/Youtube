@@ -239,6 +239,8 @@ export interface QualityChecklist {
   items: QualityCheckItem[];
   passCount: number;
   totalCount: number;
+  sceneType?: string;
+  sceneTypeLabel?: string;
 }
 
 /** 비시각 메타태그 패턴 — 최종 렌더링 전에 제거해야 하는 내부 planning 언어 */
@@ -253,86 +255,113 @@ const STATIC_ACTION = /\b(stands?\s|standing\s|motionless|remains\s|stationary|f
 /** 텍스트 유도 오브젝트 — 'no readable text'와 충돌하는 표현 */
 const TEXT_GENERATING_OBJECTS = /\b(sign|signs|signage|faded sign|dusty sign|signboard|placard|billboard|marquee|banner text|lettered|lettering|readable|legible)\b/i;
 
+// ── 씬 타입 감지 (클라이언트 측) ─────────────────────────────────────────────
+type SceneType = "character" | "environment" | "object-detail" | "map-graphic" | "transition-abstract";
+
+function detectSceneTypeLocal(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  opts?: { shotCategory?: string; characterRole?: string },
+): SceneType {
+  if (opts?.shotCategory) {
+    const map: Record<string, SceneType> = {
+      "character-driven": "character",
+      "environment": "environment",
+      "object-detail": "object-detail",
+      "map-graphic": "map-graphic",
+      "transition-atmosphere": "transition-abstract",
+    };
+    if (map[opts.shotCategory]) return map[opts.shotCategory];
+  }
+  if (opts?.characterRole === "absent" || !json.characterRef) {
+    if (/\b(map|terrain|topograph|satellite|aerial|bird.?s?\s+eye|globe|continent|border|region)\b/i.test(renderedPrompt)) return "map-graphic";
+    if (/\b(landscape|cityscape|skyline|mountain|forest|ocean|panoram)\b/i.test(renderedPrompt)) return "environment";
+    if (/\b(close.?up|macro|detail|object|artifact)\b/i.test(renderedPrompt)) return "object-detail";
+    return "transition-abstract";
+  }
+  return "character";
+}
+
+// ── 씬 타입별 워드카운트 범위 ────────────────────────────────────────────────
+const WORD_RANGE: Record<SceneType, { min: number; max: number }> = {
+  "character": { min: 80, max: 350 },
+  "environment": { min: 60, max: 300 },
+  "object-detail": { min: 50, max: 250 },
+  "map-graphic": { min: 40, max: 250 },
+  "transition-abstract": { min: 40, max: 200 },
+};
+
+// ── 씬 타입별 라벨 ──────────────────────────────────────────────────────────
+const SCENE_TYPE_LABEL_KO: Record<SceneType, string> = {
+  "character": "캐릭터 씬",
+  "environment": "환경/풍경 씬",
+  "object-detail": "오브젝트/디테일 씬",
+  "map-graphic": "지도/인포그래픽 씬",
+  "transition-abstract": "전환/추상 씬",
+};
+
 /**
  * 최종 렌더링된 프롬프트에 대한 품질 체크리스트 생성
- * verify-prompt.ts 채점 기준에 맞춰 사전 검증
+ * 씬 타입에 따라 다른 기준 적용
  */
 export function generateQualityChecklist(
   renderedPrompt: string,
   json: VideoPromptJson,
   opts?: { shotCategory?: string; characterRole?: string },
 ): QualityChecklist {
+  const sceneType = detectSceneTypeLocal(renderedPrompt, json, opts);
+  const range = WORD_RANGE[sceneType];
+
+  // 씬 타입별 분기
+  if (sceneType === "map-graphic") {
+    return generateMapGraphicChecklist(renderedPrompt, json, sceneType, range);
+  }
+  if (sceneType === "environment") {
+    return generateEnvironmentChecklist(renderedPrompt, json, sceneType, range);
+  }
+  if (sceneType === "object-detail") {
+    return generateObjectDetailChecklist(renderedPrompt, json, sceneType, range);
+  }
+  if (sceneType === "transition-abstract") {
+    return generateTransitionChecklist(renderedPrompt, json, sceneType, range);
+  }
+  // character (default)
+  return generateCharacterChecklist(renderedPrompt, json, opts, range);
+}
+
+// ── 캐릭터 씬 체크리스트 ─────────────────────────────────────────────────────
+function generateCharacterChecklist(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  opts: { shotCategory?: string; characterRole?: string } | undefined,
+  range: { min: number; max: number },
+): QualityChecklist {
   const items: QualityCheckItem[] = [];
-  const isCharacterless = !json.characterRef || opts?.characterRole === "absent";
 
-  // 1. 캐릭터 없는 씬에 character placeholder가 없는지
-  const hasUnneededChar = isCharacterless && /\b(character|person|figure|subject)\b/i.test(renderedPrompt);
+  // 1. 비시각 메타태그 없는지
+  items.push(checkNoMetaTags(renderedPrompt));
+
+  // 2. 텍스트 유도 오브젝트 충돌
+  items.push(checkNoTextObjects(renderedPrompt));
+
+  // 3. 구체적 조명
+  items.push(checkConcreteLighting(json.moodLighting || ""));
+
+  // 4. 시간 진행
+  items.push(checkTemporalBeats(renderedPrompt));
+
+  // 5. 캐릭터 묘사 충분
+  const charRef = json.characterRef || "";
+  const hasDetailedChar = charRef.length >= 20 && /\b(hair|outfit|wearing|age|skin|build)\b/i.test(charRef);
   items.push({
-    id: "no-char-placeholder",
-    label: "캐릭터 없는 씬에 character placeholder 없음",
-    passed: !hasUnneededChar,
-    detail: hasUnneededChar ? "characterless 씬인데 character/person/figure 언급 발견" : undefined,
+    id: "character-description",
+    label: "캐릭터 묘사 충분 (외형+의상+특징)",
+    passed: hasDetailedChar,
+    detail: !hasDetailedChar ? "캐릭터 외형 묘사가 부족 — hair, outfit, age, skin 등 필요" : undefined,
   });
 
-  // 2. 비시각 메타태그 없는지
-  const hasMetaTags = NON_VISUAL_META_TAGS.test(renderedPrompt);
-  items.push({
-    id: "no-meta-tags",
-    label: "비시각 메타태그(REVEALED/WITHHELD 등) 없음",
-    passed: !hasMetaTags,
-    detail: hasMetaTags ? "내부 planning 태그가 최종 프롬프트에 남아있음" : undefined,
-  });
-
-  // 3. 텍스트 유도 오브젝트 충돌 없는지 (sign + 'no readable text' 동시 사용 방지)
-  const hasTextObject = TEXT_GENERATING_OBJECTS.test(renderedPrompt);
-  items.push({
-    id: "no-text-object-conflict",
-    label: "텍스트 유도 오브젝트(sign/placard 등) 없음",
-    passed: !hasTextObject,
-    detail: hasTextObject ? "sign/signboard/lettered 등이 'no text'와 충돌" : undefined,
-  });
-
-  // 4. 구체적 조명 정보 있는지 (source + direction + quality)
-  const lightingText = json.moodLighting || "";
-  const hasAbstractOnly = ABSTRACT_LIGHTING.test(lightingText.trim());
-  const hasLightSource = /\b(light|lamp|sun|moon|neon|fluorescent|candle|fire|window|bulb|glow|spill|beam)\b/i.test(lightingText);
-  const hasDirection = /\b(from|through|above|below|left|right|behind|overhead|side|rim|back|upper|lower)\b/i.test(lightingText);
-  const hasQuality = /\b(soft|harsh|diffused|sharp|warm|cool|cold|pale|bright|dim|weak|flickering|steady|dappled)\b/i.test(lightingText);
-  const concreteLight = hasLightSource && hasDirection && !hasAbstractOnly;
-  items.push({
-    id: "concrete-lighting",
-    label: "구체적 광원(source+direction+quality) 포함",
-    passed: concreteLight,
-    detail: !concreteLight
-      ? `조명: "${lightingText}" — 필요: source(${hasLightSource ? "✓" : "✗"}) + direction(${hasDirection ? "✓" : "✗"}) + quality(${hasQuality ? "✓" : "✗"})`
-      : undefined,
-  });
-
-  // 5. 씬 진행/카메라 움직임 있는지
-  const hasTemporal = /\d+s[-–]?\d+s/.test(renderedPrompt) || /first|then|finally/i.test(renderedPrompt);
-  items.push({
-    id: "visual-progression",
-    label: "시간 진행(temporal beat) 포함",
-    passed: hasTemporal,
-    detail: !hasTemporal ? "0s-2s: ... 형태의 시간 비트가 없음" : undefined,
-  });
-
-  // 6. 씬 타입과 프롬프트가 일치하는지
-  const sceneTypeMatched = (() => {
-    if (!opts?.shotCategory) return true;
-    if (opts.shotCategory === "character-driven") return !!json.characterRef;
-    if (opts.shotCategory === "environment" || opts.shotCategory === "transition-atmosphere") return !json.characterRef || json.characterRef === "";
-    return true;
-  })();
-  items.push({
-    id: "scene-type-match",
-    label: "씬 타입과 프롬프트 일치",
-    passed: sceneTypeMatched,
-    detail: !sceneTypeMatched ? `shotCategory=${opts?.shotCategory}인데 characterRef 불일치` : undefined,
-  });
-
-  // 7. 정적 행동 없는지 (캐릭터 있는 경우)
-  const hasStaticAction = !isCharacterless && STATIC_ACTION.test(renderedPrompt);
+  // 6. 정적 행동 없는지
+  const hasStaticAction = STATIC_ACTION.test(renderedPrompt);
   items.push({
     id: "no-static-action",
     label: "정적 행동(stands/motionless) 없음",
@@ -340,69 +369,16 @@ export function generateQualityChecklist(
     detail: hasStaticAction ? "standing/motionless 같은 정적 행동 발견" : undefined,
   });
 
-  // 8. 시각 디테일 밀도 (환경 묘사 요소 수)
-  const visualDetailPatterns = [
-    /\b(desk|table|chair|door|window|wall|floor|ceiling|shelf|counter|cabinet)\b/i,
-    /\b(dust|crack|stain|scratch|worn|peeling|faded|rusty|weathered|chipped)\b/i,
-    /\b(reflection|shadow|silhouette|haze|fog|mist|smoke|steam|condensation)\b/i,
-    /\b(blinds|curtain|frame|tile|pipe|wire|cable|vent|grate|rail)\b/i,
-    /\b(flickering|buzzing|dripping|swaying|creaking|settling)\b/i,
-  ];
-  const detailCount = visualDetailPatterns.filter(p => p.test(renderedPrompt)).length;
-  const goodDensity = detailCount >= 2;
-  items.push({
-    id: "visual-detail-density",
-    label: "시각 디테일 밀도 충분 (환경 오브젝트 2+)",
-    passed: goodDensity,
-    detail: !goodDensity ? `환경 디테일 카테고리 ${detailCount}/5 — 구체적 오브젝트/질감/현상 추가 필요` : undefined,
-  });
+  // 7. 시각 디테일 밀도
+  items.push(checkVisualDetailDensity(renderedPrompt));
 
-  // 9. 즉시 인식 가능성 — 장소 정체성 오브젝트 존재 여부 (WHERE)
-  const locationObjects = [
-    /\b(desk|reception|counter|register|checkout)\b/i,
-    /\b(chair|seat|bench|stool|sofa|couch)\b/i,
-    /\b(kitchen|stove|oven|fridge|sink|pan|pot)\b/i,
-    /\b(clinic|hospital|dental|medical|surgical|stethoscope|chart)\b/i,
-    /\b(classroom|blackboard|whiteboard|textbook|locker)\b/i,
-    /\b(office|cubicle|monitor|keyboard|printer|filing)\b/i,
-    /\b(restaurant|menu|plate|glass|napkin|tablecloth)\b/i,
-    /\b(street|sidewalk|crosswalk|curb|storefront|awning)\b/i,
-    /\b(car|vehicle|steering|dashboard|windshield|headlight)\b/i,
-    /\b(bed|pillow|blanket|nightstand|bedroom|mattress)\b/i,
-    /\b(waiting\s+room|operatory|lobby|hallway|corridor|entrance)\b/i,
-    /\b(warehouse|factory|workshop|garage|studio|gym)\b/i,
-  ];
-  const locationObjCount = locationObjects.filter(p => p.test(renderedPrompt)).length;
-  const hasLocationIdentity = locationObjCount >= 1;
-  items.push({
-    id: "location-identity",
-    label: "장소 정체성 오브젝트 포함 (WHERE 즉시 인식)",
-    passed: hasLocationIdentity,
-    detail: !hasLocationIdentity ? "장소를 즉시 인식할 수 있는 고유 오브젝트가 없음 — WHERE가 불명확" : undefined,
-  });
+  // 8. 장소 정체성
+  items.push(checkLocationIdentity(renderedPrompt));
 
-  // 9b. 즉시 인식 가능성 — 상황 증거 존재 여부 (WHAT)
-  const situationEvidence = [
-    /\b(empty|vacant|deserted|abandoned|unused|idle|untouched|unoccupied)\b/i,
-    /\b(crowded|packed|busy|bustling|queue|line|waiting)\b/i,
-    /\b(broken|damaged|cracked|torn|crumpled|shattered|ruined)\b/i,
-    /\b(closed|locked|shut|sealed|blocked|barred)\b/i,
-    /\b(off|dark|dim|unlit|flickering|dying|fading)\b/i,
-    /\b(new|fresh|pristine|polished|gleaming|bright|clean)\b/i,
-    /\b(overflowing|stacked|piled|scattered|cluttered|messy)\b/i,
-    /\b(alone|solo|single|isolated|solitary|only)\b/i,
-    /\b(ringing|buzzing|dripping|silent|still|quiet)\b/i,
-  ];
-  const situationCount = situationEvidence.filter(p => p.test(renderedPrompt)).length;
-  const hasSituationEvidence = situationCount >= 1;
-  items.push({
-    id: "situation-evidence",
-    label: "상황 증거 포함 (WHAT 즉시 인식)",
-    passed: hasSituationEvidence,
-    detail: !hasSituationEvidence ? "현재 상황을 보여주는 시각적 증거가 없음 — WHAT이 불명확 (empty/crowded/broken/closed 등)" : undefined,
-  });
+  // 9. 상황 증거
+  items.push(checkSituationEvidence(renderedPrompt));
 
-  // 9c. 즉시 인식 가능성 — 감정/갈등 앵커 존재 여부 (WHO/EMOTION)
+  // 10. 감정 앵커
   const emotionalAnchors = [
     /\b(slump|slouch|lean|hunch|droop|sag|collapse)\b/i,
     /\b(grip|clench|squeeze|press|tap|drum|fidget)\b/i,
@@ -414,51 +390,336 @@ export function generateQualityChecklist(
     /\b(crumple|tear|drop|throw|push\s+aside)\b/i,
     /\b(pause|hesitate|freeze|stop|halt|falter)\b/i,
   ];
-  // 캐릭터 없는 씬에서는 환경 변화가 감정 앵커 역할
-  const envEmotionalAnchors = [
-    /\b(flickering|dying|fading|dimming|brightening)\b/i,
-    /\b(closing|opening|swinging|creaking|settling)\b/i,
-    /\b(withered|wilting|blooming|growing|decaying)\b/i,
-  ];
-  const hasEmotionalAnchor = isCharacterless
-    ? envEmotionalAnchors.some(p => p.test(renderedPrompt))
-    : emotionalAnchors.some(p => p.test(renderedPrompt));
+  const hasEmotionalAnchor = emotionalAnchors.some(p => p.test(renderedPrompt));
   items.push({
     id: "emotional-anchor",
-    label: "감정/갈등 앵커 포함 (WHO/EMOTION 즉시 인식)",
+    label: "감정/갈등 앵커 포함 (신체 행동)",
     passed: hasEmotionalAnchor,
-    detail: !hasEmotionalAnchor
-      ? (isCharacterless
-          ? "환경 변화를 통한 감정 앵커가 없음 — 분위기만으로는 감정이 전달되지 않음"
-          : "인물의 구체적 신체 행동이 없음 — 감정이 보이지 않음 (slump/grip/sigh/stare 등)")
+    detail: !hasEmotionalAnchor ? "인물의 구체적 신체 행동이 없음 — slump/grip/sigh/stare 등" : undefined,
+  });
+
+  // 11. 시퀀스 비트
+  items.push(checkSequenceBeats(renderedPrompt));
+
+  // 12. 프롬프트 길이
+  items.push(checkPromptLength(renderedPrompt, range));
+
+  return { items, passCount: items.filter(i => i.passed).length, totalCount: items.length, sceneType: "character" as SceneType, sceneTypeLabel: SCENE_TYPE_LABEL_KO["character"] };
+}
+
+// ── 맵/인포그래픽 씬 체크리스트 ──────────────────────────────────────────────
+function generateMapGraphicChecklist(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  sceneType: SceneType,
+  range: { min: number; max: number },
+): QualityChecklist {
+  const items: QualityCheckItem[] = [];
+
+  // 1. 비시각 메타태그
+  items.push(checkNoMetaTags(renderedPrompt));
+
+  // 2. 텍스트/라벨 요청 없음 (맵 씬에서 특히 중요)
+  const hasTextRequest = /\b(text|label|caption|title|name|letter|word|number|digit|annotation|legend)\b/i.test(renderedPrompt);
+  items.push({
+    id: "no-text-labels",
+    label: "텍스트/라벨 요청 없음 (Veo 텍스트 불가)",
+    passed: !hasTextRequest,
+    detail: hasTextRequest
+      ? "지도에 텍스트/라벨 요청 → 대체: colored overlays, glowing boundaries, relief regions, icon markers, highlight zones"
       : undefined,
   });
 
-  // 10. 시퀀스 비트 구조 — 3개 시간 비트(0s-2s, 2s-5s 등) 존재 여부
-  const beatSegments = renderedPrompt.match(/\d+s[-–]\d+s/g) || [];
-  const hasSequenceBeats = beatSegments.length >= 2;
+  // 3. 지형 디테일
+  const terrainPatterns = [
+    /\b(mountain|peak|ridge|hill|valley|canyon|plateau|cliff)\b/i,
+    /\b(river|stream|lake|ocean|sea|coast|shore|bay|harbor)\b/i,
+    /\b(forest|woodland|jungle|grassland|prairie|field|plain)\b/i,
+    /\b(desert|tundra|glacier|marsh|swamp|wetland)\b/i,
+    /\b(terrain|topograph|elevation|contour|relief|slope)\b/i,
+    /\b(border|boundary|region|territory|province|district)\b/i,
+  ];
+  const terrainCount = terrainPatterns.filter(p => p.test(renderedPrompt)).length;
   items.push({
-    id: "sequence-beats",
-    label: "시퀀스 비트 구조 (2+ temporal beats)",
-    passed: hasSequenceBeats,
-    detail: !hasSequenceBeats ? `시간 비트 ${beatSegments.length}개 — 시퀀스 블록에 최소 2개의 서로 다른 비트 필요` : undefined,
+    id: "terrain-detail",
+    label: "지형/지리 디테일 충분 (terrain 2+)",
+    passed: terrainCount >= 2,
+    detail: terrainCount < 2 ? `지형 요소 ${terrainCount}/6 — 산/강/해안/평원 등 구체적 지형 추가 필요` : undefined,
   });
 
-  // 11. 프롬프트 길이 적정 (80~350 words)
-  const wordCount = renderedPrompt.split(/\s+/).length;
-  const goodLength = wordCount >= 80 && wordCount <= 350;
+  // 4. 시각적 구분 (텍스트 대체 수단)
+  const visualAlternatives = [
+    /\b(color|colored|colour|hue|tint|shade)\b/i,
+    /\b(overlay|highlight|glow|pulse|pulsing|shimmer)\b/i,
+    /\b(boundary|border|outline|contour|edge)\b/i,
+    /\b(relief|shading|gradient|pattern|texture)\b/i,
+    /\b(icon|marker|symbol|indicator|dot|pin)\b/i,
+    /\b(zone|area|region|sector|layer)\b/i,
+  ];
+  const altCount = visualAlternatives.filter(p => p.test(renderedPrompt)).length;
   items.push({
-    id: "prompt-length",
-    label: "프롬프트 길이 적정 (80-350 words)",
-    passed: goodLength,
-    detail: !goodLength ? `현재 ${wordCount} words` : undefined,
+    id: "visual-distinction",
+    label: "지역 구분 시각 수단 포함 (color/overlay/boundary)",
+    passed: altCount >= 2,
+    detail: altCount < 2 ? `시각 구분 수단 ${altCount}/6 — colored overlays, glowing boundaries, relief shading 등 추가 필요` : undefined,
   });
 
+  // 5. 구체적 조명
+  items.push(checkConcreteLighting(json.moodLighting || ""));
+
+  // 6. 카메라/모션 적절성
+  const hasAerialCamera = /\b(aerial|flyover|bird.?s?\s+eye|overhead|drone|satellite|zoom|pan\s+across|sweep)\b/i.test(renderedPrompt);
+  items.push({
+    id: "aerial-camera",
+    label: "항공/조감 카메라 움직임 포함",
+    passed: hasAerialCamera,
+    detail: !hasAerialCamera ? "지도 씬에 적합한 카메라: aerial flyover, bird's eye, slow zoom, pan across terrain 등" : undefined,
+  });
+
+  // 7. 시간 진행
+  items.push(checkTemporalBeats(renderedPrompt));
+
+  // 8. 시퀀스 비트
+  items.push(checkSequenceBeats(renderedPrompt));
+
+  // 9. 프롬프트 길이
+  items.push(checkPromptLength(renderedPrompt, range));
+
+  return { items, passCount: items.filter(i => i.passed).length, totalCount: items.length, sceneType, sceneTypeLabel: SCENE_TYPE_LABEL_KO[sceneType] };
+}
+
+// ── 환경/풍경 씬 체크리스트 ──────────────────────────────────────────────────
+function generateEnvironmentChecklist(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  sceneType: SceneType,
+  range: { min: number; max: number },
+): QualityChecklist {
+  const items: QualityCheckItem[] = [];
+
+  // 1. 비시각 메타태그
+  items.push(checkNoMetaTags(renderedPrompt));
+
+  // 2. 텍스트 유도 오브젝트
+  items.push(checkNoTextObjects(renderedPrompt));
+
+  // 3. 공간 레이어링 (전경/중경/후경)
+  const hasLayering = /\b(foreground|midground|background|depth|layer|plane)\b/i.test(renderedPrompt);
+  items.push({
+    id: "spatial-layering",
+    label: "공간 레이어링 (전경/중경/후경)",
+    passed: hasLayering,
+    detail: !hasLayering ? "환경 씬에 foreground/midground/background 깊이 표현 필요" : undefined,
+  });
+
+  // 4. 구체적 조명 + 대기 효과
+  items.push(checkConcreteLighting(json.moodLighting || ""));
+
+  // 5. 환경 모션 (바람, 물, 빛 변화)
+  const envMotion = /\b(wind|sway|wave|ripple|flow|drift|flutter|rustle|rain|snow|cloud|fog|mist|light\s+shift)\b/i.test(renderedPrompt);
+  items.push({
+    id: "env-motion",
+    label: "자연 환경 모션 포함 (wind/water/light)",
+    passed: envMotion,
+    detail: !envMotion ? "환경 씬에 자연 모션 추가 필요 — wind, ripple, cloud drift, light shift 등" : undefined,
+  });
+
+  // 6. 장소 정체성
+  items.push(checkLocationIdentity(renderedPrompt));
+
+  // 7. 상황 증거
+  items.push(checkSituationEvidence(renderedPrompt));
+
+  // 8. 환경 감정 앵커
+  const envAnchors = [
+    /\b(flickering|dying|fading|dimming|brightening)\b/i,
+    /\b(closing|opening|swinging|creaking|settling)\b/i,
+    /\b(withered|wilting|blooming|growing|decaying)\b/i,
+    /\b(empty|abandoned|deserted|silent|peaceful|chaotic)\b/i,
+  ];
+  const hasEnvAnchor = envAnchors.some(p => p.test(renderedPrompt));
+  items.push({
+    id: "env-emotional-anchor",
+    label: "환경 감정 앵커 포함 (분위기 변화)",
+    passed: hasEnvAnchor,
+    detail: !hasEnvAnchor ? "환경 변화를 통한 감정 앵커 — flickering/wilting/empty/settling 등" : undefined,
+  });
+
+  // 9. 시간 진행
+  items.push(checkTemporalBeats(renderedPrompt));
+
+  // 10. 시퀀스 비트
+  items.push(checkSequenceBeats(renderedPrompt));
+
+  // 11. 프롬프트 길이
+  items.push(checkPromptLength(renderedPrompt, range));
+
+  return { items, passCount: items.filter(i => i.passed).length, totalCount: items.length, sceneType, sceneTypeLabel: SCENE_TYPE_LABEL_KO[sceneType] };
+}
+
+// ── 오브젝트/디테일 씬 체크리스트 ────────────────────────────────────────────
+function generateObjectDetailChecklist(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  sceneType: SceneType,
+  range: { min: number; max: number },
+): QualityChecklist {
+  const items: QualityCheckItem[] = [];
+
+  items.push(checkNoMetaTags(renderedPrompt));
+  items.push(checkNoTextObjects(renderedPrompt));
+
+  // 오브젝트 구체성
+  const hasObjectDetail = /\b(texture|material|surface|grain|polish|metal|wood|glass|ceramic|fabric|leather|paper|plastic|stone)\b/i.test(renderedPrompt);
+  items.push({
+    id: "object-material",
+    label: "오브젝트 재질/표면 묘사 포함",
+    passed: hasObjectDetail,
+    detail: !hasObjectDetail ? "구체적 재질 표현 필요 — texture, material, surface, metal, wood, glass 등" : undefined,
+  });
+
+  // 클로즈업 카메라
+  const hasCloseCamera = /\b(close.?up|macro|rack\s+focus|shallow\s+depth|dolly\s+around|reveal|detail\s+shot)\b/i.test(renderedPrompt);
+  items.push({
+    id: "close-camera",
+    label: "디테일 카메라 기법 (macro/rack focus)",
+    passed: hasCloseCamera,
+    detail: !hasCloseCamera ? "디테일 씬에 적합한 카메라: close-up, macro, rack focus, dolly around 등" : undefined,
+  });
+
+  items.push(checkConcreteLighting(json.moodLighting || ""));
+  items.push(checkTemporalBeats(renderedPrompt));
+  items.push(checkSequenceBeats(renderedPrompt));
+  items.push(checkPromptLength(renderedPrompt, range));
+
+  return { items, passCount: items.filter(i => i.passed).length, totalCount: items.length, sceneType, sceneTypeLabel: SCENE_TYPE_LABEL_KO[sceneType] };
+}
+
+// ── 전환/추상 씬 체크리스트 ──────────────────────────────────────────────────
+function generateTransitionChecklist(
+  renderedPrompt: string,
+  json: VideoPromptJson,
+  sceneType: SceneType,
+  range: { min: number; max: number },
+): QualityChecklist {
+  const items: QualityCheckItem[] = [];
+
+  items.push(checkNoMetaTags(renderedPrompt));
+
+  // 시각 컨셉 명확성
+  const hasVisualConcept = /\b(fade|dissolve|morph|transform|shift|transition|blur|swirl|particle|abstract|pattern)\b/i.test(renderedPrompt);
+  items.push({
+    id: "visual-concept",
+    label: "시각 컨셉 명확 (전환/변형 방식)",
+    passed: hasVisualConcept,
+    detail: !hasVisualConcept ? "전환 씬에 구체적 시각 컨셉 필요 — fade, dissolve, morph, particle 등" : undefined,
+  });
+
+  // 색감/무드
+  const hasColorPalette = /\b(color|palette|hue|tone|warm|cool|monochrome|gradient|saturated|desaturated)\b/i.test(renderedPrompt);
+  items.push({
+    id: "color-palette",
+    label: "색감/무드 팔레트 지정",
+    passed: hasColorPalette,
+    detail: !hasColorPalette ? "전환 씬에 구체적 색감 지정 필요" : undefined,
+  });
+
+  items.push(checkConcreteLighting(json.moodLighting || ""));
+  items.push(checkTemporalBeats(renderedPrompt));
+  items.push(checkSequenceBeats(renderedPrompt));
+  items.push(checkPromptLength(renderedPrompt, range));
+
+  return { items, passCount: items.filter(i => i.passed).length, totalCount: items.length, sceneType, sceneTypeLabel: SCENE_TYPE_LABEL_KO[sceneType] };
+}
+
+// ── 공통 체크 함수들 ─────────────────────────────────────────────────────────
+
+function checkNoMetaTags(prompt: string): QualityCheckItem {
+  const has = NON_VISUAL_META_TAGS.test(prompt);
+  return { id: "no-meta-tags", label: "비시각 메타태그 없음", passed: !has, detail: has ? "내부 planning 태그가 최종 프롬프트에 남아있음" : undefined };
+}
+
+function checkNoTextObjects(prompt: string): QualityCheckItem {
+  const has = TEXT_GENERATING_OBJECTS.test(prompt);
+  return { id: "no-text-object-conflict", label: "텍스트 유도 오브젝트 없음", passed: !has, detail: has ? "sign/signboard/lettered 등이 'no text'와 충돌" : undefined };
+}
+
+function checkConcreteLighting(lightingText: string): QualityCheckItem {
+  const hasAbstractOnly = ABSTRACT_LIGHTING.test(lightingText.trim());
+  const hasLightSource = /\b(light|lamp|sun|moon|neon|fluorescent|candle|fire|window|bulb|glow|spill|beam)\b/i.test(lightingText);
+  const hasDirection = /\b(from|through|above|below|left|right|behind|overhead|side|rim|back|upper|lower)\b/i.test(lightingText);
+  const hasQuality = /\b(soft|harsh|diffused|sharp|warm|cool|cold|pale|bright|dim|weak|flickering|steady|dappled)\b/i.test(lightingText);
+  const passed = hasLightSource && hasDirection && !hasAbstractOnly;
   return {
-    items,
-    passCount: items.filter(i => i.passed).length,
-    totalCount: items.length,
+    id: "concrete-lighting",
+    label: "구체적 광원(source+direction+quality) 포함",
+    passed,
+    detail: !passed ? `조명: "${lightingText}" — source(${hasLightSource ? "✓" : "✗"}) + direction(${hasDirection ? "✓" : "✗"}) + quality(${hasQuality ? "✓" : "✗"})` : undefined,
   };
+}
+
+function checkTemporalBeats(prompt: string): QualityCheckItem {
+  const has = /\d+s[-–]?\d+s/.test(prompt) || /first|then|finally/i.test(prompt);
+  return { id: "visual-progression", label: "시간 진행(temporal beat) 포함", passed: has, detail: !has ? "0s-2s: ... 형태의 시간 비트가 없음" : undefined };
+}
+
+function checkSequenceBeats(prompt: string): QualityCheckItem {
+  const beats = prompt.match(/\d+s[-–]\d+s/g) || [];
+  const has = beats.length >= 2;
+  return { id: "sequence-beats", label: "시퀀스 비트 구조 (2+ temporal beats)", passed: has, detail: !has ? `시간 비트 ${beats.length}개 — 최소 2개 필요` : undefined };
+}
+
+function checkPromptLength(prompt: string, range: { min: number; max: number }): QualityCheckItem {
+  const wc = prompt.split(/\s+/).length;
+  const good = wc >= range.min && wc <= range.max;
+  return { id: "prompt-length", label: `프롬프트 길이 적정 (${range.min}-${range.max} words)`, passed: good, detail: !good ? `현재 ${wc} words` : undefined };
+}
+
+function checkVisualDetailDensity(prompt: string): QualityCheckItem {
+  const patterns = [
+    /\b(desk|table|chair|door|window|wall|floor|ceiling|shelf|counter|cabinet)\b/i,
+    /\b(dust|crack|stain|scratch|worn|peeling|faded|rusty|weathered|chipped)\b/i,
+    /\b(reflection|shadow|silhouette|haze|fog|mist|smoke|steam|condensation)\b/i,
+    /\b(blinds|curtain|frame|tile|pipe|wire|cable|vent|grate|rail)\b/i,
+    /\b(flickering|buzzing|dripping|swaying|creaking|settling)\b/i,
+  ];
+  const count = patterns.filter(p => p.test(prompt)).length;
+  const good = count >= 2;
+  return { id: "visual-detail-density", label: "시각 디테일 밀도 충분 (2+)", passed: good, detail: !good ? `환경 디테일 ${count}/5 — 구체적 오브젝트/질감/현상 추가 필요` : undefined };
+}
+
+function checkLocationIdentity(prompt: string): QualityCheckItem {
+  const patterns = [
+    /\b(desk|reception|counter|register|checkout)\b/i,
+    /\b(chair|seat|bench|stool|sofa|couch)\b/i,
+    /\b(kitchen|stove|oven|fridge|sink|pan|pot)\b/i,
+    /\b(clinic|hospital|dental|medical|surgical)\b/i,
+    /\b(classroom|blackboard|whiteboard|textbook|locker)\b/i,
+    /\b(office|cubicle|monitor|keyboard|printer)\b/i,
+    /\b(restaurant|menu|plate|glass|napkin)\b/i,
+    /\b(street|sidewalk|crosswalk|storefront|awning)\b/i,
+    /\b(car|vehicle|steering|dashboard|windshield)\b/i,
+    /\b(bed|pillow|blanket|nightstand|bedroom)\b/i,
+    /\b(waiting\s+room|lobby|hallway|corridor|entrance)\b/i,
+    /\b(warehouse|factory|workshop|garage|studio|gym)\b/i,
+  ];
+  const has = patterns.some(p => p.test(prompt));
+  return { id: "location-identity", label: "장소 정체성 오브젝트 (WHERE)", passed: has, detail: !has ? "장소를 즉시 인식할 수 있는 고유 오브젝트가 없음" : undefined };
+}
+
+function checkSituationEvidence(prompt: string): QualityCheckItem {
+  const patterns = [
+    /\b(empty|vacant|deserted|abandoned|unused|idle|untouched)\b/i,
+    /\b(crowded|packed|busy|bustling|queue|waiting)\b/i,
+    /\b(broken|damaged|cracked|torn|crumpled|shattered)\b/i,
+    /\b(closed|locked|shut|sealed|blocked|barred)\b/i,
+    /\b(off|dark|dim|unlit|flickering|dying|fading)\b/i,
+    /\b(new|fresh|pristine|polished|gleaming|clean)\b/i,
+    /\b(overflowing|stacked|piled|scattered|cluttered)\b/i,
+    /\b(alone|solo|single|isolated|solitary)\b/i,
+  ];
+  const has = patterns.some(p => p.test(prompt));
+  return { id: "situation-evidence", label: "상황 증거 포함 (WHAT)", passed: has, detail: !has ? "현재 상황을 보여주는 시각적 증거가 없음 — empty/crowded/broken/closed 등" : undefined };
 }
 
 /**

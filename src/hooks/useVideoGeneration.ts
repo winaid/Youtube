@@ -199,6 +199,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           imagePrompt: cut.imagePrompt,
           sceneDescription: cut.sceneDescription,
           cutNumber: cut.cutNumber,
+          shotCategory: cut.shotCategory,
+          characterRole: cut.characterRole,
         }),
       });
       if (res.ok) {
@@ -806,7 +808,10 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
         // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────
         if (cut.videoPromptJson) {
-          const checklist = generateQualityChecklist(prompt, cut.videoPromptJson);
+          const checklist = generateQualityChecklist(prompt, cut.videoPromptJson, {
+            shotCategory: cut.shotCategory,
+            characterRole: cut.characterRole,
+          });
           updateClip(cutNumber, { qualityChecklist: checklist });
           console.log(`[CUT ${cutNumber}] 📋 QUALITY CHECKLIST`, {
             pass: `${checklist.passCount}/${checklist.totalCount}`,

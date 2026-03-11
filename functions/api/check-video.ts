@@ -97,17 +97,29 @@ function extractFromSamples(samples: unknown, results: VideoResult[]): void {
     const video = isRecord(sample.video) ? sample.video : undefined;
     const seed = sample.seed !== undefined ? String(sample.seed) : undefined;
 
-    // video.uri
-    if (video && isString(video.uri) && video.uri.length > 0) {
-      results.push({ kind: "uri", uri: video.uri, seed });
-      continue;
+    // video.uri (혹은 gcsUri, storageUri, videoUri — Veo 버전별 필드명 차이 대응)
+    if (video) {
+      const videoUri = isString(video.uri) ? video.uri
+        : isString(video.gcsUri) ? video.gcsUri
+        : isString(video.storageUri) ? video.storageUri
+        : isString(video.videoUri) ? video.videoUri
+        : "";
+      if (videoUri.length > 0) {
+        results.push({ kind: "uri", uri: videoUri, seed });
+        continue;
+      }
     }
 
     // video가 file object인 경우 (uri, mimeType, state 등)
-    if (video && (isString(video.uri) || isString(video.name) || isString(video.mimeType))) {
+    if (video && (isString(video.uri) || isString(video.gcsUri) || isString(video.name) || isString(video.mimeType))) {
+      const fileUri = isString(video.uri) ? video.uri
+        : isString(video.gcsUri) ? video.gcsUri
+        : isString(video.storageUri) ? video.storageUri
+        : isString(video.name) ? video.name
+        : undefined;
       results.push({
         kind: "file-object",
-        uri: isString(video.uri) ? video.uri : isString(video.name) ? video.name : undefined,
+        uri: fileUri,
         mimeType: isString(video.mimeType) ? video.mimeType : undefined,
         state: isString(video.state) ? video.state : undefined,
         seed,
@@ -115,9 +127,13 @@ function extractFromSamples(samples: unknown, results: VideoResult[]): void {
       continue;
     }
 
-    // sample 자체에 uri가 있는 경우
-    if (isString(sample.uri) && sample.uri.length > 0) {
-      results.push({ kind: "uri", uri: sample.uri, seed });
+    // sample 자체에 uri/gcsUri가 있는 경우
+    const sampleUri = isString(sample.uri) ? sample.uri
+      : isString(sample.gcsUri) ? sample.gcsUri
+      : isString(sample.storageUri) ? sample.storageUri
+      : "";
+    if (sampleUri.length > 0) {
+      results.push({ kind: "uri", uri: sampleUri, seed });
       continue;
     }
 
@@ -141,19 +157,32 @@ function extractFromGeneratedVideos(videos: unknown, results: VideoResult[]): vo
     const video = isRecord(item.video) ? item.video : undefined;
 
     if (video) {
-      if (isString(video.uri) && video.uri.length > 0) {
-        results.push({ kind: "uri", uri: video.uri, seed });
+      // video.uri / gcsUri / storageUri / videoUri 대응
+      const videoUri = isString(video.uri) ? video.uri
+        : isString(video.gcsUri) ? video.gcsUri
+        : isString(video.storageUri) ? video.storageUri
+        : isString(video.videoUri) ? video.videoUri
+        : "";
+      if (videoUri.length > 0) {
+        results.push({ kind: "uri", uri: videoUri, seed });
       } else {
         results.push({
           kind: "file-object",
-          uri: isString(video.uri) ? video.uri : isString(video.name) ? video.name : undefined,
+          uri: isString(video.name) ? video.name : undefined,
           mimeType: isString(video.mimeType) ? video.mimeType : undefined,
           state: isString(video.state) ? video.state : undefined,
           seed,
         });
       }
-    } else if (isString(item.uri) && item.uri.length > 0) {
-      results.push({ kind: "uri", uri: item.uri, seed });
+    } else {
+      // item 자체에 uri/gcsUri가 있는 경우
+      const itemUri = isString(item.uri) ? item.uri
+        : isString(item.gcsUri) ? item.gcsUri
+        : isString(item.storageUri) ? item.storageUri
+        : "";
+      if (itemUri.length > 0) {
+        results.push({ kind: "uri", uri: itemUri, seed });
+      }
     }
   }
 }
@@ -685,6 +714,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         resultKinds: videoResults.map(r => r.kind),
         structure,
         rawKeys: Object.keys(data),
+      });
+    }
+
+    // ── Scene Extension 가능 여부 진단 ──────────────────────────────
+    const hasGcsUri = variants.some(v => v.rawVideoUri && (v.rawVideoUri.startsWith("gs://") || v.rawVideoUri.startsWith("https://")));
+    if (!hasGcsUri) {
+      console.warn("[check-video] ⚠️ Scene Extension 불가: 모든 variant가 GCS/HTTPS URI 없음", {
+        variantCount: variants.length,
+        kinds: variants.map(v => v.resultKind),
+        rawVideoUris: variants.map(v => v.rawVideoUri ? `${v.rawVideoUri.slice(0, 40)}…` : "(empty)"),
+        hint: "Veo가 base64로 응답함 → 다음 컷은 Scene Extension 없이 독립 생성됨. us-central1 리전 확인 필요.",
+        responseKeys: Object.keys(data).slice(0, 15),
       });
     }
 

@@ -267,6 +267,33 @@ export default function VideoGenerationPanel({
                           품질 {clip.verification.overallScore}/100
                         </Badge>
                       )}
+                      {/* 씬 타입 배지 */}
+                      {clip.verification?.detectedSceneType && (
+                        <Badge variant="outline" className="text-[10px]" style={{
+                          borderColor: ({
+                            character: "#787fff",
+                            environment: "#16a34a",
+                            "object-detail": "#d97706",
+                            "map-graphic": "#0891b2",
+                            "transition-abstract": "#9333ea",
+                          } as Record<string, string>)[clip.verification.detectedSceneType] || "#888",
+                          color: ({
+                            character: "#787fff",
+                            environment: "#16a34a",
+                            "object-detail": "#d97706",
+                            "map-graphic": "#0891b2",
+                            "transition-abstract": "#9333ea",
+                          } as Record<string, string>)[clip.verification.detectedSceneType] || "#888",
+                        }}>
+                          {({
+                            character: "캐릭터",
+                            environment: "환경",
+                            "object-detail": "오브젝트",
+                            "map-graphic": "지도/그래픽",
+                            "transition-abstract": "전환/추상",
+                          } as Record<string, string>)[clip.verification.detectedSceneType] || clip.verification.detectedSceneType}
+                        </Badge>
+                      )}
                       {clip.retryCount && clip.retryCount > 0 && (
                         <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#ef4444", color: "#dc2626" }}>
                           재시도 {clip.retryCount}회
@@ -274,22 +301,65 @@ export default function VideoGenerationPanel({
                       )}
                     </div>
 
-                    {/* 세부 품질 점수 */}
-                    {clip.verification?.rawScores && (
+                    {/* 씬 타입별 세부 점수 */}
+                    {clip.verification?.sceneTypeScores && (
+                      <div className="bg-gray-50 rounded p-2 space-y-1">
+                        {Object.entries(clip.verification.sceneTypeScores).map(([key, val]) => {
+                          const pct = val * 10;
+                          const labelMap: Record<string, string> = {
+                            characterDescription: "캐릭터 묘사",
+                            cameraMovement: "카메라 움직임",
+                            temporalStructure: "시간 구조",
+                            lightingMood: "조명/무드",
+                            veoCompatibility: "Veo 호환성",
+                            spatialComposition: "공간 구성",
+                            atmosphericDetail: "대기/분위기",
+                            subjectClarity: "피사체 명확성",
+                            cameraTechnique: "카메라 기법",
+                            lightingTexture: "조명/텍스처",
+                            terrainDetail: "지형 디테일",
+                            visualClarity: "시각 명확성",
+                            cameraMotion: "카메라 모션",
+                            lightingAtmosphere: "조명/대기",
+                            visualConcept: "시각 컨셉",
+                            temporalProgression: "시간 전개",
+                            moodAtmosphere: "무드/분위기",
+                          };
+                          return (
+                            <div key={key} className="flex items-center gap-1.5">
+                              <span className="text-[9px] w-[85px] shrink-0">{labelMap[key] || key}</span>
+                              <div className="flex-1 h-[6px] bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${pct}%`,
+                                    background: pct >= 80 ? "#22c55e" : pct >= 60 ? "#e09900" : "#ef4444",
+                                  }}
+                                />
+                              </div>
+                              <span className="text-[9px] w-[28px] text-right font-mono">{val}/10</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* rawScores fallback (씬 타입 점수가 없을 때) */}
+                    {!clip.verification?.sceneTypeScores && clip.verification?.rawScores && (
                       <div className="bg-gray-50 rounded p-2 space-y-1">
                         {([
-                          { key: "promptMatch" as const, label: "프롬프트 일치", icon: "🎯" },
-                          { key: "styleConsistency" as const, label: "스타일 일관성", icon: "🎨" },
-                          { key: "composition" as const, label: "구도/카메라", icon: "📷" },
-                          { key: "motionCoherence" as const, label: "모션 자연스러움", icon: "🎬" },
-                          { key: "visualQuality" as const, label: "시각 품질", icon: "✨" },
-                          { key: "faceQuality" as const, label: "얼굴 품질", icon: "👤" },
-                        ] as const).map(({ key, label, icon }) => {
+                          { key: "promptMatch" as const, label: "프롬프트 일치" },
+                          { key: "styleConsistency" as const, label: "스타일 일관성" },
+                          { key: "composition" as const, label: "구도/카메라" },
+                          { key: "motionCoherence" as const, label: "모션 자연스러움" },
+                          { key: "visualQuality" as const, label: "시각 품질" },
+                          { key: "faceQuality" as const, label: "얼굴 품질" },
+                        ] as const).map(({ key, label }) => {
                           const val = clip.verification!.rawScores![key];
                           const pct = val * 10;
                           return (
                             <div key={key} className="flex items-center gap-1.5">
-                              <span className="text-[9px] w-[85px] shrink-0">{icon} {label}</span>
+                              <span className="text-[9px] w-[85px] shrink-0">{label}</span>
                               <div className="flex-1 h-[6px] bg-gray-200 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full"
@@ -327,6 +397,11 @@ export default function VideoGenerationPanel({
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[10px] font-medium" style={{ color: "#555" }}>
                           프롬프트 품질 체크
+                          {(clip.qualityChecklist as { sceneTypeLabel?: string }).sceneTypeLabel && (
+                            <span className="ml-1 text-[9px] font-normal" style={{ color: "#888" }}>
+                              ({(clip.qualityChecklist as { sceneTypeLabel?: string }).sceneTypeLabel})
+                            </span>
+                          )}
                         </span>
                         <span
                           className="text-[10px] font-mono font-bold"

@@ -426,25 +426,25 @@ export const STYLE_CATALOG: StyleCategory[] = [
       },
       {
         id: "east-asian-painting",
-        nameKo: "동양화",
-        descKo: "한국/중국/일본 전통 채색화",
+        nameKo: "동양화풍 2D",
+        descKo: "동양화 화풍의 2D 애니메이션 — 정적 그림이 아닌 살아 움직이는 애니 시퀀스",
         categoryId: "painting",
-        positivePrompt: "Traditional East Asian painting. Mineral pigment colors on silk or mulberry paper. Gold leaf accents and fine brushwork. Flowing ink outlines with colored washes. Atmospheric perspective with misty distance. Seasonal nature elements — plum blossom, pine, bamboo. Vertical scroll composition influence.",
-        negativePrompt: "Western oil painting, photorealistic, digital rendering, anime, modern architecture, text overlay, watermark",
+        positivePrompt: "2D animated sequence in East Asian painting-inspired art style. Brush-and-ink influenced rendering with hand-painted look. Muted mineral pigment color palette with ink wash gradients. Soft brushstroke textures on characters and backgrounds. Rice paper or hanji surface hint. Atmospheric perspective with misty layered depth. Animated character movement with fluid 2D motion. Non-photorealistic painterly 2D animation. Stylized animated action, not static artwork.",
+        negativePrompt: "static painting, scroll painting, art plate display, storybook page, motion poster, barely moving still image, photorealistic, 3D rendering, text, letters, labels, calligraphy, Chinese characters, Korean characters, Japanese characters, typographic marks, readable symbols, text overlay, watermark, captions",
         directors: ["임권택", "장이머우", "첸 카이거"],
-        badge: "동양 채색화",
+        badge: "동양화풍 애니",
         realism: "낮음",
       },
       {
         id: "ink-wash",
-        nameKo: "수묵담채",
-        descKo: "먹과 한지, 수묵 번짐 질감",
+        nameKo: "수묵풍 2D",
+        descKo: "수묵 화풍의 2D 애니메이션 — 먹선과 담채 느낌의 움직이는 시퀀스",
         categoryId: "painting",
         legacyMode: "잉크워시",
-        positivePrompt: "East Asian ink wash animation in sumi-e brush style. Monochrome ink gradients on rice paper texture. Calligraphic brush stroke rendering. Atmospheric ink wash with deliberate white space as compositional element. Flowing brush movement with varying ink density.",
-        negativePrompt: "vibrant colorful palette, digital clean rendering, photorealistic, 3D CGI, flat anime colors, text overlay, watermark",
+        positivePrompt: "2D animated sequence in sumi-e ink wash art style. Monochrome ink gradients with brush-and-ink rendering. Varying ink density and deliberate white space as design element. Animated fluid brush movement with hand-painted 2D motion. Rice paper texture hint. Non-photorealistic painterly animation. Stylized animated characters and environments, not static artwork. Dynamic 2D scene with clear motion and progression.",
+        negativePrompt: "static painting, scroll display, art plate, storybook page, motion poster, barely moving image, vibrant colorful palette, digital clean rendering, photorealistic, 3D CGI, flat anime colors, text, letters, labels, calligraphy, Chinese characters, Korean characters, Japanese characters, typographic marks, readable symbols, text overlay, watermark, captions",
         directors: ["장이머우", "임권택", "아피찻퐁"],
-        badge: "수묵 절제",
+        badge: "수묵풍 애니",
         realism: "낮음",
       },
       {
@@ -975,14 +975,29 @@ const STYLE_PERSONAS: Record<string, StylePersona> = {
 
   // ─── 회화 계열 ────────────────────────────────────────
   "ink-wash": {
-    title: "수묵담채 아트디렉터",
-    aesthetic: "먹의 농담, 한지의 질감, 여백의 미. 적을수록 더 많이 말하는 동양 미학.",
-    failureCriteria: "화려한 색채, 디지털 깨끗함, 포토리얼, 3D CGI, 애니 셀 색감이 보이면 실패.",
+    title: "수묵풍 2D 애니메이션 아트디렉터",
+    aesthetic: "먹의 농담, 한지의 질감, 여백의 미를 활용한 2D 애니메이션. 정적 그림이 아니라 살아 움직이는 시퀀스. 적을수록 더 많이 말하는 동양 미학을 '움직이는 2D 애니'로 표현.",
+    failureCriteria: "정적 그림/족자/병풍처럼 보이면 실패. 한자/서예/문자 장식이 보이면 실패. 화려한 색채, 디지털 깨끗함, 포토리얼, 3D CGI, 셀 색감이 보이면 실패. motion poster(정지 그림이 살짝 움직이는 것)도 실패.",
     qualityChecklist: [
+      "살아 움직이는 2D 애니메이션 시퀀스인가 (정적 그림 ❌)",
       "먹 농담의 변화가 풍부한가",
       "한지/화선지 질감이 있는가",
       "의도적 여백이 구도 요소인가",
-      "붓 터치의 속도감이 느껴지는가",
+      "문자/한자/서예 요소가 없는가 (텍스트 완전 배제)",
+      "캐릭터와 배경 모두 동양화풍 렌더링인가",
+    ],
+  },
+  "east-asian-painting": {
+    title: "동양화풍 2D 애니메이션 아트디렉터",
+    aesthetic: "동양화의 붓선, 담채 색감, 여백과 평면성을 활용한 2D 애니메이션. 병풍/족자 감상이 아니라 진행되는 animated sequence. hand-painted 느낌의 2D 동양화풍 움직임.",
+    failureCriteria: "정적 그림/족자/병풍/scroll painting처럼 보이면 실패. 한자/서예/문자 요소가 보이면 실패. 포토리얼, 3D, 인포그래픽 지도처럼 보이면 실패. motion poster도 실패.",
+    qualityChecklist: [
+      "2D 애니메이션으로 살아 움직이는가 (정적 작품 ❌)",
+      "붓선/먹선의 동양화 질감이 있는가",
+      "담채/절제된 색감인가",
+      "여백과 평면성의 리듬감이 있는가",
+      "문자/한자/서예 요소가 전혀 없는가",
+      "디지털 포스터가 아닌 hand-painted 2D 느낌인가",
     ],
   },
   "van-gogh-painted": {
@@ -1166,6 +1181,20 @@ const STYLE_RENDERING_OVERRIDES: Record<string, Partial<StyleRenderingRules>> = 
   "rotoscoping": {
     characterRules: "Performance-derived human movement traced with painterly overlay. The underlying human motion must feel authentic. Paint layer adds style, not replaces motion.",
     cameraDefaults: "Organic handheld documentary camera. Not perfectly stabilized. Camera reacts to action naturally, not choreographed.",
+  },
+  "east-asian-painting": {
+    characterRules: "Characters rendered with East Asian painting brushwork — soft ink lines, muted mineral colors. Hand-painted 2D look, NOT static traditional artwork. Characters must be animated with fluid motion. ABSOLUTELY NO text, letters, calligraphy, Chinese/Korean/Japanese characters, typographic marks anywhere.",
+    environmentRules: "Backgrounds in ink wash and mineral pigment style. Atmospheric layered depth with misty perspective. Hanji/rice paper surface texture hint. Flowing brush textures. NO text, labels, signs, or readable symbols in environment.",
+    cameraDefaults: "2D animation camera — smooth pans, parallax on painted layers, gentle push-ins revealing detail. Avoid static art display feel.",
+    motionDefaults: "Fluid 2D animated motion — NOT a motion poster with slight movement. Characters and elements must move with clear action beats. Brush textures flow with movement. Each moment is a living animated frame.",
+    sequenceRules: "This is a 2D animated sequence, NOT a static artwork display. Each shot must contain multiple visual beats. Paint style must stay consistent. NO text/calligraphy/characters at any point in any scene.",
+  },
+  "ink-wash": {
+    characterRules: "Characters rendered in sumi-e ink brushwork — varying ink density, deliberate brushstrokes. Animated 2D movement, NOT static ink painting. ABSOLUTELY NO text, calligraphy, Chinese/Korean/Japanese characters, typographic marks.",
+    environmentRules: "Monochrome ink wash environments with deliberate white space. Rice paper texture. Atmospheric ink gradients. NO text, labels, or readable symbols.",
+    cameraDefaults: "2D animation camera through ink wash world — smooth pans with parallax on ink layers. Gentle reveals and transitions. Avoid art plate / scroll painting feel.",
+    motionDefaults: "Animated ink brush movement — NOT a static painting with slight zoom. Characters and elements must actively move. Ink density and white space shift dynamically.",
+    sequenceRules: "This is an animated 2D sequence in ink wash style, NOT a scroll painting display. Multiple visual beats per shot. NO text/calligraphy/characters/letters at any point.",
   },
 };
 
