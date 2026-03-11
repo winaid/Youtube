@@ -54,7 +54,26 @@ const UNIVERSAL_NEGATIVES = [
   "side by side comparison",
 ];
 
-function generateLocalNegative(videoPrompt: string, sceneDescription: string): string {
+// Map scene negatives — prevent rectangular artifacts from label/sign/frame misinterpretation
+const MAP_SCENE_NEGATIVES = [
+  "boxes",
+  "rectangular overlay",
+  "UI panels",
+  "text boxes",
+  "labels",
+  "signboards",
+  "framed inserts",
+  "infographic elements",
+  "cartouche",
+  "decorative panels",
+  "floating panels",
+  "boxed annotations",
+  "title boxes",
+  "caption boxes",
+  "embedded signage",
+];
+
+function generateLocalNegative(videoPrompt: string, sceneDescription: string, isMapScene?: boolean): string {
   const combined = (videoPrompt + " " + sceneDescription).toLowerCase();
   const negatives = new Set<string>(UNIVERSAL_NEGATIVES);
 
@@ -63,6 +82,14 @@ function generateLocalNegative(videoPrompt: string, sceneDescription: string): s
       for (const neg of negs) {
         negatives.add(neg);
       }
+    }
+  }
+
+  // Map scene: 사각형 아티팩트 방지 negative 자동 추가
+  const detectedMapScene = isMapScene || /\b(map|terrain|topograph|cartograph|satellite|aerial\s+view|bird.?s?\s+eye|globe|continent|border|region|territory)\b/i.test(combined);
+  if (detectedMapScene) {
+    for (const neg of MAP_SCENE_NEGATIVES) {
+      negatives.add(neg);
     }
   }
 

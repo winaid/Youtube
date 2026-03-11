@@ -571,6 +571,12 @@ function naturalizeMetaFields(prompt: string): string {
     .replace(/\bsignage\b/gi, "wall-mounted panel")
     .replace(/\b(clinic|shop|store|office)\s+signs?\b/gi, "$1 facade")
     .replace(/\b(neon|lit|glowing)\s+signs?\b/gi, "$1 tubes")
+    // ── 사각형 아티팩트 유발 표현 교체 (map scene 외 일반 씬에서도 적용) ──
+    .replace(/\b(labeled|labelled)\s+(region|area|zone|territory|country|province|district)s?\b/gi, "color-coded $2")
+    .replace(/\bcountry\s+names?\b/gi, "colored territorial regions")
+    .replace(/\btitle\s+box\b/gi, "")
+    .replace(/\bcaption\s+box\b/gi, "")
+    .replace(/\btext\s+box\b/gi, "")
     // ── 정리 ──
     .replace(/\.\s*\./g, ".")
     .replace(/\s{2,}/g, " ")
@@ -676,12 +682,17 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // ── MAP SCENE PROTECTION ──────────────────────────────────
   // map-graphic 장면에서는 스타일 페르소나/강화를 억제하고
   // cartographic 보호 규칙을 적용 (산수화/학/동양풍 drift 방지)
-  const MAP_SCENE_POSITIVE = "Flat top-down cartographic view, parchment surface, territorial overlays, coastlines, borders, trade routes, paper texture, ink diffusion on aged paper.";
+  const MAP_SCENE_POSITIVE = "Flat uninterrupted map surface, continuous parchment texture, territorial overlays, coastlines, borders, trade routes, paper texture, ink diffusion on aged paper. No inserted objects, no floating panels, no boxed annotations, no embedded signage.";
   const MAP_SCENE_NEGATIVES = [
     "cranes", "birds", "mountain landscape", "scenic painting",
     "nature tableau", "decorative East Asian motifs",
     "animals", "flying creatures", "landscape reinterpretation",
     "brush painting scenery", "traditional painting composition",
+    // ── 사각형 아티팩트 방지 (rectangular artifact suppression) ──
+    "boxes", "rectangular overlay", "UI panels", "text boxes",
+    "labels", "signboards", "framed inserts", "infographic elements",
+    "cartouche", "decorative panels", "floating panels",
+    "boxed annotations", "title boxes", "caption boxes",
   ];
 
   // ── BLOCK 0: STYLE PERSONA (아트디렉터 페르소나) ──────────
@@ -741,7 +752,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // 메타 필드를 자연어로 변환
   let sceneBlock = naturalizeMetaFields(input.scenePrompt);
 
-  // ⚠️ MAP SCENE: scene content에서 drift 유발 표현 강제 제거
+  // ⚠️ MAP SCENE: scene content에서 drift 유발 표현 + 사각형 아티팩트 유발 표현 강제 제거
   if (isMapScene) {
     // 지도 장면에서 풍경/동물 표현이 scene prompt에 침투했을 경우 제거
     sceneBlock = sceneBlock
@@ -749,7 +760,20 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
       .replace(/\b(birds?\s+fly|flying\s+birds?|soaring\s+birds?)\b/gi, "")
       .replace(/\b(mountain\s+landscape|scenic\s+painting|nature\s+tableau)\b/gi, "")
       .replace(/\b(brush\s*stroke\s+mountains?|misty\s+peaks?|ink\s+wash\s+mountains?)\b/gi, "")
-      .replace(/,\s*,/g, ",").replace(/\s{2,}/g, " ").trim();
+      // ── 사각형 아티팩트 유발 표현 제거 (label/sign/frame/panel 계열) ──
+      .replace(/\b(labeled|labelled)\s+[\w\s]{1,30}/gi, "")
+      .replace(/\bcountry\s+names?\b/gi, "colored territorial regions")
+      .replace(/\b(title\s+box|text\s+box|info\s*box)\b/gi, "")
+      .replace(/\b(infographic|info\s*graphic)\s*[\w\s]*/gi, "")
+      .replace(/\b(overlay\s+(?:panel|box|frame|insert))\b/gi, "")
+      .replace(/\bUI[\s-]?like\b/gi, "")
+      .replace(/\b(framed?\s+inserts?|inset\s+panels?|inset\s+maps?)\b/gi, "")
+      .replace(/\b(caption|captions|captioned)\b/gi, "")
+      .replace(/\b(plaque|plaques|cartouche)\b/gi, "")
+      .replace(/\b(marker|markers)\b(?!\s*(pen|line))/gi, "location indicator")
+      .replace(/\b(signboard|sign\s*board|sign\s*post)\b/gi, "")
+      .replace(/\blabels?\b/gi, "")
+      .replace(/,\s*,/g, ",").replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim();
 
     // 지도 장면 앵커 강화: scene block 맨 앞에 cartographic 프레이밍 삽입
     if (!/\b(map|cartograph|parchment|top.?down|overhead|territorial)\b/i.test(sceneBlock)) {
@@ -775,7 +799,7 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     }
   }
   if (isMapScene) {
-    reinforcementBlock = "Maintain cartographic top-down view throughout. No landscape reinterpretation. No animals or decorative creatures.";
+    reinforcementBlock = "Maintain cartographic top-down view throughout. No landscape reinterpretation. No animals or decorative creatures. No rectangular overlays, no floating panels, no text boxes, no labels, no framed inserts, no infographic elements.";
   }
 
   // ── BLOCK 6: NEGATIVE ──────────────────────────────────────
@@ -799,8 +823,8 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const uniqueNeg = negParts.join(", ").split(",")
     .map(s => s.trim().toLowerCase()).filter(Boolean)
     .filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
-  // 핵심 제한 (Veo가 너무 긴 negative는 무시) — map scene은 보호 항목이 많아 12개 허용
-  const negativeBlock = uniqueNeg.slice(0, isMapScene ? 12 : 8).join(", ");
+  // 핵심 제한 (Veo가 너무 긴 negative는 무시) — map scene은 사각형 아티팩트 보호까지 포함하여 20개 허용
+  const negativeBlock = uniqueNeg.slice(0, isMapScene ? 20 : 8).join(", ");
 
   // ── BLOCK 7: AUDIO ──────────────────────────────────────────
   const hasAudioRef = /\b(sound|audio|diegetic|ambient|noise|music|voice|speech)\b/i.test(sceneBlock);
@@ -872,12 +896,34 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
       /\btraditional\s+painting\s+composition/i,
       /\bmisty\s+peak/i,
     ];
+    // ── 사각형 아티팩트 유발 표현 감지 (preflight validation) ──
+    const rectArtifactTerms = [
+      /\blabels?\b/i,
+      /\blabeled\b/i,
+      /\bsign(?:board|post|age)?\b(?!\s*(language|al|ificant|ed\s+contract))/i,
+      /\bframed?\s+(?:insert|object|panel|box)/i,
+      /\bpanel[\s-]?like\s+insert/i,
+      /\binfographic\s+overlay/i,
+      /\bcountry\s+names?\s+(rendered|displayed|shown|written|visible)/i,
+      /\btitle\s+box/i,
+      /\bcaption\s+box/i,
+      /\btext\s+box/i,
+      /\bUI[\s-]?panel/i,
+      /\bcartouche\b/i,
+      /\bplaque\b/i,
+    ];
     const found = driftTerms
+      .filter(re => re.test(prompt))
+      .map(re => { const m = prompt.match(re); return m?.[0] ?? ""; })
+      .filter(Boolean);
+    const rectFound = rectArtifactTerms
       .filter(re => re.test(prompt))
       .map(re => { const m = prompt.match(re); return m?.[0] ?? ""; })
       .filter(Boolean);
     if (found.length > 0) {
       driftWarning = `MAP SCENE DRIFT DETECTED: "${found.join('", "')}" — 지도 장면에 풍경/동물 표현이 포함됨. 생성 결과가 산수화/학으로 드리프트될 위험 높음.`;
+    } else if (rectFound.length > 0) {
+      driftWarning = `MAP SCENE RECT ARTIFACT RISK: "${rectFound.join('", "')}" — 지도 장면에 사각형 아티팩트를 유발하는 표현(label/sign/frame/panel)이 감지됨. 모델이 읽을 수 없는 텍스트 박스나 UI 패널을 생성할 위험 높음.`;
     }
   }
 

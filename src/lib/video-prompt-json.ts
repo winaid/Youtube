@@ -420,13 +420,25 @@ function generateMapGraphicChecklist(
   items.push(checkNoMetaTags(renderedPrompt));
 
   // 2. 텍스트/라벨 요청 없음 (맵 씬에서 특히 중요)
-  const hasTextRequest = /\b(text|label|caption|title|name|letter|word|number|digit|annotation|legend)\b/i.test(renderedPrompt);
+  const hasTextRequest = /\b(text|label|labeled|caption|title|name|letter|word|number|digit|annotation|legend)\b/i.test(renderedPrompt);
   items.push({
     id: "no-text-labels",
     label: "텍스트/라벨 요청 없음 (Veo 텍스트 불가)",
     passed: !hasTextRequest,
     detail: hasTextRequest
       ? "지도에 텍스트/라벨 요청 → 대체: colored overlays, glowing boundaries, relief regions, icon markers, highlight zones"
+      : undefined,
+  });
+
+  // 2-b. 사각형 아티팩트 유발 표현 없음 (sign/frame/panel/infographic 등)
+  const rectArtifactPattern = /\b(sign|signboard|signpost|frame(?:d)?\s+(?:insert|object|panel)|panel[\s-]?like|infographic|overlay\s+(?:panel|box)|title\s+box|caption\s+box|text\s+box|UI[\s-]?panel|cartouche|plaque|country\s+names?)\b/i;
+  const hasRectArtifact = rectArtifactPattern.test(renderedPrompt);
+  items.push({
+    id: "no-rect-artifacts",
+    label: "사각형 아티팩트 유발 표현 없음",
+    passed: !hasRectArtifact,
+    detail: hasRectArtifact
+      ? "sign/frame/panel/infographic/plaque/cartouche 감지 → 모델이 의도하지 않은 사각형 박스를 생성할 위험. 제거 또는 안전한 표현으로 교체 필요"
       : undefined,
   });
 
@@ -746,6 +758,15 @@ export function sanitizeRenderedPrompt(prompt: string): string {
     // 일반적인 단독 "sign" (문맥상 간판 의미)
     .replace(/\ba\s+sign\b/gi, "a mounted panel")
     .replace(/\bthe\s+sign\b/gi, "the facade panel")
+    // ── 추가 사각형 아티팩트 유발 표현 교체 ──
+    .replace(/\b(labeled|labelled)\s+(region|area|zone|territory|country|province|district)s?\b/gi, "color-coded $2")
+    .replace(/\bcountry\s+names?\b/gi, "colored territorial regions")
+    .replace(/\btitle\s+box\b/gi, "")
+    .replace(/\bcaption\s+box\b/gi, "")
+    .replace(/\btext\s+box\b/gi, "")
+    .replace(/\binfo\s*graphic\b/gi, "data visualization")
+    .replace(/\bcartouche\b/gi, "ornamental border")
+    .replace(/\bplaques?\b/gi, "mounted surfaces")
     // ── Newly visible / Camera angle 등 자연어 변환 잔여 제거 ──
     .replace(/\bNewly visible:\s*/gi, "")
     .replace(/\bCamera angle:\s*/gi, "")
