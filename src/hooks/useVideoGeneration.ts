@@ -2,9 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { saveVideoRecord } from "@/lib/video-history";
-import { assemblePrompt } from "@/lib/style-system";
 import { assembleFromJSON } from "@/lib/sequence-assembler";
-import { generateQualityChecklist, sanitizeRenderedPrompt } from "@/lib/video-prompt-json";
+import { generateQualityChecklist } from "@/lib/video-prompt-json";
 import {
   buildSequencePlan,
   serializeSequencePlan,
@@ -614,7 +613,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                 sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
                 seed: clipUpdate.seed,
                 status: "completed",
-                structuredSequence: clipForRecord?.structuredSequence,
+                structuredSequence: clipForRecord?.structuredSequence as unknown as Record<string, unknown> | undefined,
               });
               console.log(`[CUT ${cutNumber}] ✅ 영상 기록 저장됨 (id: ${saved.id})`);
             }
