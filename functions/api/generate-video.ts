@@ -372,10 +372,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         ? "IMAGE_TO_VIDEO"
         : "TEXT_TO_VIDEO";
 
+    // 인증 방식에 따른 GCS URI 반환 가능성 진단
+    const authMethod = context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "SERVICE_ACCOUNT" : "API_KEY";
+    const veoUrl = buildVeoUrl(context.env, model, "predictLongRunning");
+    const urlHasProject = veoUrl.includes("/projects/");
+    const urlVersion = veoUrl.includes("/v1beta/") ? "v1beta" : "v1";
+
+    if (authMethod === "API_KEY") {
+      console.warn("[generate-video] ⚠️ API Key 인증 사용 중 — GCS URI 미반환 가능성 높음", {
+        authMethod,
+        urlVersion,
+        urlHasProject,
+        hint: "GOOGLE_SERVICE_ACCOUNT_JSON 설정 시 us-central1 엔드포인트에서 GCS URI 반환 → Scene Extension 가능",
+      });
+    }
+
     console.log("[generate-video] Veo request:", JSON.stringify({
       model,
       mode: veoMode,
       endpoint: "us-central1",
+      authMethod,
+      urlVersion,
+      urlHasProject,
+      veoUrlPrefix: veoUrl.slice(0, 80),
       previousVideoUri: req.previousVideoUri ? `${String(req.previousVideoUri).slice(0, 80)}…` : null,
       hasValidPrevUri,
       hasFirstFrame,

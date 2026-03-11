@@ -87,6 +87,28 @@ function extractVideoResults(raw: Record<string, unknown>): VideoResult[] {
     deepSearchVideoData(raw, results);
   }
 
+  // 9) base64만 있고 URI가 없는 경우 → GCS/HTTPS URI를 별도로 deep search
+  // extractFromSamples가 base64를 먼저 찾으면 deepSearchVideoData가 스킵되는 문제 보완
+  const hasUri = results.some(r => r.kind === "uri" || (r.kind === "file-object" && r.uri));
+  const hasBase64Only = results.length > 0 && !hasUri;
+  if (hasBase64Only) {
+    console.log("[check-video] base64 결과만 있음 → GCS/HTTPS URI 추가 탐색 시작");
+    const uriResults: VideoResult[] = [];
+    deepSearchVideoData(raw, uriResults);
+    // deep search에서 URI만 추출 (base64 중복 방지)
+    const uriOnly = uriResults.filter(r => r.kind === "uri" || (r.kind === "file-object" && r.uri));
+    if (uriOnly.length > 0) {
+      console.log("[check-video] ✓ deep search로 GCS/HTTPS URI 발견:", uriOnly.map(r => {
+        const uri = r.kind === "uri" ? r.uri : (r as VideoResultFileObject).uri;
+        return uri ? uri.slice(0, 80) : "(empty)";
+      }));
+      // URI 결과를 앞에 배치 (rawVideoUri가 URI를 사용하도록)
+      results.unshift(...uriOnly);
+    } else {
+      console.warn("[check-video] ✗ deep search에서도 GCS/HTTPS URI 없음 — Scene Extension 불가");
+    }
+  }
+
   return results;
 }
 
@@ -97,17 +119,30 @@ function extractFromSamples(samples: unknown, results: VideoResult[]): void {
     const video = isRecord(sample.video) ? sample.video : undefined;
     const seed = sample.seed !== undefined ? String(sample.seed) : undefined;
 
-    // video.uri (혹은 gcsUri, storageUri, videoUri — Veo 버전별 필드명 차이 대응)
+    // video.uri (혹은 gcsUri, storageUri, videoUri, downloadUri, outputUri — Veo 버전별 필드명 차이 대응)
     if (video) {
       const videoUri = isString(video.uri) ? video.uri
         : isString(video.gcsUri) ? video.gcsUri
         : isString(video.storageUri) ? video.storageUri
         : isString(video.videoUri) ? video.videoUri
+        : isString(video.downloadUri) ? video.downloadUri
+        : isString(video.outputUri) ? video.outputUri
+        : isString(video.httpsUrl) ? video.httpsUrl
         : "";
       if (videoUri.length > 0) {
         results.push({ kind: "uri", uri: videoUri, seed });
         continue;
       }
+      // URI 필드가 비어있으면 video 객체의 모든 string 필드에서 gs:// 또는 https:// 탐색
+      for (const [key, val] of Object.entries(video)) {
+        if (key === "bytesBase64Encoded" || key === "mimeType" || key === "state") continue;
+        if (isString(val) && (val.startsWith("gs://") || val.startsWith("https://")) && val.length > 10) {
+          console.log(`[check-video] video 객체의 예상 외 필드에서 URI 발견: video.${key}`);
+          results.push({ kind: "uri", uri: val, seed });
+          break;
+        }
+      }
+      if (results.length > 0) continue;
     }
 
     // video가 file object인 경우 (uri, mimeType, state 등)
@@ -661,14 +696,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const toProxyUrl = (uri: string) =>
       `/api/proxy-video?uri=${encodeURIComponent(uri)}`;
 
+    // URI 정규화: gs:// 또는 https:// 만 Scene Extension에 유효
+    const normalizeVideoUri = (uri: string): string => {
+      if (!uri) return "";
+      // gs:// → 그대로 (Veo Scene Extension 가능)
+      if (uri.startsWith("gs://")) return uri;
+      // https:// → 그대로 (Veo Scene Extension 가능)
+      if (uri.startsWith("https://")) return uri;
+      // http:// → https:// 로 업그레이드
+      if (uri.startsWith("http://")) return uri.replace("http://", "https://");
+      // data: URI나 기타 → Scene Extension 불가
+      return "";
+    };
+
     const variants: { videoUri: string; rawVideoUri: string; seed?: string; resultKind: string }[] = [];
 
     for (const result of videoResults) {
       switch (result.kind) {
         case "uri": {
+          const normalizedUri = normalizeVideoUri(result.uri);
           variants.push({
             videoUri: toProxyUrl(result.uri),
-            rawVideoUri: result.uri,
+            rawVideoUri: normalizedUri,
             seed: result.seed,
             resultKind: "uri",
           });
@@ -677,9 +726,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         case "file-object": {
           // file-object에 URI가 있으면 사용
           if (result.uri && result.uri.length > 0) {
+            const normalizedUri = normalizeVideoUri(result.uri);
             variants.push({
               videoUri: toProxyUrl(result.uri),
-              rawVideoUri: result.uri,
+              rawVideoUri: normalizedUri,
               seed: result.seed,
               resultKind: "file-object",
             });
@@ -689,15 +739,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         case "base64": {
           // base64 → data URI로 변환 (클라이언트에서 직접 재생 가능)
           const dataUri = `data:${result.mimeType};base64,${result.data}`;
+          // rawVideoUri: 같은 응답에서 발견된 GCS/HTTPS URI가 있으면 연결
+          // (extractVideoResults 에서 URI 결과가 앞에 추가되었을 수 있음)
+          const pairedUri = videoResults.find(
+            r => r.kind === "uri" && r.uri && (r.uri.startsWith("gs://") || r.uri.startsWith("https://"))
+          );
+          const rawUri = pairedUri && pairedUri.kind === "uri" ? normalizeVideoUri(pairedUri.uri) : "";
+          if (rawUri) {
+            console.log(`[check-video] base64 variant에 GCS URI 연결: ${rawUri.slice(0, 80)}`);
+          }
           variants.push({
             videoUri: dataUri,
-            // rawVideoUri는 Scene Extension용 gs:// / https:// URI에만 사용.
-            // data URI를 그대로 저장하면:
-            //   1) 수 MB 문자열이 클라이언트 state에 2벌 (videoUri + rawVideoUri) 저장됨
-            //   2) 다음 컷 generateCut 시 body에 포함되어 수십 MB 요청 발생
-            //   3) generate-video.ts에서 invalid URI 판정 → Scene Extension 건너뜀 (어차피 불가)
-            // → 빈 문자열로 설정하여 Scene Extension 시도 자체를 차단
-            rawVideoUri: "",
+            rawVideoUri: rawUri,
             seed: result.seed,
             resultKind: "base64",
           });
@@ -729,16 +782,33 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       });
     }
 
-    // 완료 로그: parsed result URL
+    // 완료 로그: parsed result URL + Scene Extension 진단
     const checkTotalMs = Date.now() - tCheckStart;
     const fetchMs = Date.now() - tFetchStart;
+    const primaryRawUri = variants[0]?.rawVideoUri || "";
+    const primaryUriType = primaryRawUri.startsWith("gs://") ? "GCS"
+      : primaryRawUri.startsWith("https://") ? "HTTPS"
+      : primaryRawUri === "" ? "EMPTY"
+      : "OTHER";
+    const sceneExtensionReady = primaryUriType === "GCS" || primaryUriType === "HTTPS";
+
     console.log("[check-video] Veo COMPLETED", {
+      cutNumber,
       variantCount: variants.length,
       kinds: variants.map(v => v.resultKind),
-      parsedResultUrl: variants[0]?.rawVideoUri
-        ? variants[0].rawVideoUri.slice(0, 80)
-        : "(base64 or empty)",
+      primaryRawUri: primaryRawUri ? primaryRawUri.slice(0, 80) : "(empty)",
+      primaryUriType,
+      sceneExtensionReady: sceneExtensionReady ? "✓ 다음 컷 SCENE_EXTENSION 가능" : "✗ 다음 컷 SCENE_EXTENSION 불가",
+      allRawUris: variants.map(v => v.rawVideoUri ? `${v.rawVideoUri.slice(0, 60)}` : "(empty)"),
     });
+    if (!sceneExtensionReady) {
+      console.warn("[check-video] ⚠️ rawVideoUri 없음 — 원인 진단:", {
+        cutNumber,
+        extractedResultKinds: videoResults.map(r => r.kind),
+        responseStructure: structure,
+        hint: "Veo가 GCS URI 대신 base64로 응답함. 가능한 원인: (1) API Key 인증 사용 (Service Account 아님), (2) global 엔드포인트 사용, (3) Veo API 응답 구조 변경",
+      });
+    }
     console.log("[check-video] ⏱ timing", { checkTotalMs, fetchMs, cutNumber });
 
     return Response.json({
@@ -748,6 +818,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       seed: variants[0].seed,
       variants,
       sampleCount: variants.length,
+      // 진단용: Scene Extension 가능 여부
+      _diag: {
+        sceneExtensionReady,
+        primaryUriType,
+        extractedKinds: videoResults.map(r => r.kind),
+      },
     });
   } catch (error) {
     const errType = error instanceof Error ? error.constructor.name : typeof error;

@@ -382,6 +382,22 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
             return;
           }
 
+          // ── Scene Extension 진단: check-video 응답의 _diag 확인 ──────────
+          const diag = (data as Record<string, unknown>)._diag as {
+            sceneExtensionReady?: boolean;
+            primaryUriType?: string;
+            extractedKinds?: string[];
+          } | undefined;
+
+          if (diag && !diag.sceneExtensionReady) {
+            console.warn(`[CUT ${cutNumber}] ⚠️ Scene Extension 불가 (서버 진단)`, {
+              primaryUriType: diag.primaryUriType,
+              extractedKinds: diag.extractedKinds,
+              rawVideoUri: data.rawVideoUri ? `${data.rawVideoUri.slice(0, 60)}…` : "(empty)",
+              hint: "다음 컷은 IMAGE_TO_VIDEO 또는 TEXT_TO_VIDEO로 생성됩니다.",
+            });
+          }
+
           const clipUpdate: Partial<VideoClip> = {
             status: "completed",
             videoUri: data.videoUri,
@@ -967,18 +983,28 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           ? "IMAGE_TO_VIDEO"
           : "TEXT_TO_VIDEO";
 
-      if (cutNumber > 1 && requestMode === "TEXT_TO_VIDEO") {
-        // Scene Extension도 image-to-video도 없으면 이전 컷과 무관한 독립 생성 → 연속성 없음
+      if (cutNumber > 1 && requestMode !== "SCENE_EXTENSION") {
+        // Scene Extension 실패 원인을 상세 진단
+        const extensionSkipReason: string[] = [];
+        if (!prevClip) extensionSkipReason.push("이전 컷 클립 없음");
+        else if (prevClip.status !== "completed") extensionSkipReason.push(`이전 컷 상태: ${prevClip.status}`);
+        if (!rawPrevUri) extensionSkipReason.push("rawVideoUri 없음 (이전 컷 응답에 GCS/HTTPS URI 미포함)");
+        else if (rawPrevUri === "") extensionSkipReason.push("rawVideoUri 빈 문자열 (Veo가 base64로 응답 → GCS URI 미반환)");
+        else if (rawPrevUri.startsWith("data:")) extensionSkipReason.push("rawVideoUri가 data: URI (base64 인라인 → Scene Extension 불가)");
+
         console.warn(
-          `[CUT ${cutNumber}] ⚠️ TEXT_TO_VIDEO — 이전 컷과 연결 없음.`,
+          `[CUT ${cutNumber}] ⚠️ ${requestMode} — Scene Extension 실패 (연속성 약화)`,
           {
+            extensionSkipReason,
+            fallbackMode: requestMode,
             prevClipExists: !!prevClip,
             prevClipStatus: prevClip?.status,
             rawVideoUri: rawPrevUri ? `${rawPrevUri.slice(0, 60)}…` : "(없음)",
             rawVideoUriType: rawPrevUri
-              ? (rawPrevUri.startsWith("gs://") ? "GCS ✓" : rawPrevUri.startsWith("https://") ? "HTTPS ✓" : rawPrevUri === "" ? "EMPTY (base64 응답) ✗" : "DATA_URI ✗")
+              ? (rawPrevUri.startsWith("gs://") ? "GCS ✓" : rawPrevUri.startsWith("https://") ? "HTTPS ✓" : rawPrevUri === "" ? "EMPTY ✗" : "DATA_URI ✗")
               : "(없음)",
-            firstFrameBase64: firstFrameBase64 ? `(${firstFrameBase64.length}자)` : "(없음)",
+            firstFrameBase64: firstFrameBase64 ? `(${firstFrameBase64.length}자) → IMAGE_TO_VIDEO fallback` : "(없음) → TEXT_TO_VIDEO fallback",
+            fix: "GOOGLE_SERVICE_ACCOUNT_JSON 인증 사용 시 us-central1 엔드포인트에서 GCS URI 반환됨",
           }
         );
       }
