@@ -94,6 +94,11 @@ async function fetchGeminiCuts(
           transitionHint: cut.transitionHint ?? "",
           characterConsistency: cut.characterConsistency ?? "",
           charactersInScene: Array.isArray(cut.charactersInScene) ? cut.charactersInScene : [],
+          // JSON 기반 프롬프트 — API에서 온 구조화 데이터 보존
+          shotCategory: cut.shotCategory,
+          characterRole: cut.characterRole,
+          videoPromptJson: cut.videoPromptJson,
+          extendPromptJson: cut.extendPromptJson,
         }))
       : [];
 
