@@ -228,13 +228,16 @@ export interface QualityChecklist {
 }
 
 /** 비시각 메타태그 패턴 — 최종 렌더링 전에 제거해야 하는 내부 planning 언어 */
-const NON_VISUAL_META_TAGS = /\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL|CAMERA_PROGRESSION|SHOT_SIZE|CAMERA_ANGLE)\s*:/i;
+const NON_VISUAL_META_TAGS = /\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL|CAMERA_PROGRESSION|SHOT_SIZE|CAMERA_ANGLE|SCENE BEATS|NEWLY REVEALED|STILL WITHHELD|NEW SCENE OPENS|PREV SCENE ENDS|NEW ACTION|BEHAVIORAL SHIFT)\s*:/i;
 
 /** 추상 조명 표현 패턴 — 구체적 광원 정보 없이 분위기만 서술 */
 const ABSTRACT_LIGHTING = /^(dramatic|moody|atmospheric|cinematic|dark|bright|warm|cool|soft|harsh)\s+(light|lighting|mood|atmosphere)$/i;
 
 /** 정적 행동 패턴 — 캐릭터가 아무것도 안 하는 상태 */
 const STATIC_ACTION = /\b(stands?\s|standing\s|motionless|remains\s|stationary|facing\s+camera|watches?\s+quietly)\b/i;
+
+/** 텍스트 유도 오브젝트 — 'no readable text'와 충돌하는 표현 */
+const TEXT_GENERATING_OBJECTS = /\b(sign|signs|signage|faded sign|dusty sign|signboard|placard|billboard|marquee|banner text|lettered|lettering|readable|legible)\b/i;
 
 /**
  * 최종 렌더링된 프롬프트에 대한 품질 체크리스트 생성
@@ -266,18 +269,32 @@ export function generateQualityChecklist(
     detail: hasMetaTags ? "내부 planning 태그가 최종 프롬프트에 남아있음" : undefined,
   });
 
-  // 3. 구체적 조명 정보 있는지
-  const lightingText = json.moodLighting || "";
-  const hasAbstractOnly = ABSTRACT_LIGHTING.test(lightingText.trim());
-  const hasConcreteLight = lightingText.length > 15 && !hasAbstractOnly;
+  // 3. 텍스트 유도 오브젝트 충돌 없는지 (sign + 'no readable text' 동시 사용 방지)
+  const hasTextObject = TEXT_GENERATING_OBJECTS.test(renderedPrompt);
   items.push({
-    id: "concrete-lighting",
-    label: "구체적 광원/방향/질감 포함",
-    passed: hasConcreteLight,
-    detail: !hasConcreteLight ? `조명: "${lightingText}" — 광원+방향+질감 필요` : undefined,
+    id: "no-text-object-conflict",
+    label: "텍스트 유도 오브젝트(sign/placard 등) 없음",
+    passed: !hasTextObject,
+    detail: hasTextObject ? "sign/signboard/lettered 등이 'no text'와 충돌" : undefined,
   });
 
-  // 4. 씬 진행/카메라 움직임 있는지
+  // 4. 구체적 조명 정보 있는지 (source + direction + quality)
+  const lightingText = json.moodLighting || "";
+  const hasAbstractOnly = ABSTRACT_LIGHTING.test(lightingText.trim());
+  const hasLightSource = /\b(light|lamp|sun|moon|neon|fluorescent|candle|fire|window|bulb|glow|spill|beam)\b/i.test(lightingText);
+  const hasDirection = /\b(from|through|above|below|left|right|behind|overhead|side|rim|back|upper|lower)\b/i.test(lightingText);
+  const hasQuality = /\b(soft|harsh|diffused|sharp|warm|cool|cold|pale|bright|dim|weak|flickering|steady|dappled)\b/i.test(lightingText);
+  const concreteLight = hasLightSource && hasDirection && !hasAbstractOnly;
+  items.push({
+    id: "concrete-lighting",
+    label: "구체적 광원(source+direction+quality) 포함",
+    passed: concreteLight,
+    detail: !concreteLight
+      ? `조명: "${lightingText}" — 필요: source(${hasLightSource ? "✓" : "✗"}) + direction(${hasDirection ? "✓" : "✗"}) + quality(${hasQuality ? "✓" : "✗"})`
+      : undefined,
+  });
+
+  // 5. 씬 진행/카메라 움직임 있는지
   const hasTemporal = /\d+s[-–]?\d+s/.test(renderedPrompt) || /first|then|finally/i.test(renderedPrompt);
   items.push({
     id: "visual-progression",
@@ -286,7 +303,7 @@ export function generateQualityChecklist(
     detail: !hasTemporal ? "0s-2s: ... 형태의 시간 비트가 없음" : undefined,
   });
 
-  // 5. 씬 타입과 프롬프트가 일치하는지
+  // 6. 씬 타입과 프롬프트가 일치하는지
   const sceneTypeMatched = (() => {
     if (!opts?.shotCategory) return true;
     if (opts.shotCategory === "character-driven") return !!json.characterRef;
@@ -300,7 +317,7 @@ export function generateQualityChecklist(
     detail: !sceneTypeMatched ? `shotCategory=${opts?.shotCategory}인데 characterRef 불일치` : undefined,
   });
 
-  // 6. 정적 행동 없는지 (캐릭터 있는 경우)
+  // 7. 정적 행동 없는지 (캐릭터 있는 경우)
   const hasStaticAction = !isCharacterless && STATIC_ACTION.test(renderedPrompt);
   items.push({
     id: "no-static-action",
@@ -309,7 +326,24 @@ export function generateQualityChecklist(
     detail: hasStaticAction ? "standing/motionless 같은 정적 행동 발견" : undefined,
   });
 
-  // 7. 프롬프트 길이 적정 (80~350 words)
+  // 8. 시각 디테일 밀도 (환경 묘사 요소 수)
+  const visualDetailPatterns = [
+    /\b(desk|table|chair|door|window|wall|floor|ceiling|shelf|counter|cabinet)\b/i,
+    /\b(dust|crack|stain|scratch|worn|peeling|faded|rusty|weathered|chipped)\b/i,
+    /\b(reflection|shadow|silhouette|haze|fog|mist|smoke|steam|condensation)\b/i,
+    /\b(blinds|curtain|frame|tile|pipe|wire|cable|vent|grate|rail)\b/i,
+    /\b(flickering|buzzing|dripping|swaying|creaking|settling)\b/i,
+  ];
+  const detailCount = visualDetailPatterns.filter(p => p.test(renderedPrompt)).length;
+  const goodDensity = detailCount >= 2;
+  items.push({
+    id: "visual-detail-density",
+    label: "시각 디테일 밀도 충분 (환경 오브젝트 2+)",
+    passed: goodDensity,
+    detail: !goodDensity ? `환경 디테일 카테고리 ${detailCount}/5 — 구체적 오브젝트/질감/현상 추가 필요` : undefined,
+  });
+
+  // 9. 프롬프트 길이 적정 (80~350 words)
   const wordCount = renderedPrompt.split(/\s+/).length;
   const goodLength = wordCount >= 80 && wordCount <= 350;
   items.push({
@@ -331,13 +365,41 @@ export function generateQualityChecklist(
  * renderVeoPromptFromJson 호출 후 최종 정리용
  */
 export function sanitizeRenderedPrompt(prompt: string): string {
-  return prompt
-    // 메타태그 키:값 형태 제거
-    .replace(/\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL)\s*:[^.]*\.\s*/gi, "")
-    // 이중 마침표/공백 정리
+  let s = prompt
+    // ── 메타태그 키:값 형태 제거 (내부 planning 언어) ──
+    .replace(/\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL|CAMERA_PROGRESSION|SHOT_SIZE|CAMERA_ANGLE|SCENE BEATS|NEWLY REVEALED|STILL WITHHELD|NEW SCENE OPENS|PREV SCENE ENDS|NEW ACTION|BEHAVIORAL SHIFT)\s*:[^.]*\.\s*/gi, "")
+    // 파이프 구분 메타 형식 제거: "SHOT_SIZE:WS | CAMERA_ANGLE:eye-level | ..."
+    .replace(/\b(SHOT_SIZE|CAMERA_ANGLE|CAMERA_PROGRESSION|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING)\s*:[^|.]*[|]/gi, "")
+    // 남은 단독 메타 키:값 (마침표 없는 경우)
+    .replace(/\b(SHOT_SIZE|CAMERA_ANGLE|CAMERA_PROGRESSION|SUBJECT_ACROSS_SCENE|REVEALED|WITHHELD|END_HOOK)\s*:[^,.;|]*[,;]?\s*/gi, "")
+    // ── 텍스트 유도 오브젝트 → 텍스트 없는 대체물로 교체 ──
+    .replace(/\b(dusty|faded|old|worn|weathered)\s+signs?\b/gi, "weathered wooden panel")
+    .replace(/\bsignboards?\b/gi, "facade panel")
+    .replace(/\bsignage\b/gi, "wall-mounted panel")
+    .replace(/\b(clinic|shop|store|office)\s+signs?\b/gi, "$1 facade")
+    .replace(/\b(neon|lit|glowing)\s+signs?\b/gi, "$1 tubes")
+    .replace(/\bplacards?\b/gi, "posted panels")
+    .replace(/\bbillboards?\b/gi, "blank wall surface")
+    .replace(/\bmarquees?\b/gi, "awning overhang")
+    // 일반적인 단독 "sign" (문맥상 간판 의미)
+    .replace(/\ba\s+sign\b/gi, "a mounted panel")
+    .replace(/\bthe\s+sign\b/gi, "the facade panel")
+    // ── Newly visible / Camera angle 등 자연어 변환 잔여 제거 ──
+    .replace(/\bNewly visible:\s*/gi, "")
+    .replace(/\bCamera angle:\s*/gi, "")
+    .replace(/\bSubject positioned\s*/gi, "")
+    .replace(/\bAction:\s*/gi, "")
+    .replace(/\bBody language:\s*/gi, "")
+    .replace(/\bTransition:\s*/gi, "")
+    .replace(/\bBehavior changes:\s*/gi, "")
+    // ── 정리 ──
     .replace(/\.\s*\./g, ".")
+    .replace(/\|\s*\./g, ".")
+    .replace(/\|\s*$/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+
+  return s;
 }
 
 // ─── Veo 렌더러 ───────────────────────────────────────────────────────────────

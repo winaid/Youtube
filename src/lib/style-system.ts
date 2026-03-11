@@ -318,7 +318,7 @@ export const STYLE_PRESETS: Record<string, StylePreset> = {
     },
     globalStyleBlock: "Neon cyberpunk aesthetic. Dark atmosphere with vivid neon lights — pink, blue, purple, cyan. Wet reflective surfaces catching neon glow. Rain-slicked urban environments.",
     characterStyleRule: "Semi-realistic figures with neon-lit rim lighting, cyberpunk fashion, vivid colored reflections on skin and clothing.",
-    environmentStyleRule: "Dark cyberpunk cityscapes with neon signage, wet reflective streets, atmospheric fog catching colored light.",
+    environmentStyleRule: "Dark cyberpunk cityscapes with neon tubes and glowing panels, wet reflective streets, atmospheric fog catching colored light.",
     reinforcement: "Neon glow consistent in every frame. Dark atmosphere with vivid neon accents maintained throughout. Wet reflective surfaces.",
     negativeBlock: "natural daylight, muted colors, pastoral setting, bright clean look, text overlay, watermark",
     isNonRealistic: false,
@@ -620,6 +620,7 @@ export interface AssembledPrompt {
  */
 function naturalizeMetaFields(prompt: string): string {
   return prompt
+    // ── 메타태그 → 자연어 변환 (SHOT_SIZE만 자연어화, 나머지는 값만 추출 또는 제거) ──
     // SHOT_SIZE:XXX → "XXX shot."
     .replace(/SHOT_SIZE:\s*(\w+)/gi, (_m, v) => {
       const map: Record<string, string> = {
@@ -629,37 +630,54 @@ function naturalizeMetaFields(prompt: string): string {
       };
       return `${map[v.toUpperCase()] || v} shot.`;
     })
-    // CAMERA_ANGLE:XXX → just the value
-    .replace(/CAMERA_ANGLE:\s*/gi, "Camera angle: ")
-    // CAMERA_MOVEMENT:XXX → just the value
-    .replace(/CAMERA_MOVEMENT:\s*/gi, "Camera ")
-    // SUBJECT_BLOCKING:XXX → just the value
-    .replace(/SUBJECT_BLOCKING:\s*/gi, "Subject positioned ")
-    // SUBJECT:XXX → just the value
+    // CAMERA_ANGLE:XXX → 값만 (태그 제거)
+    .replace(/CAMERA_ANGLE:\s*/gi, "")
+    // CAMERA_MOVEMENT/CAMERA_PROGRESSION:XXX → 값만
+    .replace(/CAMERA_(MOVEMENT|PROGRESSION):\s*/gi, "")
+    // SUBJECT_BLOCKING:XXX → 제거 (Veo가 사용하지 않는 내부 정보)
+    .replace(/SUBJECT_BLOCKING:\s*[^.|]*[.|]?\s*/gi, "")
+    // SUBJECT_ACROSS_SCENE:XXX → 값만
+    .replace(/SUBJECT_ACROSS_SCENE:\s*/gi, "")
+    // SUBJECT:XXX → 값만
     .replace(/SUBJECT:\s*/gi, "")
-    // ACTION_BEAT:XXX → just the value
-    .replace(/ACTION_BEAT:\s*/gi, "Action: ")
-    // BODY_SIGNAL:XXX → just the value
-    .replace(/BODY_SIGNAL:\s*/gi, "Body language: ")
-    // REVEALED:XXX → just the value
-    .replace(/REVEALED:\s*/gi, "Newly visible: ")
-    // WITHHELD:XXX → remove entirely (off-frame info, Veo can't use it)
+    // ACTION_BEAT:XXX → 값만
+    .replace(/ACTION_BEAT:\s*/gi, "")
+    // BODY_SIGNAL:XXX → 값만
+    .replace(/BODY_SIGNAL:\s*/gi, "")
+    // REVEALED:XXX → 제거 (내부 planning, Veo 불필요)
+    .replace(/REVEALED:\s*[^.|]*[.|]?\s*/gi, "")
+    // WITHHELD:XXX → 제거 (프레임 밖 정보)
     .replace(/WITHHELD:\s*[^.]*\.?\s*/gi, "")
-    // TRANSITION_FROM_PREV:XXX → just the value
-    .replace(/TRANSITION_FROM_PREV:\s*/gi, "Transition: ")
-    // PREV SCENE ENDS: → just the value
+    // END_HOOK:XXX → 제거 (다음 씬 연결용 내부 정보)
+    .replace(/END_HOOK:\s*[^.|]*[.|]?\s*/gi, "")
+    // TRANSITION_FROM_PREV:XXX → 값만
+    .replace(/TRANSITION_FROM_PREV:\s*/gi, "")
+    // PREV SCENE ENDS: → 자연어
     .replace(/PREV SCENE ENDS:\s*/gi, "Previous shot ends with ")
-    // NEW SHOT: → just the value
-    .replace(/NEW SHOT:\s*/gi, "New shot: ")
-    // NEW ACTION: → just the value
-    .replace(/NEW ACTION:\s*/gi, "New action: ")
-    // BEHAVIORAL SHIFT: → just the value
-    .replace(/BEHAVIORAL SHIFT:\s*/gi, "Behavior changes: ")
-    // NEWLY REVEALED: → just the value
-    .replace(/NEWLY REVEALED:\s*/gi, "Newly visible: ")
-    // STILL WITHHELD: → remove entirely
+    // NEW SCENE OPENS: → 제거 (렌더러가 이미 처리)
+    .replace(/NEW SCENE OPENS:\s*/gi, "")
+    // NEW SHOT: → 제거
+    .replace(/NEW SHOT:\s*/gi, "")
+    // NEW ACTION: → 값만
+    .replace(/NEW ACTION:\s*/gi, "")
+    // BEHAVIORAL SHIFT: → 값만
+    .replace(/BEHAVIORAL SHIFT:\s*/gi, "")
+    // NEWLY REVEALED: → 제거 (내부 planning)
+    .replace(/NEWLY REVEALED:\s*[^.|]*[.|]?\s*/gi, "")
+    // STILL WITHHELD: → 제거
     .replace(/STILL WITHHELD:\s*[^.]*\.?\s*/gi, "")
-    // 정리
+    // SCENE BEATS: → 제거 (timingBeat로 이미 처리)
+    .replace(/SCENE BEATS:\s*/gi, "")
+    // 파이프 구분자 → 마침표
+    .replace(/\s*\|\s*/g, ". ")
+    // ── 텍스트 유도 오브젝트 교체 ──
+    .replace(/\b(dusty|faded|old|worn|weathered)\s+signs?\b/gi, "weathered wooden panel")
+    .replace(/\bsignboards?\b/gi, "facade panel")
+    .replace(/\bsignage\b/gi, "wall-mounted panel")
+    .replace(/\b(clinic|shop|store|office)\s+signs?\b/gi, "$1 facade")
+    .replace(/\b(neon|lit|glowing)\s+signs?\b/gi, "$1 tubes")
+    // ── 정리 ──
+    .replace(/\.\s*\./g, ".")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

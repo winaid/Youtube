@@ -115,7 +115,7 @@ function buildGenerationPersonaBlock(gp: {
   if (gp.noNarration)          forbidden.push("narration audio, voiceover, off-screen explanatory voice");
   if (gp.noLecturerChar)       forbidden.push("lecturer / presenter / host / narrator character — no one explains to camera");
   if (gp.subjectFirst)         required.push("subject-first composition: character occupies primary frame zone, background is support — NOT decoration that competes");
-  if (gp.noBackgroundClutter)  required.push("minimal background: NO excessive banners, ornate patterns, signage, or decorative elements that override subject");
+  if (gp.noBackgroundClutter)  required.push("minimal background: NO excessive banners, ornate patterns, wall clutter, or decorative elements that override subject");
   if (gp.emotionAsAction)      required.push("emotion ONLY through specific physical action — never abstract emotion labels, never adjectives like 'nervously' or 'sadly'");
   if (gp.noRepeatComposition)  required.push("each cut: different shot type + different body position + different emotional beat than previous cut");
 
@@ -182,9 +182,9 @@ BANNED → REQUIRED replacement:
 
 ### Advertising / Historical Props
 BANNED → REQUIRED replacement:
-- "advertisement" / 광고 → "hand-lettered newspaper broadside column" | "lithographic street poster tacked to brick wall" | "painted wooden signboard hung above doorway on iron bracket"
-- "sign / 간판" → "gilded hanging shop sign on wrought-iron bracket" | "chalk-lettered sidewalk sandwich board" | "carved wooden shingle over entrance"
-- "promotional / 홍보" → "street barker standing on wooden crate, holding printed handbill above crowd" | "market-square public demonstration with illustrated poster board"
+- "advertisement" / 광고 → "hand-painted wooden panel on brick wall" | "lithographic street illustration tacked to post" | "carved wooden bracket hung above doorway"
+- "sign / 간판" → "gilded hanging wooden panel on wrought-iron bracket" | "weathered wooden plaque over entrance" | "mounted facade panel with iron frame"
+- "promotional / 홍보" → "street barker standing on wooden crate, gesturing to crowd" | "market-square public demonstration with illustrated board"
 - "flyer / pamphlet" / 전단 → "single-leaf letterpress broadside, bold woodcut typeface" | "folded paper handbill with hand-drawn illustration"
 - "poster" / 포스터 → "hand-printed broadside pinned to wooden post" | "lithographed circus-style advertisement with colored inks"
 
@@ -683,39 +683,57 @@ ${SCENE_TERM_PRECISION_BLOCK}
 
 ## STRICT 글자 제한
 
-imagePrompt (≤80 words English — 씬의 오프닝 순간):
-  If characterRole=protagonist/partial: "[SHOT_TYPE], [angle]. [charRef or partial]. SCENE OPENS: [sceneBeat1]. [setting/environment]. [moodLighting]. [noTextSuffix]"
-  If characterRole=absent: "[SHOT_TYPE], [angle]. [environment/object]. SCENE OPENS: [sceneBeat1]. [setting detail]. [moodLighting]. [noTextSuffix]"
-  If characterRole=silhouette/background: "[SHOT_TYPE], [angle]. [environment]. [distant figure hint]. SCENE OPENS: [sceneBeat1]. [moodLighting]. [noTextSuffix]"
+imagePrompt (≤80 words English — 씬의 오프닝 순간, 자연어만):
+  If characterRole=protagonist/partial: "[shot type] shot, [angle]. [charRef or partial]. [sceneBeat1 시각 묘사]. [환경 디테일 2개 이상]. [moodLighting]. [noTextSuffix]"
+  If characterRole=absent: "[shot type] shot, [angle]. [environment/object 구체적]. [sceneBeat1]. [환경 디테일]. [moodLighting]. [noTextSuffix]"
+  If characterRole=silhouette/background: "[shot type] shot, [angle]. [environment]. [distant figure hint]. [sceneBeat1]. [moodLighting]. [noTextSuffix]"
 
-endImagePrompt (≤65 words English — 씬의 마지막 순간):
-  If characterRole=protagonist/partial: "[charRef or partial]. SCENE ENDS: [sceneBeat3 결과 상태]. [what changed from opening]. [noTextSuffix]"
-  If characterRole=absent: "SCENE ENDS: [sceneBeat3 결과 상태]. [what changed from opening]. [noTextSuffix]"
+endImagePrompt (≤65 words English — 씬의 마지막 순간, 자연어만):
+  If characterRole=protagonist/partial: "[charRef or partial]. [sceneBeat3 결과 상태]. [무엇이 변했는지]. [noTextSuffix]"
+  If characterRole=absent: "[sceneBeat3 결과 상태]. [무엇이 변했는지]. [noTextSuffix]"
 
 videoPrompt (≤180 words English — ⚠️ 이것은 단일 샷 설명이 아니라 ${secPerCut}초 씬 전체의 진행 설명):
-  Format: "SHOT_SIZE:[opening shotType] | CAMERA_ANGLE:[opening angle] | CAMERA_PROGRESSION:[camera changes across scene — e.g. 'starts WS pulling back → pushes into MS as subject enters → settles CU on hands (tension builds)']. ${beatTemplate.replace("[start]", "[sceneBeat1: what opens the scene visually]").replace("[develop]", "[sceneBeat2: what develops, enters, reacts, or shifts]").replace("[climax]", "[sceneBeat3: what is revealed, peaks, or hooks into next scene]")}. SUBJECT_ACROSS_SCENE:[what the subject DOES across the full ${secPerCut}s — not a pose, an action arc]. REVEALED:[new visual info that emerges during this scene]. WITHHELD:[what's kept hidden to sustain curiosity]. END_HOOK:[visual element that pulls viewer into next scene]. [charRef if characterRole is NOT absent — omit entirely if absent]. [noTextSuffix]"
-  ⚠️ videoPrompt의 핵심은 SCENE PROGRESSION이다:
+  ⚠️ 자연어로만 작성 — SHOT_SIZE: / CAMERA_ANGLE: / REVEALED: 같은 메타태그 절대 사용 금지!
+  Format: "[Opening shot type] shot, [angle]. [Camera progression across scene]. ${beatTemplate.replace("[start]", "[sceneBeat1: what opens the scene visually]").replace("[develop]", "[sceneBeat2: what develops, enters, reacts, or shifts]").replace("[climax]", "[sceneBeat3: what is revealed, peaks, or hooks into next scene]")}. [charRef if characterRole is NOT absent — omit entirely if absent]. [noTextSuffix]"
+  예시: "Wide shot, eye-level. Camera slowly pushes in from establishing distance to medium shot as figure enters frame. 0s-2s: empty clinic hallway with flickering fluorescent tube overhead, cracked tile floor. 2s-5s: door at far end creaks open, pale light spills across worn linoleum, shadow stretches toward camera. 5s-8s: figure's hand grips doorframe, half-open blinds cast striped shadows across the wall. [charRef]. [noTextSuffix]"
+  ⚠️ videoPrompt 핵심 = 구체적 시각 디테일 + SCENE PROGRESSION:
   - 씬 시작과 끝이 달라야 한다 (구도/카메라/피사체/정보 중 최소 2개 변화)
-  - 카메라도 씬 안에서 진행한다 (CAMERA_PROGRESSION = 시작 위치 → 중간 변화 → 최종 위치)
-  - 피사체도 씬 안에서 행동한다 (SUBJECT_ACROSS_SCENE = 행동의 시작 → 전개 → 결과)
+  - 카메라 진행을 자연어로 서술 (예: "camera slowly pushes in from wide to medium")
+  - 피사체 행동도 자연어 arc (예: "reaches for handle, pulls back, then grips it firmly")
+  - 환경 디테일을 구체적으로 (예: "dusty floor reflection, peeling wallpaper, rusted pipe")
   BANNED: "continues", "still", "same as before", "watches quietly", "stands facing", "remains motionless", "standing"
+  BANNED: SHOT_SIZE: / CAMERA_ANGLE: / REVEALED: / WITHHELD: / END_HOOK: / SUBJECT_ACROSS_SCENE: 같은 메타태그
+  BANNED: "sign", "faded sign", "signboard" — 텍스트 유도 오브젝트 금지
   BANNED emotion labels: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — body behavior only
 
 extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
-  Format: "PREV SCENE ENDS: [prevScene endHook state]. → TRANSITION. NEW SCENE OPENS: SHOT_SIZE:[this shotType] | CAMERA_PROGRESSION:[camera arc for new scene]. SCENE BEATS: [beat1] → [beat2] → [beat3]. [charRef if characterRole is NOT absent — omit if absent]. NEWLY REVEALED: [what this scene shows]. STILL WITHHELD: [what remains hidden]. END_HOOK: [visual bridge to next]. [noTextSuffix]"
-  BANNED: "continuing", "similar to previous", "same pose", emotion adjectives
+  ⚠️ 자연어로만 작성 — 메타태그 절대 사용 금지!
+  Format: "Continuing from previous shot — [prevScene endHook]. Transition to [this shotType] shot. [camera progression]. [beat1] → [beat2] → [beat3]. [charRef if characterRole is NOT absent — omit if absent]. [noTextSuffix]"
+  BANNED: "continuing", "similar to previous", "same pose", emotion adjectives, 모든 메타태그(SHOT_SIZE:/CAMERA_ANGLE: 등)
 
 cameraDirection (≤55 chars English):
   Format: "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
 
-moodLighting (≤55 chars English — 반드시 구체적 광원 포함):
-  Format: "[light source] + [direction] + [quality]. [color grade]."
-  예: "cold neon spill from storefront signs, casting blue pools on wet asphalt"
-  예: "overcast daylight diffused through clinic window, soft flat illumination"
-  예: "harsh side light from flickering fluorescent tube, cool white with green cast"
-  예: "warm backlight through fog, silhouetting figure, amber-orange rim"
-  BANNED: "dramatic lighting" / "moody atmosphere" 같은 추상어만으로 끝내기 금지
-  필수: light source(광원) + direction(방향/위치) + quality(질감/강도)
+moodLighting (≤55 chars English — 반드시 4요소: source + direction + intensity + quality):
+  Format: "[light source] from [direction], [intensity] [quality]. [color grade]."
+  예: "cold daylight entering from the upper right, weak diffused glow, blue-grey cast"
+  예: "weak overhead fluorescent light, flickering green-white, casting hard downward shadows"
+  예: "soft diffused window light from the left, pale warm wash, gentle falloff on floor"
+  예: "pale neon spill from corridor tubes behind, dim blue-pink rim on edges"
+  예: "single desk lamp from below-left, warm amber spot, deep shadows on ceiling"
+  BANNED: "dramatic lighting" / "moody atmosphere" / "cinematic light" — 추상어만 사용 절대 금지
+  BANNED: "storefront signs" / "neon signs" — sign 오브젝트는 텍스트를 유도하므로 사용 금지
+  필수: source(광원 종류) + direction(방향/위치) + intensity(강도) + quality(질감)
+
+## ⚠️ TEXT-FREE 규칙 (간판/텍스트 유도 오브젝트 금지)
+프롬프트에 "no text" / "no readable text"를 포함하는 동시에 텍스트를 연상시키는 오브젝트를 사용하면 Veo에게 상충 신호가 됩니다.
+BANNED objects: sign, faded sign, dusty sign, signboard, placard, billboard, marquee, banner text, lettered, nameplate
+ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade panel, empty storefront overhang, mounted panel, wall bracket, awning
+
+## ⚠️ 시각 디테일 밀도 (Visual Detail Density)
+각 씬 프롬프트에 화면에 실제로 보이는 구체적 환경 오브젝트를 2개 이상 포함하라:
+예: empty reception desk, dusty floor reflection, worn dental chair silhouette, flickering fluorescent tube, half-open blinds, faded wall paint, cracked tile floor, condensation on window, peeling wallpaper strip, rusted pipe along wall
+메타 정보(REVEALED/WITHHELD)를 늘리지 말고 실제 화면 디테일을 늘려라.
 
 ## MULTI-SHOT 규칙 (씬 내부 비트를 서브샷으로 구현 — Kling과 Veo 공통)
 각 씬마다 "multiShot" 배열을 생성하라. 배열은 sceneBeat1/2/3에 대응하는 2~3개 서브샷이다.
@@ -1039,8 +1057,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       })();
 
       // extendPrompt: 빈 문자열이거나 너무 짧으면 outline 기반 fallback 생성
+      // extendFallback: 자연어 중심 (메타태그 제거)
       const extendFallback = prevOutline
-        ? `PREV SCENE ENDS: ${prevOutline.endHook}. → TRANSITION. NEW SCENE OPENS: SHOT_SIZE:${outline.shotType} | CAMERA_PROGRESSION:${outline.cameraMovement}. SCENE BEATS: ${outline.sceneBeat1} → ${outline.sceneBeat2} → ${outline.sceneBeat3}.${charRefForCut ? ` ${charRefForCut}.` : ""} NEWLY REVEALED: new visual layer. END_HOOK: ${outline.endHook}. ${extendBeatTemplate}. ${noTextSuffix}`
+        ? `Continuing from previous shot — ${prevOutline.endHook}. Transition to ${outline.shotType} shot. ${outline.cameraMovement}. ${outline.sceneBeat1} → ${outline.sceneBeat2} → ${outline.sceneBeat3}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${extendBeatTemplate}. ${noTextSuffix}`
         : "";
 
       // ── JSON 기반 프롬프트 구조 생성 ──────────────────────────────────────
@@ -1109,12 +1128,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // ── 이미지 프롬프트 fallback (씬 오프닝/엔딩 기반) ──────────────
       const defaultImagePrompt = needsCharacter
-        ? `${outline.shotType}, eye-level. ${charRefForCut}. SCENE OPENS: ${outline.sceneBeat1}. ${noTextSuffix}`
-        : `${outline.shotType}, eye-level. SCENE OPENS: ${outline.sceneBeat1}. ${outline.sceneKo}. ${noTextSuffix}`;
+        ? `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${charRefForCut}. ${outline.sceneBeat1}. ${noTextSuffix}`
+        : `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.sceneBeat1}. ${outline.sceneKo}. ${noTextSuffix}`;
       const defaultEndImagePrompt = needsCharacter
-        ? `${charRefForCut}. SCENE ENDS: ${outline.sceneBeat3}. ${noTextSuffix}`
-        : `SCENE ENDS: ${outline.sceneBeat3}. ${noTextSuffix}`;
-      const defaultVideoPrompt = `SHOT_SIZE:${outline.shotType} | CAMERA_ANGLE:eye-level | CAMERA_PROGRESSION:${outline.cameraMovement}. ${sceneTimingBeat}. SUBJECT_ACROSS_SCENE:${outline.sceneBeat1} → ${outline.sceneBeat2} → ${outline.sceneBeat3}. REVEALED:new visual layer. WITHHELD:next narrative element. END_HOOK:${outline.endHook}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${noTextSuffix}`;
+        ? `${charRefForCut}. ${outline.sceneBeat3}. ${noTextSuffix}`
+        : `${outline.sceneBeat3}. ${noTextSuffix}`;
+      // defaultVideoPrompt: 자연어 중심 (메타태그 제거)
+      const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
+      const defaultVideoPrompt = `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.cameraMovement}. ${sceneTimingBeat}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${noTextSuffix}`;
 
       return {
         cutNumber:     outline.cutNumber,
