@@ -455,10 +455,13 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           if (data.canonicalVideoUri) {
             // 서버(check-video)가 직접 GCS/HTTPS URI를 반환한 경우
             clipUpdate.canonicalVideoUri = data.canonicalVideoUri;
-            console.log(`[CUT ${cutNumber}] canonicalVideoUri (서버 제공):`, data.canonicalVideoUri.slice(0, 80));
+            clipUpdate.uploadStatus = "skipped";
+            clipUpdate.sceneExtensionEligible = true;
+            console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (서버 제공):`, data.canonicalVideoUri.slice(0, 80));
           } else if (data.needsUpload && clipUpdate.videoUri) {
             // base64만 있고 canonical URI 없음 → R2/GCS 업로드 시도
-            console.log(`[CUT ${cutNumber}] needsUpload=true → /api/upload-video 호출`);
+            clipUpdate.uploadStatus = "pending";
+            console.log(`[CUT ${cutNumber}] 📤 UPLOAD_PENDING → /api/upload-video 호출`);
             try {
               // videoUri가 data: URI(base64 인라인)인 경우 base64 데이터 추출
               const videoDataUri = clipUpdate.videoUri;
@@ -467,7 +470,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                 base64Data = videoDataUri.replace(/^data:[^;]+;base64,/, "");
               } else if (videoDataUri.startsWith("/api/proxy-video")) {
                 // 프록시 URL인 경우 base64 추출 불가 → 업로드 스킵
-                console.warn(`[CUT ${cutNumber}] videoUri가 프록시 URL — 업로드 스킵`);
+                clipUpdate.uploadStatus = "skipped";
+                clipUpdate.sceneExtensionEligible = false;
+                console.warn(`[CUT ${cutNumber}] videoUri가 프록시 URL — 업로드 스킵 (Scene Extension 불가)`);
               }
 
               if (base64Data.length > 1000) {
@@ -488,26 +493,43 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                     proxyUri?: string;
                     storage?: string;
                     key?: string;
+                    diag?: Record<string, unknown>;
                   };
                   if (uploadData.canonicalVideoUri) {
                     clipUpdate.canonicalVideoUri = uploadData.canonicalVideoUri;
-                    console.log(`[CUT ${cutNumber}] canonicalVideoUri (업로드):`, {
+                    clipUpdate.uploadStatus = "success";
+                    clipUpdate.uploadStorage = uploadData.storage as "r2" | "gcs" | undefined;
+                    clipUpdate.sceneExtensionEligible = true;
+                    console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (업로드):`, {
                       uri: uploadData.canonicalVideoUri.slice(0, 80),
                       storage: uploadData.storage,
                     });
                   } else if (uploadData.proxyUri) {
                     // R2에 업로드했지만 도메인 없음 → proxyUri로 대체
-                    console.log(`[CUT ${cutNumber}] R2 업로드 성공 (도메인 없음) — proxyUri 사용:`, uploadData.proxyUri);
+                    clipUpdate.uploadStatus = "success";
+                    clipUpdate.uploadStorage = "r2";
+                    clipUpdate.sceneExtensionEligible = false; // proxyUri는 Scene Extension에 사용 불가
+                    console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2, 도메인 없음) — proxyUri만 사용 가능. Scene Extension 불가`);
                   }
                 } else {
                   const errText = await uploadRes.text().catch(() => "");
-                  console.warn(`[CUT ${cutNumber}] upload-video 실패 (${uploadRes.status}):`, errText.slice(0, 200));
+                  clipUpdate.uploadStatus = "failed";
+                  clipUpdate.uploadError = `HTTP ${uploadRes.status}: ${errText.slice(0, 200)}`;
+                  clipUpdate.sceneExtensionEligible = false;
+                  console.warn(`[CUT ${cutNumber}] ❌ UPLOAD_FAILED (${uploadRes.status}):`, errText.slice(0, 200));
                 }
               }
             } catch (uploadErr) {
               // 업로드 실패는 생성 성공에 영향 없음 — Scene Extension만 불가
-              console.warn(`[CUT ${cutNumber}] upload-video 오류:`, uploadErr instanceof Error ? uploadErr.message : uploadErr);
+              clipUpdate.uploadStatus = "failed";
+              clipUpdate.uploadError = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+              clipUpdate.sceneExtensionEligible = false;
+              console.warn(`[CUT ${cutNumber}] ❌ UPLOAD_FAILED (exception):`, clipUpdate.uploadError);
             }
+          } else {
+            // 업로드 불필요 (이미 canonical URI 있거나 videoUri 없음)
+            clipUpdate.uploadStatus = "none";
+            clipUpdate.sceneExtensionEligible = !!clipUpdate.canonicalVideoUri;
           }
 
           updateClip(cutNumber, clipUpdate);
@@ -541,6 +563,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
               canonicalVideoUri: curi ? `${curi.slice(0, 80)}…` : "(없음)",
               rawVideoUri: ruri ? `${ruri.slice(0, 80)}…` : "(empty)",
               effectiveUriType: ruriType,
+              uploadStatus: clipUpdate.uploadStatus || "unknown",
+              uploadStorage: clipUpdate.uploadStorage || "(N/A)",
+              uploadError: clipUpdate.uploadError || "(없음)",
+              sceneExtensionEligible: clipUpdate.sceneExtensionEligible ?? false,
               nextCutWillExtend: willExtend ? "✓ Scene Extension 가능" : "✗ Scene Extension 불가 → image/text fallback",
               nextCutContinuityScore: continuityScore,
               nextCutFallback: willExtend ? "SCENE_EXTENSION" : hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame)" : "TEXT_TO_VIDEO (연속성 없음)",

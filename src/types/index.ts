@@ -399,6 +399,11 @@ export interface VideoClip {
   engineUsed?: "veo" | "kling";      // 실제 사용된 엔진
   modeUsed?: VideoMode;              // 실제 사용된 모드
   sourceVideo?: string;              // extend 모드의 소스 영상 URI / task_id
+  // ── 업로드 상태 추적 ──
+  uploadStatus?: "none" | "pending" | "success" | "failed" | "skipped";
+  uploadStorage?: "r2" | "gcs" | "none";
+  uploadError?: string;
+  sceneExtensionEligible?: boolean;  // canonicalVideoUri가 있어서 다음 컷 Scene Extension 가능 여부
 }
 
 // ===== AI 피드백 리뷰 =====
