@@ -137,11 +137,11 @@ function EditableField({
 
 export default function CutCard({
   cut, characterSeeds, onUpdate,
-  storyboardImage, storyboardCandidates, storyboardLoading, onGenerateImage, onSelectCandidate,
-  storyboardEndImage, storyboardEndLoading, onGenerateEndImage,
+  storyboardImage: _storyboardImage, storyboardCandidates: _storyboardCandidates, storyboardLoading: _storyboardLoading, onGenerateImage: _onGenerateImage, onSelectCandidate: _onSelectCandidate,
+  storyboardEndImage: _storyboardEndImage, storyboardEndLoading: _storyboardEndLoading, onGenerateEndImage: _onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
-  userVeoMode,
+  userVeoMode: _userVeoMode,
 }: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
   const [feedbackText, setFeedbackText] = useState("");

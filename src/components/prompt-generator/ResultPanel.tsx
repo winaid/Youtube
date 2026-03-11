@@ -33,7 +33,7 @@ export default function ResultPanel({
   error,
   onUpdateResult,
   storyText,
-  directorName,
+  directorName: _directorName,
   region,
   animationMode,
 }: ResultPanelProps) {

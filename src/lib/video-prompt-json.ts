@@ -397,7 +397,7 @@ export function generateQualityChecklist(
  * renderVeoPromptFromJson 호출 후 최종 정리용
  */
 export function sanitizeRenderedPrompt(prompt: string): string {
-  let s = prompt
+  const s = prompt
     // ── 메타태그 키:값 형태 제거 (내부 planning 언어) ──
     .replace(/\b(REVEALED|WITHHELD|END_HOOK|SUBJECT_ACROSS_SCENE|SUBJECT_BLOCKING|TRANSITION_FROM_PREV|ACTION_BEAT|BODY_SIGNAL|CAMERA_PROGRESSION|SHOT_SIZE|CAMERA_ANGLE|SCENE BEATS|NEWLY REVEALED|STILL WITHHELD|NEW SCENE OPENS|PREV SCENE ENDS|NEW ACTION|BEHAVIORAL SHIFT)\s*:[^.]*\.\s*/gi, "")
     // 파이프 구분 메타 형식 제거: "SHOT_SIZE:WS | CAMERA_ANGLE:eye-level | ..."
