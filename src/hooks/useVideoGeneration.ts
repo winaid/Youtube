@@ -562,22 +562,33 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
           // ── 영상 기록 저장 (localStorage) ────────────────────────────────────
           try {
-            const cut = cuts.find((c) => c.cutNumber === cutNumber);
-            saveVideoRecord({
-              operationName,
-              engine,
-              gcsUri: clipUpdate.canonicalVideoUri || clipUpdate.rawVideoUri || "",
-              proxyUri: clipUpdate.videoUri || "",
-              prompt: cut?.videoPrompt?.slice(0, 500) || "",
-              mode: isExtend ? "extend" : "generate",
-              durationSec: cut?.durationSec || 8,
-              cutNumber,
-              sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
-              seed: clipUpdate.seed,
-              status: "completed",
-            });
-          } catch {
-            // 히스토리 저장 실패는 무시 — 생성 플로우를 방해하지 않음
+            const proxyUri = clipUpdate.videoUri || "";
+            const gcsUri = clipUpdate.canonicalVideoUri || clipUpdate.rawVideoUri || "";
+            if (!proxyUri) {
+              console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 건너뜀: proxyUri 없음`, {
+                canonicalVideoUri: clipUpdate.canonicalVideoUri || "(없음)",
+                rawVideoUri: clipUpdate.rawVideoUri || "(없음)",
+                videoUri: clipUpdate.videoUri || "(없음)",
+              });
+            } else {
+              const cut = cuts.find((c) => c.cutNumber === cutNumber);
+              const saved = saveVideoRecord({
+                operationName,
+                engine,
+                gcsUri,
+                proxyUri,
+                prompt: cut?.videoPrompt?.slice(0, 500) || "",
+                mode: isExtend ? "extend" : "generate",
+                durationSec: cut?.durationSec || 8,
+                cutNumber,
+                sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
+                seed: clipUpdate.seed,
+                status: "completed",
+              });
+              console.log(`[CUT ${cutNumber}] ✅ 영상 기록 저장됨 (id: ${saved.id})`);
+            }
+          } catch (err) {
+            console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 실패:`, err);
           }
 
           if (data.seed && onSeedDetected) {

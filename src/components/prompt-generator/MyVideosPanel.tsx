@@ -39,7 +39,15 @@ export default function MyVideosPanel() {
       if (e.key === "video-history") reload();
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+
+    // 같은 탭에서 saveVideoRecord 호출 시 즉시 반영
+    const onHistoryUpdated = () => reload();
+    window.addEventListener("video-history-updated", onHistoryUpdated);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("video-history-updated", onHistoryUpdated);
+    };
   }, [reload]);
 
   const handleDelete = (id: string) => {

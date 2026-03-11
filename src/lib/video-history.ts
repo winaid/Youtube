@@ -62,6 +62,11 @@ export function saveVideoRecord(record: Omit<VideoRecord, "id" | "createdAt">): 
     } catch { /* give up */ }
   }
 
+  // 같은 탭 내 MyVideosPanel 즉시 갱신
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("video-history-updated"));
+  }
+
   return newRecord;
 }
 
