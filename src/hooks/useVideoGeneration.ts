@@ -791,17 +791,17 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     if (!cut) return;
 
     const cfg = state.config;
-    // extendPrompt가 "" 이면 videoPrompt를 fallback으로 사용 (generate-cuts 파싱 실패 대비)
-    // CUT 2+에서 extendPrompt=""이면 모든 컷이 동일한 generic 프롬프트로 생성되는 버그 방지
-    let prompt: string;
+    // legacyPrompt: safety retry 등 극한 fallback에서만 사용.
+    // 주 경로에서는 structuredSequence가 source of truth이므로
+    // 이 값을 body.prompt에 넣거나 source of truth로 취급하면 안 된다.
+    let legacyPrompt: string;
     if (cutNumber === 1) {
-      prompt = cut.videoPrompt;
+      legacyPrompt = cut.videoPrompt;
     } else if (cut.extendPrompt && cut.extendPrompt.trim().length > 0) {
-      prompt = cut.extendPrompt;
+      legacyPrompt = cut.extendPrompt;
     } else {
-      // extendPrompt 누락 → videoPrompt를 extend 맥락으로 재활용 + 경고
       console.warn(`[CUT ${cutNumber}] extendPrompt 없음(빈 문자열) — videoPrompt 사용. 장면 연속성이 약해질 수 있음.`);
-      prompt = cut.videoPrompt;
+      legacyPrompt = cut.videoPrompt;
     }
     const clip = state.clips.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
@@ -853,7 +853,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                videoPrompt: prompt,
+                videoPrompt: legacyPrompt,
                 sceneDescription: cut.sceneDescription,
                 animationMode: cfg.animationMode || "cinematic",
                 useAI: false,
@@ -878,7 +878,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  videoPrompt: prompt,
+                  videoPrompt: legacyPrompt,
                   extendPrompt: cutNumber > 1 ? cut.extendPrompt : undefined,
                   cutNumber,
                   mode: "english-native",
@@ -921,9 +921,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             updateClip(cutNumber, { verification });
 
             if (verification.overallScore < 80 && verification.improvedVideoPrompt) {
-              prompt = cutNumber === 1
+              legacyPrompt = cutNumber === 1
                 ? verification.improvedVideoPrompt
-                : (verification.improvedExtendPrompt || prompt);
+                : (verification.improvedExtendPrompt || legacyPrompt);
             }
 
             if (
@@ -951,87 +951,86 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const tPreEnd = performance.now();
       const preProcessMs = Math.round(tPreEnd - tPreStart);
 
-      // ═══ JSON-first 프롬프트 조립 (sequence-assembler) ═══════════════
-      // assembleFromJSON()이 JSON document를 먼저 구축하고,
-      // validate → sanitize → resolve conflicts → serialize 순서로 처리.
-      // 문자열 조합은 최종 provider 전송 직전에만 발생.
-      let assembled: ReturnType<typeof assembleFromJSON>;
-      {
-        const prevCutData = cutNumber > 1
-          ? cuts.find((c) => c.cutNumber === cutNumber - 1)
-          : undefined;
+      // ═══ JSON-first 조립 (sequence-assembler) ════════════════════════
+      // assembleFromJSON()은 JSON document만 구축한다.
+      // 문자열 prompt는 반환하지 않는다.
+      // 직렬화는 body 생성 시 provider가 string-only이면 그때만 수행.
+      const prevCutData = cutNumber > 1
+        ? cuts.find((c) => c.cutNumber === cutNumber - 1)
+        : undefined;
 
-        assembled = assembleFromJSON({
-          cut,
-          config: cfg,
-          prevCut: prevCutData,
-        });
+      const assembled = assembleFromJSON({
+        cut,
+        config: cfg,
+        prevCut: prevCutData,
+      });
 
-        // JSON-first: structuredSequence가 1순위, prompt는 fallback
-        prompt = sanitizeRenderedPrompt(assembled.prompt);
+      const sequence = assembled.structuredSequence;
 
-        // Kling용 negative prompt (Veo는 prompt에 이미 embed됨)
-        if (assembled.negativePrompt) {
-          negativePrompt = assembled.negativePrompt;
-        }
-
-        // ── PREFLIGHT DRIFT DETECTION (비용 보호) ──────────────────────
-        if (assembled.driftWarning) {
-          console.error(`[CUT ${cutNumber}] ⛔ ${assembled.driftWarning}`);
-          updateClip(cutNumber, {
-            status: "failed",
-            error: assembled.driftWarning,
-            finalPrompt: prompt,
-          });
-          return;
-        }
-
-        // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────
-        if (cut.videoPromptJson) {
-          const checklist = generateQualityChecklist(prompt, cut.videoPromptJson, {
-            shotCategory: cut.shotCategory,
-            characterRole: cut.characterRole,
-          });
-          updateClip(cutNumber, { qualityChecklist: checklist });
-        }
-
-        // ── UI에 structuredSequence + 최종 프롬프트 저장 ──
+      // ── PREFLIGHT DRIFT DETECTION (비용 보호) ──────────────────────
+      if (assembled.diagnostics.driftWarning) {
+        console.error(`[CUT ${cutNumber}] ⛔ ${assembled.diagnostics.driftWarning}`);
         updateClip(cutNumber, {
-          finalPrompt: prompt,
-          assembledDebug: assembled.assembledDebug,
-          structuredSequence: assembled.structuredSequence,
+          status: "failed",
+          error: assembled.diagnostics.driftWarning,
+          structuredSequence: sequence,
         });
+        return;
+      }
 
-        // ── JSON-first 파이프라인 디버그 로그 ──────────────────────────────
-        console.log(`[CUT ${cutNumber}] 📝 JSON-FIRST ASSEMBLED`, {
-          animationMode: cfg.animationMode || "(없음)",
-          shotCategory: cut.shotCategory || "(없음)",
-          isMapScene: assembled.assembledDebug.isMapScene,
-          wordCount: assembled.wordCount,
-          hasStructuredSequence: !!assembled.structuredSequence,
-          structuredValidation: assembled.structuredSequence.validation,
-          validationErrors: assembled.validation.issues.filter(i => i.severity === "error").length,
-          validationWarnings: assembled.validation.issues.filter(i => i.severity === "warning").length,
-          sanitizeFixes: assembled.sanitizeFixes.length,
-          conflictResolutions: assembled.conflictResolutions.length,
-          sections: Object.keys(assembled.serializationDebug.sections),
-          truncated: assembled.serializationDebug.truncated,
-          finalPrompt: prompt.length > 800 ? prompt.slice(0, 800) + "…" : prompt,
+      // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────
+      if (cut.videoPromptJson && assembled.preview) {
+        const checklist = generateQualityChecklist(assembled.preview.renderedPrompt, cut.videoPromptJson, {
+          shotCategory: cut.shotCategory,
+          characterRole: cut.characterRole,
         });
+        updateClip(cutNumber, { qualityChecklist: checklist });
+      }
 
-        // ── 검증 이슈 상세 로그 (문제 있을 때만) ──────────────────────────
-        if (assembled.validation.issues.length > 0) {
-          console.log(`[CUT ${cutNumber}] 🔍 VALIDATION`, {
-            valid: assembled.validation.valid,
-            issues: assembled.validation.issues.map(i => `[${i.severity}] ${i.rule}: ${i.message}`),
-          });
-        }
-        if (assembled.sanitizeFixes.length > 0) {
-          console.log(`[CUT ${cutNumber}] 🔧 AUTO-FIXES`, assembled.sanitizeFixes);
-        }
-        if (assembled.conflictResolutions.length > 0) {
-          console.log(`[CUT ${cutNumber}] ⚡ CONFLICT RESOLUTIONS`, assembled.conflictResolutions);
-        }
+      // ── UI에 structuredSequence 저장 (source of truth) ──
+      // finalPrompt는 디버그 preview만 — source of truth 아님
+      updateClip(cutNumber, {
+        structuredSequence: sequence,
+        finalPrompt: assembled.preview?.renderedPrompt || "(structured sequence — no string render)",
+        assembledDebug: assembled.preview ? {
+          styleBlock: assembled.document.reinforcement.styleSuffix,
+          consistencyBlock: assembled.document.continuity.characterRef || "",
+          cameraBlock: Object.values(assembled.preview.sections).find(s => s.includes("shot,")) || "",
+          sceneBlock: assembled.document.subject.primary.slice(0, 200),
+          reinforcementBlock: assembled.document.reinforcement.mediumLock || "",
+          negativeBlock: sequence.negatives ? [...new Set([...sequence.negatives.universal, ...sequence.negatives.sceneSpecific, ...sequence.negatives.failureMode, ...sequence.negatives.user])].slice(0, 30).join(", ") : "",
+          isMapScene: assembled.preview.isMapScene,
+        } : undefined,
+      });
+
+      // ── JSON-first 파이프라인 디버그 로그 ──────────────────────────────
+      console.log(`[CUT ${cutNumber}] 📝 SEQUENCE ASSEMBLED (JSON-first)`, {
+        animationMode: cfg.animationMode || "(없음)",
+        shotCategory: cut.shotCategory || "(없음)",
+        isMapScene: assembled.preview?.isMapScene ?? false,
+        previewWordCount: assembled.preview?.wordCount ?? 0,
+        sequenceValidation: sequence.validation,
+        sanitizeFixes: assembled.diagnostics.sanitizeFixes.length,
+        conflictResolutions: assembled.diagnostics.conflictResolutions.length,
+        shotPlan: {
+          framing: sequence.shotPlan.camera.framing,
+          angle: sequence.shotPlan.camera.angle,
+          motion: sequence.shotPlan.camera.motion,
+          action: sequence.shotPlan.action?.slice(0, 80),
+        },
+      });
+
+      if (assembled.diagnostics.validation.issues.length > 0) {
+        console.log(`[CUT ${cutNumber}] 🔍 VALIDATION`, {
+          valid: assembled.diagnostics.validation.valid,
+          issues: assembled.diagnostics.validation.issues.map(i => `[${i.severity}] ${i.rule}: ${i.message}`),
+        });
+      }
+      if (assembled.diagnostics.sanitizeFixes.length > 0) {
+        console.log(`[CUT ${cutNumber}] 🔧 AUTO-FIXES`, assembled.diagnostics.sanitizeFixes);
+      }
+      if (assembled.diagnostics.conflictResolutions.length > 0) {
+        console.log(`[CUT ${cutNumber}] ⚡ CONFLICT RESOLUTIONS`, assembled.diagnostics.conflictResolutions);
       }
 
       // ── Continuity firstFrame 취득 (우선순위 순)
@@ -1173,8 +1172,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         hasFirstFrame: !!firstFrameBase64,
         hasLastFrame: !!lastFrameBase64,
         promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),
-        promptLen: prompt.length,
-        promptPrefix: prompt.slice(0, 120),
+        legacyPromptLen: legacyPrompt.length,
+        legacyPromptPrefix: legacyPrompt.slice(0, 120),
         model: "veo-3.1-fast-generate-001",
       });
 
@@ -1204,23 +1203,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         ? (prevClip?.rawVideoUri ?? "")
         : "";
 
-      // Veo 멀티샷: engine이 결정된 후 multiShot을 프롬프트 앞에 삽입
-      // (Kling은 body의 multiShot 필드로 별도 처리 → model_params.multi_shot)
-      if (engine !== "kling" && cut.multiShot && cut.multiShot.length > 0) {
-        const shotLines = cut.multiShot.map((s) =>
-          `SHOT ${s.index} (${s.duration}s): ${s.prompt}`
-        ).join(" → ");
-        prompt = `${shotLines}. ${prompt}`;
-      }
-
       // ── cut1 hard guard: extend 관련 필드 완전 차단 ──────────────────────────
       const isCut1 = cutNumber === 1;
       const safeSourceVideo = isCut1 ? undefined : (sourceVideo || undefined);
       const safePrevVideoUri = isCut1 ? undefined : previousVideoUri;
       const safeFirstFrame = isCut1 ? (cfg.firstFrameBase64 || (storyboardImages?.[1]) || undefined) : firstFrameBase64;
 
+      // ── JSON-first body 구성 ──────────────────────────────────────────
+      // structuredSequence가 1급 source of truth.
+      // prompt는 structuredSequence 없는 legacy fallback일 때만 포함.
+      // Veo 멀티샷은 서버에서 처리하도록 structuredSequence에 위임.
       const body: Record<string, unknown> = {
-        prompt,
+        // structuredSequence = 1급 source of truth
+        structuredSequence: sequence,
         cutNumber,
         engine,
         videoMode,
@@ -1229,44 +1224,36 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         resolution: cfg.resolution,
         aspectRatio: cfg.aspectRatio,
-        generateAudio: true, // 항상 사운드 ON 강제
+        generateAudio: true,
         negativePrompt: negativePrompt || undefined,
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,
         seed: cfg.seed,
-        // Scene Extension (Veo) — gs:// 또는 https:// URI만
         previousVideoUri: safePrevVideoUri,
-        // First Frame (auto-linked from prev cut's end or storyboard)
         firstFrameBase64: safeFirstFrame,
-        // Last Frame (auto-linked from end storyboard or manual)
         lastFrameBase64: lastFrameBase64,
-        // Reference Images (캐릭터 얼굴 + 수동 레퍼런스)
         referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
-        // Kling 멀티샷: Kling 장면에서 multiShot이 있으면 model_params로 전달
         ...(engine === "kling" && cut.multiShot && cut.multiShot.length > 0
           ? { multiShot: cut.multiShot }
           : {}),
-        // JSON-first: structuredSequence가 1순위 source of truth
-        // 서버 우선순위: structuredSequence > videoPromptJson > prompt
-        ...(assembled.structuredSequence ? { structuredSequence: assembled.structuredSequence } : {}),
-        // JSON 기반 프롬프트 (있으면 서버에서 provider별 렌더링)
+        // legacy fallback fields (서버가 structuredSequence 없을 때 사용)
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
+        // prompt는 structuredSequence 없는 극한 fallback으로만
+        // Veo 멀티샷도 여기서 문자열로 조합하지 않음 — 서버에서 structuredSequence 기반 처리
       };
 
-      // ── 타이밍: 프롬프트 조립 완료 ──────────────────────────────────────────
+      // ── 타이밍: 시퀀스 조립 완료 ──────────────────────────────────────────
       const tBuildDone = performance.now();
-      const buildPromptMs = Math.round(tBuildDone - t0);
-      const assemblyOnlyMs = Math.round(tBuildDone - tPreEnd); // assemblePrompt 순수 시간
-      const promptWordCount = prompt.split(/\s+/).length;
-      const promptCharCount = prompt.length;
+      const buildMs = Math.round(tBuildDone - t0);
+      const assemblyOnlyMs = Math.round(tBuildDone - tPreEnd);
 
       console.log(`[CUT ${cutNumber}] ⏱ PIPELINE TIMING`, {
-        preProcessMs,   // auto-negative + refine-prompt + verify-prompt (병렬화 후)
-        assemblyMs: assemblyOnlyMs, // assemblePrompt + quality checklist
-        buildTotalMs: buildPromptMs,
-        promptChars: promptCharCount,
-        promptWords: promptWordCount,
+        preProcessMs,
+        assemblyMs: assemblyOnlyMs,
+        buildTotalMs: buildMs,
+        sourceOfTruth: "structuredSequence",
+        previewWordCount: assembled.preview?.wordCount ?? 0,
       });
 
       // ── API 요청 요약 디버그 ──────────────────────────────────────────────
@@ -1275,7 +1262,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         videoMode,
         mode: requestMode,
         style: cfg.animationMode || "(없음)",
-        promptWords: prompt.split(/\s+/).length,
+        sourceOfTruth: "structuredSequence",
+        hasStructuredSequence: true,
+        shotPlanFraming: sequence.shotPlan.camera.framing,
         hasFirstFrame: !!safeFirstFrame,
         hasPrevUri: !!safePrevVideoUri,
         refImages: finalRefImages.length,
@@ -1319,32 +1308,33 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           errData.raiFiltered === true;
 
         if (isSafetyError && retryCount === 0) {
-          const originalPrompt = prompt;
+          // Safety retry: 서버에서 직렬화된 prompt를 preview에서 가져와 sanitize 시도
+          const fallbackPrompt = assembled.preview?.renderedPrompt || legacyPrompt;
           console.warn(`[CUT ${cutNumber}] Safety 차단 감지`, {
             blockReason: errMsg.slice(0, 200),
-            originalPromptLen: originalPrompt.length,
-            originalPromptHead: originalPrompt.slice(0, 120),
+            fallbackPromptLen: fallbackPrompt.length,
+            fallbackPromptHead: fallbackPrompt.slice(0, 120),
           });
           try {
             const sanitizeRes = await fetch("/api/refine-prompt", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ videoPrompt: prompt, mode: "sanitize", cutNumber }),
+              body: JSON.stringify({ videoPrompt: fallbackPrompt, mode: "sanitize", cutNumber }),
             });
             if (sanitizeRes.ok) {
               const sanitized = await sanitizeRes.json();
               if (sanitized?.refinedVideoPrompt) {
-                prompt = sanitized.refinedVideoPrompt;
+                const sanitizedPrompt = sanitized.refinedVideoPrompt;
                 console.log(`[CUT ${cutNumber}] Safety 재시도`, {
                   changes: sanitized.changes,
-                  originalHead: originalPrompt.slice(0, 100),
-                  sanitizedHead: prompt.slice(0, 100),
+                  originalHead: fallbackPrompt.slice(0, 100),
+                  sanitizedHead: sanitizedPrompt.slice(0, 100),
                 });
-                body.prompt = prompt;
+                // Safety retry는 직접 prompt를 보냄 — 예외적 string fallback
                 const retryRes = await fetch("/api/generate-video", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ ...body, prompt }),
+                  body: JSON.stringify({ ...body, prompt: sanitizedPrompt }),
                 });
                 if (retryRes.ok) {
                   const retryData = await retryRes.json();

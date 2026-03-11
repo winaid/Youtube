@@ -796,32 +796,37 @@ export function serializeForProvider(
 // ═══════════════════════════════════════════════════════════════════
 
 export interface AssembleFromJSONResult {
-  /** 직렬화된 prompt (string-only provider 호환) */
-  prompt: string;
-  negativePrompt: string;
-  /** JSON-first source of truth — 이것이 1순위 */
+  /** JSON-first source of truth — 이것이 유일한 1급 산출물 */
   structuredSequence: StructuredSequenceDocument;
+  /** 내부 SingleShotDocument (디버그/검증용) */
   document: SingleShotDocument;
-  validation: ValidationResult;
-  sanitizeFixes: string[];
-  conflictResolutions: string[];
-  serializationDebug: SerializedShot["debug"];
-  wordCount: number;
-  driftWarning?: string;
-  assembledDebug: {
-    styleBlock: string;
-    consistencyBlock: string;
-    cameraBlock: string;
-    sceneBlock: string;
-    reinforcementBlock: string;
-    negativeBlock: string;
+  /** diagnostics */
+  diagnostics: {
+    validation: ValidationResult;
+    sanitizeFixes: string[];
+    conflictResolutions: string[];
+    driftWarning?: string;
+  };
+  /** 디버그 전용 프리뷰 — source of truth 아님, 저장/전송 금지 */
+  preview?: {
+    renderedPrompt: string;
+    renderedNegative: string;
+    wordCount: number;
+    sections: Record<string, string>;
+    truncated: boolean;
     isMapScene: boolean;
   };
 }
 
 /**
- * JSON-first 프롬프트 조립 메인 파이프라인.
- * Build JSON -> Validate -> Sanitize -> Resolve Conflicts -> Serialize
+ * JSON-first 조립 메인 파이프라인.
+ *
+ * Build JSON → Validate → Sanitize → Resolve Conflicts.
+ * 직렬화(Serialize)는 여기서 하지 않는다.
+ * 직렬화가 필요한 시점은 provider에 전송하는 마지막 순간뿐이며,
+ * 그 책임은 serializeForProvider() 또는 서버 generate-video.ts에 있다.
+ *
+ * 반환값에 prompt 문자열은 없다. preview.renderedPrompt는 디버그 전용이다.
  */
 export function assembleFromJSON(input: {
   cut: Cut;
@@ -842,10 +847,7 @@ export function assembleFromJSON(input: {
   // Step 4: Resolve conflicts
   const { doc: resolvedDoc, resolutions: conflictResolutions } = resolveConflicts(sanitizedDoc);
 
-  // Step 5: Serialize
-  const serialized = serializeForProvider(resolvedDoc, provider);
-
-  // Drift warning
+  // Drift warning (validation 기반 — 직렬화 없이 판단)
   let driftWarning: string | undefined;
   const errors = validation.issues.filter(i => i.severity === "error");
   if (errors.length >= 3) {
@@ -859,7 +861,7 @@ export function assembleFromJSON(input: {
     ...resolvedDoc.negatives.user,
   ];
 
-  // Build StructuredSequenceDocument — JSON-first source of truth
+  // Build StructuredSequenceDocument — 유일한 1급 산출물
   const shotPlan = input.cut.videoPromptJson
     ? videoPromptJsonToShotPlan(
         input.cut.videoPromptJson,
@@ -885,7 +887,12 @@ export function assembleFromJSON(input: {
     cutNumber: input.cut.cutNumber,
     shotPlan,
     videoPromptJson: input.cut.videoPromptJson,
-    serializedPrompt: serialized.prompt,
+    negatives: {
+      universal: resolvedDoc.negatives.universal,
+      sceneSpecific: [...new Set(resolvedDoc.negatives.sceneSpecific)],
+      failureMode: [...new Set(resolvedDoc.negatives.failureMode)],
+      user: resolvedDoc.negatives.user,
+    },
     validation: {
       valid: validation.valid,
       errors: validation.issues.filter(i => i.severity === "error").length,
@@ -896,25 +903,145 @@ export function assembleFromJSON(input: {
     conflictResolutions,
   };
 
+  // Preview — 디버그 전용. source of truth 아님.
+  // 이 값은 저장하거나 body에 넣으면 안 된다.
+  const serializedPreview = serializeForProvider(resolvedDoc, provider);
+
   return {
-    prompt: serialized.prompt,
-    negativePrompt: serialized.negativePrompt,
     structuredSequence,
     document: resolvedDoc,
-    validation,
-    sanitizeFixes,
-    conflictResolutions,
-    serializationDebug: serialized.debug,
-    wordCount: serialized.wordCount,
-    driftWarning,
-    assembledDebug: {
-      styleBlock: resolvedDoc.reinforcement.styleSuffix,
-      consistencyBlock: resolvedDoc.continuity.characterRef || "",
-      cameraBlock: buildCameraLine(resolvedDoc),
-      sceneBlock: resolvedDoc.subject.primary.slice(0, 200),
-      reinforcementBlock: resolvedDoc.reinforcement.mediumLock || "",
-      negativeBlock: [...new Set(allNeg)].slice(0, 30).join(", "),
+    diagnostics: {
+      validation,
+      sanitizeFixes,
+      conflictResolutions,
+      driftWarning,
+    },
+    preview: {
+      renderedPrompt: serializedPreview.prompt,
+      renderedNegative: serializedPreview.negativePrompt,
+      wordCount: serializedPreview.wordCount,
+      sections: serializedPreview.debug.sections,
+      truncated: serializedPreview.debug.truncated,
       isMapScene: resolvedDoc.scene.shotCategory === "map-graphic",
     },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. renderSequenceForProvider — 마지막 직렬화 지점
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * StructuredSequenceDocument → provider 전송용 문자열.
+ *
+ * 이 함수는 오직 string-only provider에 전송하기 직전에만 호출한다.
+ * source of truth는 여전히 structuredSequence이며,
+ * 이 함수의 반환값은 일시적 transport payload일 뿐 저장하면 안 된다.
+ */
+export function renderSequenceForProvider(
+  sequence: StructuredSequenceDocument,
+  provider: "veo" | "kling",
+): { prompt: string; negativePrompt: string } {
+  // shotPlan → SingleShotDocument를 재구성하지 않고
+  // ShotPlan의 필드를 직접 사용하여 deterministic 직렬화
+  const shot = sequence.shotPlan;
+  const json = sequence.videoPromptJson;
+  const cap = PROVIDER_CAPABILITIES[provider];
+
+  const parts: string[] = [];
+
+  // Camera
+  const framingMap: Record<string, string> = {
+    ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up",
+    MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot",
+    WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view",
+  };
+  const angleMap: Record<string, string> = {
+    eye_level: "eye-level", low_angle: "low-angle", high_angle: "high-angle",
+    dutch: "dutch angle", overhead: "overhead", POV: "POV",
+  };
+
+  const framing = framingMap[shot.camera.framing] || shot.camera.framing;
+  const angle = angleMap[shot.camera.angle] || shot.camera.angle;
+  const motion = shot.camera.motion && shot.camera.motion !== "static"
+    ? `, ${shot.camera.motion}`
+    : "";
+
+  // Subject
+  if (shot.subject.primary) {
+    const subjectLine = shot.subject.blocking
+      ? `${shot.subject.primary}, ${shot.subject.blocking}`
+      : shot.subject.primary;
+    parts.push(subjectLine);
+  }
+
+  // Camera line
+  parts.push(`${framing}, ${angle}${motion}`);
+
+  // Location / Situation cues
+  if (shot.locationCue) parts.push(shot.locationCue);
+  if (shot.situationCue) parts.push(shot.situationCue);
+
+  // Character ref
+  if (shot.subject.characterRef) parts.push(shot.subject.characterRef);
+
+  // Emotional anchor + Action
+  if (shot.emotionalAnchor) parts.push(shot.emotionalAnchor);
+  if (shot.action) parts.push(shot.action);
+
+  // Body signal (from videoPromptJson)
+  if (json?.bodySignal) parts.push(json.bodySignal);
+
+  // Mood/Lighting
+  if (shot.moodLighting) parts.push(shot.moodLighting);
+
+  // Timing beat
+  if (shot.timingBeat) parts.push(shot.timingBeat);
+
+  // Transition
+  if (shot.transitionFromPrev) parts.push(`Previous shot ends with ${shot.transitionFromPrev}`);
+
+  // Style suffix (from videoPromptJson)
+  if (json?.styleSuffix) {
+    const first = json.styleSuffix.split(". ")[0];
+    if (first && first.length > 5) parts.push(first);
+  }
+
+  // Visual medium lock
+  if (shot.visualMedium) parts.push(shot.visualMedium);
+
+  // Audio + no text
+  parts.push("Diegetic ambient sound");
+  parts.push("No text overlay, no watermark");
+
+  let prompt = parts.filter(Boolean).join(". ");
+
+  // Negatives
+  const allNeg = sequence.negatives
+    ? [...sequence.negatives.universal, ...sequence.negatives.sceneSpecific, ...sequence.negatives.failureMode, ...sequence.negatives.user]
+    : shot.negativeDirectives || [];
+  const uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+  const negStr = uniqueNeg.join(", ");
+
+  if (!cap.supportsNegativePrompt && uniqueNeg.length > 0) {
+    prompt += `. Avoid: ${negStr}`;
+  }
+
+  // Word cap
+  const words = prompt.split(/\s+/);
+  if (words.length > cap.maxPromptWords) {
+    prompt = words.slice(0, cap.maxPromptWords - 5).join(" ");
+  }
+
+  // Cleanup
+  prompt = prompt
+    .replace(/\.\s*\./g, ".")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    prompt,
+    negativePrompt: cap.supportsNegativePrompt ? negStr : "",
   };
 }

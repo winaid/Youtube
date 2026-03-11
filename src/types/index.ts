@@ -266,8 +266,13 @@ export interface StructuredSequenceDocument {
   shotPlan: import("@/lib/sequence-plan").ShotPlan;
   /** 원본 VideoPromptJson (있으면) */
   videoPromptJson?: VideoPromptJson;
-  /** provider별 직렬화 결과 (lazy — 실제 전송 시에만 생성) */
-  serializedPrompt?: string;
+  /** negatives 수집 결과 */
+  negatives?: {
+    universal: string[];
+    sceneSpecific: string[];
+    failureMode: string[];
+    user: string[];
+  };
   /** 검증 결과 */
   validation?: {
     valid: boolean;

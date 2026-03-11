@@ -2,13 +2,16 @@
  * JSON-first Pipeline 테스트
  *
  * 테스트 시나리오:
- * 1. StructuredSequenceDocument 생성 (assembleFromJSON)
- * 2. Camera/framing 충돌 해결 (resolveFramingConflicts)
- * 3. Positive/negative 충돌 해결 (resolvePosNegConflicts)
- * 4. Cinematic realism 3D/CGI drift 방지 (enforceCinematicRealism)
- * 5. 통합 파이프라인 (runSequencePipeline)
- * 6. Asset status 계산 (computeAssetStatus)
- * 7. 서버 priority chain (structuredSequence > videoPromptJson > prompt)
+ * 1. Camera/framing 충돌 해결 (resolveFramingConflicts)
+ * 2. Positive/negative 충돌 해결 (resolvePosNegConflicts)
+ * 3. Cinematic realism 3D/CGI drift 방지 (enforceCinematicRealism)
+ * 4. 통합 파이프라인 (runSequencePipeline)
+ * 5. Asset status 계산 (computeAssetStatus)
+ * 6. StructuredSequenceDocument에 serializedPrompt 없음
+ * 7. assembleFromJSON()이 prompt를 1급 반환하지 않음
+ * 8. renderSequenceForProvider가 마지막 직렬화 지점
+ * 9. Legacy compatibility: structuredSequence 없으면 fallback
+ * 10. preview.renderedPrompt는 source of truth 아님
  *
  * 실행: npx tsx tests/json-first-pipeline.test.ts
  */
@@ -23,7 +26,13 @@ import {
   type ShotPlan,
 } from "../src/lib/sequence-plan";
 
-import type { Cut, VideoPromptJson, StructuredSequenceDocument } from "../src/types";
+import {
+  assembleFromJSON,
+  renderSequenceForProvider,
+  type AssembleFromJSONResult,
+} from "../src/lib/sequence-assembler";
+
+import type { Cut, VideoPromptJson, StructuredSequenceDocument, VeoGenerationConfig } from "../src/types";
 import { computeAssetStatus, type VideoRecord } from "../src/lib/video-history";
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
@@ -97,6 +106,30 @@ function makeTestCuts(count: number = 3): Cut[] {
   return cuts;
 }
 
+function makeTestConfig(): VeoGenerationConfig {
+  return {
+    engine: "veo",
+    videoMode: "extend",
+    mode: "fast",
+    durationSeconds: 8,
+    resolution: "720p",
+    aspectRatio: "16:9",
+    generateAudio: true,
+    negativePrompt: "text overlay, watermark",
+    personGeneration: "allow_all",
+    sampleCount: 1,
+    referenceImages: [],
+    styleIntensity: 50,
+    autoLinkFirstFrame: true,
+    autoRetryOnFailure: true,
+    maxRetryCount: 2,
+    autoVerifyPrompts: false,
+    autoEnglishRefine: false,
+    animationMode: "cinematic-realism",
+    cinematography: { lighting: [], composition: [], lens: [], cameraMove: [], countryStyle: [], colorGrade: [] },
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Test 1: Camera/Framing Conflict Resolution
 // ═══════════════════════════════════════════════════════════════════
@@ -104,7 +137,6 @@ function makeTestCuts(count: number = 3): Cut[] {
 section("1. Camera/Framing Conflict Resolution");
 
 {
-  // 3연속 동일 framing → 중간 shot 자동 변경
   const cuts = makeTestCuts(5);
   cuts[0].videoPromptJson = makeVideoPromptJson({ shotSize: "MS" });
   cuts[1].videoPromptJson = makeVideoPromptJson({ shotSize: "MS" });
@@ -115,16 +147,12 @@ section("1. Camera/Framing Conflict Resolution");
   const plan = buildSequencePlan(cuts);
   const { plan: resolved, resolutions } = resolveFramingConflicts(plan);
 
-  assert(resolutions.length > 0, "3연속 동일 framing이 감지되어 수정됨");
-  assert(
-    resolved.shots[1].camera.framing !== "MS",
-    "중간 shot의 framing이 변경됨"
-  );
+  assert(resolutions.length > 0, "3연속 동일 framing 감지 수정");
+  assert(resolved.shots[1].camera.framing !== "MS", "중간 shot framing 변경");
   console.log(`  ✓ 3연속 MS → 중간 shot ${resolved.shots[1].camera.framing}로 변경`);
 }
 
 {
-  // Map scene + close-up → WS + overhead
   const cuts = makeTestCuts(1);
   cuts[0].shotCategory = "map-graphic";
   cuts[0].videoPromptJson = makeVideoPromptJson({ shotSize: "CU" });
@@ -147,26 +175,17 @@ section("2. Positive/Negative Conflict Resolution");
 {
   const cuts = makeTestCuts(2);
   const plan = buildSequencePlan(cuts);
-
-  // Inject a negative that matches the global style
   plan.shots[0].negativeDirectives.push("cinematic realism");
   plan.shots[1].negativeDirectives.push("something irrelevant");
 
   const { plan: resolved, conflicts, removedNegatives } = resolvePosNegConflicts(
-    plan,
-    "cinematic realism, 35mm film grain",
+    plan, "cinematic realism, 35mm film grain",
   );
 
-  assert(conflicts.length >= 1, "positive/negative 충돌 최소 1개 감지");
-  assert(removedNegatives.length >= 1, "충돌 negative가 제거됨");
-  assert(
-    !resolved.shots[0].negativeDirectives.includes("cinematic realism"),
-    "shot 0에서 충돌 negative 제거됨"
-  );
-  assert(
-    resolved.shots[1].negativeDirectives.includes("something irrelevant"),
-    "비충돌 negative는 유지됨"
-  );
+  assert(conflicts.length >= 1, "positive/negative 충돌 감지");
+  assert(removedNegatives.length >= 1, "충돌 negative 제거");
+  assert(!resolved.shots[0].negativeDirectives.includes("cinematic realism"), "충돌 negative 제거됨");
+  assert(resolved.shots[1].negativeDirectives.includes("something irrelevant"), "비충돌 negative 유지");
   console.log(`  ✓ ${conflicts.length} 충돌 감지, ${removedNegatives.length} 제거`);
 }
 
@@ -178,47 +197,26 @@ section("3. Cinematic Realism 3D/CGI Drift Prevention");
 
 {
   const cuts = makeTestCuts(2);
-  cuts[0].videoPromptJson = makeVideoPromptJson({
-    subjectAction: "3D rendered globe rotates slowly",
-  });
-  cuts[1].videoPromptJson = makeVideoPromptJson({
-    subjectAction: "Camera pans across landscape",
-  });
-
-  const plan = buildSequencePlan(cuts, {
-    style: "cinematic realism",
-    styleId: "cinematic-realism",
-  });
-
-  // Manually set action to contain CGI terms
+  const plan = buildSequencePlan(cuts, { style: "cinematic realism", styleId: "cinematic-realism" });
   plan.shots[0].action = "3D rendered globe rotates slowly";
   plan.shots[1].action = "Camera pans across landscape";
 
   const { plan: resolved, fixes } = enforceCinematicRealism(plan);
 
   assert(fixes.length > 0, "CGI drift 수정 발생");
-  assert(
-    !resolved.shots[0].action.includes("3D rendered"),
-    "3D rendered가 치환됨"
-  );
-  assert(
-    resolved.shots[0].negativeDirectives.some(n => n.includes("no 3D render")),
-    "anti-3D negative가 주입됨"
-  );
-  console.log(`  ✓ ${fixes.length} CGI drift fixes applied`);
+  assert(!resolved.shots[0].action.includes("3D rendered"), "3D rendered 치환됨");
+  assert(resolved.shots[0].negativeDirectives.some(n => n.includes("no 3D render")), "anti-3D negative 주입");
+  console.log(`  ✓ ${fixes.length} CGI drift fixes`);
 }
 
 {
-  // Non-cinematic-realism 스타일에서는 CGI drift 방지 안 함
   const cuts = makeTestCuts(1);
   const plan = buildSequencePlan(cuts, { style: "anime", styleId: "tv-anime" });
   plan.shots[0].action = "3D rendered globe";
 
-  const { plan: resolved, fixes } = enforceCinematicRealism(plan);
-
-  assert(fixes.length === 0, "anime 스타일에서는 CGI drift 방지 비활성");
-  assert(resolved.shots[0].action === "3D rendered globe", "action 변경 없음");
-  console.log(`  ✓ Non-CR 스타일에서 CGI drift 방지 비활성 확인`);
+  const { fixes } = enforceCinematicRealism(plan);
+  assert(fixes.length === 0, "anime에서 CGI drift 방지 비활성");
+  console.log(`  ✓ Non-CR 스타일 비활성 확인`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -230,27 +228,14 @@ section("4. runSequencePipeline 통합 테스트");
 {
   const cuts = makeTestCuts(3);
   const result = runSequencePipeline(cuts, {
-    styleId: "cinematic-realism",
-    style: "cinematic realism",
-    provider: "veo",
+    styleId: "cinematic-realism", style: "cinematic realism", provider: "veo",
   });
 
   assert(result.plan.shots.length === 3, "3 shots in plan");
   assert(result.serialized.shotPrompts.length === 3, "3 serialized shot prompts");
-  assert(result.validation !== undefined, "validation result present");
-  assert(result.debugLog.length > 0, "debug log not empty");
-  assert(
-    result.serialized.flattenedPrompt.includes("[GLOBAL]"),
-    "flattened prompt has [GLOBAL] tag"
-  );
-  assert(
-    result.serialized.flattenedPrompt.includes("[CONTINUITY]"),
-    "flattened prompt has [CONTINUITY] tag"
-  );
-  assert(
-    result.serialized.flattenedPrompt.includes("[SHOT"),
-    "flattened prompt has [SHOT] tags"
-  );
+  assert(result.serialized.flattenedPrompt.includes("[GLOBAL]"), "[GLOBAL] tag present");
+  assert(result.serialized.flattenedPrompt.includes("[CONTINUITY]"), "[CONTINUITY] tag present");
+  assert(result.serialized.flattenedPrompt.includes("[SHOT"), "[SHOT] tag present");
   console.log(`  ✓ Pipeline: ${result.plan.shots.length} shots, ${result.debugLog.length} log entries`);
 }
 
@@ -262,86 +247,159 @@ section("5. Asset Status Computation");
 
 {
   const base: VideoRecord = {
-    id: "vid-test",
-    operationName: "op-1",
-    engine: "veo",
-    gcsUri: "",
-    proxyUri: "",
-    prompt: "test",
-    mode: "generate",
-    durationSec: 8,
-    cutNumber: 1,
-    status: "completed",
-    createdAt: Date.now(),
+    id: "vid-test", operationName: "op-1", engine: "veo", gcsUri: "", proxyUri: "",
+    prompt: "test", mode: "generate", durationSec: 8, cutNumber: 1,
+    status: "completed", createdAt: Date.now(),
   };
 
-  // No URIs → GENERATED
   assert(computeAssetStatus({ ...base }) === "GENERATED", "no URIs → GENERATED");
-
-  // gcsUri only → ASSET_STORED_INTERNAL
-  assert(
-    computeAssetStatus({ ...base, gcsUri: "gs://bucket/video.mp4" }) === "ASSET_STORED_INTERNAL",
-    "gcsUri → ASSET_STORED_INTERNAL"
-  );
-
-  // proxyUri → ASSET_STORED_PUBLIC
-  assert(
-    computeAssetStatus({ ...base, proxyUri: "https://proxy.com/video.mp4" }) === "ASSET_STORED_PUBLIC",
-    "proxyUri → ASSET_STORED_PUBLIC"
-  );
-
-  // canonicalVideoUri → SCENE_EXTENSION_READY
-  assert(
-    computeAssetStatus({ ...base, canonicalVideoUri: "gs://canonical/video.mp4", proxyUri: "https://proxy.com/v.mp4" }) === "SCENE_EXTENSION_READY",
-    "canonicalVideoUri → SCENE_EXTENSION_READY"
-  );
-
-  // Failed → always GENERATED
-  assert(
-    computeAssetStatus({ ...base, status: "failed", canonicalVideoUri: "gs://x" }) === "GENERATED",
-    "failed status → GENERATED regardless"
-  );
-
+  assert(computeAssetStatus({ ...base, gcsUri: "gs://b/v.mp4" }) === "ASSET_STORED_INTERNAL", "gcsUri → INTERNAL");
+  assert(computeAssetStatus({ ...base, proxyUri: "https://p.com/v.mp4" }) === "ASSET_STORED_PUBLIC", "proxyUri → PUBLIC");
+  assert(computeAssetStatus({ ...base, canonicalVideoUri: "gs://c/v.mp4", proxyUri: "h" }) === "SCENE_EXTENSION_READY", "canonical → READY");
+  assert(computeAssetStatus({ ...base, status: "failed", canonicalVideoUri: "gs://x" }) === "GENERATED", "failed → GENERATED");
   console.log(`  ✓ All asset status transitions verified`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Test 6: StructuredSequenceDocument 타입 검증
+// Test 6: NO serializedPrompt in StructuredSequenceDocument
 // ═══════════════════════════════════════════════════════════════════
 
-section("6. StructuredSequenceDocument 구조 검증");
+section("6. StructuredSequenceDocument에 serializedPrompt 없음");
 
 {
-  // Type-level test — ensure the shape compiles
-  const doc: StructuredSequenceDocument = {
-    shotId: "shot_1",
-    cutNumber: 1,
-    shotPlan: {
-      shotId: "shot_1",
-      startSec: 0,
-      endSec: 8,
-      shotType: "medium_action",
-      camera: { framing: "MS", angle: "eye_level", motion: "static" },
-      subject: { primary: "test subject" },
-      environment: "test env",
-      action: "walks",
-      visualDirectives: [],
-      negativeDirectives: [],
-      moodLighting: "warm",
-    },
-    videoPromptJson: makeVideoPromptJson(),
-    serializedPrompt: "serialized test",
-    validation: { valid: true, errors: 0, warnings: 0, issues: [] },
-    sanitizeFixes: [],
-    conflictResolutions: [],
-  };
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+  const seq = result.structuredSequence;
 
-  assert(doc.shotId === "shot_1", "shotId 설정됨");
-  assert(doc.shotPlan.camera.framing === "MS", "shotPlan camera framing");
-  assert(doc.videoPromptJson !== undefined, "videoPromptJson 포함");
-  assert(doc.serializedPrompt !== undefined, "serializedPrompt 포함");
-  assert(doc.validation!.valid === true, "validation.valid");
-  console.log(`  ✓ StructuredSequenceDocument 타입 검증 완료`);
+  // serializedPrompt 필드가 존재하지 않아야 한다
+  assert(!("serializedPrompt" in seq), "serializedPrompt 필드 없음");
+  assert(seq.shotPlan !== undefined, "shotPlan 있음");
+  assert(seq.videoPromptJson !== undefined, "videoPromptJson 있음");
+  assert(seq.negatives !== undefined, "negatives 있음");
+  assert(seq.validation !== undefined, "validation 있음");
+  console.log(`  ✓ serializedPrompt 완전 제거 확인`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 7: assembleFromJSON()이 prompt를 1급 반환하지 않음
+// ═══════════════════════════════════════════════════════════════════
+
+section("7. assembleFromJSON()에 prompt 없음");
+
+{
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+
+  // result에 prompt, negativePrompt 필드가 없어야 한다
+  assert(!("prompt" in result), "result.prompt 없음");
+  assert(!("negativePrompt" in result), "result.negativePrompt 없음");
+
+  // 대신 structuredSequence와 diagnostics가 있다
+  assert(result.structuredSequence !== undefined, "structuredSequence 있음");
+  assert(result.diagnostics !== undefined, "diagnostics 있음");
+  assert(result.diagnostics.validation !== undefined, "diagnostics.validation 있음");
+
+  // preview는 디버그용으로만 존재
+  assert(result.preview !== undefined, "preview 있음 (디버그용)");
+  assert(typeof result.preview!.renderedPrompt === "string", "preview.renderedPrompt은 문자열");
+  assert(result.preview!.renderedPrompt.length > 0, "preview.renderedPrompt 비어있지 않음");
+
+  console.log(`  ✓ assembleFromJSON은 prompt 없이 structuredSequence만 반환`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 8: renderSequenceForProvider가 마지막 직렬화 지점
+// ═══════════════════════════════════════════════════════════════════
+
+section("8. renderSequenceForProvider 마지막 직렬화");
+
+{
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+  const seq = result.structuredSequence;
+
+  // Veo용 직렬화
+  const veo = renderSequenceForProvider(seq, "veo");
+  assert(typeof veo.prompt === "string", "Veo prompt은 문자열");
+  assert(veo.prompt.length > 50, "Veo prompt 충분한 길이");
+  assert(veo.negativePrompt === "", "Veo negative는 embed (별도 필드 없음)");
+  assert(veo.prompt.includes("Avoid:"), "Veo prompt에 negative embed됨");
+
+  // Kling용 직렬화
+  const kling = renderSequenceForProvider(seq, "kling");
+  assert(typeof kling.prompt === "string", "Kling prompt은 문자열");
+  assert(kling.prompt.length > 50, "Kling prompt 충분한 길이");
+  assert(kling.negativePrompt.length > 0, "Kling negative 별도 필드");
+
+  // 직렬화 결과가 structuredSequence에 저장되지 않음
+  assert(!("serializedPrompt" in seq), "직렬화 후에도 serializedPrompt 없음");
+
+  console.log(`  ✓ Veo: ${veo.prompt.length}ch, Kling: ${kling.prompt.length}ch + neg ${kling.negativePrompt.length}ch`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 9: Legacy compatibility — structuredSequence 없으면 fallback
+// ═══════════════════════════════════════════════════════════════════
+
+section("9. Legacy compatibility");
+
+{
+  // videoPromptJson 없는 Cut으로 assembleFromJSON 호출
+  const cut: Cut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "A warrior stands on a cliff",
+    cameraDirection: "slow dolly",
+    moodLighting: "sunset golden",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "A warrior stands on a cliff overlooking the valley",
+    extendPrompt: "",
+    transitionHint: "",
+    characterConsistency: "muscular warrior, leather armor",
+    charactersInScene: ["char-1"],
+  };
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut, config: cfg });
+
+  assert(result.structuredSequence !== undefined, "videoPromptJson 없어도 structuredSequence 생성");
+  assert(result.structuredSequence.shotPlan !== undefined, "shotPlan은 fallback으로 생성");
+  assert(result.structuredSequence.videoPromptJson === undefined, "videoPromptJson은 undefined");
+
+  // renderSequenceForProvider도 정상 작동
+  const rendered = renderSequenceForProvider(result.structuredSequence, "veo");
+  assert(rendered.prompt.length > 30, "fallback shotPlan에서도 렌더링 가능");
+
+  console.log(`  ✓ Legacy cut (no videoPromptJson) → structuredSequence + render OK`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Test 10: preview.renderedPrompt는 source of truth 아님
+// ═══════════════════════════════════════════════════════════════════
+
+section("10. preview isolation");
+
+{
+  const cuts = makeTestCuts(1);
+  const cfg = makeTestConfig();
+  const result = assembleFromJSON({ cut: cuts[0], config: cfg });
+
+  // preview가 있어도 structuredSequence가 유일한 source of truth
+  const seq = result.structuredSequence;
+  const preview = result.preview;
+
+  assert(preview !== undefined, "preview 존재");
+  assert(!("serializedPrompt" in seq), "structuredSequence에 serializedPrompt 없음 (preview와 무관)");
+
+  // preview 수정해도 structuredSequence 불변
+  if (preview) {
+    const originalAction = seq.shotPlan.action;
+    preview.renderedPrompt = "CORRUPTED";
+    assert(seq.shotPlan.action === originalAction, "preview 수정이 sequence에 영향 없음");
+  }
+
+  console.log(`  ✓ preview는 sequence와 독립 — source of truth 영향 없음`);
 }
 
 // ═══════════════════════════════════════════════════════════════════

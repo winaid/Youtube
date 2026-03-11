@@ -22,10 +22,130 @@ type Env = GeminiEnv & KlingEnv;
 interface StructuredSequencePayload {
   shotId: string;
   cutNumber: number;
-  shotPlan: Record<string, unknown>;
+  shotPlan: {
+    camera: { framing: string; angle: string; motion: string; motionMotivation?: string };
+    subject: { primary: string; secondary?: string[]; characterRef?: string; blocking?: string };
+    environment: string;
+    action: string;
+    moodLighting: string;
+    timingBeat?: string;
+    transitionFromPrev?: string;
+    locationCue?: string;
+    situationCue?: string;
+    emotionalAnchor?: string;
+    visualMedium?: string;
+    negativeDirectives?: string[];
+    [key: string]: unknown;
+  };
   videoPromptJson?: VideoPromptJson;
-  serializedPrompt?: string;
+  negatives?: {
+    universal: string[];
+    sceneSpecific: string[];
+    failureMode: string[];
+    user: string[];
+  };
   validation?: { valid: boolean; errors: number; warnings: number };
+}
+
+/**
+ * 서버 사이드 last-mile 직렬화.
+ * StructuredSequencePayload → provider 전송용 문자열.
+ * 이 함수는 provider가 structured input을 지원하지 않을 때만 호출한다.
+ * source of truth는 structuredSequence이며, 이 반환값은 일시적 transport payload.
+ */
+function serializeSequenceToPrompt(
+  seq: StructuredSequencePayload,
+  provider: "veo" | "kling",
+): { prompt: string; negativePrompt: string } {
+  // videoPromptJson이 있으면 기존 provider 렌더러 사용 (최적화된 포맷)
+  if (seq.videoPromptJson) {
+    if (provider === "kling") {
+      return {
+        prompt: renderKlingPromptFromJson(seq.videoPromptJson),
+        negativePrompt: "",
+      };
+    }
+    return {
+      prompt: renderVeoPromptFromJson(seq.videoPromptJson),
+      negativePrompt: "",
+    };
+  }
+
+  // videoPromptJson 없으면 shotPlan에서 직접 직렬화
+  const shot = seq.shotPlan;
+  const parts: string[] = [];
+
+  const framingMap: Record<string, string> = {
+    ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up",
+    MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot",
+    WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view",
+  };
+  const angleMap: Record<string, string> = {
+    eye_level: "eye-level", low_angle: "low-angle", high_angle: "high-angle",
+    dutch: "dutch angle", overhead: "overhead", POV: "POV",
+  };
+
+  // Subject
+  if (shot.subject.primary) {
+    const line = shot.subject.blocking
+      ? `${shot.subject.primary}, ${shot.subject.blocking}`
+      : shot.subject.primary;
+    parts.push(line);
+  }
+
+  // Camera
+  const framing = framingMap[shot.camera.framing] || shot.camera.framing;
+  const angle = angleMap[shot.camera.angle] || shot.camera.angle;
+  const motion = shot.camera.motion && shot.camera.motion !== "static"
+    ? `, ${shot.camera.motion}` : "";
+  parts.push(`${framing}, ${angle}${motion}`);
+
+  // Cues
+  if (shot.locationCue) parts.push(shot.locationCue);
+  if (shot.situationCue) parts.push(shot.situationCue);
+  if (shot.subject.characterRef) parts.push(shot.subject.characterRef);
+  if (shot.emotionalAnchor) parts.push(shot.emotionalAnchor);
+  if (shot.action) parts.push(shot.action);
+  if (shot.moodLighting) parts.push(shot.moodLighting);
+  if (shot.timingBeat) parts.push(shot.timingBeat);
+  if (shot.transitionFromPrev) parts.push(`Previous shot ends with ${shot.transitionFromPrev}`);
+  if (shot.visualMedium) parts.push(shot.visualMedium);
+
+  parts.push("Diegetic ambient sound");
+  parts.push("No text overlay, no watermark");
+
+  let prompt = parts.filter(Boolean).join(". ");
+
+  // Negatives
+  const allNeg = seq.negatives
+    ? [...seq.negatives.universal, ...seq.negatives.sceneSpecific, ...seq.negatives.failureMode, ...seq.negatives.user]
+    : (shot.negativeDirectives || []);
+  const uniqueNeg = [...new Set(allNeg)].slice(0, 30);
+  const negStr = uniqueNeg.join(", ");
+
+  // Veo: embed negatives (no separate negative prompt field)
+  // Kling: separate negative prompt
+  if (provider !== "kling" && uniqueNeg.length > 0) {
+    prompt += `. Avoid: ${negStr}`;
+  }
+
+  // Word cap (250 for Veo, 300 for Kling)
+  const maxWords = provider === "kling" ? 300 : 250;
+  const words = prompt.split(/\s+/);
+  if (words.length > maxWords) {
+    prompt = words.slice(0, maxWords - 5).join(" ");
+  }
+
+  prompt = prompt
+    .replace(/\.\s*\./g, ".")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    prompt,
+    negativePrompt: provider === "kling" ? negStr : "",
+  };
 }
 
 interface GenerateVideoRequest {
@@ -79,32 +199,60 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const req = await context.request.json() as GenerateVideoRequest;
 
-    // ── JSON-first 프롬프트 해석 (우선순위: structuredSequence > videoPromptJson > prompt) ─
-    // 1순위: structuredSequence.serializedPrompt (클라이언트에서 이미 직렬화됨)
-    // 2순위: videoPromptJson → provider별 렌더링
-    // 3순위: prompt string (하위 호환)
-    if (req.structuredSequence?.serializedPrompt && !req.prompt) {
-      req.prompt = req.structuredSequence.serializedPrompt;
-      console.log("[generate-video] structuredSequence.serializedPrompt 사용", {
+    // ── JSON-first 프롬프트 해석 ─────────────────────────────────────────────
+    // 서버가 마지막 직렬화 지점이다.
+    // 우선순위: structuredSequence > videoPromptJson > prompt (legacy)
+    // structuredSequence가 있으면 서버에서 직렬화한다.
+    // req.prompt는 legacy fallback transport field일 뿐 source of truth가 아니다.
+    let usedPath: "structuredSequence" | "videoPromptJson" | "prompt_legacy" = "prompt_legacy";
+    let fallbackReason: string | undefined;
+
+    if (req.structuredSequence?.shotPlan) {
+      // 1순위: structuredSequence — 서버에서 직렬화
+      // 엔진 결정 전이므로 일단 Veo로 직렬화 (아래에서 Kling이면 재직렬화)
+      const serialized = serializeSequenceToPrompt(req.structuredSequence, "veo");
+      req.prompt = serialized.prompt;
+      usedPath = "structuredSequence";
+      console.log("[generate-video] structuredSequence → 서버 직렬화", {
         cutNumber: req.cutNumber,
         shotId: req.structuredSequence.shotId,
         promptLen: req.prompt.length,
         validation: req.structuredSequence.validation,
-      });
-    } else if (req.structuredSequence?.videoPromptJson && !req.prompt) {
-      req.prompt = renderVeoPromptFromJson(req.structuredSequence.videoPromptJson);
-      console.log("[generate-video] structuredSequence.videoPromptJson → Veo 렌더링", {
-        cutNumber: req.cutNumber,
-        promptLen: req.prompt.length,
+        hasVideoPromptJson: !!req.structuredSequence.videoPromptJson,
+        hasNegatives: !!req.structuredSequence.negatives,
       });
     } else if (req.videoPromptJson && !req.prompt) {
-      // 2순위: videoPromptJson (레거시 호환)
+      // 2순위: videoPromptJson (legacy)
       req.prompt = renderVeoPromptFromJson(req.videoPromptJson);
+      usedPath = "videoPromptJson";
+      fallbackReason = "no structuredSequence";
+      console.log("[generate-video] videoPromptJson fallback", {
+        cutNumber: req.cutNumber,
+        promptLen: req.prompt.length,
+        fallbackReason,
+      });
+    } else if (req.prompt) {
+      // 3순위: prompt string (legacy)
+      usedPath = "prompt_legacy";
+      fallbackReason = "no structuredSequence, no videoPromptJson";
+      console.log("[generate-video] legacy prompt string fallback", {
+        cutNumber: req.cutNumber,
+        promptLen: req.prompt.length,
+        fallbackReason,
+      });
     }
 
     if (!req.prompt) {
-      return Response.json({ error: "prompt is required" }, { status: 400 });
+      return Response.json({ error: "prompt is required — structuredSequence, videoPromptJson, or prompt must be provided" }, { status: 400 });
     }
+
+    // 서버 경로 진단 로그
+    console.log("[generate-video] source-of-truth path:", {
+      usedPath,
+      fallbackReason: fallbackReason || "none",
+      finalPromptLen: req.prompt.length,
+      finalPromptPreview: req.prompt.slice(0, 120),
+    });
 
     // durationSeconds 타입 검증 및 정규화
     if (req.durationSeconds !== undefined) {
@@ -162,15 +310,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         );
       }
 
-      // JSON 프롬프트가 있으면 Kling 전용으로 재렌더링
-      // 우선순위: structuredSequence.videoPromptJson > req.videoPromptJson
-      const klingJson = req.structuredSequence?.videoPromptJson || req.videoPromptJson;
-      if (klingJson) {
-        req.prompt = renderKlingPromptFromJson(klingJson);
-        console.log("[generate-video] Kling: JSON → prompt 렌더링 완료", {
+      // Kling: structuredSequence가 있으면 Kling 전용으로 재직렬화
+      if (req.structuredSequence?.shotPlan) {
+        const klingResult = serializeSequenceToPrompt(req.structuredSequence, "kling");
+        req.prompt = klingResult.prompt;
+        // Kling은 별도 negative prompt 지원
+        if (klingResult.negativePrompt) {
+          req.negativePrompt = klingResult.negativePrompt;
+        }
+        console.log("[generate-video] Kling: structuredSequence → 서버 재직렬화", {
           promptLen: req.prompt.length,
-          source: req.structuredSequence?.videoPromptJson ? "structuredSequence" : "videoPromptJson",
+          negativeLen: klingResult.negativePrompt.length,
         });
+      } else {
+        // Legacy fallback: videoPromptJson
+        const klingJson = req.videoPromptJson;
+        if (klingJson) {
+          req.prompt = renderKlingPromptFromJson(klingJson);
+          console.log("[generate-video] Kling: videoPromptJson fallback 렌더링", {
+            promptLen: req.prompt.length,
+          });
+        }
       }
 
       const duration = toKlingDuration(req.durationSeconds ?? 8);
