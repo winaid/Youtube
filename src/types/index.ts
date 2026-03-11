@@ -551,3 +551,18 @@ export type MotionIntensity = 0 | 25 | 50 | 75 | 100;
 
 // ===== 상태 타입 =====
 export type GeneratorStatus = "idle" | "loading" | "success" | "error";
+
+// ===== 시퀀스 플랜 (re-export) =====
+export type {
+  SequencePlan,
+  SequenceGlobalIntent,
+  SequenceContinuity,
+  ShotPlan,
+  ShotCamera,
+  ShotSubject,
+  SequenceValidationResult,
+  SequenceValidationIssue,
+  SequenceFidelityResult,
+  FailureDiagnosis,
+  SerializedSequence,
+} from "@/lib/sequence-plan";
