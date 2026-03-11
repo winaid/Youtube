@@ -1175,6 +1175,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const charactersInScene = needsCharacter ? [mainChar.id] : [];
 
       // ── 이미지 프롬프트 fallback (씬 오프닝/엔딩 기반) ──────────────
+      const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
       const defaultImagePrompt = needsCharacter
         ? `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${charRefForCut}. ${outline.sceneBeat1}. ${noTextSuffix}`
         : `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.sceneBeat1}. ${outline.sceneKo}. ${noTextSuffix}`;
@@ -1182,7 +1183,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         ? `${charRefForCut}. ${outline.sceneBeat3}. ${noTextSuffix}`
         : `${outline.sceneBeat3}. ${noTextSuffix}`;
       // defaultVideoPrompt: 자연어 중심 (메타태그 제거)
-      const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
       const defaultVideoPrompt = `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.cameraMovement}. ${sceneTimingBeat}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${noTextSuffix}`;
 
       return {
