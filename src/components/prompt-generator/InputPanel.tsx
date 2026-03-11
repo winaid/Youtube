@@ -3,9 +3,10 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques,
-  GenerationPersona, DEFAULT_GENERATION_PERSONA,
+  GenerationPersona, DEFAULT_GENERATION_PERSONA, StyleFamily,
 } from "@/types";
 import { directors, workToDirectorMap } from "@/data/directors";
+import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -40,95 +41,20 @@ interface InputPanelProps {
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
 
-// StyleFamily 분류:
-//   live_action  — 실사 기반 (카메라, 필름, 빛)
-//   animation_2d — 2D 그림 기반 (셀, 수채, 수묵, 픽셀)
-//   stop_motion  — 수공예 오브젝트 (클레이, 인형, 미니어처)
-//   hybrid       — 실제 움직임 + 스타일 레이어 (로토스코핑, 반실사 혼합)
-type StyleFamilyFilter = Exclude<import("../../types").StyleFamily, "all">;
+// ─── 카탈로그 기반 스타일 시스템 ───────────────────────────────────
 
-interface AnimationStyleDef {
-  mode: AnimationMode;
-  label: string;
-  desc: string;
-  directors: string[];
-  family: StyleFamilyFilter;
-  badge: string;   // 결과 성향 한줄 요약
-  badge2?: string; // 두 번째 성향 뱃지 (하이브리드 등 레이어 구분 필요 시)
-  realism: "높음" | "중간" | "낮음";
-}
-
-const animationStyles: AnimationStyleDef[] = [
-  {
-    mode: "실사", label: "실사", desc: "포토리얼, 시네마틱 필름 그레인",
-    directors: ["봉준호", "크리스토퍼 놀란", "데이비드 핀처"],
-    family: "live_action", badge: "실사 강함", realism: "높음",
-  },
-  {
-    mode: "빈티지 필름", label: "빈티지 필름", desc: "70년대 필름 그레인, 바랜 색감",
-    directors: ["쿼틴 타란티노", "왕가위", "알폰소 쿠아론"],
-    family: "live_action", badge: "아날로그 필름", realism: "높음",
-  },
-  {
-    mode: "네온 사이버펑크", label: "네온 사이버펑크", desc: "네온, 비 젖은 거리, 홀로그램",
-    directors: ["니콜라스 빈딩 레픈", "드니 빌뇌브", "콘 사토시"],
-    family: "live_action", badge: "네온 강조", realism: "높음",
-  },
-  {
-    mode: "2D 애니", label: "2D 애니", desc: "셀 애니메이션, 외곽선 기반 작화",
-    directors: ["미야자키 하야오", "신카이 마코토", "콘 사토시"],
-    family: "animation_2d", badge: "평면 채색", realism: "낮음",
-  },
-  {
-    mode: "수채화 애니", label: "수채화", desc: "번지는 수채 물감 질감, 파스텔 톤",
-    directors: ["미야자키 하야오", "임권택"],
-    family: "animation_2d", badge: "수채 질감", realism: "낮음",
-  },
-  {
-    mode: "픽셀아트", label: "픽셀아트", desc: "16비트 레트로 게임 감성",
-    directors: ["쿼틴 타란티노", "콘 사토시"],
-    family: "animation_2d", badge: "레트로 픽셀", realism: "낮음",
-  },
-  {
-    mode: "잉크워시", label: "동양화", desc: "수묵화 붓터치, 먹과 한지 질감",
-    directors: ["장이머우", "임권택", "아피찻퐁"],
-    family: "animation_2d", badge: "수묵 절제", realism: "낮음",
-  },
-  {
-    mode: "스톱모션", label: "스톱모션", desc: "수공예 소재, 프레임별 촬영",
-    directors: ["웨스 앤더슨", "기예르모 델 토로"],
-    family: "stop_motion", badge: "수공예 질감", realism: "중간",
-  },
-  {
-    mode: "클레이", label: "클레이", desc: "점토 캐릭터, 손자국 질감",
-    directors: ["웨스 앤더슨", "피터 잭슨"],
-    family: "stop_motion", badge: "점토 질감", realism: "중간",
-  },
-  {
-    mode: "미니어처", label: "미니어처", desc: "틸트시프트, 소형 디오라마 시점",
-    directors: ["웨스 앤더슨", "피터 잭슨"],
-    family: "stop_motion", badge: "미니어처 시점", realism: "중간",
-  },
-  {
-    mode: "로토스코핑", label: "로토스코핑", desc: "실제 움직임 기반 2D — 일반 2D 아님",
-    directors: ["콘 사토시", "왕가위"],
-    family: "hybrid", badge: "실제 움직임+2D", realism: "중간",
-  },
-  {
-    mode: "하이브리드", label: "하이브리드", desc: "배경=포토리얼 유지 / 캐릭터만 스타일화",
-    directors: ["이안", "기예르모 델 토로"],
-    family: "hybrid", badge: "실사 배경 우선", badge2: "캐릭터 스타일화", realism: "중간",
-  },
+const FAMILY_TABS: { key: StyleFamily; label: string; hint: string }[] = [
+  { key: "all",           label: "전체",       hint: "모든 스타일" },
+  { key: "live_action",   label: "실사",       hint: "카메라 기반" },
+  { key: "animation_2d",  label: "2D 애니",    hint: "셀/수채/잉크" },
+  { key: "animation_3d",  label: "3D 애니",    hint: "CGI/픽사" },
+  { key: "painting",      label: "회화",       hint: "유화/수묵" },
+  { key: "stop_motion",   label: "스톱모션",    hint: "공예/인형" },
+  { key: "retro_game",    label: "레트로",      hint: "픽셀/게임" },
+  { key: "experimental",  label: "실험",       hint: "혼합/초현실" },
 ];
 
-const FAMILY_TABS: { key: import("../../types").StyleFamily; label: string; hint: string }[] = [
-  { key: "all",          label: "전체",    hint: "모든 스타일" },
-  { key: "live_action",  label: "실사",    hint: "카메라 기반" },
-  { key: "animation_2d", label: "2D",      hint: "그림 기반" },
-  { key: "stop_motion",  label: "스톱모션", hint: "수공예" },
-  { key: "hybrid",       label: "혼합",    hint: "실사+스타일" },
-];
-// 감독 스타일 분석 → 영상 스타일 추천
+// 감독 스타일 분석 → 영상 스타일 추천 (새 카탈로그 id 기반)
 function recommendStylesForDirector(
   director: DirectorPersona | undefined,
 ): { mode: AnimationMode; reason: string; score: number }[] {
@@ -146,83 +72,120 @@ function recommendStylesForDirector(
   const scores: { mode: AnimationMode; reason: string; score: number }[] = [];
   const check = (pattern: RegExp) => pattern.test(all);
 
-  // 실사
+  // 실사 계열
   let s = 0;
   if (check(/photorealistic|real|live.?action|cinematic|film grain|realism/)) s += 3;
   if (check(/사실|실사|리얼|사회|누아르|범죄|스릴러|드라마|긴장|묵직/)) s += 2;
   if (check(/tracking|handheld|steadicam|dolly|crane|deep focus|long take/)) s += 1;
-  if (s > 0) scores.push({ mode: "실사", reason: "시네마틱 실사 촬영에 최적", score: s });
+  if (s > 0) scores.push({ mode: "cinematic-realism", reason: "시네마틱 실사 촬영에 최적", score: s });
 
-  // 2D 애니
+  s = 0;
+  if (check(/documentary|handheld|observ|vérité|candid/)) s += 3;
+  if (check(/다큐|관찰|핸드헬드/)) s += 2;
+  if (s > 0) scores.push({ mode: "docu-handheld", reason: "다큐멘터리 핸드헬드", score: s });
+
+  s = 0;
+  if (check(/commercial|brand|product|advertising|premium/)) s += 3;
+  if (check(/광고|브랜드|프리미엄/)) s += 2;
+  if (s > 0) scores.push({ mode: "commercial-ad", reason: "광고 영상 퀄리티", score: s });
+
+  // 2D 계열
   s = 0;
   if (check(/anime|2d|cel.?shad|animation|animated/)) s += 3;
   if (check(/애니|셀|만화|일본|지브리|작화/)) s += 2;
   if (check(/vibrant|colorful|hand.?drawn/)) s += 1;
-  if (s > 0) scores.push({ mode: "2D 애니", reason: "셀 애니메이션 스타일", score: s });
+  if (s > 0) scores.push({ mode: "tv-anime", reason: "셀 애니메이션 스타일", score: s });
 
-  // 수채화 애니
   s = 0;
   if (check(/watercolor|pastel|soft|gentle|ghibli/)) s += 3;
   if (check(/수채|파스텔|몽환|서정|자연|따뜻/)) s += 2;
-  if (check(/warm.*tone|soft.*light|natural.*beauty/)) s += 1;
-  if (s > 0) scores.push({ mode: "수채화 애니", reason: "수채화 감성과 어울림", score: s });
+  if (s > 0) scores.push({ mode: "painted-2d", reason: "회화 애니메이션 감성", score: s });
 
-  // 빈티지 필름
+  s = 0;
+  if (check(/webtoon|manhwa|korean.*comic/)) s += 3;
+  if (check(/웹툰|만화|한국.*만화/)) s += 2;
+  if (s > 0) scores.push({ mode: "webtoon-motion", reason: "웹툰 모션 스타일", score: s });
+
+  // 빈티지
   s = 0;
   if (check(/vintage|70s|retro|grain|faded|analog|film stock|old school/)) s += 3;
   if (check(/빈티지|레트로|필름|바랜|클래식|노스탤지|올드/)) s += 2;
-  if (check(/desaturated|sepia|amber|warm.*highlight/)) s += 1;
-  if (s > 0) scores.push({ mode: "빈티지 필름", reason: "빈티지 필름 그레인 감성", score: s });
+  if (s > 0) scores.push({ mode: "vintage-film", reason: "빈티지 필름 그레인 감성", score: s });
 
-  // 네온 사이버펑크
+  // 네온/사이버펑크
   s = 0;
   if (check(/neon|cyberpunk|futuristic|noir|blade runner|electric/)) s += 3;
   if (check(/네온|사이버|미래|도시|야경|형광|어둠/)) s += 2;
-  if (check(/blue.*pink|cold|rain|wet.*street/)) s += 1;
-  if (s > 0) scores.push({ mode: "네온 사이버펑크", reason: "네온빛 미래 도시 감성", score: s });
+  if (s > 0) scores.push({ mode: "neon-noir", reason: "네온 누아르 도시 감성", score: s });
 
-  // 잉크워시 (동양화)
+  // 동양화/수묵
   s = 0;
   if (check(/ink wash|sumi.?e|brush|calligraph|minimalist|zen|oriental/)) s += 3;
   if (check(/수묵|동양|먹|한지|붓|절제|여백|무사|사무라이/)) s += 2;
-  if (check(/monochrome|sparse|contrast/)) s += 1;
-  if (s > 0) scores.push({ mode: "잉크워시", reason: "수묵화 여백과 절제미", score: s });
+  if (s > 0) scores.push({ mode: "ink-wash", reason: "수묵 여백과 절제미", score: s });
 
-  // 하이브리드
+  // 3D 계열
+  s = 0;
+  if (check(/pixar|disney|3d.*anim|cg.*anim/)) s += 3;
+  if (check(/픽사|디즈니|3D|CG/)) s += 2;
+  if (s > 0) scores.push({ mode: "pixar-style", reason: "픽사풍 3D 애니메이션", score: s });
+
   s = 0;
   if (check(/hybrid|blend|semi.?real|stylized|cgi|vfx/)) s += 3;
   if (check(/혼합|반실사|하이브리드|판타지|대서사/)) s += 2;
-  if (s > 0) scores.push({ mode: "하이브리드", reason: "2D+3D 혼합 반실사", score: s });
+  if (s > 0) scores.push({ mode: "semi-real-3d", reason: "반실사 3D 하이브리드", score: s });
 
-  // 로토스코핑
+  s = 0;
+  if (check(/game.*cinematic|unreal|ue5|aaa/i)) s += 3;
+  if (check(/게임|시네마틱|언리얼/)) s += 2;
+  if (s > 0) scores.push({ mode: "game-cinematic-3d", reason: "게임 시네마틱 퀄리티", score: s });
+
+  // 유화/회화
+  s = 0;
+  if (check(/oil.*paint|impasto|post.?impressionis/)) s += 3;
+  if (check(/유화|인상파|고흐/)) s += 2;
+  if (s > 0) scores.push({ mode: "van-gogh-painted", reason: "고흐풍 유화 터치", score: s });
+
+  // 로토스코핑/실험
   s = 0;
   if (check(/rotoscop|dreamlike|surreal|psychedelic|hallucin/)) s += 3;
   if (check(/몽환|초현실|환각|꿈|편집증/)) s += 2;
-  if (s > 0) scores.push({ mode: "로토스코핑", reason: "초현실 몽환적 연출", score: s });
+  if (s > 0) scores.push({ mode: "rotoscoping", reason: "초현실 몽환적 연출", score: s });
 
-  // 스톱모션
+  // 스톱모션 계열
   s = 0;
   if (check(/stop.?motion|puppet|handcraft/)) s += 3;
   if (check(/스톱|인형|수작업/)) s += 2;
-  if (s > 0) scores.push({ mode: "스톱모션", reason: "수작업 스톱모션 감성", score: s });
+  if (s > 0) scores.push({ mode: "miniature-diorama", reason: "수작업 스톱모션 감성", score: s });
 
-  // 클레이
   s = 0;
   if (check(/clay|plasticine|sculpt|wallace/)) s += 3;
   if (check(/점토|클레이|수제/)) s += 2;
-  if (s > 0) scores.push({ mode: "클레이", reason: "점토 캐릭터 질감", score: s });
+  if (s > 0) scores.push({ mode: "claymation", reason: "점토 캐릭터 질감", score: s });
 
-  // 픽셀아트
+  // 레트로/게임
   s = 0;
   if (check(/pixel|retro.*game|8.?bit|16.?bit|arcade/)) s += 3;
   if (check(/픽셀|레트로|게임|도트/)) s += 2;
-  if (s > 0) scores.push({ mode: "픽셀아트", reason: "레트로 게임 픽셀 스타일", score: s });
+  if (s > 0) scores.push({ mode: "pixel-art", reason: "레트로 게임 픽셀 스타일", score: s });
 
   // 미니어처
   s = 0;
   if (check(/tilt.?shift|diorama|dollhouse|miniature|symmetr/)) s += 3;
   if (check(/대칭|미니어처|인형의 집|정교/)) s += 2;
-  if (s > 0) scores.push({ mode: "미니어처", reason: "대칭 미니어처 디오라마", score: s });
+  if (s > 0) scores.push({ mode: "miniature-3d", reason: "미니어처 디오라마", score: s });
+
+  // 고딕/호러
+  s = 0;
+  if (check(/gothic|horror|dark|macabre|grotesque/)) s += 3;
+  if (check(/고딕|호러|공포|어둠|그로테스크/)) s += 2;
+  if (s > 0) scores.push({ mode: "gothic-horror", reason: "고딕 호러 분위기", score: s });
+
+  // SF
+  s = 0;
+  if (check(/sci.?fi|futur|space|dystop/)) s += 3;
+  if (check(/SF|미래|우주|디스토피아/)) s += 2;
+  if (s > 0) scores.push({ mode: "sf-futuristic", reason: "SF 미래도시", score: s });
 
   scores.sort((a, b) => b.score - a.score);
 
@@ -230,13 +193,13 @@ function recommendStylesForDirector(
   if (scores.length === 0) {
     const r = director.region;
     if (r === "일본") {
-      scores.push({ mode: "2D 애니", reason: "일본 감독 기본 추천", score: 1 });
-      scores.push({ mode: "수채화 애니", reason: "일본 서정 감성", score: 1 });
-      scores.push({ mode: "실사", reason: "시네마틱 실사", score: 1 });
+      scores.push({ mode: "tv-anime", reason: "일본 감독 기본 추천", score: 1 });
+      scores.push({ mode: "painted-2d", reason: "일본 서정 감성", score: 1 });
+      scores.push({ mode: "cinematic-realism", reason: "시네마틱 실사", score: 1 });
     } else {
-      scores.push({ mode: "실사", reason: "시네마틱 실사 기본", score: 1 });
-      scores.push({ mode: "빈티지 필름", reason: "클래식 필름 감성", score: 1 });
-      scores.push({ mode: "하이브리드", reason: "반실사 하이브리드", score: 1 });
+      scores.push({ mode: "cinematic-realism", reason: "시네마틱 실사 기본", score: 1 });
+      scores.push({ mode: "vintage-film", reason: "클래식 필름 감성", score: 1 });
+      scores.push({ mode: "semi-real-3d", reason: "반실사 하이브리드", score: 1 });
     }
   }
 
@@ -272,8 +235,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
-  const [animationMode, setAnimationMode] = useState<AnimationMode>("2D 애니");
-  const [styleFamily, setStyleFamily] = useState<import("../../types").StyleFamily>("all");
+  const [animationMode, setAnimationMode] = useState<AnimationMode>("tv-anime");
+  const [styleFamily, setStyleFamily] = useState<StyleFamily>("all");
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const generationPersona: GenerationPersona = DEFAULT_GENERATION_PERSONA;
   const [duration, setDuration] = useState<Duration>("auto");
   const [directorSearch, setDirectorSearch] = useState("");
@@ -1005,7 +969,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                         </span>
                       )}
                       <span className="text-[11px] font-semibold truncate">
-                        {animationStyles.find((s) => s.mode === rec.mode)?.label || rec.mode}
+                        {getStyleById(rec.mode)?.nameKo || rec.mode}
                       </span>
                     </div>
                     <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: 0.7 }}>
@@ -1042,97 +1006,149 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           );
         })()}
 
-        {/* 애니메이션 모드 */}
+        {/* 영상 스타일 — 계층형 카탈로그 */}
         <div className="space-y-2">
           <Label>영상 스타일</Label>
 
-          {/* 계열 필터 탭 */}
+          {/* 카테고리 필터 탭 */}
           <div className="flex gap-1 flex-wrap">
-            {FAMILY_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setStyleFamily(tab.key)}
-                className="text-[10px] px-2 py-0.5 rounded-full transition-all"
-                style={
-                  styleFamily === tab.key
-                    ? { background: "#787fff", color: "white", fontWeight: 600 }
-                    : { background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" }
-                }
-                title={tab.hint}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {FAMILY_TABS.map((tab) => {
+              const cat = STYLE_CATALOG.find(c => c.id === tab.key);
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setStyleFamily(tab.key)}
+                  className="text-[10px] px-2 py-0.5 rounded-full transition-all"
+                  style={
+                    styleFamily === tab.key
+                      ? { background: cat?.color ?? "#787fff", color: "white", fontWeight: 600 }
+                      : { background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" }
+                  }
+                  title={tab.hint}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
-          {/* 스타일 카드 그리드 */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {animationStyles
-              .filter((s) => styleFamily === "all" || s.family === styleFamily)
-              .map((style) => {
-                const isSelected = animationMode === style.mode;
+          {/* 카테고리 아코디언 + 스타일 그리드 */}
+          <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
+            {STYLE_CATALOG
+              .filter((cat) => styleFamily === "all" || cat.id === styleFamily)
+              .map((cat) => {
+                const isExpanded = styleFamily !== "all" || expandedCategory === cat.id;
+                const hasSelected = cat.styles.some(s => s.id === animationMode);
+                const selectedStyle = cat.styles.find(s => s.id === animationMode);
+
                 return (
-                  <button
-                    key={style.mode}
-                    className="text-left p-2 rounded-lg transition-all hover:shadow-sm relative"
-                    style={
-                      isSelected
-                        ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
-                        : { background: "white", color: "#333", border: "1px solid #e2e8f0" }
-                    }
-                    onClick={() => setAnimationMode(style.mode)}
-                  >
-                    <p className="text-[11px] font-semibold leading-tight">{style.label}</p>
-                    <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: isSelected ? 0.85 : 0.5 }}>
-                      {style.desc}
-                    </p>
-                    {/* 결과 성향 뱃지 */}
-                    <div className="flex flex-wrap gap-0.5 mt-1">
-                      <span
-                        className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
-                        style={
-                          isSelected
-                            ? { background: "rgba(255,255,255,0.25)", color: "white" }
-                            : { background: "#f0f0ff", color: "#787fff" }
+                  <div key={cat.id} className="rounded-lg overflow-hidden" style={{ border: `1px solid ${hasSelected ? cat.color + "40" : "#e2e8f0"}` }}>
+                    {/* 카테고리 헤더 */}
+                    <button
+                      className="w-full flex items-center justify-between px-3 py-2 text-left transition-all hover:bg-gray-50"
+                      style={{ background: hasSelected ? cat.color + "08" : "white" }}
+                      onClick={() => {
+                        if (styleFamily === "all") {
+                          setExpandedCategory(expandedCategory === cat.id ? null : cat.id);
                         }
-                      >
-                        {style.badge}
-                      </span>
-                      {style.badge2 && (
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
                         <span
-                          className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
-                          style={
-                            isSelected
-                              ? { background: "rgba(255,255,255,0.2)", color: "white" }
-                              : { background: "#fff3e0", color: "#b45309" }
-                          }
-                        >
-                          {style.badge2}
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: cat.color }}
+                        />
+                        <span className="text-xs font-semibold" style={{ color: "#333" }}>
+                          {cat.nameKo}
                         </span>
-                      )}
-                    </div>
-                  </button>
+                        <span className="text-[9px]" style={{ color: "#999" }}>
+                          {cat.styles.length}개
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {hasSelected && selectedStyle && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: cat.color, color: "white" }}>
+                            {selectedStyle.nameKo}
+                          </span>
+                        )}
+                        {styleFamily === "all" && (
+                          <span className="text-[10px]" style={{ color: "#bbb" }}>
+                            {isExpanded ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+
+                    {/* 스타일 그리드 (펼침 시) */}
+                    {isExpanded && (
+                      <div className="grid grid-cols-2 gap-1 p-1.5 pt-0" style={{ background: "#fafafa" }}>
+                        {cat.styles.map((s) => {
+                          const isSelected = animationMode === s.id;
+                          return (
+                            <button
+                              key={s.id}
+                              className="text-left p-2 rounded-lg transition-all hover:shadow-sm"
+                              style={
+                                isSelected
+                                  ? { background: cat.color, color: "white", boxShadow: `0 2px 8px ${cat.color}30` }
+                                  : { background: "white", color: "#333", border: "1px solid #e8e8e8" }
+                              }
+                              onClick={() => setAnimationMode(s.id)}
+                            >
+                              <p className="text-[11px] font-semibold leading-tight">{s.nameKo}</p>
+                              <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: isSelected ? 0.85 : 0.5 }}>
+                                {s.descKo}
+                              </p>
+                              <div className="flex flex-wrap gap-0.5 mt-1">
+                                <span
+                                  className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
+                                  style={
+                                    isSelected
+                                      ? { background: "rgba(255,255,255,0.25)", color: "white" }
+                                      : { background: cat.color + "10", color: cat.color }
+                                  }
+                                >
+                                  {s.badge}
+                                </span>
+                                <span
+                                  className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
+                                  style={
+                                    isSelected
+                                      ? { background: "rgba(255,255,255,0.15)", color: "white" }
+                                      : { background: "#f5f5f5", color: "#999" }
+                                  }
+                                >
+                                  리얼리즘 {s.realism}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
           </div>
-          {/* 감독 추천 */}
+
+          {/* 선택된 스타일 추천 감독 */}
           {(() => {
-            const selected = animationStyles.find((s) => s.mode === animationMode);
-            if (!selected) return null;
+            const selected = getStyleById(animationMode);
+            if (!selected || selected.directors.length === 0) return null;
+            const cat = STYLE_CATALOG.find(c => c.id === selected.categoryId);
             return (
-              <div className="flex items-start gap-1.5 p-2 rounded-lg" style={{ background: "#f0f0ff", border: "1px solid #787fff15" }}>
-                <span className="text-[10px] shrink-0 mt-0.5" style={{ color: "#787fff" }}>추천 감독:</span>
+              <div className="flex items-start gap-1.5 p-2 rounded-lg" style={{ background: (cat?.color ?? "#787fff") + "08", border: `1px solid ${(cat?.color ?? "#787fff")}15` }}>
+                <span className="text-[10px] shrink-0 mt-0.5" style={{ color: cat?.color ?? "#787fff" }}>추천 감독:</span>
                 <div className="flex flex-wrap gap-1">
                   {selected.directors.map((d) => (
                     <Badge
                       key={d}
                       variant="outline"
-                      className="text-[9px] py-0 cursor-pointer hover:bg-[#787fff10]"
-                      style={{ borderColor: "#787fff40", color: "#5a5ecc" }}
+                      className="text-[9px] py-0 cursor-pointer hover:opacity-70"
+                      style={{ borderColor: (cat?.color ?? "#787fff") + "40", color: cat?.color ?? "#5a5ecc" }}
                       onClick={() => {
                         const found = allDirectors.find((dir) => dir.nameKo.includes(d));
                         if (found) {
-                          // region은 스토리 배경 설정 — 감독 국가로 덮어쓰지 않음
                           setDirectorPersona(found.id);
                         }
                       }}

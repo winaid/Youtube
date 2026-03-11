@@ -4,8 +4,9 @@
  * 설계 원칙:
  * 1. 스타일은 "단어"가 아니라 "시스템"으로 다룬다
  * 2. 프로젝트 전체에 하나의 스타일 정체성이 일관되게 적용된다
- * 3. 최종 프롬프트는 [STYLE] > [CONSISTENCY] > [SCENE] > [NEGATIVE] 우선순위로 조립된다
+ * 3. 최종 프롬프트는 [PERSONA] > [STYLE] > [CONSISTENCY] > [CAMERA] > [SCENE] > [REINFORCEMENT] > [NEGATIVE] 우선순위로 조립된다
  * 4. 내부 메타 필드는 내부에만 유지하고, Veo에 보내는 프롬프트는 자연어 중심으로 변환한다
+ * 5. 각 스타일은 전용 페르소나 + 렌더링 규칙 + anti-drift 체크리스트를 가진다
  */
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -67,285 +68,90 @@ const ANTI_PHOTO = [
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
-// 3. 프리셋 정의
+// 3. 프리셋 정의 — style-catalog.ts에서 자동 생성 + 레거시 호환
 // ──────────────────────────────────────────────────────────────────────────
 
+import { STYLE_CATALOG, getAllStyles, getStyleByLegacyMode, getStyleById, buildStyleEnforcementBlock, getStyleRenderingRules } from "@/data/style-catalog";
+
+/**
+ * 카탈로그의 positivePrompt에서 StylePreset의 각 블록을 파생.
+ * positivePrompt → globalStyleBlock (전체)
+ * negativePrompt → negativeBlock
+ */
+function derivePresetFromCatalog(entry: { id: string; nameKo: string; categoryId: string; positivePrompt: string; negativePrompt: string }): StylePreset {
+  const cat = STYLE_CATALOG.find(c => c.id === entry.categoryId);
+
+  // 실사 카테고리는 기본적으로 photorealistic
+  const realismMap: Record<string, RealismLevel> = {
+    live_action: "photorealistic",
+    animation_2d: "fully-illustrated",
+    animation_3d: "semi-realistic",
+    painting: "fully-illustrated",
+    stop_motion: "stylized",
+    retro_game: "fully-illustrated",
+    experimental: "stylized",
+  };
+
+  // 특수 오버라이드
+  const realismOverrides: Record<string, RealismLevel> = {
+    "neon-noir": "semi-realistic",
+    "semi-real-3d": "semi-realistic",
+    "pixar-style": "stylized",
+    "dreamworks-style": "stylized",
+    "game-cinematic-3d": "semi-realistic",
+    "rotoscoping": "stylized",
+    "2d-3d-hybrid": "semi-realistic",
+  };
+
+  const realismLevel = realismOverrides[entry.id] ?? realismMap[entry.categoryId] ?? "stylized";
+
+  // positive prompt의 첫 두 문장을 globalStyleBlock으로
+  const sentences = entry.positivePrompt.split(". ").filter(Boolean);
+  const globalStyleBlock = sentences.slice(0, 3).join(". ") + ".";
+  const characterStyleRule = sentences.length > 3 ? sentences.slice(3, 5).join(". ") + "." : globalStyleBlock;
+  const environmentStyleRule = sentences.length > 5 ? sentences.slice(5).join(". ") + "." : characterStyleRule;
+  const reinforcement = `${entry.nameKo} style consistent throughout every frame. ${sentences[0]}.`;
+
+  return {
+    id: entry.id,
+    nameKo: entry.nameKo + (cat ? ` (${cat.nameKo})` : ""),
+    dimensions: {
+      realismLevel,
+      texture: "derived from catalog",
+      characterRendering: "derived from catalog",
+      backgroundRendering: "derived from catalog",
+      motionFeel: "derived from catalog",
+      colorPalette: "derived from catalog",
+      lighting: "derived from catalog",
+      cameraFeel: "derived from catalog",
+      edgeTreatment: "derived from catalog",
+    },
+    globalStyleBlock: entry.positivePrompt,
+    characterStyleRule,
+    environmentStyleRule,
+    reinforcement,
+    negativeBlock: entry.negativePrompt,
+    isNonRealistic: !["live_action"].includes(entry.categoryId),
+  };
+}
+
+// 새 카탈로그 기반 프리셋 (StyleEntry.id → StylePreset)
+const CATALOG_PRESETS: Record<string, StylePreset> = {};
+for (const style of getAllStyles()) {
+  CATALOG_PRESETS[style.id] = derivePresetFromCatalog(style);
+}
+
+// 레거시 호환: 기존 한글 키("실사", "2D 애니" 등)로도 접근 가능
+const LEGACY_ALIASES: Record<string, StylePreset> = {};
+for (const style of getAllStyles()) {
+  if (style.legacyMode) {
+    LEGACY_ALIASES[style.legacyMode] = CATALOG_PRESETS[style.id];
+  }
+}
+
 export const STYLE_PRESETS: Record<string, StylePreset> = {
-  // ─── 실사 ──────────────────────────────────────────────────
-  "실사": {
-    id: "realistic-cinematic",
-    nameKo: "실사 시네마틱",
-    dimensions: {
-      realismLevel: "photorealistic",
-      texture: "natural film grain, organic surfaces",
-      characterRendering: "realistic human proportions, natural skin, real clothing folds",
-      backgroundRendering: "photorealistic environments, real-world locations",
-      motionFeel: "fluid cinematic motion, natural physics",
-      colorPalette: "natural tones with cinematic color grading",
-      lighting: "dramatic cinematic lighting, volumetric light, natural shadows",
-      cameraFeel: "cinematic lens, shallow depth of field, anamorphic",
-      edgeTreatment: "sharp photographic detail, natural focus falloff",
-    },
-    globalStyleBlock: "Photorealistic cinematic live-action. Natural lighting with dramatic shadows. Filmic depth of field. Real-world textures and materials.",
-    characterStyleRule: "Realistic human proportions, natural skin tones and pores, authentic clothing with real fabric physics.",
-    environmentStyleRule: "Photorealistic environments with natural weathering, authentic materials, volumetric atmospheric effects.",
-    reinforcement: "Cinematic film quality throughout, professional color grading, anamorphic lens characteristics.",
-    negativeBlock: "cartoon, anime, illustration, painting, flat colors, cel-shading, stylized, text overlay, watermark",
-    isNonRealistic: false,
-  },
-
-  // ─── 2D 애니 ───────────────────────────────────────────────
-  "2D 애니": {
-    id: "2d-anime",
-    nameKo: "2D 애니메이션",
-    dimensions: {
-      realismLevel: "fully-illustrated",
-      texture: "clean digital, cel-shaded flat surfaces",
-      characterRendering: "anime proportions, large eyes, simplified facial features, clean outlined forms",
-      backgroundRendering: "illustrated anime backgrounds, detailed painted scenery with flat color areas",
-      motionFeel: "anime keyframe animation, expressive limited-frame motion",
-      colorPalette: "vibrant saturated anime palette, clear color separations",
-      lighting: "anime-style dramatic lighting with sharp light/shadow edges",
-      cameraFeel: "dynamic anime camera angles, dramatic zooms, speed lines",
-      edgeTreatment: "clean sharp outlines, consistent line weight, cel-shaded edges",
-    },
-    globalStyleBlock: "2D anime animation style. Cel-shaded illustration with clean outlines and vibrant flat colors. Anime character proportions with expressive features. Illustrated backgrounds with painterly detail.",
-    characterStyleRule: "Anime character design with stylized proportions, clean outlines, cel-shaded coloring, expressive large eyes.",
-    environmentStyleRule: "Anime background art style, illustrated scenery with clear color areas and detailed painterly elements.",
-    reinforcement: "Consistent anime art style throughout every frame. Clean cel-shading maintained. Sharp illustrated edges on all forms.",
-    negativeBlock: "3D rendering, realistic skin, real photography, cinematic realism, natural film grain, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 수채화 애니 (Painted Animation — Loving Vincent 레퍼런스) ──
-  "수채화 애니": {
-    id: "painted-animation",
-    nameKo: "회화 애니메이션",
-    dimensions: {
-      realismLevel: "stylized",
-      texture: "thick oil/watercolor brushwork on every surface, visible paint strokes in motion, canvas texture underpinning all frames",
-      characterRendering: "fully painted characters with expressive brushwork — faces, hair, clothing all rendered in living paint strokes that shift frame-to-frame",
-      backgroundRendering: "painted environments with active brushwork — skies swirl, foliage breathes, surfaces shimmer with painterly texture in motion",
-      motionFeel: "fluid painted animation where every frame is a living painting — brushstrokes flow with character movement, paint texture shifts organically",
-      colorPalette: "rich painterly palette with visible color mixing, impasto highlights, warm undertones with expressive color temperature shifts",
-      lighting: "painted light rendered through brushwork — light pools, shadow edges made of visible strokes, golden hour warmth through paint medium",
-      cameraFeel: "cinematic camera movement through painted world — dolly, pan, push-in all rendered as flowing painted frames",
-      edgeTreatment: "painterly edges with visible brushwork — no sharp digital lines, forms defined by paint strokes and color boundaries",
-    },
-    globalStyleBlock: "Fully painted animation — every frame is a hand-painted oil/watercolor painting in motion. Expressive visible brushwork on all surfaces. Characters, backgrounds, and lighting all rendered in living paint strokes that flow with movement. Not a static illustration — this is animated painted cinema where paint texture actively moves and breathes. Thick impasto highlights, soft wet-on-wet blending, canvas grain visible throughout.",
-    characterStyleRule: "Characters are painted beings — faces rendered in expressive brushstrokes, hair flows as painted strokes, clothing shows visible paint texture. Movement creates new brushwork each frame. Not photorealistic, not flat cartoon — fully painted animated figures like a painting come to life.",
-    environmentStyleRule: "Every background element is actively painted and alive — trees sway with visible brushwork, water ripples show paint strokes in motion, skies shift with living color. Painted world that moves, not a static backdrop. Canvas texture visible on all surfaces.",
-    reinforcement: "Every frame must look like an animated painting, never a photograph or static illustration. Visible brushwork in continuous motion. Paint texture alive on every surface. Animated painted cinema, not a slideshow of paintings.",
-    negativeBlock: "photorealistic rendering, static illustration, storybook page, motion poster, slideshow, frozen painting, digital clean rendering, flat vector art, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 하이브리드 ─────────────────────────────────────────────
-  "하이브리드": {
-    id: "semi-realistic",
-    nameKo: "세미 리얼리스틱",
-    dimensions: {
-      realismLevel: "semi-realistic",
-      texture: "digital art finish, subtle stylization",
-      characterRendering: "anime-influenced proportions with realistic detail, stylized but believable",
-      backgroundRendering: "detailed digital matte painting, semi-realistic environments",
-      motionFeel: "smooth digital animation, slightly stylized physics",
-      colorPalette: "rich digital art palette, slightly enhanced from reality",
-      lighting: "cinematic with artistic enhancement, stylized light rays",
-      cameraFeel: "cinematic framing with artistic composition",
-      edgeTreatment: "clean digital with subtle softness",
-    },
-    globalStyleBlock: "Semi-realistic digital art animation. Anime-influenced character proportions within detailed realistic environments. Stylized rendering with cinematic quality.",
-    characterStyleRule: "Semi-realistic character design — anime-influenced proportions but with detailed rendering and believable materials.",
-    environmentStyleRule: "Detailed digital matte painting environments with semi-realistic lighting and subtle artistic enhancement.",
-    reinforcement: "Consistent semi-realistic digital art quality. Stylized but grounded aesthetic throughout.",
-    negativeBlock: "pure photorealism, pure flat anime, uncanny valley, text overlay, watermark",
-    isNonRealistic: false,
-  },
-
-  // ─── 로토스코핑 ─────────────────────────────────────────────
-  "로토스코핑": {
-    id: "rotoscope",
-    nameKo: "로토스코핑",
-    dimensions: {
-      realismLevel: "stylized",
-      texture: "painterly overlay on motion, hand-traced texture",
-      characterRendering: "performance-derived human movement with painterly stylized overlay",
-      backgroundRendering: "painted backgrounds with rotoscoped motion elements",
-      motionFeel: "fluid performance-based movement with artistic overlay",
-      colorPalette: "rich painterly palette, artistic color choices",
-      lighting: "performance-captured lighting with artistic enhancement",
-      cameraFeel: "documentary framing with artistic post-processing",
-      edgeTreatment: "hand-traced outlines, painterly edges, visible artistic processing",
-    },
-    globalStyleBlock: "Rotoscoped 2D animation. Performance-derived fluid movement with painterly stylized overlay. Hand-traced outlines over realistic motion. Artistic painted processing over every frame.",
-    characterStyleRule: "Rotoscoped character motion — fluid human movement with hand-traced painterly overlay, not clean realistic rendering.",
-    environmentStyleRule: "Painted backgrounds that blend with rotoscoped foreground elements. Artistic atmospheric processing.",
-    reinforcement: "Painterly rotoscope effect consistent in every frame. Hand-traced artistic quality throughout.",
-    negativeBlock: "flat cartoon, generic anime, vibrant cel-shading, clean digital outlines, mechanical stiff movement, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 스톱모션 ───────────────────────────────────────────────
-  "스톱모션": {
-    id: "stop-motion",
-    nameKo: "스톱모션",
-    dimensions: {
-      realismLevel: "stylized",
-      texture: "handcrafted miniature textures, fabric, clay, wood, felt",
-      characterRendering: "handmade puppet/figure appearance, tactile material surfaces",
-      backgroundRendering: "miniature set design, handcrafted diorama environments",
-      motionFeel: "frame-by-frame stop-motion jitter, tactile movement",
-      colorPalette: "warm handmade palette, material-driven colors",
-      lighting: "warm studio lighting with visible light sources",
-      cameraFeel: "miniature-scale camera, slight imprecision in movement",
-      edgeTreatment: "material edges — fabric, clay, paper, visible craft imperfections",
-    },
-    globalStyleBlock: "Stop-motion animation with handcrafted miniature textures. Frame-by-frame movement with stop-motion jitter. Tactile material surfaces — clay, fabric, felt, wood. Warm studio lighting on miniature sets.",
-    characterStyleRule: "Stop-motion puppet characters with handcrafted material surfaces. Visible tactile textures — clay, fabric, felt. Material imperfections present.",
-    environmentStyleRule: "Miniature handcrafted diorama sets. Visible material construction — paper, wood, fabric backdrops. Warm studio lighting.",
-    reinforcement: "Handmade material feel in every frame. Stop-motion frame jitter throughout. Craft imperfections visible.",
-    negativeBlock: "smooth CGI, digital clean rendering, plastic toy look, photorealistic, flat 2D animation, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 픽셀아트 ───────────────────────────────────────────────
-  "픽셀아트": {
-    id: "pixel-art",
-    nameKo: "픽셀아트",
-    dimensions: {
-      realismLevel: "fully-illustrated",
-      texture: "crisp pixel grid, blocky resolution",
-      characterRendering: "pixel sprite characters, limited color per sprite",
-      backgroundRendering: "pixel art backgrounds, tile-based environments",
-      motionFeel: "retro game animation, limited keyframes",
-      colorPalette: "limited 16-bit retro palette",
-      lighting: "flat pixel lighting, dithered gradients",
-      cameraFeel: "side-scroll or isometric camera, clean pixel-aligned movement",
-      edgeTreatment: "crisp hard pixel edges, no anti-aliasing",
-    },
-    globalStyleBlock: "Pixel art 16-bit retro animation. Crisp hard pixel edges with no anti-aliasing. Limited color palette. Blocky character sprites on pixel art backgrounds.",
-    characterStyleRule: "Pixel sprite characters with limited colors, blocky proportions, retro game aesthetic.",
-    environmentStyleRule: "Pixel art tile-based backgrounds. Retro game environment design with limited palette.",
-    reinforcement: "Consistent pixel grid in every frame. Retro 16-bit game aesthetic throughout. No smooth anti-aliased edges.",
-    negativeBlock: "smooth rendering, anti-aliased edges, 3D, photorealistic, high-resolution detail, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 잉크워시 ───────────────────────────────────────────────
-  "잉크워시": {
-    id: "ink-wash",
-    nameKo: "잉크워시 (수묵화)",
-    dimensions: {
-      realismLevel: "fully-illustrated",
-      texture: "rice paper texture, ink brush on paper",
-      characterRendering: "ink brush stroke characters, calligraphic line weight variation",
-      backgroundRendering: "sumi-e ink wash landscapes, atmospheric ink gradients",
-      motionFeel: "flowing ink brush movement, contemplative pacing",
-      colorPalette: "monochrome ink gradients with occasional subtle accent",
-      lighting: "atmospheric ink density, white space as light",
-      cameraFeel: "scroll-like panning, contemplative compositions with negative space",
-      edgeTreatment: "brush stroke edges, calligraphic line weight, ink bleeding",
-    },
-    globalStyleBlock: "East Asian ink wash animation in sumi-e brush style. Monochrome ink gradients on rice paper texture. Calligraphic brush stroke rendering. Atmospheric ink wash with deliberate white space.",
-    characterStyleRule: "Characters rendered in ink brush strokes with calligraphic line weight variation. Sumi-e figure style, not realistic.",
-    environmentStyleRule: "Sumi-e ink wash landscapes. Atmospheric ink gradients on rice paper. Deliberate white space as compositional element.",
-    reinforcement: "Ink wash aesthetic in every frame. Brush stroke texture visible throughout. Rice paper grain present.",
-    negativeBlock: "vibrant colorful palette, digital clean rendering, photorealistic, 3D CGI, flat anime colors, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 클레이 ─────────────────────────────────────────────────
-  "클레이": {
-    id: "claymation",
-    nameKo: "클레이메이션",
-    dimensions: {
-      realismLevel: "stylized",
-      texture: "smooth clay surfaces, fingerprint marks, sculptural imperfections",
-      characterRendering: "clay figure proportions, sculptural faces, visible material joins",
-      backgroundRendering: "clay/plasticine environments, sculptural set pieces",
-      motionFeel: "claymation frame-by-frame, slight material deformation between frames",
-      colorPalette: "warm clay/plasticine colors, material-driven palette",
-      lighting: "warm studio lighting, soft shadows on clay surfaces",
-      cameraFeel: "miniature-scale shots, studio table-top camera",
-      edgeTreatment: "sculptural clay edges, fingerprint textures, material imperfections",
-    },
-    globalStyleBlock: "Claymation animation with smooth clay figures. Fingerprint texture on surfaces. Warm studio lighting on sculptural forms. Material imperfections visible — clay joins, subtle fingermarks.",
-    characterStyleRule: "Clay figure characters with sculptural proportions. Visible clay material — fingerprint marks, material joins, smooth rounded forms.",
-    environmentStyleRule: "Plasticine/clay environment elements. Sculptural set pieces under warm studio lighting.",
-    reinforcement: "Clay material feel in every frame. Handmade sculptural quality throughout. Warm studio lighting consistent.",
-    negativeBlock: "digital rendering, smooth CGI, photorealistic, shiny plastic, flat 2D, text overlay, watermark",
-    isNonRealistic: true,
-  },
-
-  // ─── 빈티지 필름 ────────────────────────────────────────────
-  "빈티지 필름": {
-    id: "vintage-film",
-    nameKo: "빈티지 필름",
-    dimensions: {
-      realismLevel: "photorealistic",
-      texture: "35mm film grain, chemical processing artifacts",
-      characterRendering: "realistic figures through vintage film processing",
-      backgroundRendering: "real-world environments with faded analog color",
-      motionFeel: "slightly degraded film motion, vintage camera stability",
-      colorPalette: "faded analog palette, warm desaturated tones",
-      lighting: "natural lighting with vintage film response, light leaks",
-      cameraFeel: "vintage film camera, natural lens imperfections, soft vignette",
-      edgeTreatment: "soft focus edges, chromatic aberration, film halation",
-    },
-    globalStyleBlock: "Vintage 35mm film look. Warm film grain throughout. Faded analog color palette with light leaks. Soft focus edges and chromatic aberration. Chemical processing artifacts visible.",
-    characterStyleRule: "Realistic figures captured through vintage film aesthetic — warm skin tones, film grain over faces, slightly soft focus.",
-    environmentStyleRule: "Real environments with vintage film color response. Warm desaturated tones, natural light leaks, analog vignetting.",
-    reinforcement: "35mm film grain consistent in every frame. Analog color degradation throughout. Vintage camera characteristics maintained.",
-    negativeBlock: "digital clean modern look, oversaturated colors, perfect sharpness, HDR, text overlay, watermark",
-    isNonRealistic: false,
-  },
-
-  // ─── 네온 사이버펑크 ────────────────────────────────────────
-  "네온 사이버펑크": {
-    id: "neon-cyberpunk",
-    nameKo: "네온 사이버펑크",
-    dimensions: {
-      realismLevel: "semi-realistic",
-      texture: "wet reflective surfaces, neon light on chrome and glass",
-      characterRendering: "semi-realistic figures in cyberpunk fashion, neon-lit faces",
-      backgroundRendering: "neon-lit cityscapes, dark atmosphere with vivid light sources",
-      motionFeel: "cinematic with neon light trails, dynamic urban motion",
-      colorPalette: "dark base with vivid neon pink, blue, purple, cyan accents",
-      lighting: "neon light sources, wet surface reflections, dark shadows with vivid rim light",
-      cameraFeel: "cinematic urban angles, rain-slicked lens, neon reflections on camera",
-      edgeTreatment: "neon glow edges, light bloom, rim lighting on forms",
-    },
-    globalStyleBlock: "Neon cyberpunk aesthetic. Dark atmosphere with vivid neon lights — pink, blue, purple, cyan. Wet reflective surfaces catching neon glow. Rain-slicked urban environments.",
-    characterStyleRule: "Semi-realistic figures with neon-lit rim lighting, cyberpunk fashion, vivid colored reflections on skin and clothing.",
-    environmentStyleRule: "Dark cyberpunk cityscapes with neon tubes and glowing panels, wet reflective streets, atmospheric fog catching colored light.",
-    reinforcement: "Neon glow consistent in every frame. Dark atmosphere with vivid neon accents maintained throughout. Wet reflective surfaces.",
-    negativeBlock: "natural daylight, muted colors, pastoral setting, bright clean look, text overlay, watermark",
-    isNonRealistic: false,
-  },
-
-  // ─── 미니어처 ───────────────────────────────────────────────
-  "미니어처": {
-    id: "tilt-shift-miniature",
-    nameKo: "미니어처",
-    dimensions: {
-      realismLevel: "photorealistic",
-      texture: "real-world miniature textures, diorama materials",
-      characterRendering: "tiny figures with toy-like proportions",
-      backgroundRendering: "diorama-scale environments, tilt-shift blur",
-      motionFeel: "slightly sped-up time-lapse feel, miniature scale physics",
-      colorPalette: "slightly saturated toy-like colors",
-      lighting: "bright overhead lighting, miniature-scale shadows",
-      cameraFeel: "extreme tilt-shift lens, very shallow depth of field, top-down angle",
-      edgeTreatment: "tilt-shift selective focus, extreme blur in non-focal areas",
-    },
-    globalStyleBlock: "Tilt-shift miniature effect. Extreme shallow depth of field making everything appear diorama-scale. Toy-like proportions. Bright overhead lighting on miniature sets.",
-    characterStyleRule: "Tiny toy-like figures at miniature scale, slightly saturated coloring.",
-    environmentStyleRule: "Diorama-scale environments with tilt-shift blur. Everything appears like a detailed miniature model.",
-    reinforcement: "Tilt-shift miniature effect consistent in every frame. Diorama scale maintained throughout. Extreme shallow depth of field.",
-    negativeBlock: "normal human scale, deep focus, realistic proportions, text overlay, watermark",
-    isNonRealistic: false,
-  },
+  ...CATALOG_PRESETS,
+  ...LEGACY_ALIASES,
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -419,20 +225,102 @@ const SCENE_CAMERA_OVERRIDES: CameraMotionOverride[] = [
  * 스타일별 카메라 모션 느낌.
  * 스타일 프리셋과 연동하여 카메라 움직임의 질감을 조정.
  */
-const STYLE_CAMERA_FLAVOR: Record<string, string> = {
-  "실사":           "cinematic dolly and crane-like movement, filmic steadicam feel",
-  "2D 애니":        "dynamic anime camera sweep, dramatic zoom emphasis",
-  "수채화 애니":     "cinematic painted camera — dolly and pan through living brushwork, painted world flows past lens",
-  "하이브리드":      "smooth digital camera motion, cinematic with slight stylization",
-  "로토스코핑":      "organic handheld sway, documentary-feel camera presence",
-  "스톱모션":        "subtle miniature-scale camera shift, stop-motion camera increment",
-  "픽셀아트":        "pixel-aligned scroll, retro game camera pan",
-  "잉크워시":        "scroll-like horizontal drift, contemplative slow pan",
-  "클레이":          "table-top miniature camera nudge, stop-motion camera step",
-  "빈티지 필름":     "vintage camera drift with slight mechanical imprecision",
-  "네온 사이버펑크":  "neon-reflected tracking shot, rain-slicked gliding movement",
-  "미니어처":        "tilt-shift camera slide, overhead slow drift",
+/** 카테고리별 기본 카메라 느낌 */
+const CATEGORY_CAMERA_FLAVOR: Record<string, string> = {
+  live_action:   "cinematic dolly and crane-like movement, filmic steadicam feel",
+  animation_2d:  "dynamic anime camera sweep, dramatic zoom emphasis",
+  animation_3d:  "smooth 3D camera orbit and dolly, depth-of-field transitions",
+  painting:      "cinematic painted camera — dolly and pan through living brushwork",
+  stop_motion:   "subtle miniature-scale camera shift, stop-motion camera increment",
+  retro_game:    "pixel-aligned scroll, retro game camera pan",
+  experimental:  "organic handheld sway, documentary-feel camera presence",
 };
+
+/** 스타일별 카메라 느낌 오버라이드 (특수 스타일) */
+const STYLE_CAMERA_OVERRIDES_MAP: Record<string, string> = {
+  // 실사 계열
+  "cinematic-realism": "cinematic dolly and crane-like movement, filmic steadicam feel",
+  "docu-handheld": "authentic handheld sway with observational camera distance",
+  "commercial-ad": "smooth polished dolly and crane, product-hero tracking",
+  "vintage-film": "vintage camera drift with slight mechanical imprecision",
+  "neon-noir": "neon-reflected tracking shot, rain-slicked gliding movement",
+  "vhs-retro": "VHS camera shake, unstabilized consumer camcorder movement",
+  "sf-futuristic": "sleek hovering camera glide, futuristic smooth tracking",
+  "gothic-horror": "slow creeping dolly, unsettling dutch tilt drift",
+  // 2D 계열
+  "tv-anime": "dynamic anime camera sweep, dramatic zoom emphasis",
+  "theatrical-anime": "sweeping cinematic anime camera with fluid parallax",
+  "storybook-anime": "gentle floating drift, fairy-tale camera sway",
+  "painted-2d": "cinematic painted camera — dolly through living brushwork",
+  "watercolor-animation": "soft flowing drift through watercolor world",
+  "ink-drawing-anime": "measured pen-stroke panning, graphic novel page-turn",
+  "webtoon-motion": "vertical scroll motion, panel-transition parallax",
+  "cutout-anime": "flat lateral slide between paper layers",
+  // 3D 계열
+  "pixar-style": "smooth Pixar-style camera orbit with rack focus",
+  "dreamworks-style": "energetic dynamic 3D camera with dramatic swoops",
+  "stylized-3d": "cartoon 3D camera orbit with snappy movements",
+  "semi-real-3d": "smooth digital cinema motion, cinematic with slight stylization",
+  "low-poly-3d": "gentle isometric camera drift, minimal movement",
+  "miniature-3d": "tilt-shift camera slide, overhead slow drift",
+  "game-cinematic-3d": "AAA game camera choreography, epic sweeping shots",
+  // 회화 계열
+  "ink-wash": "scroll-like horizontal drift, contemplative slow pan",
+  "east-asian-painting": "traditional scroll unrolling, meditative lateral pan",
+  "van-gogh-painted": "swirling dynamic camera following brushstroke energy",
+  // 스톱모션 계열
+  "claymation": "table-top miniature camera nudge, stop-motion camera step",
+  "paper-collage": "flat paper-layer parallax slide",
+  "miniature-diorama": "miniature-scale overhead dolly with stop-motion jitter",
+  // 레트로 계열
+  "pixel-art": "pixel-aligned scroll, retro game camera pan",
+  "16bit-jrpg": "SNES-style parallax scroll, mode-7 camera",
+  "8bit-arcade": "fixed screen scroll, NES-style snap movement",
+  "ps1-lowpoly": "PS1 fixed camera angle with jittery vertex snapping",
+  "90s-game-cutscene": "dramatic pre-rendered camera orbit, 90s CG swoops",
+  "visual-novel": "subtle portrait zoom and background parallax drift",
+  // 실험 계열
+  "rotoscoping": "organic handheld sway, documentary-feel camera presence",
+  "mixed-media-collage": "layered parallax with found-footage camera shake",
+  "live-paint-overlay": "real camera movement with painted overlay following action",
+  "surreal-composite": "dream-logic camera — gravity-defying dolly and impossible angles",
+};
+
+/** 스타일 ID 또는 레거시 모드명으로 카메라 플레이버 반환 */
+function getStyleCameraFlavor(animationMode: string): string {
+  // 1. 직접 오버라이드 확인
+  if (STYLE_CAMERA_OVERRIDES_MAP[animationMode]) return STYLE_CAMERA_OVERRIDES_MAP[animationMode];
+  // 2. 레거시 이름 → 새 id 변환 후 확인
+  const style = getStyleByLegacyMode(animationMode) ?? getStyleById(animationMode);
+  if (style) {
+    if (STYLE_CAMERA_OVERRIDES_MAP[style.id]) return STYLE_CAMERA_OVERRIDES_MAP[style.id];
+    if (CATEGORY_CAMERA_FLAVOR[style.categoryId]) return CATEGORY_CAMERA_FLAVOR[style.categoryId];
+  }
+  // 3. 레거시 하드코딩 (호환)
+  const LEGACY_FLAVOR: Record<string, string> = {
+    "실사": "cinematic dolly and crane-like movement, filmic steadicam feel",
+    "2D 애니": "dynamic anime camera sweep, dramatic zoom emphasis",
+    "수채화 애니": "cinematic painted camera — dolly and pan through living brushwork",
+    "하이브리드": "smooth digital camera motion, cinematic with slight stylization",
+    "로토스코핑": "organic handheld sway, documentary-feel camera presence",
+    "스톱모션": "subtle miniature-scale camera shift, stop-motion camera increment",
+    "픽셀아트": "pixel-aligned scroll, retro game camera pan",
+    "잉크워시": "scroll-like horizontal drift, contemplative slow pan",
+    "클레이": "table-top miniature camera nudge, stop-motion camera step",
+    "빈티지 필름": "vintage camera drift with slight mechanical imprecision",
+    "네온 사이버펑크": "neon-reflected tracking shot, rain-slicked gliding movement",
+    "미니어처": "tilt-shift camera slide, overhead slow drift",
+  };
+  return LEGACY_FLAVOR[animationMode] ?? "cinematic camera movement";
+}
+
+// STYLE_CAMERA_FLAVOR — 호환용 (기존 참조 유지)
+const STYLE_CAMERA_FLAVOR: Record<string, string> = new Proxy({} as Record<string, string>, {
+  get(_target, prop: string) {
+    return getStyleCameraFlavor(prop);
+  },
+  has() { return true; },
+});
 
 /**
  * 최소 모션 기본값 — 명시적 카메라 지시가 없을 때 삽입.
@@ -747,17 +635,32 @@ function sanitizeTextContent(prompt: string): string {
 export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const preset = input.animationMode ? STYLE_PRESETS[input.animationMode] : undefined;
 
+  // ── BLOCK 0: STYLE PERSONA (아트디렉터 페르소나) ──────────
+  // 스타일 페르소나가 프롬프트 최상단에서 모델의 "미적 판단 기준"을 설정
+  let personaBlock = "";
+  if (input.animationMode) {
+    const enforcement = buildStyleEnforcementBlock(input.animationMode);
+    personaBlock = enforcement.personaBlock;
+  }
+
   // ── BLOCK 1: STYLE IDENTITY ───────────────────────────────
   let styleBlock = "";
   if (preset) {
     styleBlock = preset.globalStyleBlock;
   }
 
-  // ── BLOCK 2: CONSISTENCY (character + environment) ─────────
+  // ── BLOCK 2: CONSISTENCY (character + environment + rendering rules) ─────────
   const consistencyParts: string[] = [];
   if (preset) {
     consistencyParts.push(preset.characterStyleRule);
     consistencyParts.push(preset.environmentStyleRule);
+  }
+  // 스타일별 렌더링 규칙 추가
+  if (input.animationMode) {
+    const rules = getStyleRenderingRules(input.animationMode);
+    if (rules.sequenceRules && input.styleIntensity > 30) {
+      consistencyParts.push(rules.sequenceRules);
+    }
   }
   if (input.characterConsistency) {
     consistencyParts.push(input.characterConsistency);
@@ -828,7 +731,10 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   // ── 조립 ───────────────────────────────────────────────────
   const blocks: string[] = [];
 
-  // 1. 스타일 정체성 (최상단)
+  // 0. 스타일 페르소나 (최최상단 — 모델의 미적 판단 기준 설정)
+  if (personaBlock && input.styleIntensity > 30) blocks.push(personaBlock);
+
+  // 1. 스타일 정체성
   if (styleBlock) blocks.push(styleBlock);
 
   // 2. 일관성 규칙

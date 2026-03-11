@@ -1,5 +1,6 @@
 import { PromptInput, PromptOutput, Cut, DirectorPersona, CharacterSeed } from "@/types";
 import { directors } from "@/data/directors";
+import { getStyleById } from "@/data/style-catalog";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -115,12 +116,10 @@ function generateFallbackCuts(
   const storyWords = input.storyText.slice(0, 30);
   const directorStyle = director.style;
 
-  const veoStyle =
-    input.animationMode === "2D 애니"
-      ? "2D cel-shaded animation, hand-drawn character, stylized but not rigidly flat"
-      : input.animationMode === "하이브리드"
-        ? "HYBRID COMPOSITE: photorealistic cinematic environment (real textures, physical depth) + stylized character render (illustrated design lines), background=live-action realism, character=artistic stylization, ANTI-COLLAPSE: no full-frame anime or cartoon look"
-        : "photorealistic, cinematic film grain, 4K quality";
+  const catalogStyle = getStyleById(input.animationMode);
+  const veoStyle = catalogStyle
+    ? catalogStyle.positivePrompt.split(". ").slice(0, 2).join(". ")
+    : "photorealistic, cinematic film grain, 4K quality";
 
   const characterSeeds: CharacterSeed[] = [{
     id: "char-1",
@@ -201,12 +200,10 @@ export async function generatePrompt(
     : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
   const { characterSeeds, cuts, usedFallback, fallbackReason } = cutsResult;
 
-  const veoStyle =
-    input.animationMode === "2D 애니"
-      ? "2D cel-shaded animation, hand-drawn character, stylized but not rigidly flat"
-      : input.animationMode === "하이브리드"
-        ? "HYBRID COMPOSITE: photorealistic cinematic environment (real textures, physical depth) + stylized character render (illustrated design lines), background=live-action realism, character=artistic stylization, ANTI-COLLAPSE: no full-frame anime or cartoon look"
-        : "photorealistic, cinematic film grain, 4K quality";
+  const catalogStyle = getStyleById(input.animationMode);
+  const veoStyle = catalogStyle
+    ? catalogStyle.positivePrompt.split(". ").slice(0, 2).join(". ")
+    : "photorealistic, cinematic film grain, 4K quality";
 
   const regionFlavor: Record<string, string> = {
     한국: "Korean aesthetic, Korean urban-rural atmosphere",

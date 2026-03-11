@@ -1,19 +1,8 @@
 // ===== 입력 타입 =====
 export type Region = "한국" | "일본" | "중국" | "유럽" | "미국" | "인도" | "중동" | "동남아" | "중남미" | "아프리카" | "오세아니아";
-export type AnimationMode =
-  | "2D 애니"
-  | "실사"
-  | "하이브리드"
-  | "수채화 애니"
-  | "로토스코핑"
-  | "스톱모션"
-  | "픽셀아트"
-  | "잉크워시"
-  | "클레이"
-  | "빈티지 필름"
-  | "네온 사이버펑크"
-  | "미니어처";
-export type StyleFamily = "all" | "live_action" | "animation_2d" | "stop_motion" | "hybrid";
+/** 영상 스타일 ID — style-catalog.ts의 StyleEntry.id 참조 (string으로 확장) */
+export type AnimationMode = string;
+export type StyleFamily = "all" | "live_action" | "animation_2d" | "animation_3d" | "painting" | "stop_motion" | "retro_game" | "experimental";
 export type Duration = 60 | 90 | 120 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
@@ -312,7 +301,7 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   resolution: "720p",
   aspectRatio: "16:9",
   generateAudio: true,
-  animationMode: "2D 애니",
+  animationMode: "tv-anime",
   // "live action, real footage"는 global negative에서 제외:
   // 로토스코핑은 실사 퍼포먼스 기반 움직임이 핵심 — 스타일별 STYLE_NEGATIVE_OVERRIDES에서 처리
   negativePrompt: "text overlay, watermark, logo, blurry, distorted face, photorealistic",
