@@ -343,7 +343,39 @@ export function generateQualityChecklist(
     detail: !goodDensity ? `환경 디테일 카테고리 ${detailCount}/5 — 구체적 오브젝트/질감/현상 추가 필요` : undefined,
   });
 
-  // 9. 프롬프트 길이 적정 (80~350 words)
+  // 9. 즉시 인식 가능성 — 장소 정체성 오브젝트 존재 여부
+  const locationObjects = [
+    /\b(desk|reception|counter|register|checkout)\b/i,
+    /\b(chair|seat|bench|stool|sofa|couch)\b/i,
+    /\b(kitchen|stove|oven|fridge|sink|pan|pot)\b/i,
+    /\b(clinic|hospital|dental|medical|surgical|stethoscope|chart)\b/i,
+    /\b(classroom|blackboard|whiteboard|textbook|locker)\b/i,
+    /\b(office|cubicle|monitor|keyboard|printer|filing)\b/i,
+    /\b(restaurant|menu|plate|glass|napkin|tablecloth)\b/i,
+    /\b(street|sidewalk|crosswalk|curb|storefront|awning)\b/i,
+    /\b(car|vehicle|steering|dashboard|windshield|headlight)\b/i,
+    /\b(bed|pillow|blanket|nightstand|bedroom|mattress)\b/i,
+  ];
+  const locationObjCount = locationObjects.filter(p => p.test(renderedPrompt)).length;
+  const hasLocationIdentity = locationObjCount >= 1;
+  items.push({
+    id: "location-identity",
+    label: "장소 정체성 오브젝트 포함 (즉시 인식)",
+    passed: hasLocationIdentity,
+    detail: !hasLocationIdentity ? "장소를 즉시 인식할 수 있는 고유 오브젝트가 없음 — WHERE가 불명확" : undefined,
+  });
+
+  // 10. 시퀀스 비트 구조 — 3개 시간 비트(0s-2s, 2s-5s 등) 존재 여부
+  const beatSegments = renderedPrompt.match(/\d+s[-–]\d+s/g) || [];
+  const hasSequenceBeats = beatSegments.length >= 2;
+  items.push({
+    id: "sequence-beats",
+    label: "시퀀스 비트 구조 (2+ temporal beats)",
+    passed: hasSequenceBeats,
+    detail: !hasSequenceBeats ? `시간 비트 ${beatSegments.length}개 — 시퀀스 블록에 최소 2개의 서로 다른 비트 필요` : undefined,
+  });
+
+  // 11. 프롬프트 길이 적정 (80~350 words)
   const wordCount = renderedPrompt.split(/\s+/).length;
   const goodLength = wordCount >= 80 && wordCount <= 350;
   items.push({

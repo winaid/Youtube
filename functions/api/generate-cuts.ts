@@ -266,10 +266,14 @@ interface CutOutline {
   transitionHint: string;  // 한국어 ≤15자
   shotCategory: ShotCategory;   // 이 씬의 피사체 중심 유형
   characterRole: CharacterRole;  // 이 씬에서 캐릭터의 역할
+  // ── 즉시 인식 가능성 (Instant Readability) ──────────────
+  locationCue: string;     // English ≤8w — 보자마자 "어디인지" 알 수 있는 핵심 시각 단서 (예: "dental chair and overhead lamp", "empty restaurant dining hall")
+  situationCue: string;    // English ≤8w — 보자마자 "무슨 상황인지" 알 수 있는 단서 (예: "no patients, lights on but empty", "long line outside door")
+  emotionalAnchor: string; // English ≤8w — 감정/갈등이 집약되는 시각 요소 (예: "doctor slumps alone at desk", "crumpled rejection letter on floor")
   // ── Scene progression (8초 안의 내부 비트) ──────────────
-  sceneBeat1: string;      // English ≤12w — 0s~2s: establishing visual beat
-  sceneBeat2: string;      // English ≤12w — 2s~5s: development / reaction / detail
-  sceneBeat3: string;      // English ≤12w — 5s~8s: reveal / emotion peak / transition
+  sceneBeat1: string;      // English ≤12w — 0s~2s: LOCATION — 장소를 즉시 인식시키는 시각 요소
+  sceneBeat2: string;      // English ≤12w — 2s~5s: SITUATION — 현재 상태/문제를 보여주는 증거
+  sceneBeat3: string;      // English ≤12w — 5s~8s: EMOTION — 감정/갈등이 집약되는 순간
   endHook: string;         // English ≤10w — 다음 씬으로 이어지는 시각적 고리
 }
 
@@ -394,7 +398,21 @@ characterSeeds (최대 3명):
 - appearanceKo: ≤25자
 
 outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마이크로 씬"):
-⚠️ 각 ${secPerCut}초는 단일 정지 샷이 아님! 하나의 씬 안에서 시각적 진행이 있어야 함.
+
+## ⚠️ 핵심 원칙: "즉시 인식 가능성" (Instant Readability)
+시청자가 장면을 보고 바로 이해해야 합니다:
+- "아, 치과구나" (장소)
+- "아, 손님이 없구나" (상황)
+- "아, 원장이 힘들구나" (감정)
+설명을 읽어야 이해되는 장면이 아니라, 시각적 단서만으로 즉시 의미가 전달되는 scene.
+"멋있어 보이는 무드 샷"보다 "보자마자 의미가 읽히는 서사 샷"을 우선합니다.
+
+각 씬 설계 시 반드시 아래 세 가지를 먼저 정의하세요:
+1. locationCue: 보자마자 어디인지 아는 핵심 오브젝트 (치과 → dental chair, 식당 → dining tables, 사무실 → office desk)
+2. situationCue: 보자마자 상황을 아는 증거 (한산함 → empty waiting chairs, 성공 → packed customers, 위기 → warning notice)
+3. emotionalAnchor: 감정이 집약되는 시각 포인트 (원장 한숨 → doctor slumps at desk, 결심 → hand grips phone tightly)
+이 세 가지가 없으면 씬을 다시 설계하세요.
+
 - cutNumber: 순번
 - sceneKo: ≤30자
 - emotion: 영어 키워드
@@ -409,9 +427,12 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 - characterRole: "protagonist" | "background" | "silhouette" | "partial" | "absent"
   ⚠️ shotCategory가 environment/object-detail/transition-atmosphere이면 characterRole="absent" 권장
   ⚠️ characterRole이 "absent"가 아닌 경우 subjectAction은 반드시 구체적 행동 포함 (standing/motionless 금지)
-- sceneBeat1: 영어 ≤12 words — ${secPerCut >= 8 ? "0s~2s" : "0s~1s"}: 시각적 오프닝 (무엇이 보이는가, 어떻게 씬이 열리는가)
-- sceneBeat2: 영어 ≤12 words — ${secPerCut >= 8 ? "2s~5s" : "1s~3s"}: 전개 (반응/디테일/움직임 변화/새 요소 등장)
-- sceneBeat3: 영어 ≤12 words — ${secPerCut >= 8 ? "5s~8s" : "3s~" + secPerCut + "s"}: reveal / 감정 피크 / 다음 씬 연결
+- locationCue: 영어 ≤8 words — 장소를 즉시 인식시키는 핵심 시각 오브젝트 (예: "dental chair and overhead lamp", "restaurant kitchen with steel counters")
+- situationCue: 영어 ≤8 words — 현재 상황을 즉시 보여주는 증거 (예: "empty waiting room, no patients", "long queue outside the door")
+- emotionalAnchor: 영어 ≤8 words — 감정/갈등이 집약되는 시각 요소 (예: "doctor alone slumping at desk", "hand crumpling printed notice")
+- sceneBeat1: 영어 ≤12 words — ${secPerCut >= 8 ? "0s~2s" : "0s~1s"}: LOCATION — 장소를 즉시 인식시키는 시각 요소 (locationCue가 화면에 보여야 함)
+- sceneBeat2: 영어 ≤12 words — ${secPerCut >= 8 ? "2s~5s" : "1s~3s"}: SITUATION — 현재 상태/문제를 보여주는 증거 (situationCue가 드러나야 함)
+- sceneBeat3: 영어 ≤12 words — ${secPerCut >= 8 ? "5s~8s" : "3s~" + secPerCut + "s"}: EMOTION — 감정/갈등이 집약되는 순간 (emotionalAnchor가 등장)
 - endHook: 영어 ≤10 words — 관객이 다음 씬을 기대하게 만드는 시각적 고리
 
 JSON만 출력:
@@ -491,9 +512,12 @@ JSON만 출력:
           transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
           shotCategory,
           characterRole,
-          sceneBeat1: String(o.sceneBeat1 ?? "establishing space and atmosphere"),
-          sceneBeat2: String(o.sceneBeat2 ?? "subject enters or key detail emerges"),
-          sceneBeat3: String(o.sceneBeat3 ?? "reveal or emotional shift"),
+          locationCue: String(o.locationCue ?? "identifiable location elements"),
+          situationCue: String(o.situationCue ?? "visible situation evidence"),
+          emotionalAnchor: String(o.emotionalAnchor ?? "emotional focal point"),
+          sceneBeat1: String(o.sceneBeat1 ?? "location-identifying objects and space"),
+          sceneBeat2: String(o.sceneBeat2 ?? "situation evidence becomes visible"),
+          sceneBeat3: String(o.sceneBeat3 ?? "emotional anchor enters or is revealed"),
           endHook: String(o.endHook ?? "visual tension toward next scene"),
         };
       })
@@ -564,16 +588,20 @@ async function step23DetailBatch(
     const revealHint = isFirst
       ? "REVEAL: space layout, atmosphere, physical environment only. WITHHOLD: character face, central conflict object, dramatic information."
       : `REVEAL: one new layer beyond prev scene (${prevOutline?.shotType ?? "unknown"} → ${o.shotType}). WITHHOLD: at least one element that sustains curiosity.`;
-    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}) — ${secPerCut}초 MICRO-SCENE (NOT a single static shot):
+    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}) — ${secPerCut}초 MICRO-SCENE:
   Purpose: ${o.purpose} | Opening shot: ${o.shotType} | Emotion shift: ${o.emotionalDelta}
   Shot category: ${o.shotCategory} | Character role: ${o.characterRole}
   Camera progression: ${o.cameraMovement}
   Core action across scene: ${o.subjectAction}
   Scene summary: ${o.sceneKo}
-  ── INTERNAL SCENE BEATS (이 씬 안에서 일어나는 시각적 진행) ──
-  BEAT1 (${secPerCut >= 8 ? "0s-2s" : "0s-1s"}): ${o.sceneBeat1}
-  BEAT2 (${secPerCut >= 8 ? "2s-5s" : "1s-3s"}): ${o.sceneBeat2}
-  BEAT3 (${secPerCut >= 8 ? "5s-" + secPerCut + "s" : "3s-" + secPerCut + "s"}): ${o.sceneBeat3}
+  ── INSTANT READABILITY (시청자가 바로 이해해야 하는 3가지) ──
+  WHERE (장소 단서): ${o.locationCue}
+  WHAT (상황 단서): ${o.situationCue}
+  WHO/EMOTION (감정 앵커): ${o.emotionalAnchor}
+  ── SCENE BEATS: location → situation → emotion ──
+  BEAT1 LOCATION (${secPerCut >= 8 ? "0s-2s" : "0s-1s"}): ${o.sceneBeat1}  — 장소가 즉시 인식되어야 함
+  BEAT2 SITUATION (${secPerCut >= 8 ? "2s-5s" : "1s-3s"}): ${o.sceneBeat2}  — 상황/문제의 시각적 증거
+  BEAT3 EMOTION (${secPerCut >= 8 ? "5s-" + secPerCut + "s" : "3s-" + secPerCut + "s"}): ${o.sceneBeat3}  — 감정/갈등 집약
   END HOOK: ${o.endHook}
   ── CONTEXT ──
   Previous: ${prevDesc}
@@ -586,11 +614,20 @@ async function step23DetailBatch(
 스타일: ${veoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
 ${secPerCut}초/씬 | 화면비: ${aspectRatio}
 
-## ⚠️ 핵심 원칙: ${secPerCut}초 = "마이크로 씬"이다 (단일 정지 샷이 아님!)
-- 각 ${secPerCut}초 단위는 하나의 scene이다. 사람 하나 세워두고 카메라 고정하는 "single static shot"이 아님.
-- 씬 안에서 시각적 진행이 있어야 한다: 오프닝 → 전개 → 리빌/전환
-- 카메라도 진행한다: 구도, 거리, 앵글이 씬 안에서 변화
-- 씬이 끝날 때 시작과 다른 상태여야 한다 (무언가가 변했거나 드러났거나 움직였거나)
+## ⚠️ 핵심 원칙: ${secPerCut}초 = "짧은 시퀀스(sequence)"이다 (단일 샷이 아님!)
+- 각 ${secPerCut}초 단위는 여러 시각 비트가 모여 하나의 의미를 전달하는 시퀀스이다.
+- 예: "치과 간판 → 텅 빈 대기실 → 한숨 쉬는 원장" = 3개의 시각 비트 = 1개의 시퀀스 = "한산한 치과" 즉시 이해
+- 시퀀스의 각 비트(sceneBeat)는 서로 다른 구도/앵글/피사체를 가진다.
+- ${secPerCut}초가 끝났을 때 시청자는 "어디서, 무슨 상황이고, 누가 어떤 감정인지"를 바로 알아야 한다.
+
+## ⚠️ 최우선 기준: "즉시 인식 가능성" (Instant Readability)
+- 모든 장면은 보자마자 아래가 이해되어야 한다:
+  1. 어디인가? (장소 정체성 — 치과면 치과답게, 식당이면 식당답게)
+  2. 무슨 상황인가? (비어있음, 북적임, 위기, 성공 등)
+  3. 누가 핵심인가? (인물이 있다면 무슨 역할/감정인지)
+- "멋있어 보이는 분위기 샷"보다 "보자마자 의미가 읽히는 서사 샷"을 우선한다.
+- 장소는 장소답게: 추상적 무드보다 장소 정체성(location-defining objects)이 먼저다.
+- 상황은 증거로: 추상적 설명 대신 시각적 증거(빈 의자, 줄 선 사람, 꺼진 조명)로 보여준다.
 캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
 ⚠️ 단, shotCategory에 따라 캐릭터 사용 여부가 달라짐 — 아래 SHOT CATEGORY RULES 참조
 
@@ -692,14 +729,17 @@ endImagePrompt (≤65 words English — 씬의 마지막 순간, 자연어만):
   If characterRole=protagonist/partial: "[charRef or partial]. [sceneBeat3 결과 상태]. [무엇이 변했는지]. [noTextSuffix]"
   If characterRole=absent: "[sceneBeat3 결과 상태]. [무엇이 변했는지]. [noTextSuffix]"
 
-videoPrompt (≤180 words English — ⚠️ 이것은 단일 샷 설명이 아니라 ${secPerCut}초 씬 전체의 진행 설명):
+videoPrompt (≤180 words English — ⚠️ ${secPerCut}초 = 짧은 시퀀스. 단일 샷 설명이 아니라 3개 비트의 시퀀스 블록이다):
   ⚠️ 자연어로만 작성 — SHOT_SIZE: / CAMERA_ANGLE: / REVEALED: 같은 메타태그 절대 사용 금지!
-  Format: "[Opening shot type] shot, [angle]. [Camera progression across scene]. ${beatTemplate.replace("[start]", "[sceneBeat1: what opens the scene visually]").replace("[develop]", "[sceneBeat2: what develops, enters, reacts, or shifts]").replace("[climax]", "[sceneBeat3: what is revealed, peaks, or hooks into next scene]")}. [charRef if characterRole is NOT absent — omit entirely if absent]. [noTextSuffix]"
-  예시: "Wide shot, eye-level. Camera slowly pushes in from establishing distance to medium shot as figure enters frame. 0s-2s: empty clinic hallway with flickering fluorescent tube overhead, cracked tile floor. 2s-5s: door at far end creaks open, pale light spills across worn linoleum, shadow stretches toward camera. 5s-8s: figure's hand grips doorframe, half-open blinds cast striped shadows across the wall. [charRef]. [noTextSuffix]"
-  ⚠️ videoPrompt 핵심 = 구체적 시각 디테일 + SCENE PROGRESSION:
-  - 씬 시작과 끝이 달라야 한다 (구도/카메라/피사체/정보 중 최소 2개 변화)
-  - 카메라 진행을 자연어로 서술 (예: "camera slowly pushes in from wide to medium")
-  - 피사체 행동도 자연어 arc (예: "reaches for handle, pulls back, then grips it firmly")
+  ⚠️ 핵심: 각 비트(beat)는 서로 다른 구도/앵글/피사체를 가져야 한다. 같은 카메라 위치에서 같은 구도로 ${secPerCut}초를 채우지 마라!
+  Format: "[Beat1 shot type], [angle]. [locationCue 시각화 — 장소 정체성이 즉시 인식되는 오브젝트]. ${beatTemplate.replace("[start]", "[BEAT1 LOCATION: 장소 인식 — WHERE가 즉시 읽히는 환경 디테일]").replace("[develop]", "[BEAT2 SITUATION: 상황 증거 — WHAT이 보이는 시각적 증거(빈 의자, 꺼진 조명, 줄 선 사람 등)]").replace("[climax]", "[BEAT3 EMOTION: 감정/갈등 — WHO/EMOTION 앵커(인물 행동, 반응, 갈등 집약)]")}. [charRef if characterRole is NOT absent — omit entirely if absent]. [noTextSuffix]"
+  예시: "Wide shot, eye-level. Dental clinic waiting room — empty reception desk, overhead fluorescent buzzing. 0s-2s: wide establishing — three vacant blue plastic chairs, water dispenser with still surface, appointment board on wall. 2s-5s: medium shot — camera pushes in to reception counter, dust particles float in pale window light, phone sits untouched, withered plant on corner. 5s-8s: close-up — doctor slumps at desk behind frosted partition, fingers tap idle pen, stethoscope coiled unused beside cold coffee cup. [charRef]. [noTextSuffix]"
+  ⚠️ videoPrompt 시퀀스 설계 원칙:
+  - 3개 비트 각각 다른 shot size 사용 (예: WS→MS→CU 또는 LS→MS→ECU) — 같은 구도 반복 금지
+  - BEAT1: 장소 정체성 오브젝트 2개 이상 (치과=치과의자+소독등, 식당=테이블+메뉴판 등)
+  - BEAT2: 상황을 시각적 증거로 (빈=빈 의자, 성공=줄 선 사람, 위기=꺼진 조명) — 추상 설명 금지
+  - BEAT3: 인물 감정을 구체적 신체 행동으로 (한숨, 고개 숙임, 손 떨림 등)
+  - ${secPerCut}초 끝나면 시청자가 "어디서, 무슨 상황, 누가 어떤 감정"을 즉시 알아야 한다
   - 환경 디테일을 구체적으로 (예: "dusty floor reflection, peeling wallpaper, rusted pipe")
   BANNED: "continues", "still", "same as before", "watches quietly", "stands facing", "remains motionless", "standing"
   BANNED: SHOT_SIZE: / CAMERA_ANGLE: / REVEALED: / WITHHELD: / END_HOOK: / SUBJECT_ACROSS_SCENE: 같은 메타태그
@@ -708,7 +748,8 @@ videoPrompt (≤180 words English — ⚠️ 이것은 단일 샷 설명이 아�
 
 extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
   ⚠️ 자연어로만 작성 — 메타태그 절대 사용 금지!
-  Format: "Continuing from previous shot — [prevScene endHook]. Transition to [this shotType] shot. [camera progression]. [beat1] → [beat2] → [beat3]. [charRef if characterRole is NOT absent — omit if absent]. [noTextSuffix]"
+  ⚠️ extendPrompt도 시퀀스 블록이다 — 이전 장면 연결 후 location→situation→emotion 순서로 전개
+  Format: "Continuing from previous shot — [prevScene endHook]. [Beat1: location establishing with different angle]. [Beat2: situation evidence]. [Beat3: emotional anchor]. [charRef if characterRole is NOT absent — omit if absent]. [noTextSuffix]"
   BANNED: "continuing", "similar to previous", "same pose", emotion adjectives, 모든 메타태그(SHOT_SIZE:/CAMERA_ANGLE: 등)
 
 cameraDirection (≤55 chars English):
@@ -735,16 +776,16 @@ ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade
 예: empty reception desk, dusty floor reflection, worn dental chair silhouette, flickering fluorescent tube, half-open blinds, faded wall paint, cracked tile floor, condensation on window, peeling wallpaper strip, rusted pipe along wall
 메타 정보(REVEALED/WITHHELD)를 늘리지 말고 실제 화면 디테일을 늘려라.
 
-## MULTI-SHOT 규칙 (씬 내부 비트를 서브샷으로 구현 — Kling과 Veo 공통)
-각 씬마다 "multiShot" 배열을 생성하라. 배열은 sceneBeat1/2/3에 대응하는 2~3개 서브샷이다.
+## MULTI-SHOT 규칙 (시퀀스 블록의 각 비트를 서브샷으로 구현 — Kling과 Veo 공통)
+각 씬 = 짧은 시퀀스(sequence block). "multiShot" 배열 = location→situation→emotion 순서의 서브샷이다.
 - 모든 duration(초 단위 정수) 합산 = ${secPerCut} (반드시 정확히 일치)
-- 각 서브샷 = 씬 내부의 하나의 visual beat (단일 정지 샷이 아님!)
-- 서브샷 1 = sceneBeat1 시각화: 씬 오프닝/공간 설정 (≤80 words)
-- 서브샷 2 = sceneBeat2 시각화: 전개/반응/디테일 (≤80 words)
-- 서브샷 3 (${secPerCut} >= 9 시 권장) = sceneBeat3 시각화: 리빌/피크/전환 (≤80 words)
-- 서브샷마다 다른 카메라 앵글/구도 사용 (WS→CU→MS 등 씬 내 shot progression)
+- 서브샷 1 = BEAT1 LOCATION: 장소 정체성 즉시 인식 (장소 고유 오브젝트 2+) — shot size: WS/LS (≤80 words)
+- 서브샷 2 = BEAT2 SITUATION: 상황의 시각적 증거 (빈/붐빔/위기 등을 오브젝트로) — shot size: MS/MCU (≤80 words)
+- 서브샷 3 (${secPerCut} >= 9 시 권장) = BEAT3 EMOTION: 감정/갈등 앵커 (인물의 구체적 신체 행동) — shot size: CU/ECU (≤80 words)
+- ⚠️ 핵심: 서브샷마다 반드시 다른 shot size + 앵글 사용 (WS→MS→CU 등 씬 내 progression)
+- ⚠️ 시퀀스 끝(서브샷 3 이후) 시청자가 WHERE + WHAT + WHO/EMOTION 3가지를 즉시 이해해야 함
 - duration 분배: 균등 또는 핵심 비트에 가중치 (정수만, 합산 ${secPerCut})
-- BANNED: 서브샷 전체에 동일 prompt 반복, 감정 형용사 사용, "standing motionless"
+- BANNED: 서브샷 전체에 동일 구도/앵글 반복, 감정 형용사 사용, "standing motionless"
 
 JSON 배열로만 출력 (마크다운 없이):
 [{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":2,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":3,"prompt":"...","duration":"${secPerCut - 2 * Math.ceil(secPerCut / 3)}"}]}]`;
