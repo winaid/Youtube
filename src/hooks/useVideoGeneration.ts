@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { saveVideoRecord } from "@/lib/video-history";
 import { assemblePrompt } from "@/lib/style-system";
+import { assembleFromJSON } from "@/lib/sequence-assembler";
 import { generateQualityChecklist, sanitizeRenderedPrompt } from "@/lib/video-prompt-json";
 import {
   buildSequencePlan,
@@ -950,37 +951,29 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const tPreEnd = performance.now();
       const preProcessMs = Math.round(tPreEnd - tPreStart);
 
-      // ═══ 전역 스타일 시스템으로 프롬프트 조립 ═══════════════════════
-      // assemblePrompt()가 7개 블록을 우선순위대로 조립:
-      //   1. STYLE IDENTITY (전체 비주얼 정체성)
-      //   2. CONSISTENCY (캐릭터 스타일 + 환경 스타일 + 일관성 규칙)
-      //   3. CAMERA MOTION (자동 프리셋 + 8초 타임라인 + 안티보어덤)
-      //   4. SCENE CONTENT (메타 필드 자연어 변환 + temporal beats + sanitize)
-      //   5. STYLE REINFORCEMENT (스타일 강화 리마인더)
-      //   6. NEGATIVE (스타일 충돌 차단 + 비실사 anti-photorealism)
-      //   7. AUDIO (오디오 힌트)
+      // ═══ JSON-first 프롬프트 조립 (sequence-assembler) ═══════════════
+      // assembleFromJSON()이 JSON document를 먼저 구축하고,
+      // validate → sanitize → resolve conflicts → serialize 순서로 처리.
+      // 문자열 조합은 최종 provider 전송 직전에만 발생.
       {
         const prevCutData = cutNumber > 1
           ? cuts.find((c) => c.cutNumber === cutNumber - 1)
           : undefined;
 
-        const assembled = assemblePrompt({
-          animationMode: cfg.animationMode,
-          styleIntensity: cfg.styleIntensity,
-          scenePrompt: prompt,
-          characterConsistency: prevCutData?.characterConsistency || cut.characterConsistency,
-          moodLighting: prevCutData?.moodLighting || cut.moodLighting,
-          cameraDirection: cut.cameraDirection,
-          shotType: cut.videoPromptJson?.shotSize,
-          userNegativePrompt: negativePrompt,
-          durationSec: cfg.durationSeconds,
-          shotCategory: cut.shotCategory,
+        const assembled = assembleFromJSON({
+          cut,
+          config: cfg,
+          prevCut: prevCutData,
         });
 
-        prompt = sanitizeRenderedPrompt(assembled.finalPrompt);
+        prompt = sanitizeRenderedPrompt(assembled.prompt);
+
+        // Kling용 negative prompt (Veo는 prompt에 이미 embed됨)
+        if (assembled.negativePrompt) {
+          negativePrompt = assembled.negativePrompt;
+        }
 
         // ── PREFLIGHT DRIFT DETECTION (비용 보호) ──────────────────────
-        // map scene에서 풍경/동물 drift 감지 시 생성 차단
         if (assembled.driftWarning) {
           console.error(`[CUT ${cutNumber}] ⛔ ${assembled.driftWarning}`);
           updateClip(cutNumber, {
@@ -1000,47 +993,40 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           updateClip(cutNumber, { qualityChecklist: checklist });
         }
 
-        // ── UI에 최종 프롬프트 저장 (실제 API에 전송되는 merged prompt) ──
+        // ── UI에 최종 프롬프트 저장 ──
         updateClip(cutNumber, {
           finalPrompt: prompt,
-          assembledDebug: {
-            styleBlock: assembled.debug.styleBlock,
-            consistencyBlock: assembled.debug.consistencyBlock,
-            cameraBlock: assembled.debug.cameraBlock,
-            sceneBlock: assembled.debug.sceneBlock,
-            reinforcementBlock: assembled.debug.reinforcementBlock,
-            negativeBlock: assembled.debug.negativeBlock,
-            isMapScene: assembled.debug.isMapScene,
-          },
+          assembledDebug: assembled.assembledDebug,
         });
 
-        // ── 시퀀스 플랜 기반 shot 프롬프트 직렬화 로그 ──────────────────────
-        if (state.sequencePlan) {
-          const serialized = serializeSequencePlan(state.sequencePlan, cfg.engine === "kling" ? "kling" : "veo");
-          const shotPrompt = serialized.shotPrompts.find(sp => sp.shotId === `shot_${cutNumber}`);
-          const shotLog = serialized.logs.find(l => l.shotId === `shot_${cutNumber}`);
-          if (shotPrompt) {
-            console.log(`[CUT ${cutNumber}] 📋 SEQUENCE SHOT PROMPT`, {
-              shotId: shotPrompt.shotId,
-              promptLen: shotPrompt.prompt.length,
-              negative: shotPrompt.negative || "(없음)",
-              includedFields: shotLog?.includedFields || [],
-              droppedFields: shotLog?.droppedFields || [],
-              warnings: shotLog?.warnings || [],
-            });
-          }
-        }
-
-        // ── 블록별 디버그 로그 (통합) ──────────────────────────────────────
-        console.log(`[CUT ${cutNumber}] 📝 ASSEMBLED PROMPT`, {
+        // ── JSON-first 파이프라인 디버그 로그 ──────────────────────────────
+        console.log(`[CUT ${cutNumber}] 📝 JSON-FIRST ASSEMBLED`, {
           animationMode: cfg.animationMode || "(없음)",
           shotCategory: cut.shotCategory || "(없음)",
-          isMapScene: assembled.debug.isMapScene,
-          wordCount: assembled.debug.wordCount,
-          camera: assembled.debug.camera.source,
-          negative: assembled.debug.negativeBlock || "(없음)",
+          isMapScene: assembled.assembledDebug.isMapScene,
+          wordCount: assembled.wordCount,
+          validationErrors: assembled.validation.issues.filter(i => i.severity === "error").length,
+          validationWarnings: assembled.validation.issues.filter(i => i.severity === "warning").length,
+          sanitizeFixes: assembled.sanitizeFixes.length,
+          conflictResolutions: assembled.conflictResolutions.length,
+          sections: Object.keys(assembled.serializationDebug.sections),
+          truncated: assembled.serializationDebug.truncated,
           finalPrompt: prompt.length > 800 ? prompt.slice(0, 800) + "…" : prompt,
         });
+
+        // ── 검증 이슈 상세 로그 (문제 있을 때만) ──────────────────────────
+        if (assembled.validation.issues.length > 0) {
+          console.log(`[CUT ${cutNumber}] 🔍 VALIDATION`, {
+            valid: assembled.validation.valid,
+            issues: assembled.validation.issues.map(i => `[${i.severity}] ${i.rule}: ${i.message}`),
+          });
+        }
+        if (assembled.sanitizeFixes.length > 0) {
+          console.log(`[CUT ${cutNumber}] 🔧 AUTO-FIXES`, assembled.sanitizeFixes);
+        }
+        if (assembled.conflictResolutions.length > 0) {
+          console.log(`[CUT ${cutNumber}] ⚡ CONFLICT RESOLUTIONS`, assembled.conflictResolutions);
+        }
       }
 
       // ── Continuity firstFrame 취득 (우선순위 순)
