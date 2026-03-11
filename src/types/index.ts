@@ -216,6 +216,10 @@ export interface PromptOutput {
   cuts: Cut[];
   usedFallback?: boolean;
   fallbackReason?: string;
+  /** 시퀀스 플랜 — generate-cuts에서 구축, shot plan 구조 */
+  sequencePlan?: import("@/lib/sequence-plan").SequencePlan;
+  /** 시퀀스 검증 결과 */
+  sequenceValidation?: import("@/lib/sequence-plan").SequenceValidationResult;
 }
 
 // ===== 채팅 타입 =====
@@ -421,6 +425,10 @@ export interface VideoGenerationState {
   currentAutoIndex: number;
   config: VeoGenerationConfig;
   review?: VideoReview;
+  /** 시퀀스 플랜 (generate-cuts에서 수신, 전체 shot 구조) */
+  sequencePlan?: import("@/lib/sequence-plan").SequencePlan;
+  /** 시퀀스 fidelity 평가 (전체 완료 후 계산) */
+  sequenceFidelity?: import("@/lib/sequence-plan").SequenceFidelityResult;
 }
 
 // ===== 캐릭터 얼굴 레퍼런스 =====

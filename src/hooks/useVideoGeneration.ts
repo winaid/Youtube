@@ -5,6 +5,12 @@ import { saveVideoRecord } from "@/lib/video-history";
 import { assemblePrompt } from "@/lib/style-system";
 import { generateQualityChecklist, sanitizeRenderedPrompt } from "@/lib/video-prompt-json";
 import {
+  buildSequencePlan,
+  serializeSequencePlan,
+  evaluateSequenceFidelity,
+} from "@/lib/sequence-plan";
+import type { SequencePlan } from "@/lib/sequence-plan";
+import {
   Cut,
   VideoClip,
   VideoGenStatus,
@@ -35,6 +41,8 @@ function sleep(ms: number): Promise<void> {
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
+  /** 서버에서 받은 시퀀스 플랜 (generate-cuts 응답) */
+  sequencePlan?: SequencePlan;
   storyboardImages?: Record<number, string>;
   storyboardEndImages?: Record<number, string>;
   faceRefs?: CharacterFaceRef[];
@@ -142,7 +150,7 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
 // sanitizeTextContent, ensureTemporalBeats, naturalizeMetaFields는
 // style-system.ts의 assemblePrompt() 내부에서 처리됨
 
-export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
+export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
     clips: [],
     isAutoMode: false,
@@ -155,10 +163,17 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
   const activePolls = useRef<Set<number>>(new Set());
   const autoModeRef = useRef(false);
 
-  // cuts 변경 시 clips 초기화
+  // cuts 변경 시 clips 초기화 + 시퀀스 플랜 동기화
   useEffect(() => {
+    // 서버에서 받은 sequencePlan이 있으면 사용, 없으면 클라이언트에서 빌드
+    const plan = externalSequencePlan || (cuts.length > 0 ? buildSequencePlan(cuts, {
+      styleId: state.config.animationMode,
+      aspectRatio: state.config.aspectRatio,
+    }) : undefined);
+
     setState((prev) => ({
       ...prev,
+      sequencePlan: plan,
       clips: cuts.map((cut) => {
         const existing = prev.clips.find((c) => c.cutNumber === cut.cutNumber);
         if (existing) return existing;
@@ -169,7 +184,8 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         };
       }),
     }));
-  }, [cuts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cuts, externalSequencePlan]);
 
   // cleanup on unmount
   useEffect(() => {
@@ -961,6 +977,23 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
           },
         });
 
+        // ── 시퀀스 플랜 기반 shot 프롬프트 직렬화 로그 ──────────────────────
+        if (state.sequencePlan) {
+          const serialized = serializeSequencePlan(state.sequencePlan, cfg.engine === "kling" ? "kling" : "veo");
+          const shotPrompt = serialized.shotPrompts.find(sp => sp.shotId === `shot_${cutNumber}`);
+          const shotLog = serialized.logs.find(l => l.shotId === `shot_${cutNumber}`);
+          if (shotPrompt) {
+            console.log(`[CUT ${cutNumber}] 📋 SEQUENCE SHOT PROMPT`, {
+              shotId: shotPrompt.shotId,
+              promptLen: shotPrompt.prompt.length,
+              negative: shotPrompt.negative || "(없음)",
+              includedFields: shotLog?.includedFields || [],
+              droppedFields: shotLog?.droppedFields || [],
+              warnings: shotLog?.warnings || [],
+            });
+          }
+        }
+
         // ── 블록별 디버그 로그 (통합) ──────────────────────────────────────
         console.log(`[CUT ${cutNumber}] 📝 ASSEMBLED PROMPT`, {
           animationMode: cfg.animationMode || "(없음)",
@@ -1663,6 +1696,39 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         return;
       }
 
+      // ── 시퀀스 fidelity 평가 (전체 완료 시) ──────────────────────────
+      if (state.sequencePlan) {
+        try {
+          const serialized = serializeSequencePlan(state.sequencePlan);
+          const genResults = state.sequencePlan.shots.map((shot) => {
+            const clip = state.clips.find(c => `shot_${c.cutNumber}` === shot.shotId);
+            return {
+              shotId: shot.shotId,
+              generated: clip?.status === "completed",
+              engineUsed: clip?.engineUsed,
+              finalPrompt: clip?.finalPrompt || "",
+              verification: clip?.verification ? {
+                overallScore: clip.verification.overallScore,
+                issues: clip.verification.issues,
+              } : undefined,
+            };
+          });
+          const fidelity = evaluateSequenceFidelity(state.sequencePlan, serialized, genResults);
+          setState((prev) => ({ ...prev, sequenceFidelity: fidelity }));
+          console.log(`[SEQUENCE] 🎯 FIDELITY EVALUATION`, {
+            overallScore: fidelity.overallScore,
+            shotCountMatch: fidelity.shotCountMatch,
+            continuityPreservation: fidelity.continuityPreservation,
+            primaryCause: fidelity.failureDiagnosis.primaryCause,
+            authoringIssues: fidelity.failureDiagnosis.authoringIssues.length,
+            serializationIssues: fidelity.failureDiagnosis.serializationIssues.length,
+            generationIssues: fidelity.failureDiagnosis.generationIssues.length,
+          });
+        } catch (e) {
+          console.error("[SEQUENCE] fidelity evaluation failed:", e);
+        }
+      }
+
       // 첫 완료 → 자동 리뷰 시작
       if (!state.review || state.review.status === "idle") {
         sendNotification(
@@ -1676,7 +1742,7 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     if (completedCount < prevCompletedRef.current) {
       prevCompletedRef.current = completedCount;
     }
-  }, [completedCount, totalCount, state.review, reviewAllClips, sendNotification]);
+  }, [completedCount, totalCount, state.review, state.sequencePlan, state.clips, reviewAllClips, sendNotification]);
 
   // 알림 권한 미리 요청
   useEffect(() => {

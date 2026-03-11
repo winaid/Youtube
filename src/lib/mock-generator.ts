@@ -35,7 +35,7 @@ async function fetchGeminiCuts(
   directorPersonaText: string,
   cutCount: number,
   cutDuration: number
-): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string }> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
@@ -99,7 +99,12 @@ async function fetchGeminiCuts(
 
     if (cuts.length === 0) throw new Error("Empty cuts from API");
 
-    return { characterSeeds, cuts };
+    return {
+      characterSeeds,
+      cuts,
+      sequencePlan: data.sequencePlan ?? undefined,
+      sequenceValidation: data.sequenceValidation ?? undefined,
+    };
   } catch (error) {
     console.error("Cuts API error, using fallback:", error);
     const fallback = generateFallbackCuts(input, director, cutCount, cutDuration);
@@ -198,7 +203,7 @@ export async function generatePrompt(
   const cutsResult = director
     ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration)
     : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
-  const { characterSeeds, cuts, usedFallback, fallbackReason } = cutsResult;
+  const { characterSeeds, cuts, usedFallback, fallbackReason, sequencePlan, sequenceValidation } = cutsResult;
 
   const catalogStyle = getStyleById(input.animationMode);
   const veoStyle = catalogStyle
@@ -237,5 +242,7 @@ export async function generatePrompt(
     cuts,
     usedFallback,
     fallbackReason,
+    sequencePlan: sequencePlan as PromptOutput["sequencePlan"],
+    sequenceValidation: sequenceValidation as PromptOutput["sequenceValidation"],
   };
 }

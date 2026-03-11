@@ -11,6 +11,7 @@
  */
 import { GeminiEnv, streamingGenerate } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
+import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 
 type Env = GeminiEnv;
 
@@ -1215,7 +1216,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       };
     });
 
-    return Response.json({ characterSeeds, cuts });
+    // ═══ 시퀀스 플랜 구축 + 검증 ═══════════════════════════════════
+    // cuts[]를 SequencePlan JSON으로 구조화하고, shot plan 무결성 검증
+    const sequencePlan = buildSequencePlanFromCuts(cuts, {
+      styleId: String(animationMode || "live-action"),
+      aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
+      directorId: String(directorName || ""),
+    });
+    const sequenceValidation = validateSequencePlan(sequencePlan);
+
+    if (!sequenceValidation.valid) {
+      console.warn("[generate-cuts] ⚠️ sequence validation issues:", sequenceValidation.issues);
+    }
+
+    return Response.json({ characterSeeds, cuts, sequencePlan, sequenceValidation });
 
   } catch (error) {
     const errMsg   = error instanceof Error ? error.message  : String(error);
