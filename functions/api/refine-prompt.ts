@@ -4,7 +4,7 @@ type Env = GeminiEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { videoPrompt, extendPrompt, feedback, cutNumber, mode, sceneDescription, negativePrompt, durationSeconds, previousCutPrompt } =
+    const { videoPrompt, extendPrompt, feedback, cutNumber, mode, sceneDescription, negativePrompt, durationSeconds, previousCutPrompt, shotCategory } =
       await context.request.json() as Record<string, string | number>;
 
     if (!videoPrompt) {
@@ -76,6 +76,16 @@ ${negativePrompt ? `AVOID: ${String(negativePrompt)}. Weave "no X, no Y" natural
 ## Context
 ${sceneDescription ? `Scene intent: ${String(sceneDescription).slice(0, 300)}` : ""}
 ${previousCutPrompt ? `Previous cut ended with: ${String(previousCutPrompt).slice(0, 200)}` : ""}
+${String(shotCategory) === "map-graphic" ? `
+## ⚠️ MAP/GRAPHIC SCENE — CRITICAL PROTECTION RULES
+This scene is a MAP or INFOGRAPHIC. You MUST:
+1. Keep the cartographic/diagrammatic intent — this is a MAP viewed from above, NOT a landscape painting
+2. NEVER add: cranes, birds, mountains, scenic painting elements, decorative animals, brush painting scenery
+3. NEVER reinterpret the map as a landscape or East Asian painting scene
+4. Camera must be: flat top-down or slight overhead angle looking DOWN at the map surface
+5. Focus on: parchment texture, territorial overlays, coastlines, borders, trade routes, ink spreading on paper
+6. If the style is "East Asian painting" — apply ONLY the color palette and paper texture, NOT the landscape composition
+7. The scene must look like someone looking DOWN at a physical map, NOT looking OUT at a landscape` : ""}
 
 ## Original Video Prompt (CUT ${cutNumber || 1}):
 ${String(videoPrompt)}

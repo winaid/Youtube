@@ -739,9 +739,10 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
                   cutNumber,
                   mode: "english-native",
                   sceneDescription: cut.sceneDescription,
-                  negativePrompt: cfg.negativePrompt, // 원본 negative (아직 auto-negative 결과 없음)
+                  negativePrompt: cfg.negativePrompt,
                   durationSeconds: cfg.durationSeconds,
                   previousCutPrompt: prevCut?.videoPrompt || "",
+                  shotCategory: cut.shotCategory, // map-graphic 등 장면 유형 전달
                 }),
               });
               if (refRes.ok) {
@@ -835,6 +836,18 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
 
         prompt = sanitizeRenderedPrompt(assembled.finalPrompt);
 
+        // ── PREFLIGHT DRIFT DETECTION (비용 보호) ──────────────────────
+        // map scene에서 풍경/동물 drift 감지 시 생성 차단
+        if (assembled.driftWarning) {
+          console.error(`[CUT ${cutNumber}] ⛔ ${assembled.driftWarning}`);
+          updateClip(cutNumber, {
+            status: "failed",
+            error: assembled.driftWarning,
+            finalPrompt: prompt,
+          });
+          return;
+        }
+
         // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────
         if (cut.videoPromptJson) {
           const checklist = generateQualityChecklist(prompt, cut.videoPromptJson, {
@@ -845,11 +858,24 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
         }
 
         // ── UI에 최종 프롬프트 저장 (실제 API에 전송되는 merged prompt) ──
-        updateClip(cutNumber, { finalPrompt: prompt });
+        updateClip(cutNumber, {
+          finalPrompt: prompt,
+          assembledDebug: {
+            styleBlock: assembled.debug.styleBlock,
+            consistencyBlock: assembled.debug.consistencyBlock,
+            cameraBlock: assembled.debug.cameraBlock,
+            sceneBlock: assembled.debug.sceneBlock,
+            reinforcementBlock: assembled.debug.reinforcementBlock,
+            negativeBlock: assembled.debug.negativeBlock,
+            isMapScene: assembled.debug.isMapScene,
+          },
+        });
 
         // ── 블록별 디버그 로그 (통합) ──────────────────────────────────────
         console.log(`[CUT ${cutNumber}] 📝 ASSEMBLED PROMPT`, {
           animationMode: cfg.animationMode || "(없음)",
+          shotCategory: cut.shotCategory || "(없음)",
+          isMapScene: assembled.debug.isMapScene,
           wordCount: assembled.debug.wordCount,
           camera: assembled.debug.camera.source,
           negative: assembled.debug.negativeBlock || "(없음)",

@@ -440,16 +440,35 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
-                {/* Final Merged Prompt (실제 API 전송 프롬프트) */}
+                {/* Final Merged Prompt + Debug Blocks (실제 API 전송 프롬프트) */}
                 {clip.finalPrompt && (
                   <div className="px-3 pb-2">
                     <details className="group">
                       <summary className="text-[10px] font-medium cursor-pointer select-none" style={{ color: "#555" }}>
-                        최종 프롬프트 (API 전송용) <span className="text-[9px] font-normal text-muted-foreground">({clip.finalPrompt.split(/\s+/).length}w)</span>
+                        최종 프롬프트 (API 전송용)
+                        <span className="text-[9px] font-normal text-muted-foreground ml-1">({clip.finalPrompt.split(/\s+/).length}w)</span>
+                        {clip.assembledDebug?.isMapScene && (
+                          <Badge className="ml-1 text-[8px]" style={{ background: "#0891b220", color: "#0891b2" }}>MAP</Badge>
+                        )}
                       </summary>
-                      <pre className="mt-1 bg-gray-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed" style={{ color: "#333", maxHeight: 200, overflowY: "auto" }}>
-                        {clip.finalPrompt}
-                      </pre>
+                      <div className="mt-1 space-y-1">
+                        <pre className="bg-gray-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed" style={{ color: "#333", maxHeight: 200, overflowY: "auto" }}>
+                          {clip.finalPrompt}
+                        </pre>
+                        {clip.assembledDebug && (
+                          <details className="ml-1">
+                            <summary className="text-[9px] cursor-pointer text-muted-foreground">블록별 분해</summary>
+                            <div className="mt-1 space-y-0.5 text-[8px] font-mono" style={{ color: "#666" }}>
+                              <div><span className="font-bold text-blue-600">[STYLE]</span> {clip.assembledDebug.styleBlock.slice(0, 200) || "(없음)"}</div>
+                              <div><span className="font-bold text-green-600">[CONSISTENCY]</span> {clip.assembledDebug.consistencyBlock.slice(0, 200) || "(없음)"}</div>
+                              <div><span className="font-bold text-orange-600">[CAMERA]</span> {clip.assembledDebug.cameraBlock.slice(0, 150) || "(없음)"}</div>
+                              <div><span className="font-bold text-purple-600">[SCENE]</span> {clip.assembledDebug.sceneBlock.slice(0, 200) || "(없음)"}</div>
+                              <div><span className="font-bold text-pink-600">[REINFORCEMENT]</span> {clip.assembledDebug.reinforcementBlock || "(없음)"}</div>
+                              <div><span className="font-bold text-red-600">[NEGATIVE]</span> {clip.assembledDebug.negativeBlock || "(없음)"}</div>
+                            </div>
+                          </details>
+                        )}
+                      </div>
                     </details>
                   </div>
                 )}

@@ -484,6 +484,9 @@ export interface AssembledPrompt {
   /** Veo에 전송할 최종 프롬프트 */
   finalPrompt: string;
 
+  /** map scene drift 감지 시 경고 (비용 보호) */
+  driftWarning?: string;
+
   /** 디버그용 블록별 분해 */
   debug: {
     styleBlock: string;
@@ -496,6 +499,7 @@ export interface AssembledPrompt {
     wordCount: number;
     realismLevel: RealismLevel | "unknown";
     isNonRealistic: boolean;
+    isMapScene: boolean;
     camera: {
       source: string;
       motionType: string;
@@ -728,11 +732,30 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     animationMode: input.animationMode,
     durationSec: input.durationSec,
   });
-  const cameraBlock = cameraResult.cameraBlock;
+  // ⚠️ MAP SCENE: 카메라를 항상 top-down으로 강제
+  const cameraBlock = isMapScene
+    ? "Static top-down overhead view looking directly down at flat map surface, very slow gentle zoom in"
+    : cameraResult.cameraBlock;
 
   // ── BLOCK 4: SCENE CONTENT ─────────────────────────────────
   // 메타 필드를 자연어로 변환
   let sceneBlock = naturalizeMetaFields(input.scenePrompt);
+
+  // ⚠️ MAP SCENE: scene content에서 drift 유발 표현 강제 제거
+  if (isMapScene) {
+    // 지도 장면에서 풍경/동물 표현이 scene prompt에 침투했을 경우 제거
+    sceneBlock = sceneBlock
+      .replace(/\b(crane|cranes|heron|herons)\b(?!\s*(shot|angle|camera|move))/gi, "")
+      .replace(/\b(birds?\s+fly|flying\s+birds?|soaring\s+birds?)\b/gi, "")
+      .replace(/\b(mountain\s+landscape|scenic\s+painting|nature\s+tableau)\b/gi, "")
+      .replace(/\b(brush\s*stroke\s+mountains?|misty\s+peaks?|ink\s+wash\s+mountains?)\b/gi, "")
+      .replace(/,\s*,/g, ",").replace(/\s{2,}/g, " ").trim();
+
+    // 지도 장면 앵커 강화: scene block 맨 앞에 cartographic 프레이밍 삽입
+    if (!/\b(map|cartograph|parchment|top.?down|overhead|territorial)\b/i.test(sceneBlock)) {
+      sceneBlock = `Overhead view of an old parchment map surface. ${sceneBlock}`;
+    }
+  }
 
   // Temporal beats 삽입
   sceneBlock = ensureTemporalBeats(sceneBlock, input.durationSec);
@@ -832,8 +855,35 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
 
   const finalWordCount = prompt.split(/\s+/).length;
 
+  // ── PREFLIGHT DRIFT DETECTION ──────────────────────────────
+  // map scene인데 최종 prompt에 풍경/동물 표현이 남아있으면 drift 경고
+  let driftWarning: string | undefined;
+  if (isMapScene) {
+    const driftTerms = [
+      /\bcrane(?!s?\s*(shot|angle|camera|move))\b/i,
+      /\bbird\b/i,
+      /\bheron\b/i,
+      /\bmountain\s+landscape\b/i,
+      /\bscenic\s+painting\b/i,
+      /\bnature\s+tableau\b/i,
+      /\bbrush\s*stroke\s+mountain/i,
+      /\bink\s+wash\s+mountain/i,
+      /\bflying\s+(creature|animal|bird)/i,
+      /\btraditional\s+painting\s+composition/i,
+      /\bmisty\s+peak/i,
+    ];
+    const found = driftTerms
+      .filter(re => re.test(prompt))
+      .map(re => { const m = prompt.match(re); return m?.[0] ?? ""; })
+      .filter(Boolean);
+    if (found.length > 0) {
+      driftWarning = `MAP SCENE DRIFT DETECTED: "${found.join('", "')}" — 지도 장면에 풍경/동물 표현이 포함됨. 생성 결과가 산수화/학으로 드리프트될 위험 높음.`;
+    }
+  }
+
   return {
     finalPrompt: prompt,
+    driftWarning,
     debug: {
       styleBlock,
       consistencyBlock,
@@ -845,9 +895,10 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
       wordCount: finalWordCount,
       realismLevel: preset?.dimensions.realismLevel ?? "unknown",
       isNonRealistic: preset?.isNonRealistic ?? false,
+      isMapScene,
       camera: {
-        source: cameraResult.debug.source,
-        motionType: cameraResult.debug.motionType,
+        source: isMapScene ? "map-override" : cameraResult.debug.source,
+        motionType: isMapScene ? "static-topdown" : cameraResult.debug.motionType,
         hasTimeline: cameraResult.debug.hasTimeline,
         antiBoredomTriggered,
       },
