@@ -701,14 +701,9 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
     "boxed annotations", "title boxes", "caption boxes", "modern UI",
   ];
 
-  // ── BLOCK 0: STYLE PERSONA (아트디렉터 페르소나) ──────────
-  // 스타일 페르소나가 프롬프트 최상단에서 모델의 "미적 판단 기준"을 설정
-  // ⚠️ map scene에서는 페르소나를 억제 (지도→산수화 drift 방지)
-  let personaBlock = "";
-  if (input.animationMode && !isMapScene) {
-    const enforcement = getCachedEnforcement(input.animationMode);
-    personaBlock = enforcement.personaBlock;
-  }
+  // ── BLOCK 0: STYLE PERSONA — 제거됨 ──────────────────────
+  // 페르소나 블록은 Veo에게 불필요한 메타 지시문이며
+  // 씬 프롬프트의 워드 예산을 낭비함. 제거하여 씬 내용 우선 배치.
 
   // ── BLOCK 1: STYLE IDENTITY ───────────────────────────────
   // ⚠️ map scene에서는 스타일 블록 대신 cartographic 보호 블록 삽입
@@ -842,24 +837,39 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   const audioBlock = hasAudioRef ? "" : "Diegetic sound, ambient audio.";
 
   // ── 조립 ───────────────────────────────────────────────────
+  // 핵심 원칙: Veo는 프롬프트 앞부분에 더 높은 가중치를 줌.
+  // 따라서 씬 내용(사용자 의도)을 최우선 배치하고,
+  // 스타일/카메라는 간결한 supporting context로 뒤에 배치.
   const blocks: string[] = [];
 
-  // 0. 스타일 페르소나 (최최상단 — 모델의 미적 판단 기준 설정)
-  if (personaBlock && input.styleIntensity > 30) blocks.push(personaBlock);
-
-  // 1. 스타일 정체성
-  if (styleBlock) blocks.push(styleBlock);
-
-  // 2. 일관성 규칙
-  if (consistencyBlock) blocks.push(consistencyBlock);
-
-  // 3. 카메라 모션 (씬 내용보다 앞에 배치 — Veo가 카메라 움직임을 우선 해석)
-  if (cameraBlock) blocks.push(`Camera: ${cameraBlock}`);
-
-  // 4. 씬 내용
+  // 1. 씬 내용 (최우선 — 사용자가 원하는 장면의 핵심)
   blocks.push(sceneBlock);
 
-  // 5. 스타일 강화
+  // 2. 카메라 모션 (시각적 연출)
+  if (cameraBlock) blocks.push(`Camera: ${cameraBlock}`);
+
+  // 3. 스타일 정체성 (간결하게 — 첫 문장만)
+  if (styleBlock) {
+    // 스타일 블록이 너무 길면 첫 2문장만 사용하여 씬 프롬프트 공간 확보
+    const styleSentences = styleBlock.split(". ").filter(Boolean);
+    const compactStyle = styleSentences.length > 2
+      ? styleSentences.slice(0, 2).join(". ") + "."
+      : styleBlock;
+    blocks.push(compactStyle);
+  }
+
+  // 4. 일관성 규칙 (간결하게)
+  if (consistencyBlock) {
+    // 일관성 블록도 과도하면 압축
+    const consistencyWords = consistencyBlock.split(/\s+/);
+    if (consistencyWords.length > 40) {
+      blocks.push(consistencyWords.slice(0, 40).join(" "));
+    } else {
+      blocks.push(consistencyBlock);
+    }
+  }
+
+  // 5. 스타일 강화 (map scene이나 높은 styleIntensity에서만)
   if (reinforcementBlock) blocks.push(reinforcementBlock);
 
   let prompt = blocks.join(" ");
@@ -870,9 +880,10 @@ export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
   prompt = boredCheck.corrected;
 
   // ── 워드 캡 (negative/audio 전에) ──────────────────────────
+  // Veo 3.1은 긴 프롬프트를 잘 처리함 → 200단어까지 허용
   const words = prompt.split(/\s+/);
-  if (words.length > 150) {
-    prompt = words.slice(0, 140).join(" ");
+  if (words.length > 210) {
+    prompt = words.slice(0, 200).join(" ");
     if (!/no text overlay/i.test(prompt)) {
       prompt += ". No text overlay, no watermark";
     }

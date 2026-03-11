@@ -688,21 +688,9 @@ export function useVideoGeneration({ cuts, storyboardImages, storyboardEndImages
     const clip = state.clips.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
 
-    // CUT N>1: 이전 컷 시각 상태를 프롬프트에 주입 (Scene Extension fallback 시 보조)
-    // veo-3.1-fast-generate-001은 Scene Extension + image-to-video 모두 지원
-    if (cutNumber > 1) {
-      const prevCutData = cuts.find((c) => c.cutNumber === cutNumber - 1);
-      if (prevCutData && !prompt.toLowerCase().startsWith("continuing")) {
-        const ctx: string[] = [];
-        if (prevCutData.characterConsistency) ctx.push(prevCutData.characterConsistency);
-        if (prevCutData.moodLighting) ctx.push(prevCutData.moodLighting);
-        if (prevCutData.cameraDirection) ctx.push(prevCutData.cameraDirection);
-        if (ctx.length > 0) {
-          // 앞에 붙여서 Veo가 가장 먼저 인식하도록
-          prompt = `[Continuing from previous shot — ${ctx.slice(0, 2).join("; ")}] ${prompt}`;
-        }
-      }
-    }
+    // CUT N>1: 이전 컷 시각 상태는 assemblePrompt()의 CONSISTENCY 블록에서 처리됨.
+    // 여기서 중복 주입하면 워드 예산을 낭비하고 씬 프롬프트가 밀려남.
+    // (assemblePrompt에 characterConsistency/moodLighting을 직접 전달)
 
     // 이전 장면의 videoUri (Scene Extension)
     const prevClip = state.clips.find(
