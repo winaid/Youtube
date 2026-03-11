@@ -1053,3 +1053,269 @@ export function videoPromptJsonToShotPlan(
     emotionalAnchor: json.emotionalAnchor,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Camera/Framing Conflict Resolution
+// ═══════════════════════════════════════════════════════════════════
+
+export interface ConflictResolutionResult {
+  plan: SequencePlan;
+  resolutions: string[];
+}
+
+/**
+ * Per-shot framing 유일성 및 motion 호환성 검증 + 자동 수정.
+ * - 연속 3개 이상 동일 framing → 중간 shot을 인접 크기로 변경
+ * - Camera motion과 framing 충돌 해결 (WS + close-up 등)
+ */
+export function resolveFramingConflicts(plan: SequencePlan): ConflictResolutionResult {
+  const result = structuredClone(plan);
+  const resolutions: string[] = [];
+
+  // 1. 연속 동일 framing 해소 (3연속 이상)
+  const FRAMING_ORDER: ShotCamera["framing"][] = ["WS", "LS", "MLS", "MS", "MCU", "CU", "ECU"];
+  for (let i = 1; i < result.shots.length - 1; i++) {
+    const prev = result.shots[i - 1].camera.framing;
+    const curr = result.shots[i].camera.framing;
+    const next = result.shots[i + 1].camera.framing;
+    if (prev === curr && curr === next) {
+      const idx = FRAMING_ORDER.indexOf(curr);
+      if (idx > 0) {
+        result.shots[i].camera.framing = FRAMING_ORDER[idx - 1];
+        resolutions.push(`${result.shots[i].shotId}: 3연속 ${curr} → ${FRAMING_ORDER[idx - 1]}로 변경`);
+      } else if (idx < FRAMING_ORDER.length - 1) {
+        result.shots[i].camera.framing = FRAMING_ORDER[idx + 1];
+        resolutions.push(`${result.shots[i].shotId}: 3연속 ${curr} → ${FRAMING_ORDER[idx + 1]}로 변경`);
+      }
+    }
+  }
+
+  // 2. Motion-framing 충돌 해결
+  const CLOSE_FRAMINGS = new Set(["ECU", "CU"]);
+  const WIDE_FRAMINGS = new Set(["WS", "LS"]);
+  for (const shot of result.shots) {
+    const motionLower = (shot.camera.motion || "").toLowerCase();
+    const framing = shot.camera.framing;
+    // Wide shot + "close-up" in motion text
+    if (WIDE_FRAMINGS.has(framing) && /close[\s-]?up/i.test(motionLower)) {
+      shot.camera.motion = shot.camera.motion.replace(/close[\s-]?up/gi, "").trim() || "static";
+      resolutions.push(`${shot.shotId}: WS/LS motion에서 close-up 텍스트 제거`);
+    }
+    // Close shot + "wide establishing" in motion text
+    if (CLOSE_FRAMINGS.has(framing) && /wide\s+(shot|establishing)/i.test(motionLower)) {
+      shot.camera.motion = shot.camera.motion.replace(/wide\s+(shot|establishing)/gi, "").trim() || "static";
+      resolutions.push(`${shot.shotId}: CU/ECU motion에서 wide shot 텍스트 제거`);
+    }
+  }
+
+  // 3. Map scene framing 보호
+  for (const shot of result.shots) {
+    if (shot.shotCategory === "map-graphic" && CLOSE_FRAMINGS.has(shot.camera.framing)) {
+      const old = shot.camera.framing;
+      shot.camera.framing = "WS";
+      shot.camera.angle = "overhead";
+      resolutions.push(`${shot.shotId}: map-graphic ${old} → WS overhead`);
+    }
+  }
+
+  return { plan: result, resolutions };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Positive/Negative Conflict Detection & Resolution
+// ═══════════════════════════════════════════════════════════════════
+
+export interface PosNegConflict {
+  shotId: string;
+  term: string;
+  inPositive: string;
+  inNegative: string;
+}
+
+/**
+ * 양성/음성 프롬프트 간 충돌 검출 + 자동 제거.
+ * - Style 양성 용어가 negative 목록에도 있으면 negative에서 제거
+ */
+export function resolvePosNegConflicts(
+  plan: SequencePlan,
+  globalStyle: string,
+): { plan: SequencePlan; conflicts: PosNegConflict[]; removedNegatives: string[] } {
+  const result = structuredClone(plan);
+  const conflicts: PosNegConflict[] = [];
+  const removedNegatives: string[] = [];
+  const positiveLower = globalStyle.toLowerCase();
+
+  for (const shot of result.shots) {
+    const kept: string[] = [];
+    for (const neg of shot.negativeDirectives) {
+      const negLower = neg.toLowerCase();
+      if (negLower.length > 4 && positiveLower.includes(negLower)) {
+        conflicts.push({
+          shotId: shot.shotId,
+          term: neg,
+          inPositive: globalStyle,
+          inNegative: neg,
+        });
+        removedNegatives.push(`${shot.shotId}: "${neg}"`);
+      } else {
+        kept.push(neg);
+      }
+    }
+    shot.negativeDirectives = kept;
+  }
+
+  return { plan: result, conflicts, removedNegatives };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. Cinematic Realism 3D/CGI Drift Prevention
+// ═══════════════════════════════════════════════════════════════════
+
+const CGI_DRIFT_TERMS = /\b(3D\s+render|CGI|glossy\s+render|game[\s-]?map|miniature\s+diorama|plastic\s+terrain|3D\s+topograph)/gi;
+const CGI_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\b3D\s+topograph(?:ic)?\s+map\b/gi, replacement: "physical relief map surface" },
+  { pattern: /\b3D\s+terrain\b/gi, replacement: "physical terrain surface" },
+  { pattern: /\b3D\s+map\b/gi, replacement: "physical map surface" },
+  { pattern: /\b3D\s+rendered?\b/gi, replacement: "cinematic" },
+  { pattern: /\bCGI\s+(?:render|terrain|landscape)\b/gi, replacement: "cinematic physical surface" },
+  { pattern: /\bgame[\s-]?map\b/gi, replacement: "physical map" },
+  { pattern: /\bminiature\s+diorama\b/gi, replacement: "physical map surface" },
+  { pattern: /\bglossy\s+(?:3D|render)\b/gi, replacement: "diffused natural surface" },
+  { pattern: /\bplastic\s+(?:terrain|model|surface)\b/gi, replacement: "physical map surface" },
+];
+
+/**
+ * Cinematic realism 스타일에서 3D/CGI drift 자동 차단.
+ * - action/environment 텍스트에서 CGI 용어를 물리적 매체 용어로 치환
+ * - 전용 negative 자동 주입
+ */
+export function enforceCinematicRealism(plan: SequencePlan): {
+  plan: SequencePlan;
+  fixes: string[];
+} {
+  const styleLower = `${plan.globalIntent.style || ""} ${plan.globalIntent.styleId}`.toLowerCase();
+  if (!/cinematic\s*realism/i.test(styleLower)) {
+    return { plan, fixes: [] };
+  }
+
+  const result = structuredClone(plan);
+  const fixes: string[] = [];
+  const ANTI_3D_NEGS = [
+    "no 3D render", "no CGI", "no glossy render", "no game map",
+    "no miniature diorama", "no plastic terrain model",
+  ];
+
+  for (const shot of result.shots) {
+    // Check if shot text contains CGI drift triggers
+    const fullText = `${shot.action} ${shot.environment} ${shot.subject.primary}`;
+    if (CGI_DRIFT_TERMS.test(fullText)) {
+      CGI_DRIFT_TERMS.lastIndex = 0; // reset regex state
+      // Replace CGI terms in action/environment
+      for (const { pattern, replacement } of CGI_REPLACEMENTS) {
+        const oldAction = shot.action;
+        shot.action = shot.action.replace(pattern, replacement);
+        if (oldAction !== shot.action) fixes.push(`${shot.shotId}: action CGI cleaned`);
+
+        const oldEnv = shot.environment;
+        shot.environment = shot.environment.replace(pattern, replacement);
+        if (oldEnv !== shot.environment) fixes.push(`${shot.shotId}: environment CGI cleaned`);
+      }
+
+      // Inject anti-3D negatives
+      const existing = new Set(shot.negativeDirectives.map(n => n.toLowerCase()));
+      for (const neg of ANTI_3D_NEGS) {
+        if (!existing.has(neg.toLowerCase())) {
+          shot.negativeDirectives.push(neg);
+          fixes.push(`${shot.shotId}: injected "${neg}"`);
+        }
+      }
+    }
+  }
+
+  return { plan: result, fixes };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. Central Pipeline — JSON-first 통합 파이프라인
+// ═══════════════════════════════════════════════════════════════════
+
+export interface SequencePipelineResult {
+  /** 검증된 시퀀스 플랜 */
+  plan: SequencePlan;
+  /** 직렬화된 시퀀스 (string-only provider용) */
+  serialized: SerializedSequence;
+  /** 검증 결과 */
+  validation: SequenceValidationResult;
+  /** 프레이밍 충돌 해결 내역 */
+  framingResolutions: string[];
+  /** 양성/음성 충돌 내역 */
+  posNegConflicts: PosNegConflict[];
+  /** cinematic realism 3D/CGI 수정 내역 */
+  cinematicRealismFixes: string[];
+  /** 디버그 로그 */
+  debugLog: string[];
+}
+
+/**
+ * 통합 JSON-first 파이프라인:
+ * Build Plan → Validate → Resolve Framing → Resolve Pos/Neg → Enforce CR → Serialize
+ */
+export function runSequencePipeline(
+  cuts: Cut[],
+  opts: {
+    styleId?: string;
+    style?: string;
+    medium?: string;
+    aspectRatio?: "16:9" | "9:16";
+    directorId?: string;
+    provider?: "veo" | "kling";
+    globalStyle?: string;
+  } = {},
+): SequencePipelineResult {
+  const debugLog: string[] = [];
+  const provider = opts.provider || "veo";
+
+  // Step 1: Build plan
+  debugLog.push(`[PIPELINE] Building plan from ${cuts.length} cuts`);
+  let plan = buildSequencePlan(cuts, opts);
+
+  // Step 2: Validate
+  const validation = validateSequencePlan(plan);
+  debugLog.push(`[PIPELINE] Validation: ${validation.summary.errors}E ${validation.summary.warnings}W ${validation.summary.infos}I`);
+
+  // Step 3: Resolve framing conflicts
+  const { plan: framingPlan, resolutions: framingResolutions } = resolveFramingConflicts(plan);
+  plan = framingPlan;
+  if (framingResolutions.length > 0) {
+    debugLog.push(`[PIPELINE] Framing fixes: ${framingResolutions.length}`);
+  }
+
+  // Step 4: Resolve positive/negative conflicts
+  const globalStyle = opts.globalStyle || opts.style || opts.styleId || "";
+  const { plan: posNegPlan, conflicts: posNegConflicts } = resolvePosNegConflicts(plan, globalStyle);
+  plan = posNegPlan;
+  if (posNegConflicts.length > 0) {
+    debugLog.push(`[PIPELINE] Pos/neg conflicts resolved: ${posNegConflicts.length}`);
+  }
+
+  // Step 5: Enforce cinematic realism (3D/CGI drift)
+  const { plan: crPlan, fixes: cinematicRealismFixes } = enforceCinematicRealism(plan);
+  plan = crPlan;
+  if (cinematicRealismFixes.length > 0) {
+    debugLog.push(`[PIPELINE] CR fixes: ${cinematicRealismFixes.length}`);
+  }
+
+  // Step 6: Serialize
+  const serialized = serializeSequencePlan(plan, provider);
+  debugLog.push(`[PIPELINE] Serialized: ${serialized.shotPrompts.length} shots, flattened ${serialized.flattenedPrompt.length} chars`);
+
+  return {
+    plan,
+    serialized,
+    validation,
+    framingResolutions,
+    posNegConflicts,
+    cinematicRealismFixes,
+    debugLog,
+  };
+}

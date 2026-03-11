@@ -250,6 +250,55 @@ export interface StoryAIPersona {
 export type VideoEngine = "veo" | "kling" | "auto";
 export type VideoMode   = "generate" | "extend";
 
+// ===== JSON-first 구조화된 시퀀스 문서 =====
+/**
+ * StructuredSequenceDocument — JSON-first source of truth.
+ * 전체 파이프라인에서 이 문서가 1순위로 전달되며,
+ * string prompt는 string-only provider 전송 시에만 직렬화된다.
+ *
+ * 우선순위: structuredSequence > videoPromptJson > prompt
+ */
+export interface StructuredSequenceDocument {
+  /** 단일 shot에 대한 구조화 데이터 */
+  shotId: string;
+  cutNumber: number;
+  /** SequencePlan의 ShotPlan과 1:1 매핑 */
+  shotPlan: import("@/lib/sequence-plan").ShotPlan;
+  /** 원본 VideoPromptJson (있으면) */
+  videoPromptJson?: VideoPromptJson;
+  /** provider별 직렬화 결과 (lazy — 실제 전송 시에만 생성) */
+  serializedPrompt?: string;
+  /** 검증 결과 */
+  validation?: {
+    valid: boolean;
+    errors: number;
+    warnings: number;
+    issues: Array<{ rule: string; severity: string; message: string }>;
+  };
+  /** 자동 수정 내역 */
+  sanitizeFixes?: string[];
+  /** 충돌 해결 내역 */
+  conflictResolutions?: string[];
+}
+
+// ===== Asset 상태 분리 =====
+/**
+ * AssetStatus — 영상 자산의 생명 주기 상태.
+ * 생성 상태(VideoGenStatus)와 분리하여 자산 가용성을 독립 추적.
+ *
+ * GENERATED: 영상 생성 완료 (raw URI만 있음)
+ * ASSET_STORED_INTERNAL: R2/GCS에 업로드 완료 (내부 접근 가능)
+ * ASSET_STORED_PUBLIC: 공개 프록시 URI 발급 완료 (재생 가능)
+ * SCENE_EXTENSION_READY: canonicalVideoUri 확보 → Scene Extension 가능
+ * VISIBLE_IN_LIBRARY: MyVideosPanel에 노출 가능 상태
+ */
+export type AssetStatus =
+  | "GENERATED"
+  | "ASSET_STORED_INTERNAL"
+  | "ASSET_STORED_PUBLIC"
+  | "SCENE_EXTENSION_READY"
+  | "VISIBLE_IN_LIBRARY";
+
 // ===== Veo 3.1 영상 생성 설정 =====
 export interface VeoGenerationConfig {
   engine: VideoEngine;         // 사용할 엔진 (veo | kling | auto)
@@ -404,6 +453,9 @@ export interface VideoClip {
   uploadStorage?: "r2" | "gcs" | "none";
   uploadError?: string;
   sceneExtensionEligible?: boolean;  // canonicalVideoUri가 있어서 다음 컷 Scene Extension 가능 여부
+  // ── JSON-first asset 추적 ──
+  assetStatus?: AssetStatus;         // 자산 생명 주기 상태 (생성 상태와 분리)
+  structuredSequence?: StructuredSequenceDocument; // JSON-first source of truth
 }
 
 // ===== AI 피드백 리뷰 =====
@@ -579,3 +631,10 @@ export type {
   FailureDiagnosis,
   SerializedSequence,
 } from "@/lib/sequence-plan";
+
+// ===== sequence-assembler re-export =====
+export type {
+  SingleShotDocument,
+  ProviderCapability,
+  AssembleFromJSONResult,
+} from "@/lib/sequence-assembler";

@@ -6,12 +6,21 @@
  * DB 없이 localStorage로 우선 구현, 향후 D1/Supabase로 마이그레이션 가능.
  */
 
+/** Asset 생명 주기 상태 (VideoClip.assetStatus와 동기) */
+export type VideoAssetStatus =
+  | "GENERATED"
+  | "ASSET_STORED_INTERNAL"
+  | "ASSET_STORED_PUBLIC"
+  | "SCENE_EXTENSION_READY"
+  | "VISIBLE_IN_LIBRARY";
+
 export interface VideoRecord {
   id: string;
   operationName: string;
   engine: "veo" | "kling";
   gcsUri: string;            // rawVideoUri (gs:// 또는 https://)
   proxyUri: string;          // 재생 가능한 프록시 URI
+  canonicalVideoUri?: string; // 안정적 URI (Scene Extension용)
   prompt: string;
   mode: "generate" | "extend";
   durationSec: number;
@@ -22,6 +31,8 @@ export interface VideoRecord {
   animationMode?: string;
   seed?: string;
   status: "completed" | "failed";
+  /** 자산 생명 주기 상태 — 생성 상태(status)와 분리 추적 */
+  assetStatus?: VideoAssetStatus;
   createdAt: number;
 }
 
@@ -81,4 +92,48 @@ export function clearVideoHistory(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch { /* ignore */ }
+}
+
+/**
+ * VideoRecord의 asset status를 결정.
+ * gcsUri, proxyUri, canonicalVideoUri 유무에 따라 자산 상태 계산.
+ */
+export function computeAssetStatus(record: VideoRecord): VideoAssetStatus {
+  if (record.status === "failed") return "GENERATED"; // 실패 시 최초 상태 고정
+
+  if (record.canonicalVideoUri) {
+    return "SCENE_EXTENSION_READY";
+  }
+  if (record.proxyUri) {
+    return "ASSET_STORED_PUBLIC";
+  }
+  if (record.gcsUri) {
+    return "ASSET_STORED_INTERNAL";
+  }
+  return "GENERATED";
+}
+
+/**
+ * 기존 레코드의 asset status를 업데이트.
+ * 업로드 완료/Scene Extension 가능 등 상태 변경 시 호출.
+ */
+export function updateVideoRecordAssetStatus(
+  id: string,
+  assetStatus: VideoAssetStatus,
+  canonicalVideoUri?: string,
+): void {
+  const records = getVideoHistory();
+  const record = records.find((r) => r.id === id);
+  if (!record) return;
+
+  record.assetStatus = assetStatus;
+  if (canonicalVideoUri) record.canonicalVideoUri = canonicalVideoUri;
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  } catch { /* ignore */ }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("video-history-updated"));
+  }
 }

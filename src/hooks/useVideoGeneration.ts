@@ -955,17 +955,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       // assembleFromJSON()이 JSON document를 먼저 구축하고,
       // validate → sanitize → resolve conflicts → serialize 순서로 처리.
       // 문자열 조합은 최종 provider 전송 직전에만 발생.
+      let assembled: ReturnType<typeof assembleFromJSON>;
       {
         const prevCutData = cutNumber > 1
           ? cuts.find((c) => c.cutNumber === cutNumber - 1)
           : undefined;
 
-        const assembled = assembleFromJSON({
+        assembled = assembleFromJSON({
           cut,
           config: cfg,
           prevCut: prevCutData,
         });
 
+        // JSON-first: structuredSequence가 1순위, prompt는 fallback
         prompt = sanitizeRenderedPrompt(assembled.prompt);
 
         // Kling용 negative prompt (Veo는 prompt에 이미 embed됨)
@@ -993,10 +995,11 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           updateClip(cutNumber, { qualityChecklist: checklist });
         }
 
-        // ── UI에 최종 프롬프트 저장 ──
+        // ── UI에 structuredSequence + 최종 프롬프트 저장 ──
         updateClip(cutNumber, {
           finalPrompt: prompt,
           assembledDebug: assembled.assembledDebug,
+          structuredSequence: assembled.structuredSequence,
         });
 
         // ── JSON-first 파이프라인 디버그 로그 ──────────────────────────────
@@ -1005,6 +1008,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           shotCategory: cut.shotCategory || "(없음)",
           isMapScene: assembled.assembledDebug.isMapScene,
           wordCount: assembled.wordCount,
+          hasStructuredSequence: !!assembled.structuredSequence,
+          structuredValidation: assembled.structuredSequence.validation,
           validationErrors: assembled.validation.issues.filter(i => i.severity === "error").length,
           validationWarnings: assembled.validation.issues.filter(i => i.severity === "warning").length,
           sanitizeFixes: assembled.sanitizeFixes.length,
@@ -1241,6 +1246,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         ...(engine === "kling" && cut.multiShot && cut.multiShot.length > 0
           ? { multiShot: cut.multiShot }
           : {}),
+        // JSON-first: structuredSequence가 1순위 source of truth
+        // 서버 우선순위: structuredSequence > videoPromptJson > prompt
+        ...(assembled.structuredSequence ? { structuredSequence: assembled.structuredSequence } : {}),
         // JSON 기반 프롬프트 (있으면 서버에서 provider별 렌더링)
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),

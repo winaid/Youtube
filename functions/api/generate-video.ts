@@ -18,6 +18,16 @@ import {
 
 type Env = GeminiEnv & KlingEnv;
 
+/** StructuredSequenceDocument의 서버 측 미러 (클라이언트에서 전달) */
+interface StructuredSequencePayload {
+  shotId: string;
+  cutNumber: number;
+  shotPlan: Record<string, unknown>;
+  videoPromptJson?: VideoPromptJson;
+  serializedPrompt?: string;
+  validation?: { valid: boolean; errors: number; warnings: number };
+}
+
 interface GenerateVideoRequest {
   // ── 공통 ──────────────────────────────────────────────────────────────────
   prompt: string;
@@ -25,7 +35,9 @@ interface GenerateVideoRequest {
   videoMode?: "generate" | "extend";   // generate: 독립 생성, extend: 이전 영상 이어서
   sourceVideo?: string;                // extend 모드의 소스 (Veo: gs:// URI, Kling: task_id/video_id)
   cutNumber?: number;                  // 진단 로그용 컷 번호
-  // ── JSON 프롬프트 (있으면 prompt보다 우선) ─────────────────────────────────
+  // ── JSON-first source of truth (최우선) ───────────────────────────────────
+  structuredSequence?: StructuredSequencePayload;
+  // ── JSON 프롬프트 (structuredSequence 없으면 fallback) ─────────────────────
   videoPromptJson?: VideoPromptJson;   // 구조화된 영상 프롬프트
   extendPromptJson?: ExtendPromptJson; // 구조화된 확장 프롬프트
   // ── Veo 전용 ──────────────────────────────────────────────────────────────
@@ -67,11 +79,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const req = await context.request.json() as GenerateVideoRequest;
 
-    // ── JSON 프롬프트 → provider별 string 렌더링 ─────────────────────────────
-    // videoPromptJson이 있으면 engine에 따라 적절한 string으로 렌더링
-    // 없으면 기존 prompt string 사용 (하위 호환)
-    if (req.videoPromptJson && !req.prompt) {
-      // 일단 Veo 기본으로 렌더링 (엔진 확정 전이므로, 아래에서 Kling이면 재렌더링)
+    // ── JSON-first 프롬프트 해석 (우선순위: structuredSequence > videoPromptJson > prompt) ─
+    // 1순위: structuredSequence.serializedPrompt (클라이언트에서 이미 직렬화됨)
+    // 2순위: videoPromptJson → provider별 렌더링
+    // 3순위: prompt string (하위 호환)
+    if (req.structuredSequence?.serializedPrompt && !req.prompt) {
+      req.prompt = req.structuredSequence.serializedPrompt;
+      console.log("[generate-video] structuredSequence.serializedPrompt 사용", {
+        cutNumber: req.cutNumber,
+        shotId: req.structuredSequence.shotId,
+        promptLen: req.prompt.length,
+        validation: req.structuredSequence.validation,
+      });
+    } else if (req.structuredSequence?.videoPromptJson && !req.prompt) {
+      req.prompt = renderVeoPromptFromJson(req.structuredSequence.videoPromptJson);
+      console.log("[generate-video] structuredSequence.videoPromptJson → Veo 렌더링", {
+        cutNumber: req.cutNumber,
+        promptLen: req.prompt.length,
+      });
+    } else if (req.videoPromptJson && !req.prompt) {
+      // 2순위: videoPromptJson (레거시 호환)
       req.prompt = renderVeoPromptFromJson(req.videoPromptJson);
     }
 
@@ -136,9 +163,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
 
       // JSON 프롬프트가 있으면 Kling 전용으로 재렌더링
-      if (req.videoPromptJson) {
-        req.prompt = renderKlingPromptFromJson(req.videoPromptJson);
-        console.log("[generate-video] Kling: JSON → prompt 렌더링 완료", { promptLen: req.prompt.length });
+      // 우선순위: structuredSequence.videoPromptJson > req.videoPromptJson
+      const klingJson = req.structuredSequence?.videoPromptJson || req.videoPromptJson;
+      if (klingJson) {
+        req.prompt = renderKlingPromptFromJson(klingJson);
+        console.log("[generate-video] Kling: JSON → prompt 렌더링 완료", {
+          promptLen: req.prompt.length,
+          source: req.structuredSequence?.videoPromptJson ? "structuredSequence" : "videoPromptJson",
+        });
       }
 
       const duration = toKlingDuration(req.durationSeconds ?? 8);

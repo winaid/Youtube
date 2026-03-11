@@ -8,9 +8,10 @@
  * 4. Provider별 capability에 따라 직렬화 전략 분기
  */
 
-import type { Cut, VeoGenerationConfig } from "@/types";
+import type { Cut, VeoGenerationConfig, StructuredSequenceDocument } from "@/types";
 import { collectFailureModeNegatives, getGenreTemplate } from "@/lib/prompt-architecture";
 import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
+import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -795,8 +796,11 @@ export function serializeForProvider(
 // ═══════════════════════════════════════════════════════════════════
 
 export interface AssembleFromJSONResult {
+  /** 직렬화된 prompt (string-only provider 호환) */
   prompt: string;
   negativePrompt: string;
+  /** JSON-first source of truth — 이것이 1순위 */
+  structuredSequence: StructuredSequenceDocument;
   document: SingleShotDocument;
   validation: ValidationResult;
   sanitizeFixes: string[];
@@ -855,9 +859,47 @@ export function assembleFromJSON(input: {
     ...resolvedDoc.negatives.user,
   ];
 
+  // Build StructuredSequenceDocument — JSON-first source of truth
+  const shotPlan = input.cut.videoPromptJson
+    ? videoPromptJsonToShotPlan(
+        input.cut.videoPromptJson,
+        input.cut.cutNumber - 1,
+        input.config.durationSeconds || 8,
+      )
+    : {
+        shotId: `shot_${input.cut.cutNumber}`,
+        startSec: 0,
+        endSec: input.config.durationSeconds || 8,
+        shotType: "medium_action" as const,
+        camera: { framing: resolvedDoc.camera.framing as "MS", angle: "eye_level" as const, motion: resolvedDoc.camera.motion },
+        subject: { primary: resolvedDoc.subject.primary },
+        environment: resolvedDoc.scene.environment,
+        action: resolvedDoc.subject.action,
+        visualDirectives: [],
+        negativeDirectives: [...new Set(allNeg)].slice(0, 30),
+        moodLighting: resolvedDoc.scene.moodLighting,
+      };
+
+  const structuredSequence: StructuredSequenceDocument = {
+    shotId: `shot_${input.cut.cutNumber}`,
+    cutNumber: input.cut.cutNumber,
+    shotPlan,
+    videoPromptJson: input.cut.videoPromptJson,
+    serializedPrompt: serialized.prompt,
+    validation: {
+      valid: validation.valid,
+      errors: validation.issues.filter(i => i.severity === "error").length,
+      warnings: validation.issues.filter(i => i.severity === "warning").length,
+      issues: validation.issues.map(i => ({ rule: i.rule, severity: i.severity, message: i.message })),
+    },
+    sanitizeFixes,
+    conflictResolutions,
+  };
+
   return {
     prompt: serialized.prompt,
     negativePrompt: serialized.negativePrompt,
+    structuredSequence,
     document: resolvedDoc,
     validation,
     sanitizeFixes,
