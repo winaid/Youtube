@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -90,8 +90,8 @@ ${cutDescriptions}
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Review API error:", res.status, errText.slice(0, 300));
-      return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
+      console.error("review-video Gemini error:", res.status, errText.slice(0, 500));
+      return geminiErrorResponse(res, errText, "review-video");
     }
 
     const data = await res.json() as {

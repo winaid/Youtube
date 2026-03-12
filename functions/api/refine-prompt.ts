@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -227,8 +227,8 @@ ${String(feedback || "Make it better")}
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Refine prompt error:", res.status, errText);
-      return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
+      console.error("refine-prompt Gemini error:", res.status, errText.slice(0, 500));
+      return geminiErrorResponse(res, errText, "refine-prompt");
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -50,7 +50,7 @@ JSON 배열로 응답:
     if (!res.ok) {
       const errText = await res.text();
       console.error("SRT generation API error:", res.status, errText);
-      return Response.json({ error: `API error: ${res.status}` }, { status: 500 });
+      return geminiErrorResponse(res, errText, "generate-srt");
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

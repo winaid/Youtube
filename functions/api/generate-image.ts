@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_IMAGE, GEMINI_MODEL_IMAGE_FB } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_IMAGE, GEMINI_MODEL_IMAGE_FB, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -88,10 +88,7 @@ ${prompt}`;
     if (!fallbackRes.ok) {
       const errText = await fallbackRes.text();
       console.error("Nano Banana Pro fallback error:", fallbackRes.status, errText.slice(0, 500));
-      return Response.json(
-        { error: `이미지 생성 실패 (${fallbackRes.status}). 프롬프트를 단순화해보세요.`, details: errText.slice(0, 200) },
-        { status: 500 }
-      );
+      return geminiErrorResponse(fallbackRes, errText, "generate-image");
     }
 
     const images = extractImages(await fallbackRes.json());

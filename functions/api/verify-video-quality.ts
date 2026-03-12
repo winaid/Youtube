@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -157,9 +157,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         res.status,
         errText.slice(0, 300)
       );
-      // ⚠️ 이전 버그: Gemini 오류 시 HTTP 500 반환 → 클라이언트가 에러 로그 스팸
-      // soft-fail(HTTP 200) 로 변경 — 품질 검증 실패가 생성 자체를 막지 않음
-      return Response.json(softFail(`Gemini API 오류 (${res.status})`));
+      return geminiErrorResponse(res, errText, "verify-video-quality");
     }
 
     const data = await res.json() as {

@@ -227,3 +227,63 @@ export async function streamingGenerate(
 
   return { text: parts.join(""), truncated: false };
 }
+
+// === 에러 전파 헬퍼 ===
+
+/**
+ * Gemini API 에러 응답을 파싱하여 구체적인 에러 정보를 포함한 Response를 생성.
+ * 모든 엔드포인트에서 `if (!res.ok)` 분기에서 사용.
+ */
+export function geminiErrorResponse(
+  res: { status: number },
+  errText: string,
+  context: string,
+): Response {
+  // 구조화된 에러인지 확인 (fetchWithAuth가 반환한 것)
+  let parsed: Record<string, unknown> | null = null;
+  try { parsed = JSON.parse(errText); } catch { /* raw text */ }
+
+  const code = (parsed?.code as string) || classifyGeminiError(res.status, errText);
+  const help = (parsed?.help as string) || getErrorHelp(code);
+  const detail = (parsed?.detail as string) || errText.slice(0, 500);
+
+  const errorMsg = (parsed?.error as string) || `Gemini API 오류 (${res.status})`;
+
+  return Response.json({
+    error: `[${context}] ${errorMsg}`,
+    code,
+    help,
+    detail,
+    status: res.status,
+  }, { status: res.status >= 400 && res.status < 600 ? res.status : 500 });
+}
+
+function classifyGeminiError(status: number, body: string): string {
+  if (status === 401) return "INVALID_API_KEY";
+  if (status === 403 && /quota|RESOURCE_EXHAUSTED/i.test(body)) return "QUOTA_EXCEEDED";
+  if (status === 403) return "PERMISSION_DENIED";
+  if (status === 404 && /not found|deprecated|does not exist/i.test(body)) return "MODEL_NOT_FOUND";
+  if (status === 429) return "RATE_LIMITED";
+  if (status === 500 || status === 502 || status === 503) return "SERVER_ERROR";
+  return "UNKNOWN_ERROR";
+}
+
+function getErrorHelp(code: string): string {
+  switch (code) {
+    case "MISSING_API_KEY":
+      return "Cloudflare Pages 환경변수에서 GEMINI_API_KEY를 설정하세요. Google AI Studio(aistudio.google.com)에서 발급.";
+    case "INVALID_API_KEY":
+      return "GEMINI_API_KEY가 잘못되었습니다. Google AI Studio에서 키를 재발급하고 Cloudflare 환경변수를 업데이트하세요.";
+    case "MODEL_NOT_FOUND":
+      return "모델이 deprecated되었거나 존재하지 않습니다. _gemini-keys.ts의 모델 상수를 확인하세요.";
+    case "QUOTA_EXCEEDED":
+    case "RATE_LIMITED":
+      return "API 할당량 또는 요청 속도 제한 초과. 잠시 후 재시도하거나 GEMINI_API_KEY_2를 추가 설정하세요.";
+    case "PERMISSION_DENIED":
+      return "API 키에 해당 모델 접근 권한이 없습니다. Google AI Studio에서 권한을 확인하세요.";
+    case "SERVER_ERROR":
+      return "Gemini 서버 일시 오류. 잠시 후 다시 시도하세요.";
+    default:
+      return "예상치 못한 오류입니다. 브라우저 콘솔과 Cloudflare 로그를 확인하세요.";
+  }
+}

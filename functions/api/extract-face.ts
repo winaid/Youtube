@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -76,8 +76,8 @@ JSON으로만 응답:
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini Vision error:", res.status, errText);
-      return Response.json({ error: `Vision API error: ${res.status}` }, { status: 500 });
+      console.error("extract-face Gemini error:", res.status, errText.slice(0, 500));
+      return geminiErrorResponse(res, errText, "extract-face");
     }
 
     const data = await res.json() as {

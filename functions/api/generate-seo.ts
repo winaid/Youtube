@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -100,10 +100,7 @@ Optimize for the ${input.region || "Global"} audience. Consider trending formats
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Gemini API error:", errorText);
-      return new Response(
-        JSON.stringify({ error: "Gemini API error", details: errorText }),
-        { status: response.status, headers: { "Content-Type": "application/json" } }
-      );
+      return geminiErrorResponse(response, errorText, "generate-seo");
     }
 
     const data = (await response.json()) as {

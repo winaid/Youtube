@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -82,11 +82,7 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
     if (!res.ok) {
       const errText = await res.text();
       console.error("Gemini error:", res.status, errText);
-      return Response.json({
-        error: `AI 분석 실패: ${res.status}`,
-        detail: errText.slice(0, 500),
-        authMode: context.env.GEMINI_API_KEY ? "api-key" : context.env.GEMINI_API_KEY_2 ? "api-key-2" : "none",
-      }, { status: 500 });
+      return geminiErrorResponse(res, errText, "analyze-cuts");
     }
 
     const data = await res.json() as {

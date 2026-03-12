@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -89,8 +89,8 @@ viral: sfx-ding, sfx-wrong-buzzer, sfx-record-scratch, sfx-tik-tok-oh-no`;
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini SFX API error:", res.status, errText);
-      return Response.json({ error: `API error: ${res.status}` }, { status: 500 });
+      console.error("match-sfx Gemini error:", res.status, errText.slice(0, 500));
+      return geminiErrorResponse(res, errText, "match-sfx");
     }
 
     const data = await res.json() as {

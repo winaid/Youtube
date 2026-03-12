@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -117,10 +117,7 @@ Compare every unique pair of cuts. Be specific about differences in facial featu
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Gemini API error:", errorText);
-      return new Response(
-        JSON.stringify({ error: "Gemini API error", details: errorText }),
-        { status: response.status, headers: { "Content-Type": "application/json" } }
-      );
+      return geminiErrorResponse(response, errorText, "verify-character-consistency");
     }
 
     const data = (await response.json()) as {

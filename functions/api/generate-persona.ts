@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -61,8 +61,8 @@ ${techniques ? "5. 위 '시그니처 기법' 분석 결과를 반드시 반영�
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini API error:", res.status, errText);
-      return Response.json({ error: `Gemini API error: ${res.status}` }, { status: 500 });
+      console.error("generate-persona Gemini error:", res.status, errText.slice(0, 500));
+      return geminiErrorResponse(res, errText, "generate-persona");
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

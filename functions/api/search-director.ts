@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -46,11 +46,8 @@ If no match, return empty array [].`;
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini API error:", res.status, errText);
-      return Response.json(
-        { error: `Gemini API error: ${res.status}`, directors: [] },
-        { status: 500 }
-      );
+      console.error("search-director Gemini error:", res.status, errText.slice(0, 500));
+      return geminiErrorResponse(res, errText, "search-director");
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

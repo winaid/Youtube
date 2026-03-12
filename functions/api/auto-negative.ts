@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -169,12 +169,9 @@ Return ONLY the negative prompt string, nothing else.`;
     });
 
     if (!res.ok) {
-      // Fallback to local
-      const negativePrompt = generateLocalNegative(
-        String(videoPrompt),
-        String(sceneDescription || "")
-      );
-      return Response.json({ negativePrompt, mode: "local-fallback" });
+      const errText = await res.text();
+      console.error("Auto negative Gemini error:", res.status, errText);
+      return geminiErrorResponse(res, errText, "auto-negative");
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

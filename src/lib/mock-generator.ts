@@ -62,11 +62,22 @@ async function fetchGeminiCuts(
       const errBody = await res.json().catch(() => ({} as Record<string, string>));
       const eb = errBody as Record<string, string>;
       const cause = eb.cause || "";
+      const code = eb.code || "";
       const detail = eb.detail || eb.error || "unknown";
+      const help = eb.help || "";
+      if (code === "MISSING_API_KEY") {
+        throw new Error(`MISSING_API_KEY: ${help || "GEMINI_API_KEY 환경변수를 설정하세요."}`);
+      }
+      if (code === "MODEL_NOT_FOUND") {
+        throw new Error(`MODEL_NOT_FOUND: ${help || "모델이 deprecated됨. _gemini-keys.ts 확인."}`);
+      }
+      if (code === "INVALID_API_KEY") {
+        throw new Error(`INVALID_API_KEY: ${help || "API 키가 유효하지 않습니다."}`);
+      }
       throw new Error(
         cause === "MAX_TOKENS"
           ? `토큰 한도 초과 (step ${eb.step || "?"}): ${detail}`
-          : `API error: ${res.status} — ${detail}`,
+          : `API error: ${res.status} [${code || "UNKNOWN"}] — ${detail}`,
       );
     }
 

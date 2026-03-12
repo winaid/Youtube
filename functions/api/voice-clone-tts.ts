@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -57,7 +57,7 @@ ${dialogues ? `## Existing Dialogues:\n${dialogues.map((d) => `${d.characterId}:
     if (!res.ok) {
       const errText = await res.text();
       console.error("Voice clone TTS error:", res.status, errText);
-      return Response.json({ error: `API error: ${res.status}` }, { status: 500 });
+      return geminiErrorResponse(res, errText, "voice-clone-tts");
     }
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

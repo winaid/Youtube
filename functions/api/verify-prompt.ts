@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -475,14 +475,7 @@ ${sceneTypeCriteria}`;
     if (!res.ok) {
       const errText = await res.text();
       console.error("[verify-prompt] Gemini API 오류:", res.status, errText.slice(0, 300));
-      return Response.json({
-        scoringFailure: true,
-        overallScore: 50,
-        detectedSceneType: sceneType,
-        issues: [`채점 API 오류 (HTTP ${res.status}) — 생성은 계속 진행 가능`],
-        scores: defaultScores,
-        suggestions: [],
-      });
+      return geminiErrorResponse(res, errText, "verify-prompt");
     }
 
     const data = await res.json() as {
