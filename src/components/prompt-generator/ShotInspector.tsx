@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { EditableShot } from "@/lib/shot-editing";
+import type { ShotRegenerateStatus } from "@/types";
 import { FRAMING_OPTIONS, ANGLE_OPTIONS } from "@/lib/shot-editing";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -20,8 +21,11 @@ import { FRAMING_OPTIONS, ANGLE_OPTIONS } from "@/lib/shot-editing";
 
 interface ShotInspectorProps {
   shot: EditableShot;
+  shotStatus: ShotRegenerateStatus;
+  variantCount: number;
   onUpdateField: (path: string, value: string) => void;
   onSetDuration: (newDuration: number) => void;
+  onRegenerate: (shotId: string) => void;
   onClose: () => void;
 }
 
@@ -41,11 +45,15 @@ const MOTION_OPTIONS = [
 
 export default function ShotInspector({
   shot,
+  shotStatus,
+  variantCount,
   onUpdateField,
   onSetDuration,
+  onRegenerate,
   onClose,
 }: ShotInspectorProps) {
   const duration = shot.endSec - shot.startSec;
+  const isGenerating = shotStatus === "generating";
 
   const handleDurationChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,14 +72,51 @@ export default function ShotInspector({
           </CardTitle>
           <p className="text-[10px] text-muted-foreground mt-0.5">
             {shot.shotId}
+            {variantCount > 0 && (
+              <span className="ml-1" style={{ color: "#8b5cf6" }}>
+                ({variantCount}개 variant)
+              </span>
+            )}
           </p>
         </div>
-        <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onClose}>
-          닫기
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {/* Regenerate button */}
+          <Button
+            size="sm"
+            className="h-6 text-[10px] text-white"
+            style={{ background: isGenerating ? "#f59e0b" : "#8b5cf6" }}
+            onClick={() => onRegenerate(shot.shotId)}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                생성 중
+              </span>
+            ) : (
+              "이 샷 다시 생성"
+            )}
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onClose}>
+            닫기
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-3 pt-3">
+        {/* Status indicator */}
+        {shotStatus === "generating" && (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs" style={{ background: "#f59e0b10", border: "1px solid #f59e0b30", color: "#b37700" }}>
+            <div className="w-2.5 h-2.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            이 샷만 다시 생성하고 있습니다. 나머지 샷은 영향 없습니다.
+          </div>
+        )}
+        {shotStatus === "failed" && (
+          <div className="px-2.5 py-1.5 rounded-md text-xs" style={{ background: "#ef444410", border: "1px solid #ef444430", color: "#ef4444" }}>
+            샷 재생성 실패. 다시 시도하세요.
+          </div>
+        )}
+
         {/* Timing */}
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">

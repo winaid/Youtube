@@ -26,7 +26,21 @@ import {
   CharacterFaceRef,
   CutFeedback,
   DEFAULT_VEO_CONFIG,
+  type StructuredSequenceDocument,
+  type ShotVariant,
 } from "@/types";
+import {
+  createInitialVariantState,
+  setShotStatus,
+  attachShotVariant,
+  setActiveShotVariant as setActiveShotVariantState,
+  updateShotVariant,
+  generateVariantId,
+  buildShotRegeneratePayload,
+  payloadToStructuredSequence,
+  type ShotVariantState,
+} from "@/lib/shot-variants";
+import { extractEditable } from "@/lib/shot-editing";
 
 const POLL_MAX_ATTEMPTS = 72; // 최대 6분
 const POLL_BACKOFF = [5000, 7500, 10000, 15000, 20000]; // 에러 시 백오프
@@ -1860,13 +1874,222 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   }, []);
 
   /** 특정 클립의 structuredSequence를 업데이트 (시퀀스 타임라인 편집기용) */
-  const updateClipStructuredSequence = useCallback((cutNumber: number, updated: import("@/types").StructuredSequenceDocument) => {
+  const updateClipStructuredSequence = useCallback((cutNumber: number, updated: StructuredSequenceDocument) => {
     setState((prev) => ({
       ...prev,
       clips: prev.clips.map((c) =>
         c.cutNumber === cutNumber ? { ...c, structuredSequence: updated } : c,
       ),
     }));
+  }, []);
+
+  // ═══════════════════════════════════════════════════════════════
+  // Shot-level Variant State (2차: 샷별 부분 재생성)
+  // ═══════════════════════════════════════════════════════════════
+
+  const [shotVariantState, setShotVariantState] = useState<ShotVariantState>(createInitialVariantState);
+
+  /**
+   * 특정 shot만 재생성.
+   * 전체 sequence regenerate가 아닌, selectedShotId 기준 shot-level payload로 생성.
+   */
+  const regenerateShot = useCallback(async (
+    cutNumber: number,
+    shotId: string,
+    currentDoc: StructuredSequenceDocument,
+  ) => {
+    const clip = state.clips.find(c => c.cutNumber === cutNumber);
+    if (!clip?.structuredSequence) return;
+
+    const editable = extractEditable(currentDoc);
+    const payload = buildShotRegeneratePayload(editable, currentDoc, shotId);
+    if (!payload) return;
+
+    // Create a minimal structuredSequence for this single shot
+    const shotSequence = payloadToStructuredSequence(payload, currentDoc);
+
+    // Generate variant ID
+    const variantId = generateVariantId();
+    const shotDuration = payload.shot.endSec - payload.shot.startSec;
+
+    // Create initial variant
+    const variant: ShotVariant = {
+      variantId,
+      shotId,
+      status: "generating",
+      createdAt: Date.now(),
+      generationMeta: {
+        engine: "kling",
+        mode: "generate",
+        durationSec: shotDuration,
+        hasNeighborContext: !!(payload.previousShot || payload.nextShot),
+      },
+    };
+
+    // Update variant state: set status + attach variant
+    setShotVariantState(prev => {
+      let next = setShotStatus(prev, shotId, "generating");
+      next = attachShotVariant(next, shotId, variant);
+      return next;
+    });
+
+    try {
+      // Build API request body — same structure as generateCut but for single shot
+      const cfg = state.config;
+      const body: Record<string, unknown> = {
+        structuredSequence: shotSequence,
+        cutNumber,
+        engine: "kling",
+        videoMode: "generate", // shot-level always generates fresh
+        mode: cfg.mode,
+        durationSeconds: Math.min(cfg.durationSeconds ?? 8, Math.max(4, Math.ceil(shotDuration))),
+        resolution: cfg.resolution,
+        aspectRatio: cfg.aspectRatio,
+        generateAudio: cfg.generateAudio,
+        negativePrompt: cfg.negativePrompt || undefined,
+        personGeneration: cfg.personGeneration,
+      };
+
+      console.log(`[SHOT REGEN] ${shotId} in CUT ${cutNumber}`, {
+        variantId,
+        shotDuration,
+        hasNeighborContext: variant.generationMeta?.hasNeighborContext,
+        payload: {
+          subject: payload.shot.subject,
+          action: payload.shot.action,
+          camera: payload.shot.camera,
+        },
+      });
+
+      const res = await fetch("/api/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "API 오류" }));
+        const errMsg = errData.error || `HTTP ${res.status}`;
+
+        setShotVariantState(prev => {
+          let next = setShotStatus(prev, shotId, "failed");
+          next = updateShotVariant(next, shotId, variantId, {
+            status: "failed",
+            error: errMsg,
+          });
+          return next;
+        });
+        return;
+      }
+
+      const data = await res.json() as {
+        operationName?: string;
+        taskId?: string;
+        engine?: string;
+        modeUsed?: string;
+      };
+
+      // Update variant with operationName for polling
+      setShotVariantState(prev =>
+        updateShotVariant(prev, shotId, variantId, {
+          operationName: data.operationName,
+        }),
+      );
+
+      // Start polling for this shot variant
+      if (data.operationName) {
+        pollShotVariant(cutNumber, shotId, variantId, data.operationName);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      setShotVariantState(prev => {
+        let next = setShotStatus(prev, shotId, "failed");
+        next = updateShotVariant(next, shotId, variantId, {
+          status: "failed",
+          error: errMsg,
+        });
+        return next;
+      });
+    }
+  }, [state.clips, state.config]);
+
+  /**
+   * shot variant 전용 폴링. 기존 cut 폴링과 분리.
+   */
+  const pollShotVariant = useCallback(async (
+    cutNumber: number,
+    shotId: string,
+    variantId: string,
+    operationName: string,
+  ) => {
+    const maxAttempts = 72;
+    let attempts = 0;
+
+    const poll = async () => {
+      attempts++;
+      if (attempts > maxAttempts) {
+        setShotVariantState(prev => {
+          let next = setShotStatus(prev, shotId, "failed");
+          next = updateShotVariant(next, shotId, variantId, {
+            status: "failed",
+            error: "폴링 시간 초과 (6분)",
+          });
+          return next;
+        });
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/check-video?operationName=${encodeURIComponent(operationName)}&engine=kling`);
+        if (!res.ok) {
+          setTimeout(poll, 5000);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.status === "COMPLETED" && data.videoUri) {
+          setShotVariantState(prev => {
+            let next = setShotStatus(prev, shotId, "success");
+            next = updateShotVariant(next, shotId, variantId, {
+              status: "success",
+              videoUrl: data.videoUri,
+              thumbnailUrl: data.thumbnailUri,
+            });
+            // Auto-activate first successful variant if none active
+            if (!prev.activeVariantIds[shotId]) {
+              next = setActiveShotVariantState(next, shotId, variantId);
+            }
+            return next;
+          });
+          console.log(`[SHOT REGEN] ${shotId} variant ${variantId} completed`, { videoUri: data.videoUri });
+        } else if (data.status === "FAILED") {
+          setShotVariantState(prev => {
+            let next = setShotStatus(prev, shotId, "failed");
+            next = updateShotVariant(next, shotId, variantId, {
+              status: "failed",
+              error: data.error || "생성 실패",
+            });
+            return next;
+          });
+        } else {
+          // Still running — continue polling
+          const interval = attempts < 10 ? 5000 : 7000;
+          setTimeout(poll, interval);
+        }
+      } catch {
+        setTimeout(poll, 5000);
+      }
+    };
+
+    setTimeout(poll, 3000); // Initial delay
+  }, []);
+
+  /**
+   * shot variant 채택: activeVariantId 갱신.
+   */
+  const acceptShotVariant = useCallback((shotId: string, variantId: string) => {
+    setShotVariantState(prev => setActiveShotVariantState(prev, shotId, variantId));
   }, []);
 
   return {
@@ -1887,6 +2110,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     regenerateAllFromFeedback,
     dismissReview,
     updateClipStructuredSequence,
+    // Shot-level regenerate (2차)
+    shotVariantState,
+    regenerateShot,
+    acceptShotVariant,
     completedCount,
     totalCount,
     progress,

@@ -961,6 +961,13 @@ export default function ResultPanel({
                   onApply={(updated) => {
                     videoGen.updateClipStructuredSequence(clip.cutNumber, updated);
                   }}
+                  onRegenerateShot={(shotId, currentDoc) => {
+                    videoGen.regenerateShot(clip.cutNumber, shotId, currentDoc);
+                  }}
+                  variantState={videoGen.shotVariantState}
+                  onAcceptVariant={(shotId, variantId) => {
+                    videoGen.acceptShotVariant(shotId, variantId);
+                  }}
                 />
               ))
           )}

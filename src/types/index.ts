@@ -521,6 +521,37 @@ export interface VideoVariant {
   seed?: string;
 }
 
+// ===== 샷 단위 Variant (시퀀스 타임라인 편집기용) =====
+
+export type ShotRegenerateStatus = "idle" | "generating" | "success" | "failed";
+
+export interface ShotVariant {
+  variantId: string;
+  shotId: string;
+  status: ShotRegenerateStatus;
+  createdAt: number;
+  /** 생성된 영상 URL */
+  videoUrl?: string;
+  /** 썸네일 / 미리보기 이미지 */
+  thumbnailUrl?: string;
+  /** Kling task ID (폴링용) */
+  operationName?: string;
+  /** 품질 점수 (QA 결과) */
+  qualityScore?: number;
+  /** 생성에 사용된 prompt preview (디버그 전용) */
+  sourcePromptPreview?: string;
+  /** 에러 메시지 (실패 시) */
+  error?: string;
+  /** 생성 메타 정보 */
+  generationMeta?: {
+    engine: string;
+    mode: string;
+    durationSec: number;
+    /** 이전/다음 shot context 포함 여부 */
+    hasNeighborContext: boolean;
+  };
+}
+
 export interface PromptVerification {
   overallScore: number;
   /** 감지된 씬 타입 */

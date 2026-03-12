@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ShotTimeline from "./ShotTimeline";
 import ShotInspector from "./ShotInspector";
-import type { StructuredSequenceDocument } from "@/types";
+import ShotVariantPanel from "./ShotVariantPanel";
+import type { StructuredSequenceDocument, ShotRegenerateStatus } from "@/types";
 import {
   extractEditable,
   applyEditsToDocument,
@@ -19,6 +20,13 @@ import {
   validateSequenceDensity,
   type EditableSequence,
 } from "@/lib/shot-editing";
+import {
+  createInitialVariantState,
+  getShotVariants,
+  getActiveShotVariantId,
+  getShotStatus,
+  type ShotVariantState,
+} from "@/lib/shot-variants";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -29,6 +37,12 @@ interface SequenceTimelineEditorProps {
   structuredSequence: StructuredSequenceDocument;
   /** 편집 결과를 상위에 전달 (apply 시 호출) */
   onApply: (updated: StructuredSequenceDocument) => void;
+  /** 샷 재생성 요청 (상위에서 API 호출) */
+  onRegenerateShot?: (shotId: string, structuredSequence: StructuredSequenceDocument) => void;
+  /** 외부에서 주입되는 variant 상태 (useVideoGeneration에서 관리) */
+  variantState?: ShotVariantState;
+  /** variant 채택 콜백 */
+  onAcceptVariant?: (shotId: string, variantId: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -38,6 +52,9 @@ interface SequenceTimelineEditorProps {
 export default function SequenceTimelineEditor({
   structuredSequence,
   onApply,
+  onRegenerateShot,
+  variantState: externalVariantState,
+  onAcceptVariant,
 }: SequenceTimelineEditorProps) {
   // ── State: original vs editable ──────────────────────────────
   const [editable, setEditable] = useState<EditableSequence>(() =>
@@ -46,12 +63,50 @@ export default function SequenceTimelineEditor({
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
+  // variant state: prefer external (from useVideoGeneration), fallback to local
+  const [localVariantState] = useState<ShotVariantState>(createInitialVariantState);
+  const variantState = externalVariantState ?? localVariantState;
+
   // ── Derived ──────────────────────────────────────────────────
   const densityWarning = useMemo(() => validateSequenceDensity(editable), [editable]);
 
   const selectedShot = useMemo(
     () => editable.shots.find((s) => s.shotId === selectedShotId) ?? null,
     [editable.shots, selectedShotId],
+  );
+
+  // shot statuses map for timeline
+  const shotStatuses = useMemo(() => {
+    const map: Record<string, ShotRegenerateStatus> = {};
+    for (const shot of editable.shots) {
+      map[shot.shotId] = getShotStatus(variantState, shot.shotId);
+    }
+    return map;
+  }, [editable.shots, variantState]);
+
+  // shot variant counts for timeline
+  const shotVariantCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const shot of editable.shots) {
+      map[shot.shotId] = getShotVariants(variantState, shot.shotId).length;
+    }
+    return map;
+  }, [editable.shots, variantState]);
+
+  // selected shot's variants
+  const selectedShotVariants = useMemo(
+    () => selectedShotId ? getShotVariants(variantState, selectedShotId) : [],
+    [variantState, selectedShotId],
+  );
+
+  const selectedShotActiveVariantId = useMemo(
+    () => selectedShotId ? getActiveShotVariantId(variantState, selectedShotId) : null,
+    [variantState, selectedShotId],
+  );
+
+  const selectedShotStatus = useMemo(
+    () => selectedShotId ? getShotStatus(variantState, selectedShotId) : "idle" as const,
+    [variantState, selectedShotId],
   );
 
   // ── Mutation helpers (all immutable via shot-editing.ts) ─────
@@ -105,6 +160,25 @@ export default function SequenceTimelineEditor({
       apply(setShotDuration(editable, selectedShotId, newDuration));
     },
     [editable, selectedShotId, apply],
+  );
+
+  // ── Regenerate ──────────────────────────────────────────────
+  const handleRegenerate = useCallback(
+    (shotId: string) => {
+      if (!onRegenerateShot) return;
+      // Apply current edits first, then pass to regeneration
+      const currentDoc = applyEditsToDocument(structuredSequence, editable);
+      onRegenerateShot(shotId, currentDoc);
+    },
+    [onRegenerateShot, structuredSequence, editable],
+  );
+
+  const handleAcceptVariant = useCallback(
+    (variantId: string) => {
+      if (!selectedShotId || !onAcceptVariant) return;
+      onAcceptVariant(selectedShotId, variantId);
+    },
+    [selectedShotId, onAcceptVariant],
   );
 
   // ── Apply / Reset ───────────────────────────────────────────
@@ -171,12 +245,15 @@ export default function SequenceTimelineEditor({
             sequence={editable}
             selectedShotId={selectedShotId}
             densityWarning={densityWarning}
+            shotStatuses={shotStatuses}
+            shotVariantCounts={shotVariantCounts}
             onSelectShot={setSelectedShotId}
             onSplitShot={handleSplit}
             onMergeWithPrev={handleMergeWithPrev}
             onMergeWithNext={handleMergeWithNext}
             onMoveUp={handleMoveUp}
             onMoveDown={handleMoveDown}
+            onRegenerate={handleRegenerate}
           />
         </CardContent>
       </Card>
@@ -185,9 +262,24 @@ export default function SequenceTimelineEditor({
       {selectedShot && (
         <ShotInspector
           shot={selectedShot}
+          shotStatus={selectedShotStatus}
+          variantCount={selectedShotVariants.length}
           onUpdateField={handleUpdateField}
           onSetDuration={handleSetDuration}
+          onRegenerate={handleRegenerate}
           onClose={() => setSelectedShotId(null)}
+        />
+      )}
+
+      {/* Variant Panel (shown when selected shot has variants or is generating) */}
+      {selectedShotId && (selectedShotVariants.length > 0 || selectedShotStatus !== "idle") && (
+        <ShotVariantPanel
+          shotId={selectedShotId}
+          status={selectedShotStatus}
+          variants={selectedShotVariants}
+          activeVariantId={selectedShotActiveVariantId}
+          onAcceptVariant={handleAcceptVariant}
+          onRegenerate={() => handleRegenerate(selectedShotId)}
         />
       )}
     </div>

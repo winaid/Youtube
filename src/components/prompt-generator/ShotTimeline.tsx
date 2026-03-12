@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { EditableShot, EditableSequence, SequenceDensityWarning } from "@/lib/shot-editing";
+import type { ShotRegenerateStatus } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -13,12 +14,17 @@ interface ShotTimelineProps {
   sequence: EditableSequence;
   selectedShotId: string | null;
   densityWarning: SequenceDensityWarning;
+  /** shotId → regenerate status */
+  shotStatuses: Record<string, ShotRegenerateStatus>;
+  /** shotId → variant count */
+  shotVariantCounts: Record<string, number>;
   onSelectShot: (shotId: string) => void;
   onSplitShot: (shotId: string) => void;
   onMergeWithPrev: (shotId: string) => void;
   onMergeWithNext: (shotId: string) => void;
   onMoveUp: (shotId: string) => void;
   onMoveDown: (shotId: string) => void;
+  onRegenerate: (shotId: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -35,6 +41,19 @@ function getShotColor(index: number): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Status overlay helpers
+// ═══════════════════════════════════════════════════════════════════
+
+function getStatusOverlay(status: ShotRegenerateStatus | undefined): { show: boolean; icon: string; color: string } {
+  switch (status) {
+    case "generating": return { show: true, icon: "⟳", color: "#f59e0b" };
+    case "success": return { show: true, icon: "✓", color: "#22c55e" };
+    case "failed": return { show: true, icon: "✗", color: "#ef4444" };
+    default: return { show: false, icon: "", color: "" };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Component
 // ═══════════════════════════════════════════════════════════════════
 
@@ -42,12 +61,15 @@ export default function ShotTimeline({
   sequence,
   selectedShotId,
   densityWarning,
+  shotStatuses,
+  shotVariantCounts,
   onSelectShot,
   onSplitShot,
   onMergeWithPrev,
   onMergeWithNext,
   onMoveUp,
   onMoveDown,
+  onRegenerate,
 }: ShotTimelineProps) {
   const totalDuration = sequence.durationSec;
   const shots = sequence.shots;
@@ -95,6 +117,9 @@ export default function ShotTimeline({
           const isSelected = shot.shotId === selectedShotId;
           const color = getShotColor(i);
           const duration = (shot.endSec - shot.startSec).toFixed(1);
+          const status = shotStatuses[shot.shotId];
+          const overlay = getStatusOverlay(status);
+          const variantCount = shotVariantCounts[shot.shotId] ?? 0;
 
           return (
             <button
@@ -112,6 +137,30 @@ export default function ShotTimeline({
             >
               <span className="truncate px-0.5 max-w-full">{shot.camera.framing}</span>
               <span className="opacity-70">{duration}s</span>
+
+              {/* Status overlay */}
+              {overlay.show && (
+                <div
+                  className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold"
+                  style={{ background: overlay.color, color: "white" }}
+                >
+                  {status === "generating" ? (
+                    <span className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    overlay.icon
+                  )}
+                </div>
+              )}
+
+              {/* Variant count badge */}
+              {variantCount > 0 && (
+                <div
+                  className="absolute bottom-0.5 right-0.5 text-[7px] px-1 rounded-full font-bold"
+                  style={{ background: "#8b5cf6", color: "white" }}
+                >
+                  {variantCount}
+                </div>
+              )}
             </button>
           );
         })}
@@ -172,6 +221,16 @@ export default function ShotTimeline({
           >
             &darr;
           </Button>
+          <div className="w-px h-7 bg-border" />
+          <Button
+            size="sm"
+            className="h-7 text-xs text-white"
+            style={{ background: "#8b5cf6" }}
+            onClick={() => onRegenerate(selectedShotId)}
+            disabled={shotStatuses[selectedShotId] === "generating"}
+          >
+            {shotStatuses[selectedShotId] === "generating" ? "생성 중..." : "이 샷 다시 생성"}
+          </Button>
         </div>
       )}
 
@@ -180,6 +239,8 @@ export default function ShotTimeline({
         {shots.map((shot, i) => {
           const isSelected = shot.shotId === selectedShotId;
           const color = getShotColor(i);
+          const status = shotStatuses[shot.shotId];
+          const variantCount = shotVariantCounts[shot.shotId] ?? 0;
 
           return (
             <button
@@ -201,6 +262,17 @@ export default function ShotTimeline({
               <span className="truncate text-muted-foreground">
                 {shot.subject} — {shot.action}
               </span>
+
+              {/* Status indicator in list */}
+              {status === "generating" && (
+                <span className="w-2.5 h-2.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0" />
+              )}
+              {variantCount > 0 && (
+                <Badge className="text-[8px] px-1 shrink-0" style={{ background: "#8b5cf620", color: "#8b5cf6" }}>
+                  {variantCount}v
+                </Badge>
+              )}
+
               <Badge variant="outline" className="ml-auto text-[10px] shrink-0">
                 {shot.startSec}s–{shot.endSec}s
               </Badge>
