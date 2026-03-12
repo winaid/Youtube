@@ -1,0 +1,280 @@
+/**
+ * physics-rules.ts — Scene-specific physics constraints
+ *
+ * 환경에 맞는 물리 법칙을 감지하고 금지 표현을 생성.
+ * lunar scene은 wind/atmosphere/haze 금지, black sky 강제 등.
+ *
+ * grep: detectPhysicsRules, enforcePhysicsNegatives, PHYSICS_ENVIRONMENTS
+ */
+
+import type { PhysicsRules } from "@/types";
+
+// ═══════════════════════════════════════════════════════════════════
+// 1. Environment Detection Patterns
+// ═══════════════════════════════════════════════════════════════════
+
+const LUNAR_PATTERN = /\b(lunar|moon\s*surface|moonscape|regolith|mare\s+tranquillitatis|apollo|sea\s+of\s+tranquility|moon\s+landing|moon\s+base|cratere?d?\s+lunar)\b/i;
+const SPACE_PATTERN = /\b(space\s*station|orbit|zero[\s-]?g|weightless|interstellar|nebula|asteroid|space\s*walk|EVA|cosmos|spacecraft)\b/i;
+const UNDERWATER_PATTERN = /\b(underwater|submerged|deep\s*sea|ocean\s*floor|submarine|coral\s*reef|aquatic|diving|seafloor|abyss)\b/i;
+const INDOOR_PATTERN = /\b(indoor|interior|room|office|studio|laboratory|warehouse|building\s*interior|hallway|corridor)\b/i;
+
+// ═══════════════════════════════════════════════════════════════════
+// 2. Physics Rules Detection
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 환경 텍스트에서 물리 법칙을 감지.
+ *
+ * grep: detectPhysicsRules
+ */
+export function detectPhysicsRules(
+  environment: string,
+  subjectPrimary: string,
+  moodLighting: string,
+): PhysicsRules {
+  const fullText = `${environment} ${subjectPrimary} ${moodLighting}`;
+
+  // ── Lunar ──
+  if (LUNAR_PATTERN.test(fullText)) {
+    return {
+      hasWind: false,
+      hasAtmosphere: false,
+      gravity: "low",
+      flagMotionSource: "pole vibration or rigid support, not wind",
+      skyConstraint: "pitch-black sky with visible stars",
+      lightConstraint: "unfiltered direct sunlight, harsh shadows with no diffusion",
+      bannedExpressions: [
+        "wind", "breeze", "gust", "blowing", "waving in wind", "fluttering",
+        "atmospheric haze", "haze", "mist", "fog", "cloud", "overcast",
+        "sky gradient", "blue sky", "sunset sky", "sunrise sky",
+        "air current", "dust cloud", "sand storm",
+        "rain", "snow", "weather",
+        "sound", "echo",  // no atmosphere = no sound propagation
+      ],
+      environmentType: "lunar",
+    };
+  }
+
+  // ── Space (zero-g) ──
+  if (SPACE_PATTERN.test(fullText)) {
+    return {
+      hasWind: false,
+      hasAtmosphere: false,
+      gravity: "zero",
+      skyConstraint: "black void with stars or planetary body",
+      lightConstraint: "single harsh directional light source (sun) or ambient starlight",
+      bannedExpressions: [
+        "wind", "breeze", "gust", "blowing",
+        "haze", "mist", "fog", "cloud", "rain", "snow",
+        "gravity", "falling", "dropping", // unless intentionally zero-g
+        "sound", "echo",
+      ],
+      environmentType: "space",
+    };
+  }
+
+  // ── Underwater ──
+  if (UNDERWATER_PATTERN.test(fullText)) {
+    return {
+      hasWind: false,
+      hasAtmosphere: false,
+      gravity: "earth",
+      skyConstraint: "water surface above with light filtering through",
+      lightConstraint: "caustic light patterns from above, decreasing with depth",
+      bannedExpressions: [
+        "wind", "breeze", "dry", "dust",
+        "clear sky", "sun directly",
+        "fire", "flame", "smoke",
+      ],
+      environmentType: "underwater",
+    };
+  }
+
+  // ── Indoor ──
+  if (INDOOR_PATTERN.test(fullText)) {
+    return {
+      hasWind: false,
+      hasAtmosphere: true,
+      gravity: "earth",
+      bannedExpressions: [
+        "strong wind", "gust",
+        "rain", "snow", "weather",
+      ],
+      environmentType: "earth_indoor",
+    };
+  }
+
+  // ── Default: Earth Outdoor ──
+  return {
+    hasWind: true,
+    hasAtmosphere: true,
+    gravity: "earth",
+    bannedExpressions: [],
+    environmentType: "earth_outdoor",
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 3. Physics-Based Negative Enforcement
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * physics rules에 따른 부정 키워드 생성.
+ * 이 키워드들은 negatives.sceneSpecific에 추가되어야 한다.
+ *
+ * grep: enforcePhysicsNegatives
+ */
+export function enforcePhysicsNegatives(rules: PhysicsRules): string[] {
+  const negatives: string[] = [];
+
+  if (!rules.hasWind) {
+    negatives.push("wind", "breeze", "waving in wind", "blowing");
+  }
+  if (!rules.hasAtmosphere) {
+    negatives.push("atmospheric haze", "haze", "mist", "fog", "clouds");
+  }
+  if (rules.environmentType === "lunar") {
+    negatives.push(
+      "blue sky", "overcast sky", "sunset", "sunrise",
+      "air movement", "dust cloud",
+      "fluttering flag",  // flag must be rigid or pole-vibration only
+    );
+  }
+  if (rules.environmentType === "space") {
+    negatives.push("gravity", "falling debris");
+  }
+  if (rules.environmentType === "underwater") {
+    negatives.push("fire", "flame", "smoke", "dust");
+  }
+
+  return [...new Set(negatives)];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 4. Physics Consistency Check
+// ═══════════════════════════════════════════════════════════════════
+
+export interface PhysicsViolation {
+  field: string;
+  expression: string;
+  rule: string;
+  message: string;
+}
+
+/**
+ * 텍스트 필드에서 물리 법칙 위반을 검출.
+ *
+ * grep: checkPhysicsConsistency
+ */
+export function checkPhysicsConsistency(
+  rules: PhysicsRules,
+  fields: Record<string, string>,
+): PhysicsViolation[] {
+  const violations: PhysicsViolation[] = [];
+
+  for (const [fieldName, text] of Object.entries(fields)) {
+    if (!text) continue;
+    const textLc = text.toLowerCase();
+
+    for (const banned of rules.bannedExpressions) {
+      const bannedLc = banned.toLowerCase();
+      // Word boundary check
+      const re = new RegExp(`\\b${bannedLc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (re.test(textLc)) {
+        violations.push({
+          field: fieldName,
+          expression: banned,
+          rule: `physics_${rules.environmentType}`,
+          message: `"${banned}" violates ${rules.environmentType} physics (${fieldName})`,
+        });
+      }
+    }
+
+    // Lunar-specific: flag + wind conflation
+    if (rules.environmentType === "lunar") {
+      if (/\bflag\b/i.test(textLc) && /\b(waving|fluttering|blowing|rippling)\b/i.test(textLc)) {
+        if (!/\b(pole|rigid|support|vibrat|mechani)\b/i.test(textLc)) {
+          violations.push({
+            field: fieldName,
+            expression: "flag waving/fluttering",
+            rule: "physics_lunar_flag",
+            message: `Flag motion in lunar environment must specify non-wind source (pole vibration, rigid support) — "${text.slice(0, 60)}"`,
+          });
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 5. Physics-Based Text Rewrite
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 물리 법칙에 맞게 텍스트를 자동 교정.
+ * 예: lunar scene에서 "flag waving gently" → "flag held rigid by pole support, subtle pole vibration"
+ *
+ * grep: rewriteForPhysics
+ */
+export function rewriteForPhysics(
+  text: string,
+  rules: PhysicsRules,
+): { text: string; rewrites: string[] } {
+  if (rules.bannedExpressions.length === 0) return { text, rewrites: [] };
+
+  let result = text;
+  const rewrites: string[] = [];
+
+  if (rules.environmentType === "lunar") {
+    // "Flag waving gently" → "Flag held rigid by pole support"
+    const flagWaveRe = /\bflag\s+(waving|fluttering|blowing|rippling)\s*(gently|softly|slowly)?/gi;
+    if (flagWaveRe.test(result)) {
+      result = result.replace(flagWaveRe, "flag held rigid by pole support, subtle pole vibration");
+      rewrites.push("[physics] Rewrote flag motion: wind → pole vibration (lunar)");
+    }
+
+    // "waving gently" (no flag context) → "subtle pole vibration"
+    // Only if in subject/action context
+    const genericWaveRe = /\b(waving|fluttering)\s+(gently|softly|slowly|in\s+the\s+wind)/gi;
+    if (genericWaveRe.test(result)) {
+      result = result.replace(genericWaveRe, "held rigid with subtle mechanical vibration");
+      rewrites.push("[physics] Rewrote wind-based motion → mechanical vibration (lunar)");
+    }
+
+    // "wind" standalone → remove
+    const windRe = /,?\s*\b(gentle\s+)?wind\b/gi;
+    if (windRe.test(result)) {
+      result = result.replace(windRe, "").replace(/\s{2,}/g, " ").trim();
+      rewrites.push("[physics] Removed wind reference (lunar — no atmosphere)");
+    }
+
+    // "haze" / "mist" → remove
+    const hazeRe = /,?\s*\b(atmospheric\s+)?(haze|mist|fog)\b/gi;
+    if (hazeRe.test(result)) {
+      result = result.replace(hazeRe, "").replace(/\s{2,}/g, " ").trim();
+      rewrites.push("[physics] Removed atmospheric haze (lunar — no atmosphere)");
+    }
+  }
+
+  if (rules.environmentType === "space") {
+    // Remove wind references
+    const windRe = /,?\s*\b(gentle\s+)?wind\b/gi;
+    if (windRe.test(result)) {
+      result = result.replace(windRe, "").replace(/\s{2,}/g, " ").trim();
+      rewrites.push("[physics] Removed wind reference (space — no atmosphere)");
+    }
+  }
+
+  if (rules.environmentType === "underwater") {
+    // "fire" → bioluminescence
+    const fireRe = /\bfire\b/gi;
+    if (fireRe.test(result) && !/\b(bioluminescen|chemiluminescen)\b/i.test(result)) {
+      result = result.replace(fireRe, "bioluminescent glow");
+      rewrites.push("[physics] Rewrote fire → bioluminescence (underwater)");
+    }
+  }
+
+  return { text: result, rewrites };
+}

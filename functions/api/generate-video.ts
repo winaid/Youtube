@@ -19,8 +19,23 @@ import { serverSanitizeAndValidate } from "./_prompt-sanitizer";
 
 type Env = GeminiEnv & KlingEnv;
 
-/** StructuredSequenceDocument의 서버 측 미러 (클라이언트에서 전달) */
+/** StructuredSequenceDocument의 서버 측 미러 (클라이언트에서 전달) — v2 dense fields 포함 */
 interface StructuredSequencePayload {
+  // ── Dense Sequence Fields (v2) ──
+  sequenceId?: string;
+  sceneType?: string;
+  durationSec?: number;
+  styleProfile?: { mode: string; mediumLock?: string; colorAnchor?: string };
+  continuity?: { lighting: string; sky?: string; surface?: string; scale?: string; characterRef?: string; mustPersist: string[] };
+  physicsRules?: { hasWind: boolean; hasAtmosphere: boolean; gravity: string; flagMotionSource?: string; skyConstraint?: string; lightConstraint?: string; bannedExpressions: string[]; environmentType: string };
+  placeIdentityAnchors?: string[];
+  situationEvidence?: string[];
+  naturalMotion?: string[];
+  cameraPlan?: { baseFraming: string; angle: string; motion: string; motionMotivation?: string };
+  temporalBeats?: Array<{ startSec: number; endSec: number; focus: string }>;
+  densityScore?: { total: number; breakdown: Record<string, boolean>; missing: string[] };
+
+  // ── Legacy / Existing ──
   shotId: string;
   cutNumber: number;
   shotPlan: {
@@ -45,7 +60,7 @@ interface StructuredSequencePayload {
     failureMode: string[];
     user: string[];
   };
-  validation?: { valid: boolean; errors: number; warnings: number };
+  validation?: { valid: boolean; errors: number; warnings: number; issues?: Array<{ rule: string; severity: string; message: string }> };
 }
 
 /**

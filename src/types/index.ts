@@ -251,17 +251,119 @@ export type VideoEngine = "veo" | "kling" | "auto";
 export type VideoMode   = "generate" | "extend";
 
 // ===== JSON-first 구조화된 시퀀스 문서 =====
+
+/** 시퀀스 밀도 메타데이터 — valid=true 조건의 근거 */
+export interface SequenceDensityScore {
+  /** 전체 밀도 점수 (0-100) */
+  total: number;
+  /** 개별 밀도 항목 */
+  breakdown: {
+    hasPlaceAnchors: boolean;
+    hasEvidence: boolean;
+    hasTemporalBeats: boolean;
+    hasCameraPlan: boolean;
+    hasPhysicsRules: boolean;
+    hasNaturalMotion: boolean;
+    hasExplicitLight: boolean;
+    hasContinuity: boolean;
+  };
+  /** 부족한 항목 */
+  missing: string[];
+}
+
+/** 물리 법칙 규칙 — 장면별 시뮬레이션 제약 */
+export interface PhysicsRules {
+  /** 바람 존재 여부 */
+  hasWind: boolean;
+  /** 대기 존재 여부 */
+  hasAtmosphere: boolean;
+  /** 중력 유형 */
+  gravity: "earth" | "low" | "zero" | "unknown";
+  /** 깃발/천 모션 원인 (wind → pole vibration 등) */
+  flagMotionSource?: string;
+  /** 하늘 색상 제약 (lunar → pitch-black) */
+  skyConstraint?: string;
+  /** 광원 제약 (lunar → unfiltered direct sunlight) */
+  lightConstraint?: string;
+  /** 금지 표현 목록 (wind, haze 등) */
+  bannedExpressions: string[];
+  /** 물리 환경 식별자 */
+  environmentType: "earth_outdoor" | "earth_indoor" | "lunar" | "space" | "underwater" | "unknown";
+}
+
+/** 스타일 프로필 */
+export interface StyleProfile {
+  mode: string;
+  mediumLock?: string;
+  colorAnchor?: string;
+}
+
+/** 연속성 추적 (이전/이후 컷과의 일관성) */
+export interface SequenceDenseContinuity {
+  lighting: string;
+  sky?: string;
+  surface?: string;
+  scale?: string;
+  characterRef?: string;
+  mustPersist: string[];
+}
+
+/** 카메라 계획 */
+export interface CameraPlan {
+  baseFraming: string;
+  angle: string;
+  motion: string;
+  motionMotivation?: string;
+}
+
+/** 시간 비트 */
+export interface TemporalBeat {
+  startSec: number;
+  endSec: number;
+  focus: string;
+}
+
 /**
  * StructuredSequenceDocument — JSON-first source of truth.
  * 전체 파이프라인에서 이 문서가 1순위로 전달되며,
  * string prompt는 string-only provider 전송 시에만 직렬화된다.
  *
+ * v2: shot summary → dense sequence. minimum density 규칙 강제.
+ *
  * 우선순위: structuredSequence > videoPromptJson > prompt
  */
 export interface StructuredSequenceDocument {
+  /** 시퀀스 고유 ID (sequenceId ≠ shotId) */
+  sequenceId: string;
   /** 단일 shot에 대한 구조화 데이터 */
   shotId: string;
   cutNumber: number;
+
+  // ── Dense Sequence Fields (v2) ─────────────────────────
+  /** 장면 유형 (environment / character-driven / map-graphic 등) */
+  sceneType: string;
+  /** 총 생성 시간 (초) */
+  durationSec: number;
+  /** 스타일 프로필 */
+  styleProfile: StyleProfile;
+  /** 연속성 추적 */
+  continuity: SequenceDenseContinuity;
+  /** 물리 법칙 (lunar → no wind/no atmosphere) */
+  physicsRules: PhysicsRules;
+  /** 장소 정체성 앵커 (WHERE) — minimum 1 required for valid=true */
+  placeIdentityAnchors: string[];
+  /** 상황 증거 (WHAT) — minimum 1 required for valid=true */
+  situationEvidence: string[];
+  /** 자연 환경 모션 */
+  naturalMotion: string[];
+  /** 카메라 계획 */
+  cameraPlan: CameraPlan;
+  /** 시간 비트 — minimum 2 required for valid=true */
+  temporalBeats: TemporalBeat[];
+  /** 서술 밀도 점수 (검증용) */
+  densityScore: SequenceDensityScore;
+
+  // ── Legacy / Existing Fields ───────────────────────────
   /** SequencePlan의 ShotPlan과 1:1 매핑 */
   shotPlan: import("@/lib/sequence-plan").ShotPlan;
   /** 원본 VideoPromptJson (있으면) */

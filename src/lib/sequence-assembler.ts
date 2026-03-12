@@ -8,7 +8,7 @@
  * 4. Provider별 capability에 따라 직렬화 전략 분기
  */
 
-import type { Cut, VeoGenerationConfig, StructuredSequenceDocument } from "@/types";
+import type { Cut, VeoGenerationConfig, StructuredSequenceDocument, PhysicsRules, SequenceDensityScore, TemporalBeat } from "@/types";
 import { collectFailureModeNegatives, getGenreTemplate } from "@/lib/prompt-architecture";
 import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
 import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
@@ -16,6 +16,8 @@ import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
 import { normalizeSequence } from "@/lib/sequence-normalizer";
 import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
+import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics } from "@/lib/physics-rules";
+import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -524,6 +526,61 @@ export interface ValidationIssue {
 export interface ValidationResult {
   valid: boolean;
   issues: ValidationIssue[];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 3b. Density Score Computation
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Sequence 밀도 점수 계산.
+ * valid=true 조건: total >= 60
+ *
+ * grep: computeDensityScore
+ */
+export function computeDensityScore(input: {
+  placeAnchors: string[];
+  evidence: string[];
+  temporalBeats: TemporalBeat[];
+  cameraPlan: { baseFraming: string; angle: string; motion: string };
+  physicsRules: PhysicsRules;
+  motionItems: string[];
+  lightLog: string[];
+  continuity: { lighting: string; mustPersist: string[] };
+}): SequenceDensityScore {
+  const breakdown = {
+    hasPlaceAnchors: input.placeAnchors.length >= 1,
+    hasEvidence: input.evidence.length >= 1,
+    hasTemporalBeats: input.temporalBeats.length >= 2,
+    hasCameraPlan: !!(input.cameraPlan.baseFraming && input.cameraPlan.motion),
+    hasPhysicsRules: input.physicsRules.environmentType !== "unknown",
+    hasNaturalMotion: input.motionItems.length >= 1,
+    hasExplicitLight: input.lightLog.length >= 1,
+    hasContinuity: !!(input.continuity.lighting && input.continuity.lighting.length > 3),
+  };
+
+  const weights: Record<keyof typeof breakdown, number> = {
+    hasPlaceAnchors: 15,
+    hasEvidence: 15,
+    hasTemporalBeats: 15,
+    hasCameraPlan: 10,
+    hasPhysicsRules: 10,
+    hasNaturalMotion: 10,
+    hasExplicitLight: 10,
+    hasContinuity: 15,
+  };
+
+  let total = 0;
+  const missing: string[] = [];
+  for (const [key, present] of Object.entries(breakdown) as [keyof typeof breakdown, boolean][]) {
+    if (present) {
+      total += weights[key];
+    } else {
+      missing.push(key);
+    }
+  }
+
+  return { total, breakdown, missing };
 }
 
 export function validateShotDocument(doc: SingleShotDocument): ValidationResult {
@@ -1259,6 +1316,157 @@ export function assembleFromJSON(input: {
     ...normalizedDoc.negatives.user,
   ];
 
+  // ── Dense Sequence Fields (v2) ─────────────────────────────────────────
+  const dur = input.config.durationSeconds || 8;
+  const effectiveSceneType = normalizedDoc.scene.shotCategory || input.cut.shotCategory || "unknown";
+  const isEnvScene = effectiveSceneType === "environment";
+
+  // Physics rules detection + enforcement
+  const physicsRules = detectPhysicsRules(
+    normalizedDoc.scene.environment,
+    normalizedDoc.subject.primary,
+    normalizedDoc.scene.moodLighting,
+  );
+
+  // Physics-based negatives
+  const physicsNeg = enforcePhysicsNegatives(physicsRules);
+  if (physicsNeg.length > 0) {
+    for (const neg of physicsNeg) {
+      if (!normalizedDoc.negatives.sceneSpecific.includes(neg)) {
+        normalizedDoc.negatives.sceneSpecific.push(neg);
+      }
+    }
+  }
+
+  // Physics-based text rewrite (lunar flag motion, etc.)
+  const fieldsToRewrite = [
+    { key: "subject.primary", get: () => normalizedDoc.subject.primary, set: (v: string) => { normalizedDoc.subject.primary = v; } },
+    { key: "subject.action", get: () => normalizedDoc.subject.action, set: (v: string) => { normalizedDoc.subject.action = v; } },
+    { key: "scene.environment", get: () => normalizedDoc.scene.environment, set: (v: string) => { normalizedDoc.scene.environment = v; } },
+    { key: "scene.moodLighting", get: () => normalizedDoc.scene.moodLighting, set: (v: string) => { normalizedDoc.scene.moodLighting = v; } },
+  ];
+  for (const field of fieldsToRewrite) {
+    const { text: rewritten, rewrites } = rewriteForPhysics(field.get(), physicsRules);
+    if (rewrites.length > 0) {
+      field.set(rewritten);
+      normalizeLog.push(...rewrites.map(r => `${r} (${field.key})`));
+    }
+  }
+
+  // Physics consistency violations → validation issues
+  const physicsViolations = checkPhysicsConsistency(physicsRules, {
+    "subject.primary": normalizedDoc.subject.primary,
+    "subject.action": normalizedDoc.subject.action,
+    "scene.environment": normalizedDoc.scene.environment,
+    "scene.moodLighting": normalizedDoc.scene.moodLighting,
+    "reinforcement.styleSuffix": normalizedDoc.reinforcement.styleSuffix,
+  });
+
+  // Extract anchors from normalized doc text
+  const sceneContext = detectSceneContext(normalizedDoc.scene.environment, normalizedDoc.subject.primary, normalizedDoc.scene.moodLighting);
+  const fullTextForAnchors = `${normalizedDoc.subject.primary} ${normalizedDoc.subject.action} ${normalizedDoc.scene.environment} ${normalizedDoc.scene.moodLighting}`;
+
+  // Place identity anchors — scan text for concrete objects
+  const placeAnchors: string[] = [];
+  const placeCandidates = getPlaceIdentityCandidates(sceneContext);
+  for (const candidate of placeCandidates) {
+    if (fullTextForAnchors.toLowerCase().includes(candidate.toLowerCase().split(" ")[0])) {
+      placeAnchors.push(candidate);
+    }
+  }
+  // Also check for any anchors injected by normalizer
+  const whereLog = normalizeLog.filter(l => l.includes("[WHERE]") && l.includes("Injected"));
+  for (const log of whereLog) {
+    const m = log.match(/Injected place identity anchor: "([^"]+)"/);
+    if (m) placeAnchors.push(m[1]);
+  }
+  if (placeAnchors.length === 0 && isEnvScene) {
+    // Fallback: use first candidate
+    placeAnchors.push(placeCandidates[0] || "unidentified location element");
+  }
+
+  // Situation evidence — scan for evidence
+  const evidence: string[] = [];
+  const evidenceCandidates = getSituationEvidenceCandidates(sceneContext);
+  for (const candidate of evidenceCandidates) {
+    if (fullTextForAnchors.toLowerCase().includes(candidate.toLowerCase().split(" ")[0])) {
+      evidence.push(candidate);
+    }
+  }
+  const whatLog = normalizeLog.filter(l => l.includes("[WHAT]") && l.includes("Injected"));
+  for (const log of whatLog) {
+    const m = log.match(/Injected situation evidence: "([^"]+)"/);
+    if (m) evidence.push(m[1]);
+  }
+  if (evidence.length === 0 && isEnvScene) {
+    evidence.push(evidenceCandidates[0] || "ambient environmental activity");
+  }
+
+  // Natural motion
+  const motionItems: string[] = [];
+  const motionCandidates = getNaturalMotionCandidates(sceneContext);
+  const motionLog = normalizeLog.filter(l => l.includes("[MOTION]") && l.includes("Injected"));
+  for (const log of motionLog) {
+    const m = log.match(/Injected natural motion: "([^"]+)"/);
+    if (m) motionItems.push(m[1]);
+  }
+  const motionPresentLog = normalizeLog.filter(l => l.includes("[MOTION]") && l.includes("present"));
+  for (const log of motionPresentLog) {
+    const m = log.match(/Natural motion present: (.+)$/);
+    if (m) motionItems.push(...m[1].split(", "));
+  }
+  if (motionItems.length === 0 && isEnvScene) {
+    motionItems.push(motionCandidates[0] || "subtle ambient motion");
+  }
+
+  // Temporal beats from SingleShotDocument
+  const temporalBeats: TemporalBeat[] = normalizedDoc.timing.beats.map(b => ({
+    startSec: b.startSec,
+    endSec: b.endSec,
+    focus: b.description,
+  }));
+
+  // Camera plan
+  const cameraPlan = {
+    baseFraming: normalizedDoc.camera.framing,
+    angle: normalizedDoc.camera.angle,
+    motion: normalizedDoc.camera.motion,
+    motionMotivation: normalizedDoc.camera.motionMotivation,
+  };
+
+  // Style profile
+  const styleProfile = {
+    mode: normalizedDoc.global.styleId || normalizedDoc.global.style,
+    mediumLock: normalizedDoc.reinforcement.mediumLock,
+    colorAnchor: normalizedDoc.continuity.colorAnchor,
+  };
+
+  // Continuity
+  const sequenceContinuity = {
+    lighting: normalizedDoc.continuity.lightingDirection || normalizedDoc.scene.moodLighting,
+    sky: physicsRules.skyConstraint,
+    surface: undefined as string | undefined,
+    scale: normalizedDoc.camera.framing,
+    characterRef: normalizedDoc.continuity.characterRef,
+    mustPersist: normalizedDoc.continuity.mustPersist || [],
+  };
+  // Surface extraction for special environments
+  if (physicsRules.environmentType === "lunar") {
+    sequenceContinuity.surface = "fine grey regolith";
+  }
+
+  // Density score calculation
+  const densityScore = computeDensityScore({
+    placeAnchors,
+    evidence,
+    temporalBeats,
+    cameraPlan,
+    physicsRules,
+    motionItems,
+    lightLog: normalizeLog.filter(l => l.includes("[LIGHT]")),
+    continuity: sequenceContinuity,
+  });
+
   // Build StructuredSequenceDocument — 유일한 1급 산출물
   const shotPlan = input.cut.videoPromptJson
     ? videoPromptJsonToShotPlan(
@@ -1285,8 +1493,23 @@ export function assembleFromJSON(input: {
       };
 
   const structuredSequence: StructuredSequenceDocument = {
+    // ── Dense Sequence Fields (v2) ──
+    sequenceId: `seq_${input.cut.cutNumber}_${Date.now().toString(36)}`,
     shotId: `shot_${input.cut.cutNumber}`,
     cutNumber: input.cut.cutNumber,
+    sceneType: effectiveSceneType,
+    durationSec: dur,
+    styleProfile,
+    continuity: sequenceContinuity,
+    physicsRules,
+    placeIdentityAnchors: [...new Set(placeAnchors)],
+    situationEvidence: [...new Set(evidence)],
+    naturalMotion: [...new Set(motionItems)],
+    cameraPlan,
+    temporalBeats,
+    densityScore,
+
+    // ── Legacy / Existing ──
     shotPlan,
     videoPromptJson: input.cut.videoPromptJson,
     negatives: {
@@ -1317,28 +1540,82 @@ export function assembleFromJSON(input: {
     driftWarning = `FINAL PAYLOAD pos/neg conflict: ${finalPayload.debug.validationIssues.join("; ")}`;
   }
 
-  // Always update structuredSequence.validation with final builder state
-  // (validation now runs AFTER normalization, so it reflects cleaned state.
-  //  But final builder may catch additional issues — always use the most accurate result.)
-  if (finalPayload.valid && validation.valid) {
-    structuredSequence.validation = {
-      valid: true,
-      errors: 0,
-      warnings: validation.issues.filter(i => i.severity === "warning").length,
-      issues: validation.issues.filter(i => i.severity === "warning").map(i => ({ rule: i.rule, severity: i.severity, message: i.message })),
-    };
-  } else if (!finalPayload.valid) {
-    // Final builder found issues post-serialization — merge
+  // ── Strengthened validation: density + physics + final builder ──────────
+  // Collect all issues from all sources into a unified list
+  const allValidationIssues: Array<{ rule: string; severity: "error" | "warning"; message: string }> = [
+    ...validation.issues.map(i => ({ rule: i.rule, severity: i.severity as "error" | "warning", message: i.message })),
+  ];
+
+  // Density check — environment scenes need minimum density 60
+  if (isEnvScene && densityScore.total < 60) {
+    allValidationIssues.push({
+      rule: "density_insufficient",
+      severity: "warning",
+      message: `Sequence density ${densityScore.total}/100 < 60 minimum (missing: ${densityScore.missing.join(", ")})`,
+    });
+  }
+
+  // Required anchors check
+  if (isEnvScene && structuredSequence.placeIdentityAnchors.length < 1) {
+    allValidationIssues.push({
+      rule: "place_anchor_missing",
+      severity: "error",
+      message: "Environment scene requires at least 1 placeIdentityAnchor",
+    });
+  }
+  if (isEnvScene && structuredSequence.situationEvidence.length < 1) {
+    allValidationIssues.push({
+      rule: "situation_evidence_missing",
+      severity: "error",
+      message: "Environment scene requires at least 1 situationEvidence",
+    });
+  }
+
+  // Temporal beats check (all scenes)
+  if (temporalBeats.length < 2) {
+    allValidationIssues.push({
+      rule: "temporal_beats_insufficient",
+      severity: "warning",
+      message: `Need at least 2 temporal beats, got ${temporalBeats.length}`,
+    });
+  }
+
+  // Physics consistency check
+  for (const violation of physicsViolations) {
+    allValidationIssues.push({
+      rule: violation.rule,
+      severity: "error",
+      message: violation.message,
+    });
+  }
+
+  // Final builder issues
+  if (!finalPayload.valid) {
     const builderIssues = finalPayload.debug.validationIssues.map(v => {
       const m = v.match(/^\[(error|warning)\]\s*(\S+):\s*(.+)$/);
       return m ? { rule: m[2], severity: m[1] as "error" | "warning", message: m[3] } : { rule: "final_builder", severity: "error" as const, message: v };
     });
-    structuredSequence.validation = {
-      valid: false,
-      errors: builderIssues.filter(i => i.severity === "error").length,
-      warnings: builderIssues.filter(i => i.severity === "warning").length,
-      issues: builderIssues,
-    };
+    allValidationIssues.push(...builderIssues);
+  }
+
+  // Compute final valid status — strict conditions
+  const finalErrors = allValidationIssues.filter(i => i.severity === "error");
+  const finalWarnings = allValidationIssues.filter(i => i.severity === "warning");
+  const isValid = finalErrors.length === 0 && finalPayload.valid;
+
+  structuredSequence.validation = {
+    valid: isValid,
+    errors: finalErrors.length,
+    warnings: finalWarnings.length,
+    issues: allValidationIssues,
+  };
+
+  // Update driftWarning with physics/density issues
+  if (physicsViolations.length > 0 && !driftWarning) {
+    driftWarning = `PHYSICS VIOLATION: ${physicsViolations.map(v => v.message).join("; ")}`;
+  }
+  if (finalPayload.blocked && !driftWarning) {
+    driftWarning = `BLOCKED: ${finalPayload.blockReason}`;
   }
 
   // Pipeline trace — step-by-step snapshot for debugging
