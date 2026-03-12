@@ -264,6 +264,7 @@ function classifyGeminiError(status: number, body: string): string {
   if (status === 403) return "PERMISSION_DENIED";
   if (status === 404 && /not found|deprecated|does not exist/i.test(body)) return "MODEL_NOT_FOUND";
   if (status === 429) return "RATE_LIMITED";
+  if (/MAX_TOKENS|truncat/i.test(body)) return "MAX_TOKENS_TRUNCATED";
   if (status === 500 || status === 502 || status === 503) return "SERVER_ERROR";
   return "UNKNOWN_ERROR";
 }
@@ -281,6 +282,8 @@ function getErrorHelp(code: string): string {
       return "API 할당량 또는 요청 속도 제한 초과. 잠시 후 재시도하거나 GEMINI_API_KEY_2를 추가 설정하세요.";
     case "PERMISSION_DENIED":
       return "API 키에 해당 모델 접근 권한이 없습니다. Google AI Studio에서 권한을 확인하세요.";
+    case "MAX_TOKENS_TRUNCATED":
+      return "Gemini 응답이 토큰 한도로 잘렸습니다. 컷 수를 줄이거나 스토리를 축소하세요. 이것은 API 키 문제가 아닙니다.";
     case "SERVER_ERROR":
       return "Gemini 서버 일시 오류. 잠시 후 다시 시도하세요.";
     default:

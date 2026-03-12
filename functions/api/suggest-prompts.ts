@@ -101,6 +101,8 @@ JSON 배열로만 응답 (마크다운 없이):
 ❌ {"title":"호세 리잘이 안과 의사이자 독립운동가로 영웅이 된 방법"} → 독립운동, 환자 유치 아님
 ❌ {"title":"메리 퍼트넘 자코비가 논문으로 성차별을 뚫은 방법"} → 학술 커리어, 마케팅 아님`;
 
+    console.info(`[suggest-prompts] model=${GEMINI_MODEL_PRO} promptLen=${prompt.length} maxOutputTokens=2048`);
+
     const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -108,7 +110,7 @@ JSON 배열로만 응답 (마크다운 없이):
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.9,
-          maxOutputTokens: 800,
+          maxOutputTokens: 2048,
           responseMimeType: "application/json",
         },
       }),
@@ -121,10 +123,14 @@ JSON 배열로만 응답 (마크다운 없이):
     }
 
     const data = await res.json() as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     };
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
+    const finishReason = data?.candidates?.[0]?.finishReason;
+    const truncated = finishReason === "MAX_TOKENS";
+
+    console.info(`[suggest-prompts] responseLen=${text.length} finishReason=${finishReason ?? "unknown"} truncated=${truncated}`);
 
     let cards: { title: string; hook: string; marketingTactic?: string; region?: string }[];
     try {
@@ -137,7 +143,24 @@ JSON 배열로만 응답 (마크다운 없이):
         cards = [];
       }
     } catch {
-      cards = [];
+      if (truncated) {
+        console.warn(`[suggest-prompts] truncated response — attempting partial JSON recovery`);
+        try {
+          const bracketMatch = text.match(/\[[\s\S]*\]/);
+          if (bracketMatch) {
+            const partialParsed = JSON.parse(bracketMatch[0]);
+            cards = Array.isArray(partialParsed) ? partialParsed.filter((c: unknown) =>
+              typeof c === "object" && c !== null && "title" in c && "hook" in c
+            ) : [];
+          } else {
+            cards = [];
+          }
+        } catch {
+          cards = [];
+        }
+      } else {
+        cards = [];
+      }
     }
 
     const prompts = cards.map((c) => c.title);

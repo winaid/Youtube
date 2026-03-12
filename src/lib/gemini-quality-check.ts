@@ -483,3 +483,61 @@ export const PROVIDER_ROLES = {
 } as const;
 
 export type ProviderRole = typeof PROVIDER_ROLES;
+
+// ═══════════════════════════════════════════════════════════════════
+// 5. Compact Mode — 토큰 절약용 응답 형식
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Compact QA 결과 — Gemini가 토큰 한도에 가까울 때 사용.
+ * 장황한 설명 없이 JSON 구조만 반환.
+ */
+export interface CompactQAResult {
+  valid: boolean;
+  issues: Array<{
+    cat: string;      // category 축약
+    sev: "e" | "w";   // error | warning
+    msg: string;      // ≤50자
+    fix?: string;     // autoFix 가능 시 ≤30자
+  }>;
+  autoFixes: string[];
+  score: number;      // 0-100
+}
+
+/**
+ * QualityCheckResult → CompactQAResult 변환.
+ * Gemini에게 compact_json 응답을 요청할 때 기대 스키마로 사용.
+ */
+export function toCompactQA(result: QualityCheckResult): CompactQAResult {
+  return {
+    valid: result.valid,
+    issues: result.issues.map(i => ({
+      cat: i.category,
+      sev: i.severity === "error" ? "e" : "w",
+      msg: i.message.slice(0, 50),
+      fix: i.autoFixable && i.suggestedFix ? i.suggestedFix.slice(0, 30) : undefined,
+    })),
+    autoFixes: result.issues.filter(i => i.autoFixable).map(i => i.suggestedFix || "").filter(Boolean),
+    score: result.score,
+  };
+}
+
+/**
+ * CompactQAResult → QualityCheckResult 복원.
+ * Gemini compact 응답을 기존 파이프라인에 병합할 때 사용.
+ */
+export function fromCompactQA(compact: CompactQAResult): QualityCheckResult {
+  return {
+    valid: compact.valid,
+    score: compact.score,
+    issues: compact.issues.map(i => ({
+      category: i.cat as QualityCheckIssue["category"],
+      severity: i.sev === "e" ? "error" : "warning",
+      message: i.msg,
+      autoFixable: !!i.fix,
+      suggestedFix: i.fix,
+    })),
+    suggestions: compact.autoFixes,
+    autoFixCount: compact.autoFixes.length,
+  };
+}

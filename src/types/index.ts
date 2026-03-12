@@ -205,6 +205,18 @@ export interface Cut {
   extendPromptJson?: ExtendPromptJson;
 }
 
+/** Fallback 원인 분류 — 사용자에게 정확한 안내를 위해 */
+export type FallbackCause =
+  | "MAX_TOKENS"        // Gemini 응답이 토큰 한도로 잘림 (API 키 문제 아님)
+  | "MISSING_API_KEY"   // 환경변수 미설정
+  | "INVALID_API_KEY"   // 잘못된 API 키
+  | "MODEL_NOT_FOUND"   // 모델 deprecated
+  | "QUOTA_EXCEEDED"    // 할당량 초과
+  | "RATE_LIMITED"      // 요청 속도 제한
+  | "PARSE_ERROR"       // 응답 파싱 실패 (truncation 아닌)
+  | "NETWORK_ERROR"     // 네트워크 오류
+  | "UNKNOWN";          // 기타
+
 export interface PromptOutput {
   projectTitle: string;
   conceptSummary: string;
@@ -216,6 +228,8 @@ export interface PromptOutput {
   cuts: Cut[];
   usedFallback?: boolean;
   fallbackReason?: string;
+  /** 구조화된 실패 원인 분류 */
+  fallbackCause?: FallbackCause;
   /** 시퀀스 플랜 — generate-cuts에서 구축, shot plan 구조 */
   sequencePlan?: import("@/lib/sequence-plan").SequencePlan;
   /** 시퀀스 검증 결과 */

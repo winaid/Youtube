@@ -51,6 +51,10 @@ export interface FinalProviderPayload {
     builtBy: "buildFinalProviderPayload";
     /** 전송 직전 snapshot — 로그와 실제 전송 payload 일치 보장용 */
     payloadSnapshot: string;
+    /** Gemini step1/2/3에서 토큰 절단이 발생했는지 추적 (upstream에서 주입) */
+    upstreamTruncated?: boolean;
+    /** Gemini parse mode (upstream에서 주입) */
+    upstreamParseMode?: string;
   };
 }
 

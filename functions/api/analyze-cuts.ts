@@ -62,6 +62,8 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
   "scenes": ["장면1 요약", "장면2 요약", ...]
 }`;
 
+    console.info(`[analyze-cuts] model=${GEMINI_MODEL_FLASH} promptLen=${prompt.length} maxOutputTokens=4096`);
+
     const res = await fetchWithAuth(
       context.env,
       buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
@@ -72,7 +74,7 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 4096,
             responseMimeType: "application/json",
           },
         }),
@@ -86,10 +88,14 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
     }
 
     const data = await res.json() as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     };
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const finishReason = data.candidates?.[0]?.finishReason;
+    const truncated = finishReason === "MAX_TOKENS";
+
+    console.info(`[analyze-cuts] responseLen=${text.length} finishReason=${finishReason ?? "unknown"} truncated=${truncated}`);
 
     if (!text) {
       console.error("Gemini returned empty text. Full response:", JSON.stringify(data).slice(0, 500));
@@ -107,15 +113,18 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
     try {
       parsed = JSON.parse(text);
     } catch {
-      console.error("JSON parse failed. Raw text:", text.slice(0, 500));
+      console.error(`JSON parse failed. truncated=${truncated} rawTextLen=${text.length} rawTail=${text.slice(-200)}`);
       return Response.json({
-        error: "AI 응답 파싱 실패",
+        error: truncated
+          ? "AI 응답이 토큰 한도로 잘려 파싱 실패 (API 키 문제 아님)"
+          : "AI 응답 파싱 실패",
         detail: text.slice(0, 300),
+        cause: truncated ? "MAX_TOKENS" : "PARSE_ERROR",
         recommendedCuts: 8,
         recommendedDuration: 8,
         reason: "분석 실패 - 기본값 8장면 × 8초",
         scenes: [],
-      }, { status: 500 });
+      }, { status: truncated ? 422 : 500 });
     }
 
     const rawCuts = parsed.recommendedCuts ?? 8;

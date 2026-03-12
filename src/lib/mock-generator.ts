@@ -35,7 +35,7 @@ async function fetchGeminiCuts(
   directorPersonaText: string,
   cutCount: number,
   cutDuration: number
-): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown }> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; sequencePlan?: unknown; sequenceValidation?: unknown }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
@@ -122,9 +122,29 @@ async function fetchGeminiCuts(
       sequenceValidation: data.sequenceValidation ?? undefined,
     };
   } catch (error) {
-    console.error("Cuts API error, using fallback:", error);
+    const errStr = String(error);
+    console.error("Cuts API error, using fallback:", errStr);
+
+    // 에러 원인 분류 — 정확한 사용자 안내를 위해
+    let fallbackCause: string;
+    if (errStr.includes("토큰 한도") || errStr.includes("MAX_TOKENS") || errStr.includes("truncat")) {
+      fallbackCause = "MAX_TOKENS";
+    } else if (errStr.includes("MISSING_API_KEY")) {
+      fallbackCause = "MISSING_API_KEY";
+    } else if (errStr.includes("INVALID_API_KEY")) {
+      fallbackCause = "INVALID_API_KEY";
+    } else if (errStr.includes("MODEL_NOT_FOUND") || errStr.includes("deprecated")) {
+      fallbackCause = "MODEL_NOT_FOUND";
+    } else if (errStr.includes("429") || errStr.includes("quota") || errStr.includes("QUOTA")) {
+      fallbackCause = "QUOTA_EXCEEDED";
+    } else if (errStr.includes("fetch") || errStr.includes("network") || errStr.includes("ECONNREFUSED")) {
+      fallbackCause = "NETWORK_ERROR";
+    } else {
+      fallbackCause = "UNKNOWN";
+    }
+
     const fallback = generateFallbackCuts(input, director, cutCount, cutDuration);
-    return { ...fallback, usedFallback: true, fallbackReason: String(error) };
+    return { ...fallback, usedFallback: true, fallbackReason: errStr, fallbackCause };
   }
 }
 
@@ -219,7 +239,7 @@ export async function generatePrompt(
   const cutsResult = director
     ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration)
     : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
-  const { characterSeeds, cuts, usedFallback, fallbackReason, sequencePlan, sequenceValidation } = cutsResult;
+  const { characterSeeds, cuts, usedFallback, fallbackReason, fallbackCause, sequencePlan, sequenceValidation } = cutsResult;
 
   const catalogStyle = getStyleById(input.animationMode);
   const veoStyle = catalogStyle
@@ -258,6 +278,7 @@ export async function generatePrompt(
     cuts,
     usedFallback,
     fallbackReason,
+    fallbackCause: fallbackCause as PromptOutput["fallbackCause"],
     sequencePlan: sequencePlan as PromptOutput["sequencePlan"],
     sequenceValidation: sequenceValidation as PromptOutput["sequenceValidation"],
   };

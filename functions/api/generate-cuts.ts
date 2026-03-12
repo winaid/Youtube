@@ -439,33 +439,83 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
 
-  const step1MaxTokens = 4096;
-  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens}`);
+  // ── Token budget: 컷 수에 비례하여 maxOutputTokens 산정 ──
+  // 각 outline ≈ 300-400 tokens, characterSeeds ≈ 200 tokens, JSON overhead ≈ 200
+  // 안전 마진 1.5배 → 최소 4096, 최대 8192
+  const estimatedTokens = 200 + cutCount * 400 + 200;
+  const step1MaxTokens = Math.min(8192, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
+  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens}`);
 
-  const result = await streamingGenerate(env, MODEL_OUTLINE, {
+  let result = await streamingGenerate(env, MODEL_OUTLINE, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.5, maxOutputTokens: step1MaxTokens, responseMimeType: "application/json" },
   });
 
-  console.info(`[cuts:step1] responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+  console.info(`[cuts:step1] responseLen=${result.text.length} truncated=${result.truncated ?? false} parseMode=normal`);
 
-  // MAX_TOKENS truncation: 부분 텍스트로 파싱 시도 (잘린 JSON 복구)
+  // ── Truncation 감지 + compact retry 전략 ──
+  // retry 순서: (1) higher maxTokens retry → (2) compact prompt retry → (3) throw
+  let parseMode: "normal" | "higher_tokens_retry" | "compact_retry" | "partial_recovery" = "normal";
+
   if (result.truncated && result.text) {
     console.warn(`[cuts:step1] TRUNCATED — attempting partial recovery. partialLen=${result.text.length}`);
     const partial = safeParseObj(result.text);
-    if (partial) {
-      // 부분 복구 성공 — outlines가 부족할 수 있지만 downstream에서 채움
-      console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${Array.isArray(partial.outlines) ? (partial.outlines as unknown[]).length : 0}`);
-      // result.error 무시하고 진행
-    } else if (result.error) {
-      throw new Error(`step1 truncated & parse failed: ${result.error.slice(0, 300)}`);
+    if (partial && Array.isArray(partial.outlines) && (partial.outlines as unknown[]).length >= Math.floor(cutCount * 0.7)) {
+      // 부분 복구 성공 — outlines가 70% 이상 있으면 downstream에서 채움
+      parseMode = "partial_recovery";
+      console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${(partial.outlines as unknown[]).length}/${cutCount} parseMode=${parseMode}`);
+    } else {
+      // (1) maxOutputTokens를 8192로 올려서 재시도
+      if (step1MaxTokens < 8192) {
+        console.warn(`[cuts:step1] RETRY with higher maxTokens=8192 (was ${step1MaxTokens})`);
+        parseMode = "higher_tokens_retry";
+        result = await streamingGenerate(env, MODEL_OUTLINE, {
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 8192, responseMimeType: "application/json" },
+        });
+        console.info(`[cuts:step1] higher_tokens_retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+      }
+
+      // (2) 여전히 truncated이면 compact prompt로 재시도
+      if (result.truncated || !safeParseObj(result.text)) {
+        console.warn(`[cuts:step1] COMPACT RETRY — stripping verbose instructions from prompt`);
+        parseMode = "compact_retry";
+        const compactPrompt = `당신은 시나리오 분석가입니다. JSON만 출력하세요.
+${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/해설자 금지." : "일반 영상."}
+감독: ${directorNameKo}. 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
+
+시나리오: ${storyExcerpt}
+
+characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
+outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w),sceneBeat1(≤10w),sceneBeat2(≤10w),sceneBeat3(≤10w),endHook(≤8w)}]
+
+JSON만: {"characterSeeds":[...],"outlines":[...]}`;
+
+        result = await streamingGenerate(env, MODEL_OUTLINE, {
+          contents: [{ role: "user", parts: [{ text: compactPrompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" },
+        });
+        console.info(`[cuts:step1] compact_retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+
+        if (result.truncated) {
+          // compact retry도 truncated → partial 파싱 시도 후 실패하면 throw
+          const lastPartial = safeParseObj(result.text);
+          if (lastPartial && Array.isArray(lastPartial.outlines) && (lastPartial.outlines as unknown[]).length > 0) {
+            parseMode = "partial_recovery";
+            console.info(`[cuts:step1] compact partial recovery: ${(lastPartial.outlines as unknown[]).length} outlines`);
+          } else {
+            throw new Error(`step1 truncated after compact retry: output ${result.text.length}chars, maxTokens=8192. cutCount=${cutCount}개가 너무 많거나 스토리가 너무 깁니다.`);
+          }
+        }
+      }
     }
   } else if (result.error) {
     throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
   }
 
   const parsed = safeParseObj(result.text);
-  if (!parsed) throw new Error(`step1 parse failed. responseLen=${result.text.length} truncated=${result.truncated ?? false} tail=${result.text.slice(-200)}`);
+  if (!parsed) throw new Error(`step1 parse failed. responseLen=${result.text.length} truncated=${result.truncated ?? false} parseMode=${parseMode} tail=${result.text.slice(-200)}`);
+  console.info(`[cuts:step1] FINAL parseMode=${parseMode} characterSeeds=${Array.isArray(parsed.characterSeeds) ? (parsed.characterSeeds as unknown[]).length : 0} outlines=${Array.isArray(parsed.outlines) ? (parsed.outlines as unknown[]).length : 0}`);
 
   const characterSeeds: CharacterSeed[] = Array.isArray(parsed.characterSeeds)
     ? (parsed.characterSeeds as Array<Partial<CharacterSeed>>).map((s) => ({
@@ -791,23 +841,35 @@ ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade
 JSON 배열로만 출력 (마크다운 없이):
 [{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":2,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":3,"prompt":"...","duration":"${secPerCut - 2 * Math.ceil(secPerCut / 3)}"}]}]`;
 
-  const maxTokens = 8192;
-  console.info(`[cuts:${stepLabel}] model=${MODEL_DETAIL} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens}`);
+  // 배치 크기에 비례한 토큰 예산: 컷당 ≈1200 tokens, 최소 8192, 최대 16384
+  const estimatedDetailTokens = batchOutlines.length * 1200 + 500;
+  const maxTokens = Math.min(16384, Math.max(8192, Math.ceil(estimatedDetailTokens * 1.3)));
+  console.info(`[cuts:${stepLabel}] model=${MODEL_DETAIL} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
 
-  const result = await streamingGenerate(env, MODEL_DETAIL, {
+  let result = await streamingGenerate(env, MODEL_DETAIL, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.75, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
   });
 
   console.info(`[cuts:${stepLabel}] responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
 
+  // Truncation retry: maxTokens 상향 후 재시도
+  if (result.truncated && result.text && maxTokens < 16384) {
+    console.warn(`[cuts:${stepLabel}] TRUNCATED — retrying with maxTokens=16384 (was ${maxTokens})`);
+    result = await streamingGenerate(env, MODEL_DETAIL, {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 16384, responseMimeType: "application/json" },
+    });
+    console.info(`[cuts:${stepLabel}] retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+  }
+
   if (result.error) {
     console.error(`[cuts:${stepLabel}] error: ${result.error.slice(0, 500)}`);
     if (result.truncated && result.text) {
-      console.warn(`[cuts:${stepLabel}] TRUNCATED! partialLen=${result.text.length} rawTail1000: ${result.text.slice(-1000)}`);
+      console.warn(`[cuts:${stepLabel}] TRUNCATED after retry! partialLen=${result.text.length} rawTail500: ${result.text.slice(-500)}`);
       const partialArr = safeParseArr(result.text);
       if (partialArr && partialArr.length > 0) {
-        console.info(`[cuts:${stepLabel}] partial recover: ${partialArr.length} cuts`);
+        console.info(`[cuts:${stepLabel}] partial recover: ${partialArr.length}/${batchOutlines.length} cuts`);
         return partialArr as CutDetail[];
       }
     }
