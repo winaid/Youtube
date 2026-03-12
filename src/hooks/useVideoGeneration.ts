@@ -11,6 +11,10 @@ import {
 } from "@/lib/sequence-plan";
 import type { SequencePlan } from "@/lib/sequence-plan";
 import {
+  reevaluateSceneExtensionEligibilityAfterUpload,
+  selectVideoModeForNextCut,
+} from "@/lib/scene-extension-readiness";
+import {
   Cut,
   VideoClip,
   VideoGenStatus,
@@ -1462,7 +1466,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
   // 자동 모드 (직렬 생성) — generating/pending 컷이 없을 때만 다음 idle 컷 시작
   // state.clips 변경 시마다 재실행 → generateCut이 항상 최신 클로저를 사용
-  // (rawVideoUri 등 이전 컷의 완료 정보가 반드시 포함된 상태로 호출됨)
+  // ⚡ 타이밍 수정: 이전 컷의 업로드 완료를 기다린 후 다음 컷 시작
+  //    (canonicalVideoUri가 없으면 Scene Extension 불가 → 업로드 완료 후 재평가)
   useEffect(() => {
     if (!state.isAutoMode) return;
 
@@ -1475,6 +1480,29 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     // 다음 idle 컷 시작
     const nextIdle = state.clips.find((c) => c.status === "idle");
     if (nextIdle) {
+      // ⚡ Scene Extension 타이밍 수정:
+      // 이전 컷의 uploadStatus가 "pending"이면 업로드 완료를 기다림.
+      // canonicalVideoUri가 설정된 후에야 다음 컷에서 Scene Extension 사용 가능.
+      const prevCutNumber = nextIdle.cutNumber - 1;
+      if (prevCutNumber >= 1) {
+        const prevClip = state.clips.find((c) => c.cutNumber === prevCutNumber);
+        if (prevClip?.uploadStatus === "pending") {
+          console.log(`[AUTO-MODE] ⏳ CUT ${prevCutNumber} 업로드 대기 중 — CUT ${nextIdle.cutNumber} 시작 보류`);
+          return; // uploadStatus가 변경되면 state.clips가 변경 → useEffect 재실행
+        }
+        // 업로드 완료 후 eligibility 재평가 로그
+        if (prevClip && prevClip.status === "completed") {
+          const eligibility = reevaluateSceneExtensionEligibilityAfterUpload(prevClip);
+          const modeDecision = selectVideoModeForNextCut(nextIdle.cutNumber, prevClip, undefined);
+          console.log(`[AUTO-MODE] CUT ${nextIdle.cutNumber} 모드 결정:`, {
+            mode: modeDecision.mode,
+            continuityScore: modeDecision.continuityScore,
+            eligible: eligibility.eligible,
+            reason: eligibility.reason,
+            canonicalVideoUri: eligibility.canonicalVideoUri?.slice(0, 60) || "(없음)",
+          });
+        }
+      }
       generateCut(nextIdle.cutNumber);
       return;
     }

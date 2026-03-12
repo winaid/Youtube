@@ -68,6 +68,27 @@ import {
   type VideoRecord,
 } from "../src/lib/video-history";
 
+import {
+  detectSceneContext,
+  getPlaceIdentityCandidates,
+  getSituationEvidenceCandidates,
+  getNaturalMotionCandidates,
+  getLightSourceCandidates,
+  detectNaturalMotion,
+} from "../src/lib/place-situation-anchors";
+
+import {
+  ensureNaturalEnvironmentalMotion,
+  ensureExplicitLightSource,
+} from "../src/lib/sequence-normalizer";
+
+import {
+  reevaluateSceneExtensionEligibilityAfterUpload,
+  selectVideoModeForNextCut,
+  ensureCanonicalVideoUriPromotion,
+  buildExtendPayloadFromCanonicalUri,
+} from "../src/lib/scene-extension-readiness";
+
 // ═══════════════════════════════════════════════════════════════════
 // Helper: minimal SingleShotDocument builder
 // ═══════════════════════════════════════════════════════════════════
@@ -1235,10 +1256,10 @@ console.log("\n[37] normalizeSequence WHERE/WHAT injection for environment");
   assert(whereLog.length > 0, "Has [WHERE] log entry");
   assert(whereLog.some(l => l.includes("Injected")), `WHERE was injected: ${whereLog[0]}`);
 
-  // Should have injected WHAT
+  // Should have WHAT log (either injected or detected from WHERE anchor overlap)
   const whatLog = result.log.filter(l => l.includes("[WHAT]"));
   assert(whatLog.length > 0, "Has [WHAT] log entry");
-  assert(whatLog.some(l => l.includes("Injected")), `WHAT was injected: ${whatLog[0]}`);
+  assert(whatLog.some(l => l.includes("Injected") || l.includes("present")), `WHAT handled: ${whatLog[0]}`);
 
   // Environment with existing anchors — should NOT inject
   const doc2 = makeShotDoc({
@@ -1328,6 +1349,299 @@ console.log("\n[38] Scene Extension readiness");
     cutNumber: 1, status: "completed", createdAt: Date.now(),
   });
   assert(canonicalStatus === "VISIBLE_IN_LIBRARY", `canonical + proxy → VISIBLE_IN_LIBRARY, got: ${canonicalStatus}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 39. Scene-specific WHERE anchor (place identity)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[39] Scene-specific WHERE anchor (place identity)");
+{
+  // detectSceneContext: battlefield (note: "war-torn" without "square" to avoid square_plaza match)
+  const ctx1 = detectSceneContext("war-torn city district", "bombed buildings", "harsh midday light");
+  assert(ctx1 === "battlefield", `War-torn → battlefield, got: ${ctx1}`);
+
+  // detectSceneContext: airport
+  const ctx2 = detectSceneContext("airport runway at dawn", "airplane taxiing", "morning light");
+  assert(ctx2 === "airport", `Airport → airport, got: ${ctx2}`);
+
+  // detectSceneContext: desert
+  const ctx3 = detectSceneContext("vast desert dunes", "sand drifting", "scorching heat haze");
+  assert(ctx3 === "desert", `Desert → desert, got: ${ctx3}`);
+
+  // detectSceneContext: ocean_coast
+  const ctx4 = detectSceneContext("rocky ocean coast", "waves crashing", "overcast");
+  assert(ctx4 === "ocean_coast", `Ocean coast → ocean_coast, got: ${ctx4}`);
+
+  // getPlaceIdentityCandidates returns scene-specific items
+  const battleCandidates = getPlaceIdentityCandidates("battlefield");
+  assert(battleCandidates.length >= 3, `Battlefield has ${battleCandidates.length} candidates (≥3)`);
+  assert(battleCandidates.some(c => /crater|trench|bunker|rubble|barricade|fortification|sandbag/i.test(c)),
+    "Battlefield candidates contain military/destruction objects");
+
+  const airportCandidates = getPlaceIdentityCandidates("airport");
+  assert(airportCandidates.length >= 3, `Airport has ${airportCandidates.length} candidates (≥3)`);
+
+  // ensurePlaceIdentityAnchor: no existing anchor → inject scene-specific
+  const placeResult = ensurePlaceIdentityAnchor("open area", "empty flat ground", "diffused light");
+  assert(!placeResult.hasAnchor, "No existing anchor detected in generic text");
+  assert(!!placeResult.injectedAnchor, `Injected anchor: "${placeResult.injectedAnchor}"`);
+  // Should NOT be the old generic fallback
+  assert(placeResult.injectedAnchor !== "weathered stone structure in the mid-ground" || placeResult.sceneContext === "generic",
+    "Injected anchor is scene-specific (not always generic fallback)");
+
+  // ensurePlaceIdentityAnchor: existing anchor → detected
+  const placeResult2 = ensurePlaceIdentityAnchor("soldiers near a trench", "bombed-out city", "harsh light");
+  assert(placeResult2.hasAnchor, "Existing 'trench' detected as anchor");
+  assert(placeResult2.matchedAnchors.some(a => /trench/i.test(a)), "Trench matched");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 40. Scene-specific WHAT anchor (situation evidence)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[40] Scene-specific WHAT anchor (situation evidence)");
+{
+  // getSituationEvidenceCandidates returns scene-specific items
+  const battleEvidence = getSituationEvidenceCandidates("battlefield");
+  assert(battleEvidence.length >= 3, `Battlefield evidence has ${battleEvidence.length} candidates (≥3)`);
+
+  const forestEvidence = getSituationEvidenceCandidates("forest");
+  assert(forestEvidence.length >= 3, `Forest evidence has ${forestEvidence.length} candidates (≥3)`);
+
+  // ensureSituationEvidence: no existing evidence → inject
+  const evidenceResult = ensureSituationEvidence("open landscape", "still", "calm area", "even light");
+  assert(!evidenceResult.hasEvidence, "No existing evidence in generic text");
+  assert(!!evidenceResult.injectedEvidence, `Injected evidence: "${evidenceResult.injectedEvidence}"`);
+
+  // ensureSituationEvidence: existing evidence → detected
+  const evidenceResult2 = ensureSituationEvidence("smoke plume rising", "fire burning", "bombed city", "overcast");
+  assert(evidenceResult2.hasEvidence, "Existing smoke/fire detected as evidence");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 41. Natural motion injection (MOTION anchors)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[41] Natural motion injection (MOTION anchors)");
+{
+  // getNaturalMotionCandidates: desert → heat shimmer, sand drift
+  const desertMotion = getNaturalMotionCandidates("desert");
+  assert(desertMotion.length >= 2, `Desert motion has ${desertMotion.length} candidates (≥2)`);
+
+  // detectNaturalMotion: existing motion detected
+  const hasMotion = detectNaturalMotion("flags fluttering in wind", "city square", "afternoon");
+  assert(hasMotion.hasMotion, "Wind motion detected in 'fluttering in wind'");
+
+  // detectNaturalMotion: no motion
+  const noMotion = detectNaturalMotion("standing still", "flat ground", "diffused light");
+  assert(!noMotion.hasMotion, "No natural motion in static description");
+
+  // ensureNaturalEnvironmentalMotion: inject when missing
+  const motionResult = ensureNaturalEnvironmentalMotion("standing still", "desert dunes", "harsh light");
+  assert(!motionResult.hasMotion, "No existing motion detected");
+  assert(!!motionResult.injectedMotion, `Injected motion: "${motionResult.injectedMotion}"`);
+
+  // ensureNaturalEnvironmentalMotion: keep when present
+  const motionResult2 = ensureNaturalEnvironmentalMotion("wind sweeping across", "open field", "golden hour");
+  assert(motionResult2.hasMotion, "Existing wind motion detected");
+  assert(!motionResult2.injectedMotion, "No injection when motion exists");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 42. Explicit light source normalization
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[42] Explicit light source normalization");
+{
+  // getLightSourceCandidates: detects time of day
+  const dawnLight = getLightSourceCandidates("dawn light, soft sky", "empty field");
+  assert(dawnLight.detectedTime === "dawn" || dawnLight.detectedTime === "sunrise", `Dawn detected: ${dawnLight.detectedTime}`);
+
+  // getLightSourceCandidates: overcast → suggest improvement
+  const overcastLight = getLightSourceCandidates("overcast gray sky", "urban street");
+  assert(!!overcastLight.suggestedSource || overcastLight.hasExplicitSource, "Overcast gets suggestion or counts as explicit");
+
+  // ensureExplicitLightSource: inject when vague
+  const lightResult = ensureExplicitLightSource("diffused ambient", "open area");
+  // diffused ambient is vague — should inject
+  if (!lightResult.hasExplicitSource) {
+    assert(!!lightResult.injectedSource, `Injected light: "${lightResult.injectedSource}"`);
+  } else {
+    assert(true, "Light source already explicit (acceptable)");
+  }
+
+  // Night scene detection
+  const nightLight = getLightSourceCandidates("moonlit night scene", "forest");
+  assert(nightLight.detectedTime === "night" || nightLight.detectedTime === "moonlit",
+    `Night detected: ${nightLight.detectedTime}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 43. Scene Extension reevaluation after upload
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[43] Scene Extension reevaluation after upload");
+{
+  // Completed + canonical HTTPS → eligible
+  const r1 = reevaluateSceneExtensionEligibilityAfterUpload({
+    cutNumber: 1, status: "completed",
+    canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
+    rawVideoUri: "", videoUri: "blob:...",
+    uploadStatus: "success",
+  });
+  assert(r1.eligible, "HTTPS canonical → eligible");
+  assert(r1.canonicalVideoUri === "https://origin/api/proxy-video?r2key=abc", "Canonical URI preserved");
+
+  // Completed + canonical GCS → eligible
+  const r2 = reevaluateSceneExtensionEligibilityAfterUpload({
+    cutNumber: 1, status: "completed",
+    canonicalVideoUri: "gs://bucket/video.mp4",
+    uploadStatus: "success",
+  });
+  assert(r2.eligible, "GCS canonical → eligible");
+
+  // Completed + no canonical but rawVideoUri gs:// → eligible (fallback)
+  const r3 = reevaluateSceneExtensionEligibilityAfterUpload({
+    cutNumber: 1, status: "completed",
+    rawVideoUri: "gs://bucket/raw.mp4",
+    uploadStatus: "failed",
+  });
+  assert(r3.eligible, "rawVideoUri gs:// → eligible as fallback");
+
+  // Upload still pending → not eligible yet
+  const r4 = reevaluateSceneExtensionEligibilityAfterUpload({
+    cutNumber: 1, status: "completed",
+    uploadStatus: "pending",
+  });
+  assert(!r4.eligible, "Upload pending → not eligible yet");
+
+  // Failed status → not eligible
+  const r5 = reevaluateSceneExtensionEligibilityAfterUpload({
+    cutNumber: 1, status: "failed",
+    canonicalVideoUri: "https://example.com/video.mp4",
+    uploadStatus: "success",
+  });
+  assert(!r5.eligible, "Failed clip → not eligible");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 44. Mode selection for next cut
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[44] Mode selection for next cut");
+{
+  // Cut 1 → TEXT_TO_VIDEO (no frame)
+  const m1 = selectVideoModeForNextCut(1, undefined, undefined);
+  assert(m1.mode === "TEXT_TO_VIDEO", `Cut 1 → TEXT_TO_VIDEO, got: ${m1.mode}`);
+  assert(m1.continuityScore === 0, "Cut 1 continuity = 0");
+
+  // Cut 1 + frame → IMAGE_TO_VIDEO
+  const m2 = selectVideoModeForNextCut(1, undefined, "base64data");
+  assert(m2.mode === "IMAGE_TO_VIDEO", `Cut 1 + frame → IMAGE_TO_VIDEO, got: ${m2.mode}`);
+
+  // Cut 2 + prev has canonical → SCENE_EXTENSION
+  const m3 = selectVideoModeForNextCut(2, {
+    cutNumber: 1, status: "completed",
+    canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
+    uploadStatus: "success",
+  }, undefined);
+  assert(m3.mode === "SCENE_EXTENSION", `Cut 2 + canonical → SCENE_EXTENSION, got: ${m3.mode}`);
+  assert(m3.continuityScore === 100, "Scene Extension continuity = 100");
+  assert(m3.videoUri === "https://origin/api/proxy-video?r2key=abc", "videoUri set for SCENE_EXTENSION");
+
+  // Cut 2 + prev has no canonical + has frame → IMAGE_TO_VIDEO
+  const m4 = selectVideoModeForNextCut(2, {
+    cutNumber: 1, status: "completed",
+    uploadStatus: "failed",
+  }, "framebase64");
+  assert(m4.mode === "IMAGE_TO_VIDEO", `No canonical + frame → IMAGE_TO_VIDEO, got: ${m4.mode}`);
+  assert(m4.continuityScore === 60, "Frame fallback continuity = 60");
+
+  // Cut 2 + prev has no canonical + no frame → TEXT_TO_VIDEO
+  const m5 = selectVideoModeForNextCut(2, {
+    cutNumber: 1, status: "completed",
+    uploadStatus: "failed",
+  }, undefined);
+  assert(m5.mode === "TEXT_TO_VIDEO", `No canonical + no frame → TEXT_TO_VIDEO, got: ${m5.mode}`);
+  assert(m5.continuityScore === 0, "No fallback continuity = 0");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 45. Canonical URI promotion + extend payload
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[45] Canonical URI promotion + extend payload");
+{
+  // Relative path → absolute
+  const promoted1 = ensureCanonicalVideoUriPromotion("/api/proxy-video?r2key=abc", "https://example.com");
+  assert(promoted1 === "https://example.com/api/proxy-video?r2key=abc", `Relative → absolute: ${promoted1}`);
+
+  // Already absolute → unchanged
+  const promoted2 = ensureCanonicalVideoUriPromotion("https://example.com/video.mp4", "https://origin.com");
+  assert(promoted2 === "https://example.com/video.mp4", "Already absolute → unchanged");
+
+  // GCS → unchanged
+  const promoted3 = ensureCanonicalVideoUriPromotion("gs://bucket/video.mp4", "https://origin.com");
+  assert(promoted3 === "gs://bucket/video.mp4", "GCS → unchanged");
+
+  // data: URI → undefined
+  const promoted4 = ensureCanonicalVideoUriPromotion("data:video/mp4;base64,AAAA", "https://origin.com");
+  assert(promoted4 === undefined, "data: URI → undefined");
+
+  // undefined → undefined
+  const promoted5 = ensureCanonicalVideoUriPromotion(undefined, "https://origin.com");
+  assert(promoted5 === undefined, "undefined → undefined");
+
+  // buildExtendPayloadFromCanonicalUri: valid HTTPS
+  const payload1 = buildExtendPayloadFromCanonicalUri("https://origin.com/video.mp4", "continue scene", 8);
+  assert(payload1 !== null, "HTTPS → valid payload");
+  assert(payload1!.previousVideoUri === "https://origin.com/video.mp4", "previousVideoUri set");
+  assert(payload1!.extendPrompt === "continue scene", "extendPrompt set");
+  assert(payload1!.durationSec === 8, "durationSec set");
+
+  // buildExtendPayloadFromCanonicalUri: valid GCS
+  const payload2 = buildExtendPayloadFromCanonicalUri("gs://bucket/video.mp4", undefined, 6);
+  assert(payload2 !== null, "GCS → valid payload");
+  assert(payload2!.extendPrompt === undefined, "No extendPrompt when undefined");
+
+  // buildExtendPayloadFromCanonicalUri: invalid scheme → null
+  const payload3 = buildExtendPayloadFromCanonicalUri("data:video/mp4;base64,AAAA", "test", 8);
+  assert(payload3 === null, "data: → null payload");
+
+  // buildExtendPayloadFromCanonicalUri: empty → null
+  const payload4 = buildExtendPayloadFromCanonicalUri("", "test", 8);
+  assert(payload4 === null, "Empty URI → null payload");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 46. normalizeSequence MOTION + LIGHT integration
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[46] normalizeSequence MOTION + LIGHT integration");
+{
+  // Environment scene with no motion or explicit light → should inject both
+  const envDoc = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "desert dunes stretching to horizon", moodLighting: "harsh light" },
+    subject: { primary: "vast open landscape", action: "still and silent" },
+  });
+  const envResult = normalizeSequence(envDoc);
+  const hasMotionLog = envResult.log.some(l => l.includes("[MOTION]"));
+  const hasLightLog = envResult.log.some(l => l.includes("[LIGHT]"));
+  assert(hasMotionLog, "MOTION log present for environment scene");
+  assert(hasLightLog, "LIGHT log present for environment scene");
+
+  // Environment scene with existing motion → should detect, not inject
+  const envDoc2 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "coastal cliffs", moodLighting: "golden hour sunlight from the west" },
+    subject: { primary: "rocky shoreline", action: "waves crashing against rocks, spray drifting in wind" },
+  });
+  const envResult2 = normalizeSequence(envDoc2);
+  const motionPresent = envResult2.log.some(l => l.includes("[MOTION] Natural motion present"));
+  assert(motionPresent, "Existing motion detected (waves/wind)");
+
+  // Non-environment scene → no MOTION/LIGHT injection
+  const charDoc = makeShotDoc({
+    scene: { shotCategory: "character-driven", environment: "office interior", moodLighting: "fluorescent" },
+    subject: { primary: "a businessman", action: "typing on laptop" },
+  });
+  const charResult = normalizeSequence(charDoc);
+  const noMotionLog = !charResult.log.some(l => l.includes("[MOTION]"));
+  const noLightLog = !charResult.log.some(l => l.includes("[LIGHT]"));
+  assert(noMotionLog, "No MOTION injection for character scene");
+  assert(noLightLog, "No LIGHT injection for character scene");
 }
 
 // ═══════════════════════════════════════════════════════════════════

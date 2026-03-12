@@ -17,6 +17,15 @@
 
 import type { SingleShotDocument } from "@/lib/sequence-assembler";
 import { resolveSceneType, applySceneTypeVocabularyRules, type SceneType } from "@/lib/scene-type-rules";
+import {
+  detectSceneContext,
+  getPlaceIdentityCandidates,
+  getSituationEvidenceCandidates,
+  getNaturalMotionCandidates,
+  getLightSourceCandidates,
+  detectNaturalMotion,
+  type SceneContext,
+} from "@/lib/place-situation-anchors";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Scene Type Inference
@@ -657,42 +666,28 @@ export function applySceneTypeRewrite(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 7c. WHERE/WHAT Anchor Enrichment for Environment Scenes
+// 7c. Scene-Specific WHERE/WHAT/MOTION/LIGHT Anchor Enrichment
 // ═══════════════════════════════════════════════════════════════════
-
-/**
- * WHERE (장소 정체성 오브젝트) — 시각적으로 확인 가능한 구조물/지형.
- * 분위기만으로는 불충분. 구체적 물리 오브젝트가 1개 이상 필요.
- *
- * grep: PLACE_IDENTITY_ANCHORS
- */
-const PLACE_IDENTITY_ANCHORS: Array<{ check: RegExp; examples: string[] }> = [
-  { check: /\b(gate|arch|archway|entrance|portal|doorway|gateway)\b/i, examples: ["weathered stone gate", "reinforced iron gate"] },
-  { check: /\b(square|plaza|courtyard|piazza|forum|agora)\b/i, examples: ["open stone plaza", "wide empty square"] },
-  { check: /\b(runway|tarmac|airfield|airstrip|landing\s+strip)\b/i, examples: ["cracked concrete runway", "abandoned airstrip"] },
-  { check: /\b(tank\s+wreck|burnt\s+vehicle|destroyed\s+(?:tank|truck|car|jeep)|wreckage|hulk)\b/i, examples: ["charred tank wreck", "overturned vehicle hull"] },
-  { check: /\b(palace|castle|fortress|citadel|stronghold|fort)\b/i, examples: ["palace wall", "fortress rampart"] },
-  { check: /\b(wall|rampart|barricade|barrier|fence|perimeter)\b/i, examples: ["crumbling concrete wall", "bullet-scarred barrier"] },
-  { check: /\b(compass\s+rose|map\s+border|legend|cartouche|scale\s+bar)\b/i, examples: ["brass compass rose", "engraved map border"] },
-  { check: /\b(monument|statue|memorial|obelisk|pillar|column|cenotaph|stele)\b/i, examples: ["stone monument", "toppled statue base"] },
-  { check: /\b(bridge|overpass|viaduct|crossing)\b/i, examples: ["collapsed bridge span", "damaged stone bridge"] },
-  { check: /\b(tower|minaret|bell\s+tower|watchtower|spire|turret)\b/i, examples: ["scorched watchtower", "damaged tower silhouette"] },
-  { check: /\b(building|structure|edifice|ruin|rubble\s+pile)\b/i, examples: ["bombed-out building facade", "structural ruin"] },
-  { check: /\b(road|highway|path|trail|track|route)\b/i, examples: ["cratered road surface", "broken asphalt path"] },
-  { check: /\b(crater|impact\s+(?:site|zone|crater)|bomb\s+crater)\b/i, examples: ["deep impact crater", "artillery crater"] },
-  { check: /\b(trench|dugout|foxhole|bunker|pillbox)\b/i, examples: ["abandoned trench line", "concrete bunker"] },
-  { check: /\b(river|canal|stream|waterway|bank|shore|coastline)\b/i, examples: ["muddy riverbank", "dried-out canal"] },
-];
+//
+// Uses place-situation-anchors.ts library for scene-context-aware candidates.
+// Generic fallback은 최후 수단으로만 사용.
+//
+// grep: ensurePlaceIdentityAnchor, ensureSituationEvidence,
+//       ensureNaturalEnvironmentalMotion, ensureExplicitLightSource
 
 export interface PlaceIdentityResult {
   hasAnchor: boolean;
   matchedAnchors: string[];
   injectedAnchor?: string;
+  sceneContext: SceneContext;
 }
 
+/** 장소 정체성 앵커 검사 패턴 (존재 여부 판정용) */
+const PLACE_IDENTITY_CHECK = /\b(gate|arch|square|plaza|courtyard|runway|tarmac|airfield|wreck|hulk|palace|castle|fortress|wall|rampart|barricade|fence|compass\s+rose|map\s+border|monument|statue|memorial|obelisk|pillar|column|bridge|tower|minaret|watchtower|building|structure|ruin|rubble|road|highway|path|crater|trench|bunker|river|canal|shore|coastline|dock|pier|wharf|lighthouse|smokestack|silo|chimney|dune|mesa|outcrop|cliff|boulder|cabin|signpost)\b/i;
+
 /**
- * Environment scene에 장소 정체성 오브젝트가 1개 이상 있는지 검사.
- * 없으면 environment/subject 텍스트에서 맥락을 추론해 적절한 앵커를 반환.
+ * Scene-specific 장소 정체성 오브젝트 검사/주입.
+ * scene context를 먼저 감지하고, 해당 context의 후보에서 선택.
  *
  * grep: ensurePlaceIdentityAnchor
  */
@@ -701,80 +696,34 @@ export function ensurePlaceIdentityAnchor(
   environment: string,
   moodLighting: string,
 ): PlaceIdentityResult {
+  const sceneContext = detectSceneContext(environment, subjectPrimary, moodLighting);
   const fullText = `${subjectPrimary} ${environment} ${moodLighting}`;
-  const matchedAnchors: string[] = [];
 
-  for (const { check, examples } of PLACE_IDENTITY_ANCHORS) {
-    if (check.test(fullText)) {
-      const match = fullText.match(check);
-      if (match) matchedAnchors.push(match[0]);
-    }
+  // 이미 구체적 장소 오브젝트가 있는지 검사
+  const matches = fullText.match(new RegExp(PLACE_IDENTITY_CHECK, "gi"));
+  if (matches && matches.length > 0) {
+    return { hasAnchor: true, matchedAnchors: [...new Set(matches)], sceneContext };
   }
 
-  if (matchedAnchors.length > 0) {
-    return { hasAnchor: true, matchedAnchors };
-  }
+  // Scene-specific 후보에서 첫 번째 선택
+  const candidates = getPlaceIdentityCandidates(sceneContext);
+  const injected = candidates[0] || "weathered stone structure in the mid-ground";
 
-  // No anchor found — pick contextually appropriate one
-  const fullLc = fullText.toLowerCase();
-  let injected: string;
-
-  if (/\b(war|battle|combat|destroy|devastat|ruin|bombed|shell|attack|conflict|scarred)\b/i.test(fullLc)) {
-    injected = "crumbling concrete wall with bullet marks";
-  } else if (/\b(city|urban|town|street|block|district|downtown)\b/i.test(fullLc)) {
-    injected = "weathered stone building facade";
-  } else if (/\b(desert|arid|sand|dune|barren)\b/i.test(fullLc)) {
-    injected = "lone rock formation on the horizon";
-  } else if (/\b(forest|wood|jungle|canopy|tree)\b/i.test(fullLc)) {
-    injected = "massive fallen tree trunk across the path";
-  } else if (/\b(mountain|alpine|peak|ridge|cliff)\b/i.test(fullLc)) {
-    injected = "jagged rock outcrop at the ridge line";
-  } else if (/\b(ocean|sea|coast|beach|shore|harbor|port|dock)\b/i.test(fullLc)) {
-    injected = "weathered wooden dock jutting into water";
-  } else if (/\b(field|plain|meadow|grassland|steppe|savanna)\b/i.test(fullLc)) {
-    injected = "lone fence post leaning at an angle";
-  } else if (/\b(snow|ice|frozen|arctic|tundra|glacier)\b/i.test(fullLc)) {
-    injected = "frozen signpost half-buried in snow";
-  } else {
-    injected = "weathered stone structure in the mid-ground";
-  }
-
-  return { hasAnchor: false, matchedAnchors: [], injectedAnchor: injected };
+  return { hasAnchor: false, matchedAnchors: [], injectedAnchor: injected, sceneContext };
 }
-
-/**
- * WHAT (상황 증거) — 현재 상황을 시각적으로 증명하는 동적/정적 요소.
- * 단순 분위기가 아닌 구체적 시각 증거가 1개 이상 필요.
- *
- * grep: SITUATION_EVIDENCE_PATTERNS
- */
-const SITUATION_EVIDENCE_PATTERNS: Array<{ check: RegExp; examples: string[] }> = [
-  { check: /\b(smoke\s+plume|smoke\s+column|rising\s+smoke|billowing\s+smoke)\b/i, examples: ["thick smoke plumes rising from rubble"] },
-  { check: /\b(damaged\s+ground|cratered|pockmark|scarred\s+earth|scorched\s+ground|charred\s+ground)\b/i, examples: ["blast-cratered ground"] },
-  { check: /\b(waving\s+flag|flag\s+flutter|banner\s+(?:wave|flutter|snap|hang))\b/i, examples: ["torn flag waving in the wind"] },
-  { check: /\b(empty\s+(?:plaza|square|street|road|field)|abandoned|deserted|desolate)\b/i, examples: ["eerily empty plaza"] },
-  { check: /\b(crowd|formation|column\s+of|marching|procession|convoy)\b/i, examples: ["distant column of figures moving"] },
-  { check: /\b(barricade|roadblock|checkpoint|sandbag|wire)\b/i, examples: ["makeshift barricade of debris"] },
-  { check: /\b(broken\s+vehicle|burnt\s+(?:car|truck|bus)|overturned|wrecked\s+(?:car|truck|vehicle))\b/i, examples: ["burnt vehicle shell on the roadside"] },
-  { check: /\b(debris|rubble|wreckage|shattered\s+glass|scattered\s+(?:brick|concrete|metal))\b/i, examples: ["scattered concrete debris"] },
-  { check: /\b(fire|flame|blaze|burning|ember|smolder)\b/i, examples: ["small fires smoldering in wreckage"] },
-  { check: /\b(dust\s+cloud|haze\s+of\s+dust|dust\s+hangs?|airborne\s+dust|particulate)\b/i, examples: ["dust haze hanging in the air"] },
-  { check: /\b(puddle|flood|water\s+pool|standing\s+water|mud)\b/i, examples: ["muddy puddles reflecting grey sky"] },
-  { check: /\b(shadow|long\s+shadow|silhouette|cast\s+shadow)\b/i, examples: ["long shadows stretching across ground"] },
-  { check: /\b(wind|gust|breeze|flutter|ripple)\b/i, examples: ["wind rippling through loose debris"] },
-  { check: /\b(rain|drizzle|downpour|wet\s+surface|puddle)\b/i, examples: ["rain streaking across surfaces"] },
-  { check: /\b(fog|mist|vapor|steam)\b/i, examples: ["low fog clinging to the ground"] },
-];
 
 export interface SituationEvidenceResult {
   hasEvidence: boolean;
   matchedEvidence: string[];
   injectedEvidence?: string;
+  sceneContext: SceneContext;
 }
 
+/** 상황 증거 검사 패턴 */
+const SITUATION_EVIDENCE_CHECK = /\b(smoke\s+plume|rising\s+smoke|billowing|cratered|pockmark|scorched|waving\s+flag|flag\s+flutter|banner|crowd|formation|convoy|barricade|sandbag|wire|debris|rubble|wreckage|shattered|scattered|fire|flame|burning|ember|smolder|heat\s+haze|shimmer|dust\s+cloud|puddle|standing\s+water|mud|rippl|wave|surf|tide|drift|swirl|streak|drip|seep|steam|vent)\b/i;
+
 /**
- * Environment scene에 상황 증거가 1개 이상 있는지 검사.
- * 없으면 맥락에서 적절한 증거를 생성.
+ * Scene-specific 상황 증거 검사/주입.
  *
  * grep: ensureSituationEvidence
  */
@@ -784,45 +733,72 @@ export function ensureSituationEvidence(
   environment: string,
   moodLighting: string,
 ): SituationEvidenceResult {
+  const sceneContext = detectSceneContext(environment, subjectPrimary, moodLighting);
   const fullText = `${subjectPrimary} ${action} ${environment} ${moodLighting}`;
-  const matchedEvidence: string[] = [];
 
-  for (const { check } of SITUATION_EVIDENCE_PATTERNS) {
-    if (check.test(fullText)) {
-      const match = fullText.match(check);
-      if (match) matchedEvidence.push(match[0]);
-    }
+  const matches = fullText.match(new RegExp(SITUATION_EVIDENCE_CHECK, "gi"));
+  if (matches && matches.length > 0) {
+    return { hasEvidence: true, matchedEvidence: [...new Set(matches)], sceneContext };
   }
 
-  if (matchedEvidence.length > 0) {
-    return { hasEvidence: true, matchedEvidence };
+  const candidates = getSituationEvidenceCandidates(sceneContext);
+  const injected = candidates[0] || "subtle dust particles drifting through ambient light";
+
+  return { hasEvidence: false, matchedEvidence: [], injectedEvidence: injected, sceneContext };
+}
+
+export interface NaturalMotionResult {
+  hasMotion: boolean;
+  matchedMotions: string[];
+  injectedMotion?: string;
+}
+
+/**
+ * 자연 환경 모션 검사/주입.
+ * environment scene에 바람/물결/연기 이동 등 자연 모션이 없으면 주입.
+ *
+ * grep: ensureNaturalEnvironmentalMotion
+ */
+export function ensureNaturalEnvironmentalMotion(
+  subjectAction: string,
+  environment: string,
+  moodLighting: string,
+): NaturalMotionResult {
+  const sceneContext = detectSceneContext(environment, subjectAction, moodLighting);
+  const motionCheck = detectNaturalMotion(subjectAction, environment, moodLighting);
+
+  if (motionCheck.hasMotion) {
+    return { hasMotion: true, matchedMotions: motionCheck.matchedMotions };
   }
 
-  // No evidence found — pick contextually appropriate one
-  const fullLc = fullText.toLowerCase();
-  let injected: string;
+  const candidates = getNaturalMotionCandidates(sceneContext);
+  const injected = candidates[0] || "subtle air movement carrying fine particles through the frame";
 
-  if (/\b(war|battle|combat|destroy|devastat|ruin|bombed|shell|conflict|scarred)\b/i.test(fullLc)) {
-    injected = "scattered debris and thin smoke drifting across the ground";
-  } else if (/\b(city|urban|town|street)\b/i.test(fullLc)) {
-    injected = "loose paper and dust drifting across empty pavement";
-  } else if (/\b(desert|arid|sand|dune)\b/i.test(fullLc)) {
-    injected = "fine sand particles carried by the wind across the ground";
-  } else if (/\b(forest|wood|jungle)\b/i.test(fullLc)) {
-    injected = "shafts of light filtering through branches, leaves drifting down";
-  } else if (/\b(mountain|alpine|peak|ridge)\b/i.test(fullLc)) {
-    injected = "loose gravel shifting on the slope, wind-carried dust";
-  } else if (/\b(ocean|sea|coast|shore)\b/i.test(fullLc)) {
-    injected = "foam-streaked waves washing across the shore";
-  } else if (/\b(snow|ice|frozen|arctic)\b/i.test(fullLc)) {
-    injected = "wind-driven snow particles sweeping across the surface";
-  } else if (/\b(rain|storm|thunder)\b/i.test(fullLc)) {
-    injected = "rain streaking across surfaces, puddles forming on the ground";
-  } else {
-    injected = "subtle dust particles drifting through the ambient light";
-  }
+  return { hasMotion: false, matchedMotions: [], injectedMotion: injected };
+}
 
-  return { hasEvidence: false, matchedEvidence: [], injectedEvidence: injected };
+export interface ExplicitLightResult {
+  hasExplicitSource: boolean;
+  detectedTime: string | null;
+  injectedSource?: string;
+}
+
+/**
+ * 명시적 광원(source+direction+quality) 검사/주입.
+ * "overcast" "harsh sunlight" 같이 direction만 있는 경우 완전형으로 보정.
+ *
+ * grep: ensureExplicitLightSource
+ */
+export function ensureExplicitLightSource(
+  moodLighting: string,
+  environment: string,
+): ExplicitLightResult {
+  const result = getLightSourceCandidates(moodLighting, environment);
+  return {
+    hasExplicitSource: result.hasExplicitSource,
+    detectedTime: result.detectedTime,
+    injectedSource: result.suggestedSource,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1029,6 +1005,35 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
       log.push(`[WHAT] Injected situation evidence: "${evidenceResult.injectedEvidence}"`);
     } else if (evidenceResult.hasEvidence) {
       log.push(`[WHAT] Situation evidence present: ${evidenceResult.matchedEvidence.join(", ")}`);
+    }
+
+    // MOTION — 자연 환경 모션 (바람, 물결, 연기 등)
+    const motionResult = ensureNaturalEnvironmentalMotion(
+      result.subject.action,
+      result.scene.environment,
+      result.scene.moodLighting,
+    );
+    if (!motionResult.hasMotion && motionResult.injectedMotion) {
+      result.subject.action = result.subject.action
+        ? `${result.subject.action}, ${motionResult.injectedMotion}`
+        : motionResult.injectedMotion;
+      log.push(`[MOTION] Injected natural motion: "${motionResult.injectedMotion}"`);
+    } else if (motionResult.hasMotion) {
+      log.push(`[MOTION] Natural motion present: ${motionResult.matchedMotions.join(", ")}`);
+    }
+
+    // LIGHT — 명시적 광원 (source + direction + quality)
+    const lightResult = ensureExplicitLightSource(
+      result.scene.moodLighting,
+      result.scene.environment,
+    );
+    if (!lightResult.hasExplicitSource && lightResult.injectedSource) {
+      result.scene.moodLighting = result.scene.moodLighting
+        ? `${result.scene.moodLighting}, ${lightResult.injectedSource}`
+        : lightResult.injectedSource;
+      log.push(`[LIGHT] Injected explicit light source: "${lightResult.injectedSource}"`);
+    } else if (lightResult.hasExplicitSource) {
+      log.push(`[LIGHT] Explicit light source present (time: ${lightResult.detectedTime || "unknown"})`);
     }
   }
 
