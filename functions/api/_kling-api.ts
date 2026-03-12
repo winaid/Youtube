@@ -12,12 +12,30 @@
  *   EvoLink에 native video-extend 없음.
  *   이전 컷 lastFrameBase64 → image 파라미터로 전달해 image-to-video로 대체.
  *
- * Models:
- *   kling-v3-text-to-video      — 텍스트→영상 (기본)
+ * Models (중앙 상수 — KLING_MODELS):
+ *   kling-v3-text-to-video      — 텍스트→영상 (기본, 안정적)
  *   kling-v3-image-to-video     — 이미지→영상 (first/last frame)
- *   kling-o3-text-to-video      — 최신 텍스트→영상 (사운드 지원)
- *   kling-o3-image-to-video     — 최신 이미지→영상
  */
+
+// ── 모델 상수 (중앙 관리) ────────────────────────────────────────────────────
+export const KLING_MODELS = {
+  TEXT_TO_VIDEO: "kling-v3-text-to-video",
+  IMAGE_TO_VIDEO: "kling-v3-image-to-video",
+} as const;
+
+export type KlingModelId = (typeof KLING_MODELS)[keyof typeof KLING_MODELS];
+
+// ── 에러 분류 ────────────────────────────────────────────────────────────────
+export class KlingModelAccessDeniedError extends Error {
+  readonly code = "model_access_denied" as const;
+  readonly retryable = false;
+  readonly modelRequested: string;
+  constructor(modelRequested: string, raw: string) {
+    super(`Kling 403 model_access_denied: token does not have access to model "${modelRequested}". ${raw}`);
+    this.name = "KlingModelAccessDeniedError";
+    this.modelRequested = modelRequested;
+  }
+}
 
 export interface KlingEnv {
   KLING_API_KEY?:      string;
@@ -48,7 +66,7 @@ export interface KlingMultiShot {
 export interface KlingGenerateRequest {
   prompt: string;
   negative_prompt?: string;
-  /** default: "kling-o3-text-to-video" or "kling-o3-image-to-video" if image supplied */
+  /** default: KLING_MODELS.TEXT_TO_VIDEO or KLING_MODELS.IMAGE_TO_VIDEO if image supplied */
   model?: string;
   duration?: number;  // EvoLink o3: 3~15초 정수 지원
   aspect_ratio?: "16:9" | "9:16" | "1:1";
@@ -91,8 +109,14 @@ export async function klingGenerate(
   req: KlingGenerateRequest,
 ): Promise<{ taskId: string }> {
   const headers = klingHeaders(env);
-  // kling-o3-*: 사운드 지원 최신 모델 / kling-v3-*: 사운드 없음
-  const model = req.model ?? (req.image ? "kling-o3-image-to-video" : "kling-o3-text-to-video");
+  const model = req.model ?? (req.image ? KLING_MODELS.IMAGE_TO_VIDEO : KLING_MODELS.TEXT_TO_VIDEO);
+
+  // 요청 직전 실제 사용 모델 로깅
+  console.log("[_kling-api] klingGenerate model selected", {
+    modelRequested: req.model ?? "(default)",
+    modelUsed: model,
+    hasImage: !!req.image,
+  });
 
   // image-to-video 모델인데 image가 없으면 EvoLink 1201 에러 발생 → 사전 차단
   const isImageModel = model.includes("image-to-video");
@@ -137,6 +161,12 @@ export async function klingGenerate(
   const text = await res.text();
   if (!res.ok) {
     const httpStatus = res.status;
+
+    // 403 model_access_denied — 재시도 불가, 명시적 에러 분류
+    if (httpStatus === 403 && text.includes("model_access_denied")) {
+      throw new KlingModelAccessDeniedError(model, text.slice(0, 400));
+    }
+
     const err = new Error(`Kling generate (${httpStatus}): ${text.slice(0, 400)}`);
     (err as Error & { httpStatus: number }).httpStatus = httpStatus;
     throw err;
@@ -167,7 +197,7 @@ export async function klingExtend(
   }
 
   return klingGenerate(env, {
-    model:           "kling-o3-image-to-video", // o3: 사운드 지원
+    model:           KLING_MODELS.IMAGE_TO_VIDEO,
     prompt:          req.prompt ?? "continue the scene naturally",
     negative_prompt: req.negative_prompt,
     duration:        req.duration ?? 5,
@@ -260,7 +290,7 @@ export async function klingCheckStatus(
 // ── Duration / Aspect ratio helpers ──────────────────────────────────────────
 
 /**
- * 입력 초 → Kling o3 지원 초 매핑. EvoLink o3 API: 3~15초 정수 지원.
+ * 입력 초 → Kling 지원 초 매핑. EvoLink API: 3~15초 정수 지원.
  * 실제 요청 초수를 최대한 유지하되 3~15 범위로 클램핑.
  */
 export function toKlingDuration(sec: number): number {

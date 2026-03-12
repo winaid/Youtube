@@ -13,6 +13,8 @@ import {
   klingExtend,
   toKlingDuration,
   toKlingAspectRatio,
+  KlingModelAccessDeniedError,
+  KLING_MODELS,
   type KlingEnv,
   type KlingMultiShot,
 } from "./_kling-api";
@@ -541,6 +543,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         modeUsed = "generate";
       }
     } catch (klingErr) {
+      // 403 model_access_denied — 재시도 불가, 명확한 에러 분류
+      if (klingErr instanceof KlingModelAccessDeniedError) {
+        console.error("[Kling] MODEL_ACCESS_DENIED (not retryable)", {
+          modelRequested: klingErr.modelRequested,
+          cutNumber: req.cutNumber,
+        });
+        return Response.json(
+          {
+            error: klingErr.message,
+            code: "model_access_denied",
+            retryable: false,
+            modelRequested: klingErr.modelRequested,
+            modelFallback: KLING_MODELS.TEXT_TO_VIDEO,
+          },
+          { status: 403 },
+        );
+      }
+
       const msg = klingErr instanceof Error ? klingErr.message : String(klingErr);
       const httpStatus = (klingErr as Error & { httpStatus?: number }).httpStatus;
       const status = httpStatus === 400 ? 400 : httpStatus === 401 ? 401 : 502;
@@ -562,6 +582,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       taskId,
       engine: "kling",
       modeUsed,
+      modelUsed: KLING_MODELS.TEXT_TO_VIDEO,
       sourceVideo: sourceVideo || undefined,
       status: "RUNNING",
     });

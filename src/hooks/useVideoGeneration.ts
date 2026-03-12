@@ -1233,7 +1233,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),
         legacyPromptLen: legacyPrompt.length,
         legacyPromptPrefix: legacyPrompt.slice(0, 120),
-        model: "kling-o3",
+        model: "kling-v3",
       });
 
       // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
