@@ -15,10 +15,8 @@
  * 8. hard-block if errors remain
  */
 
-import { serializeForProvider, type SingleShotDocument, type SerializedShot } from "@/lib/sequence-assembler";
-import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
-import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
-import { normalizeSequence } from "@/lib/sequence-normalizer";
+import { serializeForProvider, type SingleShotDocument } from "@/lib/sequence-assembler";
+import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -87,7 +85,7 @@ export function buildFinalProviderPayload(input: BuildFinalPayloadInput): FinalP
   const serialized = serializeForProvider(doc, provider);
 
   let prompt = serialized.prompt;
-  let negativePrompt = serialized.negativePrompt;
+  const negativePrompt = serialized.negativePrompt;
 
   // Collect debug info from serialization
   if (serialized.debug.sections._sanitizeLog) {
