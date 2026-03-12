@@ -91,19 +91,24 @@ const ENV_COVERAGE_MINIMUM = 3; // 5개 중 3개 이상
 
 export function validateFinalProviderPayload(input: ValidatePayloadInput): PayloadValidationResult {
   const issues: PayloadValidationIssue[] = [];
-  const promptLower = input.prompt.toLowerCase();
   const sceneType = resolveSceneType(input.shotCategory);
 
   // ── Rule 1: Positive/Negative duplicate terms ──────────────────
+  // "Avoid: ..." 섹션을 제외한 prompt 본문만 검사
+  // serializeForProvider가 negative를 embed 한 후 validator가 실행되므로
+  // "Avoid:" 이후는 원래 negative → 충돌이 아님
+  const promptBodyForConflict = input.prompt.replace(/\.\s*Avoid:\s*.*/i, "");
+  const bodyLower = promptBodyForConflict.toLowerCase();
+
   for (const word of POS_NEG_CRITICAL_WORDS) {
     const wordLower = word.toLowerCase();
     const isInNeg = input.negatives.some(n => n.toLowerCase().includes(wordLower));
     if (!isInNeg) continue;
 
-    // prompt에 해당 단어가 있되, "no X" / "avoid X" 가 아닌 경우 = 충돌
-    if (promptLower.includes(wordLower)) {
-      const noPattern = new RegExp(`\\b(?:no|avoid|without)\\s+${escapeRegex(word)}`, "i");
-      if (!noPattern.test(input.prompt)) {
+    // prompt 본문에 해당 단어가 있되, "no X" / "avoid X" / "no text overlay, no X" 패턴 아닌 경우 = 충돌
+    if (bodyLower.includes(wordLower)) {
+      const guardPattern = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${escapeRegex(word)}\\b`, "i");
+      if (!guardPattern.test(promptBodyForConflict)) {
         issues.push({
           rule: "pos_neg_conflict",
           severity: "error",
@@ -112,6 +117,8 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
       }
     }
   }
+
+  const promptLower = input.prompt.toLowerCase();
 
   // ── Rule 2: Environment scene — banned vocabulary ──────────────
   if (sceneType === "environment") {
@@ -387,18 +394,24 @@ export function autoFixPayload(input: ValidatePayloadInput): {
   let { prompt, negatives, framing } = input;
   const sceneType = resolveSceneType(input.shotCategory);
 
-  // Fix 1: pos/neg conflicts — positive에서 제거
+  // Fix 1: pos/neg conflicts — "Avoid:" 섹션 분리 후 본문에서만 제거
+  const avoidMatch = prompt.match(/(\.\s*Avoid:\s*.*)$/i);
+  const avoidSection = avoidMatch ? avoidMatch[1] : "";
+  let promptBody = avoidMatch ? prompt.slice(0, prompt.length - avoidSection.length) : prompt;
+
   for (const word of POS_NEG_CRITICAL_WORDS) {
     const isInNeg = negatives.some(n => n.toLowerCase().includes(word.toLowerCase()));
     if (!isInNeg) continue;
-    const noCheck = new RegExp(`\\b(?:no|avoid|without)\\s+${escapeRegex(word)}`, "i");
-    if (noCheck.test(prompt)) continue;
+    // Guard: "no watermark", "no text overlay, no watermark" 등 부정 구문 보존
+    const guardCheck = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${escapeRegex(word)}\\b`, "i");
+    if (guardCheck.test(promptBody)) continue;
     const pattern = new RegExp(`\\b${escapeRegex(word)}\\b`, "gi");
-    if (pattern.test(prompt)) {
-      prompt = prompt.replace(pattern, "").replace(/\s{2,}/g, " ").trim();
+    if (pattern.test(promptBody)) {
+      promptBody = promptBody.replace(pattern, "").replace(/\s{2,}/g, " ").trim();
       fixes.push(`Removed "${word}" from prompt (conflict with negatives)`);
     }
   }
+  prompt = promptBody + avoidSection;
 
   // Fix 2: env banned vocab
   if (sceneType === "environment") {

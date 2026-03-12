@@ -378,7 +378,143 @@ export function checkDescriptiveCoverage(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 6. Normalize Pipeline (전체 정규화)
+// 6. Lighting Normalization
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 서로 충돌하는 lighting 속성을 하나의 coherent profile로 정규화.
+ *
+ * 규칙:
+ * - warm + cool/blue 충돌 → warm 우선 (golden hour), cool 제거
+ * - bright/harsh + soft/diffused 충돌 → 하나로 통합
+ * - 3개 이상 lighting 형용사 → 최대 2개로 축약
+ */
+export interface LightingNormalizeResult {
+  text: string;
+  normalized: boolean;
+  profile: string;
+}
+
+const WARM_PATTERNS = /\b(warm|golden|amber|sunset|sunrise|late\s+afternoon|golden\s+hour|warm\s+sunny\s+glow)\b/gi;
+const COOL_PATTERNS = /\b(cool|blue[-\s]?grey|blue[-\s]?cast|cold|icy|steel[-\s]?blue|blue[-\s]?tint|blue[-\s]?gray)\b/gi;
+const HARSH_PATTERNS = /\b(harsh|bright\s+daylight|strong\s+intense|direct\s+sunlight|midday\s+sun|overhead\s+sun|blazing)\b/gi;
+const SOFT_PATTERNS = /\b(soft|diffused|gentle|muted|subdued|overcast|cloudy)\b/gi;
+
+export function normalizeLightingDescription(moodLighting: string): LightingNormalizeResult {
+  const hasWarm = WARM_PATTERNS.test(moodLighting);
+  WARM_PATTERNS.lastIndex = 0;
+  const hasCool = COOL_PATTERNS.test(moodLighting);
+  COOL_PATTERNS.lastIndex = 0;
+  const hasHarsh = HARSH_PATTERNS.test(moodLighting);
+  HARSH_PATTERNS.lastIndex = 0;
+  const hasSoft = SOFT_PATTERNS.test(moodLighting);
+  SOFT_PATTERNS.lastIndex = 0;
+
+  // No conflict → return as is
+  if (!(hasWarm && hasCool) && !(hasHarsh && hasSoft)) {
+    return { text: moodLighting, normalized: false, profile: "consistent" };
+  }
+
+  let result = moodLighting;
+  let profile = "";
+
+  if (hasWarm && hasCool) {
+    // Warm/cool conflict: pick warm, remove cool descriptors
+    result = result.replace(COOL_PATTERNS, "").replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+    COOL_PATTERNS.lastIndex = 0;
+    profile = "warm-dominant";
+  }
+
+  if (hasHarsh && hasSoft) {
+    // Harsh/soft conflict: merge to directional natural light
+    result = result
+      .replace(HARSH_PATTERNS, "")
+      .replace(SOFT_PATTERNS, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/,\s*,/g, ",")
+      .trim();
+    HARSH_PATTERNS.lastIndex = 0;
+    SOFT_PATTERNS.lastIndex = 0;
+    result = result ? `${result}, natural directional light with defined shadows` : "natural directional light with defined shadows";
+    profile = profile ? `${profile}, balanced-intensity` : "balanced-intensity";
+  }
+
+  // Cleanup trailing/leading commas and dots
+  result = result.replace(/^[,.\s]+/, "").replace(/[,.\s]+$/, "").replace(/,\s*,/g, ",").replace(/\s{2,}/g, " ").trim();
+
+  return { text: result, normalized: true, profile: profile || "normalized" };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Environment Action Density Rewriter
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Environment scene에서 arrow(→)/progression 패턴을 continuous spatial exploration으로 rewrite.
+ * "X → Y → Z" 같은 progressive emphasis를 단일 연속 movement로 변환.
+ */
+export interface ActionDensityRewriteResult {
+  text: string;
+  rewritten: boolean;
+  motionSuggestion?: string;
+}
+
+const ARROW_PATTERN = /(.+?)\s*[→➜➡>]\s*(.+?)\s*[→➜➡>]\s*(.+)/;
+const PROGRESSION_PATTERN = /\b(fills?\s+the\s+frame|dominates?|takes?\s+over|draws?\s+attention|comes?\s+into\s+focus|emerges?|reveals?)\b/gi;
+
+export function rewriteEnvironmentAction(
+  actionText: string,
+  subjectPrimary: string,
+  camera: { framing: string; motion: string },
+): ActionDensityRewriteResult {
+  // Check for arrow-based progression
+  const arrowMatch = actionText.match(ARROW_PATTERN);
+  if (!arrowMatch) {
+    // Check for dense progression language even without arrows
+    const progMatches = actionText.match(PROGRESSION_PATTERN);
+    PROGRESSION_PATTERN.lastIndex = 0;
+    if (!progMatches || progMatches.length < 2) {
+      return { text: actionText, rewritten: false };
+    }
+  }
+
+  // Extract key elements from the progression
+  const parts = actionText.split(/\s*[→➜➡>]\s*/);
+  const keySubjects: string[] = [];
+  for (const part of parts) {
+    // Extract the main noun/subject from each segment
+    const cleaned = part
+      .replace(PROGRESSION_PATTERN, "")
+      .replace(/\b(the|a|an|in|of|with|from|to|and|or)\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    PROGRESSION_PATTERN.lastIndex = 0;
+    if (cleaned.length > 3) keySubjects.push(cleaned);
+  }
+
+  // Build continuous exploration description
+  const primarySubject = keySubjects.length > 0 ? keySubjects[keySubjects.length - 1] : subjectPrimary;
+  const contextElements = keySubjects.slice(0, -1).join(", ");
+
+  let rewrittenAction: string;
+  if (contextElements) {
+    rewrittenAction = `a wide establishing view reveals ${contextElements}, with continuous focus settling on ${primarySubject}`;
+  } else {
+    rewrittenAction = `a wide establishing view with continuous spatial exploration of ${primarySubject}`;
+  }
+
+  // Suggest camera motion fix if static
+  let motionSuggestion: string | undefined;
+  const isStatic = /^static/i.test(camera.motion) || camera.motion.toLowerCase() === "static";
+  if (isStatic) {
+    motionSuggestion = "slow push-in";
+  }
+
+  return { text: rewrittenAction, rewritten: true, motionSuggestion };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Normalize Pipeline (전체 정규화)
 // ═══════════════════════════════════════════════════════════════════
 
 export interface NormalizeResult {
@@ -399,8 +535,11 @@ export interface NormalizeResult {
  * 2. sanitizeCharacterRef
  * 3. detectOverloadedShot
  * 4. checkCameraActionConsistency
- * 5. checkDescriptiveCoverage + enrichment
- * 6. positive/negative 최종 검사 (누적 충돌 제거)
+ * 4b. environment action density rewrite (→ progression 패턴)
+ * 5. normalizeLightingDescription (충돌 lighting 정규화)
+ * 6. checkDescriptiveCoverage + enrichment
+ * 7. positive/negative 최종 검사 (누적 충돌 제거)
+ * 8. enforceMediumLock
  */
 export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
   const log: string[] = [];
@@ -470,7 +609,43 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
     }
   }
 
-  // ── 5. Descriptive coverage enrichment ─────────────────────────
+  // ── 4b. Environment action density rewrite ───────────────────────
+  if (effectiveSceneType === "environment") {
+    const actionRewrite = rewriteEnvironmentAction(
+      result.subject.action,
+      result.subject.primary,
+      result.camera,
+    );
+    if (actionRewrite.rewritten) {
+      result.subject.action = actionRewrite.text;
+      log.push(`[env-action] Rewrote arrow/progression action to continuous exploration`);
+      if (actionRewrite.motionSuggestion && /^static/i.test(result.camera.motion)) {
+        result.camera.motion = actionRewrite.motionSuggestion;
+        log.push(`[env-action] Camera motion normalized: static → ${actionRewrite.motionSuggestion}`);
+      }
+    }
+    // Also rewrite subject.primary if it has arrow patterns
+    if (/[→➜➡>]/.test(result.subject.primary)) {
+      const primaryRewrite = rewriteEnvironmentAction(
+        result.subject.primary,
+        result.scene.environment,
+        result.camera,
+      );
+      if (primaryRewrite.rewritten) {
+        result.subject.primary = primaryRewrite.text;
+        log.push(`[env-action] Rewrote subject.primary arrow pattern to continuous exploration`);
+      }
+    }
+  }
+
+  // ── 5. Lighting normalization ──────────────────────────────────
+  const lightingResult = normalizeLightingDescription(result.scene.moodLighting);
+  if (lightingResult.normalized) {
+    result.scene.moodLighting = lightingResult.text;
+    log.push(`[lighting] Normalized conflicting lighting to ${lightingResult.profile}: "${lightingResult.text.slice(0, 80)}"`);
+  }
+
+  // ── 6. Descriptive coverage enrichment ─────────────────────────
   if (effectiveSceneType) {
     const fullText = `${result.subject.primary} ${result.subject.action} ${result.scene.moodLighting} ${result.scene.environment} ${result.continuity.characterRef || ""}`;
     const coverage = checkDescriptiveCoverage(fullText, effectiveSceneType);
@@ -499,7 +674,7 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
     }
   }
 
-  // ── 6. Final positive/negative cleanup ─────────────────────────
+  // ── 7. Final positive/negative cleanup ─────────────────────────
   // 이전 단계에서 텍스트가 변경되었을 수 있으므로 재검사
   const positiveText = `${result.global.style} ${result.reinforcement.styleSuffix} ${result.subject.primary}`.toLowerCase();
   const criticalWords = ["watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic", "text overlay"];
@@ -526,7 +701,7 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
     }
   }
 
-  // ── 7. Medium lock enforcement ─────────────────────────────────
+  // ── 8. Medium lock enforcement ─────────────────────────────────
   if (effectiveSceneType === "map_visualization" && !result.reinforcement.mediumLock) {
     result.reinforcement.mediumLock = "physical map surface — not a landscape, not a 3D render, not a CGI scene";
     log.push("[medium-lock] Added medium lock for map visualization scene");

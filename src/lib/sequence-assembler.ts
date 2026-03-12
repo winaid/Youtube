@@ -1086,16 +1086,19 @@ export function serializeForProvider(
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // 15. Final Payload Validation (마지막 게이트)
+  // 15. Final Payload Validation — auto-fix loop (최대 3회)
+  // pos_neg_conflict 등 auto-fixable 에러가 남으면 반복 수정
   // ═══════════════════════════════════════════════════════════════
-  const validation = validateFinalProviderPayload({
+  const allAutoFixes: string[] = [];
+  let lastValidation = validateFinalProviderPayload({
     prompt,
     negatives: uniqueNeg,
     framing: sanitized.framing,
     shotCategory: doc.scene.shotCategory,
     provider,
   });
-  if (!validation.valid && validation.autoFixable) {
+
+  for (let fixRound = 0; fixRound < 3 && !lastValidation.valid && lastValidation.autoFixable; fixRound++) {
     const fixed = autoFixPayload({
       prompt,
       negatives: uniqueNeg,
@@ -1105,12 +1108,23 @@ export function serializeForProvider(
     });
     prompt = fixed.prompt;
     uniqueNeg = fixed.negatives;
-    if (fixed.fixes.length > 0) {
-      sections._autoFixes = fixed.fixes.join(" | ");
-    }
+    sanitized.framing = fixed.framing;
+    allAutoFixes.push(...fixed.fixes);
+
+    lastValidation = validateFinalProviderPayload({
+      prompt,
+      negatives: uniqueNeg,
+      framing: sanitized.framing,
+      shotCategory: doc.scene.shotCategory,
+      provider,
+    });
   }
-  if (validation.issues.length > 0) {
-    sections._validationIssues = validation.issues.map(i => `[${i.severity}] ${i.message}`).join(" | ");
+
+  if (allAutoFixes.length > 0) {
+    sections._autoFixes = allAutoFixes.join(" | ");
+  }
+  if (lastValidation.issues.length > 0) {
+    sections._validationIssues = lastValidation.issues.map(i => `[${i.severity}] ${i.message}`).join(" | ");
   }
 
   // Word cap
@@ -1294,6 +1308,27 @@ export function assembleFromJSON(input: {
   // 이 값은 저장하거나 body에 넣으면 안 된다.
   const serializedPreview = serializeForProvider(normalizedDoc, provider);
 
+  // ── Post-serialization validation — 최종 결과에 pos/neg 충돌이 남아있으면 driftWarning 강화
+  const finalValidationIssueText = serializedPreview.debug.sections._validationIssues || "";
+  const finalPosNegErrors = finalValidationIssueText.includes("pos_neg_conflict");
+  if (finalPosNegErrors && !driftWarning) {
+    driftWarning = `FINAL PAYLOAD pos/neg conflict detected after auto-fix: ${finalValidationIssueText}`;
+  }
+
+  // Update structuredSequence.validation with final serialized state
+  const finalErrorCount = finalValidationIssueText
+    ? finalValidationIssueText.split(" | ").filter(s => s.startsWith("[error]")).length
+    : 0;
+  if (finalErrorCount === 0) {
+    // Auto-fix resolved all errors — mark as valid
+    structuredSequence.validation = {
+      valid: true,
+      errors: 0,
+      warnings: structuredSequence.validation?.warnings || 0,
+      issues: structuredSequence.validation?.issues?.filter(i => i.severity !== "error") || [],
+    };
+  }
+
   // Pipeline trace — step-by-step snapshot for debugging
   const pipelineTrace: PipelineTrace = {
     rawSnapshot,
@@ -1307,8 +1342,8 @@ export function assembleFromJSON(input: {
     finalSnapshot: {
       wordCount: serializedPreview.wordCount,
       truncated: serializedPreview.debug.truncated,
-      validationIssues: serializedPreview.debug.sections._validationIssues
-        ? serializedPreview.debug.sections._validationIssues.split(" | ").length
+      validationIssues: finalValidationIssueText
+        ? finalValidationIssueText.split(" | ").length
         : 0,
     },
   };

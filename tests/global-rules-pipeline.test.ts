@@ -23,6 +23,8 @@ import {
   checkCameraActionConsistency,
   checkDescriptiveCoverage,
   normalizeSequence,
+  normalizeLightingDescription,
+  rewriteEnvironmentAction,
 } from "../src/lib/sequence-normalizer";
 
 import {
@@ -45,7 +47,10 @@ import {
   autoFixPayload,
 } from "../src/lib/final-payload-validator";
 
-import { sanitizeShotDocument } from "../src/lib/sequence-assembler";
+import {
+  sanitizeShotDocument,
+  serializeForProvider,
+} from "../src/lib/sequence-assembler";
 import type { SingleShotDocument } from "../src/lib/sequence-assembler";
 
 import {
@@ -653,6 +658,154 @@ console.log("\n[18] Video history status helpers");
   // canExtendScene with https:// canonical URI
   const httpsCanonical = { ...baseRecord, canonicalVideoUri: "https://storage.googleapis.com/bucket/v.mp4" };
   assert(canExtendScene(httpsCanonical), "https:// canonicalVideoUri → can extend");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 19. Lighting normalization
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[19] Lighting normalization");
+{
+  // Warm + cool conflict
+  const warmCool = normalizeLightingDescription("Bright daylight from overhead, strong intense light, warm sunny glow. Blue-grey cast.");
+  assert(warmCool.normalized, "warm+cool conflict detected and normalized");
+  assert(!warmCool.text.toLowerCase().includes("blue-grey"), "blue-grey removed from warm-dominant profile");
+  assert(warmCool.profile.includes("warm"), "Profile is warm-dominant");
+
+  // Harsh + soft conflict
+  const harshSoft = normalizeLightingDescription("harsh midday sunlight, soft diffused glow, muted shadows");
+  assert(harshSoft.normalized, "harsh+soft conflict detected and normalized");
+  assert(harshSoft.text.includes("natural directional light"), "Merged to natural directional light");
+
+  // No conflict → no change
+  const consistent = normalizeLightingDescription("golden hour light, long shadows, warm tones");
+  assert(!consistent.normalized, "No conflict → not normalized");
+  assert(consistent.profile === "consistent", "Profile is consistent");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 20. Environment action density rewrite
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[20] Environment action density rewrite");
+{
+  // Arrow pattern rewrite
+  const arrowResult = rewriteEnvironmentAction(
+    "Tiananmen Square fills the frame. → Chinese flag waving in the wind. → Flag dominates the square.",
+    "Tiananmen Square, Chinese flag",
+    { framing: "WS", motion: "Static wide shot" },
+  );
+  assert(arrowResult.rewritten, "Arrow pattern detected and rewritten");
+  assert(!arrowResult.text.includes("→"), "No arrow symbols remain in rewritten text");
+  assert(arrowResult.text.toLowerCase().includes("continuous"), "Rewritten to continuous exploration");
+  assert(arrowResult.motionSuggestion === "slow push-in", "Static → slow push-in suggestion");
+
+  // Non-arrow text → no rewrite
+  const noArrow = rewriteEnvironmentAction(
+    "a vast mountain range under overcast sky",
+    "mountain range",
+    { framing: "WS", motion: "slow pan" },
+  );
+  assert(!noArrow.rewritten, "No arrow → no rewrite");
+
+  // Arrow pattern integration into normalizeSequence
+  const envDoc = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "Tiananmen Square", moodLighting: "bright daylight, warm sunny glow, blue-grey cast" },
+    subject: { primary: "Tiananmen Square fills the frame → Chinese flag waving → Flag dominates", action: "Tiananmen Square fills the frame → Chinese flag waving → Flag dominates" },
+    camera: { framing: "WS", angle: "eye_level", motion: "Static wide shot" },
+  });
+  const normalized = normalizeSequence(envDoc);
+  assert(!normalized.doc.subject.action.includes("→"), "normalizeSequence removed arrows from action");
+  assert(normalized.log.some(l => l.includes("[env-action]")), "normalizeSequence logged env-action rewrite");
+  assert(normalized.doc.scene.moodLighting !== envDoc.scene.moodLighting, "Lighting was normalized (warm+cool conflict)");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 21. Final payload pos/neg — "Avoid:" section excluded from conflict
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[21] Final payload pos/neg — Avoid: section handling");
+{
+  // Simulate what serializeForProvider does: embed negatives as "Avoid: ..."
+  const valResult = validateFinalProviderPayload({
+    prompt: "A vast mountain landscape, cinematic realism. No text overlay, no watermark. Avoid: watermark, caption, subtitle, blurry",
+    negatives: ["watermark", "caption", "subtitle", "blurry"],
+    framing: "WS",
+    shotCategory: "environment",
+    provider: "veo",
+  });
+  const posNegErrors = valResult.issues.filter(i => i.rule === "pos_neg_conflict");
+  assert(posNegErrors.length === 0, "No pos_neg_conflict when watermark only in 'no watermark' and 'Avoid:' sections");
+
+  // Actual conflict: bare "watermark" in prompt body (not in "no X" guard)
+  const conflictResult = validateFinalProviderPayload({
+    prompt: "A watermark-style logo on the mountain. Avoid: blurry",
+    negatives: ["watermark"],
+    framing: "WS",
+    provider: "veo",
+  });
+  const realConflict = conflictResult.issues.filter(i => i.rule === "pos_neg_conflict");
+  assert(realConflict.length > 0, "Real pos_neg_conflict detected when bare watermark in body");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 22. serializeForProvider end-to-end — auto-fix cleans all pos/neg
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[22] serializeForProvider end-to-end pos/neg cleanup");
+{
+  // Build a doc with potential pos/neg conflicts
+  const doc = makeShotDoc({
+    global: { style: "cinematic realism, photorealistic", styleId: "live-action", aspectRatio: "16:9", totalDurationSec: 8 },
+    reinforcement: { styleSuffix: "cinematic realism, live-action footage" },
+    scene: { shotCategory: "environment", environment: "vast mountain", moodLighting: "golden hour" },
+  });
+  // Add conflicts: "photorealistic" and "cinematic" are in positive AND negatives
+  doc.negatives.universal = ["text overlay", "watermark", "subtitle", "logo", "blurry", "low quality"];
+  doc.negatives.sceneSpecific = ["photorealistic"]; // conflict with style!
+  doc.negatives.failureMode = ["cinematic"]; // conflict with style!
+
+  const serialized = serializeForProvider(doc, "veo");
+  const finalPrompt = serialized.prompt;
+
+  // The serialized prompt should NOT have pos/neg conflicts after auto-fix
+  // "No text overlay, no watermark" are OK (guard patterns)
+  // But bare "photorealistic" or "cinematic" should either be removed from prompt or negatives
+  const debugIssues = serialized.debug.sections._validationIssues || "";
+  const posNegRemaining = debugIssues.split(" | ").filter(s => s.includes("pos_neg_conflict"));
+  assert(posNegRemaining.length === 0, `No pos_neg_conflict errors remain after auto-fix (got: ${posNegRemaining.length})`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 23. Full Tiananmen Square scenario — end-to-end
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[23] Full Tiananmen Square scenario");
+{
+  const doc = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "Tiananmen Square, Chinese flag", moodLighting: "Bright daylight from overhead, strong intense light, warm sunny glow. Blue-grey cast." },
+    subject: {
+      primary: "Tiananmen Square fills the frame. → Chinese flag waving in the wind. → Flag dominates the square.",
+      action: "Tiananmen Square fills the frame. → Chinese flag waving in the wind. → Flag dominates the square.",
+    },
+    camera: { framing: "WS", angle: "eye_level", motion: "Static wide shot" },
+    global: { style: "cinematic realism", styleId: "live-action", aspectRatio: "16:9", totalDurationSec: 8 },
+  });
+
+  // Run full normalizeSequence
+  const result = normalizeSequence(doc);
+
+  // 1. Action should be rewritten (no arrows)
+  assert(!result.doc.subject.action.includes("→"), "Tiananmen: arrows removed from action");
+  assert(result.doc.subject.action.toLowerCase().includes("continuous"), "Tiananmen: continuous exploration language");
+
+  // 2. Lighting should be coherent (no warm+cool conflict)
+  const lighting = result.doc.scene.moodLighting.toLowerCase();
+  assert(!lighting.includes("blue-grey") && !lighting.includes("blue grey"), "Tiananmen: blue-grey cast removed");
+
+  // 3. Camera motion should be normalized (not static with progressive action)
+  assert(result.doc.camera.motion !== "Static wide shot", "Tiananmen: static motion normalized");
+
+  // 4. Serialize and verify no pos/neg conflicts
+  const serialized = serializeForProvider(result.doc, "veo");
+  const issues = serialized.debug.sections._validationIssues || "";
+  const posNeg = issues.split(" | ").filter(s => s.includes("pos_neg_conflict"));
+  assert(posNeg.length === 0, `Tiananmen: 0 pos_neg_conflict in final payload (got ${posNeg.length})`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
