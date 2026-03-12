@@ -67,7 +67,18 @@ import {
   enforcePhysicsNegatives,
   checkPhysicsConsistency,
   rewriteForPhysics,
+  sanitizeAllFieldsForPhysics,
+  sanitizeLunarLighting,
 } from "../src/lib/physics-rules";
+
+import {
+  detectShotProgression,
+  splitSingleShotSequence,
+  enforceMinimumShotCount,
+  isSingleShotException,
+  rebalanceShotTimings,
+  validateSequenceDensity,
+} from "../src/lib/shot-splitting";
 
 import {
   computeAssetStatus,
@@ -1786,7 +1797,7 @@ console.log("\n[51] Density score computation");
     evidence: [],
     temporalBeats: [],
     cameraPlan: { baseFraming: "", angle: "", motion: "" },
-    physicsRules: { hasWind: true, hasAtmosphere: true, gravity: "unknown" as "unknown", bannedExpressions: [], environmentType: "unknown" as "unknown" },
+    physicsRules: { hasWind: true, hasAtmosphere: true, hasAudibleEnvironment: true, gravity: "unknown" as "unknown", bannedExpressions: [], environmentType: "unknown" as "unknown" },
     motionItems: [],
     lightLog: [],
     continuity: { lighting: "", mustPersist: [] },
@@ -1963,6 +1974,303 @@ console.log("\n[53] Validation strictness — valid=true harder");
 
   // Physics rules should still be detected (earth outdoor)
   assert(seq.physicsRules.environmentType !== "unknown", `Physics detected even for sparse: ${seq.physicsRules.environmentType}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 54. Lunar full-layer physics sanitizer
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[54] Lunar full-layer physics sanitizer");
+{
+  const rules = detectPhysicsRules("lunar surface", "flag", "sunlight");
+
+  // sanitizeAllFieldsForPhysics covers audio.hint
+  const doc = {
+    subject: { primary: "American flag on lunar surface", action: "flag waving in the vacuum" },
+    scene: { environment: "Lunar surface, American flag", moodLighting: "cold daylight, overcast, blue-grey cast" },
+    reinforcement: { styleSuffix: "cinematic realism, diegetic ambient sound" },
+    audio: { hint: "Diegetic ambient sound" },
+    continuity: { ambient: "natural diegetic sound, ambient audio", lightingDirection: "diffused glow" },
+    global: { style: "cinematic realism" },
+  };
+
+  const result = sanitizeAllFieldsForPhysics(doc, rules);
+
+  // Audio must be vacuum silence
+  assert(doc.audio.hint.includes("vacuum silence") || doc.audio.hint.includes("Vacuum silence"),
+    `Audio → vacuum silence: "${doc.audio.hint}"`);
+
+  // Overcast must be removed from moodLighting
+  assert(!/\bovercast\b/i.test(doc.scene.moodLighting),
+    `No overcast in moodLighting: "${doc.scene.moodLighting.slice(0, 60)}"`);
+
+  // "ambient sound" must be removed from reinforcement
+  assert(!/\bambient\s+sound\b/i.test(doc.reinforcement.styleSuffix),
+    `No ambient sound in styleSuffix: "${doc.reinforcement.styleSuffix.slice(0, 60)}"`);
+
+  // "flag waving in the vacuum" must be rewritten
+  assert(!/\bwaving\s+in\s+the\s+vacuum\b/i.test(doc.subject.action),
+    `No 'waving in vacuum': "${doc.subject.action.slice(0, 80)}"`);
+
+  // continuity.ambient must be vacuum silence
+  assert(doc.continuity.ambient === "vacuum silence",
+    `Continuity ambient → vacuum silence: "${doc.continuity.ambient}"`);
+
+  assert(result.rewrites.length >= 3, `At least 3 rewrites: ${result.rewrites.length}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 55. Lunar lighting sanitizer
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[55] Lunar lighting sanitizer");
+{
+  const r1 = sanitizeLunarLighting("cold daylight entering from the upper right, weak diffused glow, blue-grey cast");
+  assert(!/\bcold daylight\b/i.test(r1.text), `No cold daylight: "${r1.text.slice(0, 80)}"`);
+  assert(!/\bweak diffused glow\b/i.test(r1.text), `No weak diffused glow: "${r1.text.slice(0, 80)}"`);
+  assert(!/\bblue[\s-]?grey cast\b/i.test(r1.text), `No blue-grey cast: "${r1.text.slice(0, 80)}"`);
+  assert(/\b(harsh|unfiltered|direct)\b/i.test(r1.text), `Has harsh/unfiltered: "${r1.text.slice(0, 80)}"`);
+  assert(r1.rewrites.length >= 2, `Lunar lighting rewrites: ${r1.rewrites.length}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 56. Lunar assembleFromJSON zero physics violations
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[56] Lunar assembleFromJSON zero physics violations");
+{
+  const lunarCut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Lunar surface with American flag planted firmly",
+    cameraDirection: "Static wide shot",
+    moodLighting: "cold daylight entering from upper right, weak diffused glow",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Lunar surface → American flag planted → Flag waving in the vacuum",
+    extendPrompt: "", transitionHint: "", characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: {
+      subjectAction: "Lunar surface → American flag planted → Flag waving in the vacuum",
+      shotSize: "WS", cameraAngle: "eye_level", cameraMovement: "Static wide shot",
+      moodLighting: "cold daylight entering from the upper right, weak diffused glow, blue-grey cast",
+      locationCue: "Lunar surface, American flag",
+    },
+  };
+  const cfg = { engine: "veo" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
+  const result = assembleFromJSON({ cut: lunarCut as any, config: cfg as any });
+  const seq = result.structuredSequence;
+
+  // Physics violations in final validation must be 0
+  const physicsErrors = (seq.validation?.issues || []).filter(i => i.rule.startsWith("physics_"));
+  assert(physicsErrors.length === 0,
+    `Zero physics violations: got ${physicsErrors.length} (${physicsErrors.map(e => e.message).join("; ")})`);
+
+  // Check source-of-truth fields only (not negatives/logs which contain banned words intentionally)
+  const sotFields = [
+    seq.shotPlan.subject.primary,
+    seq.shotPlan.action,
+    seq.shotPlan.environment,
+    seq.shotPlan.moodLighting,
+  ].join(" ");
+
+  // No "Diegetic ambient sound" in source-of-truth
+  assert(!/\bDiegetic ambient sound\b/i.test(JSON.stringify(seq.shots)),
+    "No Diegetic ambient sound in shots");
+
+  // No "waving in the vacuum" in shots
+  const shotsText = seq.shots.map(s => `${s.subject} ${s.action}`).join(" ");
+  assert(!/\bwaving\s+in\s+the\s+vacuum\b/i.test(shotsText),
+    "No waving in the vacuum in shots");
+
+  // cameraPlan reflects lunar rewrite (not "Static wide shot")
+  assert(seq.cameraPlan.motion !== "Static wide shot",
+    `Camera motion rewritten: "${seq.cameraPlan.motion}"`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 57. Shot progression detection
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[57] Shot progression detection");
+{
+  // Arrow progression
+  const p1 = detectShotProgression("Flag planted → Footprints → Flag silhouette", "");
+  assert(p1.hasProgression, "Arrow progression detected");
+  assert(p1.progressionType === "arrow", `Type: ${p1.progressionType}`);
+  assert(p1.segments.length === 3, `3 segments: ${p1.segments.length}`);
+  assert(p1.suggestedShotCount >= 2, `Suggested shots ≥ 2: ${p1.suggestedShotCount}`);
+
+  // Temporal markers
+  const p2 = detectShotProgression("soldiers march then salute finally depart", "");
+  assert(p2.hasProgression, "Temporal progression detected");
+  assert(p2.progressionType === "temporal", `Type: ${p2.progressionType}`);
+
+  // No progression
+  const p3 = detectShotProgression("standing still", "a man");
+  assert(!p3.hasProgression, "No progression for simple action");
+
+  // Single shot exception
+  assert(isSingleShotException("environment", "", 2), "2-sec duration is exception");
+  assert(isSingleShotException("transition-atmosphere", "any", 8), "Transition is exception");
+  assert(!isSingleShotException("environment", "A → B → C", 8), "Env with progression is NOT exception");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 58. Environment single shot split
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[58] Environment single shot split");
+{
+  const split = splitSingleShotSequence({
+    sceneType: "environment",
+    subjectPrimary: "Tiananmen Square",
+    action: "Square fills the frame → flag becomes dominant → crowd movement",
+    environment: "Tiananmen Square, Beijing",
+    moodLighting: "overcast afternoon",
+    durationSec: 8,
+    camera: { framing: "WS", angle: "eye_level", motion: "static" },
+  });
+  assert(split.wasSplit, "Environment scene was split");
+  assert(split.shots.length >= 2, `Split into ${split.shots.length} shots (≥ 2)`);
+  assert(split.shots[0].shotId === "shot_1", "First shot is shot_1");
+  assert(split.shots[1].shotId === "shot_2", "Second shot is shot_2");
+
+  // Each shot has required fields
+  for (const shot of split.shots) {
+    assert(shot.startSec >= 0, `${shot.shotId} startSec ≥ 0`);
+    assert(shot.endSec > shot.startSec, `${shot.shotId} endSec > startSec`);
+    assert(!!shot.camera.framing, `${shot.shotId} has framing`);
+    assert(!!shot.focus, `${shot.shotId} has focus`);
+  }
+
+  // Last shot ends at duration
+  assert(split.shots[split.shots.length - 1].endSec === 8, "Last shot ends at 8s");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 59. Minimum shot count enforcement
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[59] Minimum shot count enforcement");
+{
+  // Environment scene with 1 shot → forced split
+  const enforced = enforceMinimumShotCount({
+    sceneType: "environment",
+    subjectPrimary: "desert landscape",
+    action: "dunes stretching to horizon",
+    environment: "Sahara desert",
+    moodLighting: "harsh midday sun",
+    durationSec: 8,
+    camera: { framing: "WS", angle: "eye_level", motion: "slow pan" },
+    currentShotCount: 1,
+  });
+  assert(enforced !== null, "Environment scene enforced to multi-shot");
+  assert(enforced!.shots.length >= 2, `Enforced to ${enforced!.shots.length} shots`);
+
+  // Already multi-shot → no enforcement
+  const already = enforceMinimumShotCount({
+    sceneType: "environment",
+    subjectPrimary: "test",
+    action: "test",
+    environment: "test",
+    moodLighting: "test",
+    durationSec: 8,
+    camera: { framing: "WS", angle: "eye_level", motion: "pan" },
+    currentShotCount: 2,
+  });
+  assert(already === null, "Already multi-shot → no enforcement");
+
+  // Transition scene → exception, no enforcement
+  const exception = enforceMinimumShotCount({
+    sceneType: "transition-atmosphere",
+    subjectPrimary: "fade",
+    action: "crossfade",
+    environment: "abstract",
+    moodLighting: "dark",
+    durationSec: 8,
+    camera: { framing: "WS", angle: "eye_level", motion: "static" },
+    currentShotCount: 1,
+  });
+  assert(exception === null, "Transition is exception → no enforcement");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 60. Validator min shot count
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[60] Validator min shot count");
+{
+  // 1-shot environment → validation error
+  const issues1 = validateSequenceDensity({
+    sceneType: "environment",
+    shotCount: 1,
+    action: "vast landscape with progression → focus shifts",
+    durationSec: 8,
+    hasPlaceAnchors: true,
+    hasEvidence: true,
+    hasTemporalBeats: true,
+  });
+  assert(issues1.some(i => i.rule === "min_shot_count"), "1-shot environment → min_shot_count error");
+  assert(issues1.some(i => i.rule === "single_shot_progression"), "Progression in single shot → error");
+
+  // 2-shot environment → OK
+  const issues2 = validateSequenceDensity({
+    sceneType: "environment",
+    shotCount: 2,
+    action: "landscape view",
+    durationSec: 8,
+    hasPlaceAnchors: true,
+    hasEvidence: true,
+    hasTemporalBeats: true,
+  });
+  assert(!issues2.some(i => i.rule === "min_shot_count"), "2-shot environment → no min_shot_count error");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 61. assembleFromJSON produces multi-shot sequence
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[61] assembleFromJSON produces multi-shot sequence");
+{
+  const envCut = {
+    cutNumber: 1, durationSec: 8,
+    sceneDescription: "Vast desert landscape with dunes stretching to the horizon",
+    cameraDirection: "slow pan",
+    moodLighting: "harsh midday sunlight",
+    imagePrompt: "", endImagePrompt: "",
+    videoPrompt: "Desert landscape → dunes stretching → heat shimmer",
+    extendPrompt: "", transitionHint: "", characterConsistency: "",
+    charactersInScene: [],
+    shotCategory: "environment",
+    videoPromptJson: {
+      subjectAction: "Desert landscape → dunes stretching to horizon → heat shimmer rising",
+      shotSize: "WS", cameraAngle: "eye_level", cameraMovement: "slow pan",
+      moodLighting: "harsh midday sunlight, golden sand tones",
+      locationCue: "Sahara desert, vast dune field",
+    },
+  };
+  const cfg = { engine: "veo" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
+  const result = assembleFromJSON({ cut: envCut as any, config: cfg as any });
+  const seq = result.structuredSequence;
+
+  assert(seq.shots.length >= 2, `Multi-shot sequence: ${seq.shots.length} shots`);
+  assert(seq.temporalBeats.length >= 2, `Temporal beats match shots: ${seq.temporalBeats.length}`);
+
+  // Sequence is dense — not a thin summary
+  assert(!!seq.sequenceId, "Has sequenceId");
+  assert(!!seq.physicsRules, "Has physicsRules");
+  assert(seq.placeIdentityAnchors.length >= 1, "Has place anchors");
+  assert(seq.shots[0].shotId === "shot_1", "First shot is shot_1");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 62. Timing rebalance
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[62] Timing rebalance");
+{
+  const t2 = rebalanceShotTimings(8, 2);
+  assert(t2.length === 2, `2 timings: ${t2.length}`);
+  assert(t2[0].startSec === 0, "First starts at 0");
+  assert(t2[t2.length - 1].endSec === 8, "Last ends at 8");
+  assert(t2[0].endSec > 0, "First shot has duration");
+  assert(t2[1].startSec === t2[0].endSec, "No gap between shots");
+
+  const t3 = rebalanceShotTimings(8, 3);
+  assert(t3.length === 3, `3 timings: ${t3.length}`);
+  assert(t3[2].endSec === 8, "Last ends at 8");
+  assert(t3[0].endSec > t3[1].endSec - t3[1].startSec, "First shot is longer (establishing)");
 }
 
 // ═══════════════════════════════════════════════════════════════════

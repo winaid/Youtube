@@ -277,6 +277,8 @@ export interface PhysicsRules {
   hasWind: boolean;
   /** 대기 존재 여부 */
   hasAtmosphere: boolean;
+  /** 음향 환경 존재 여부 (no atmosphere → no audible environment) */
+  hasAudibleEnvironment: boolean;
   /** 중력 유형 */
   gravity: "earth" | "low" | "zero" | "unknown";
   /** 깃발/천 모션 원인 (wind → pole vibration 등) */
@@ -362,6 +364,18 @@ export interface StructuredSequenceDocument {
   temporalBeats: TemporalBeat[];
   /** 서술 밀도 점수 (검증용) */
   densityScore: SequenceDensityScore;
+  /** Multi-shot 분할 결과 — sequence라면 2개 이상 */
+  shots: Array<{
+    shotId: string;
+    startSec: number;
+    endSec: number;
+    camera: { framing: string; angle: string; motion: string };
+    subject: string;
+    action: string;
+    environment: string;
+    moodLighting: string;
+    focus: string;
+  }>;
 
   // ── Legacy / Existing Fields ───────────────────────────
   /** SequencePlan의 ShotPlan과 1:1 매핑 */

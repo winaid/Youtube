@@ -34,6 +34,7 @@ interface StructuredSequencePayload {
   cameraPlan?: { baseFraming: string; angle: string; motion: string; motionMotivation?: string };
   temporalBeats?: Array<{ startSec: number; endSec: number; focus: string }>;
   densityScore?: { total: number; breakdown: Record<string, boolean>; missing: string[] };
+  shots?: Array<{ shotId: string; startSec: number; endSec: number; camera: { framing: string; angle: string; motion: string }; subject: string; action: string; environment: string; moodLighting: string; focus: string }>;
 
   // ── Legacy / Existing ──
   shotId: string;
@@ -128,7 +129,9 @@ function serializeSequenceToPrompt(
   if (shot.transitionFromPrev) parts.push(`Previous shot ends with ${shot.transitionFromPrev}`);
   if (shot.visualMedium) parts.push(shot.visualMedium);
 
-  parts.push("Diegetic ambient sound");
+  // Audio: physics-aware — lunar/space scenes get vacuum silence
+  const isNoAtmosphere = seq.physicsRules && !seq.physicsRules.hasAtmosphere;
+  parts.push(isNoAtmosphere ? "Vacuum silence — no audible environment" : "Diegetic ambient sound");
   parts.push("No text overlay, no watermark");
 
   let prompt = parts.filter(Boolean).join(". ");

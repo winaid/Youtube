@@ -16,8 +16,9 @@ import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
 import { normalizeSequence } from "@/lib/sequence-normalizer";
 import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
-import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics } from "@/lib/physics-rules";
+import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
 import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
+import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor } from "@/lib/shot-splitting";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -1338,28 +1339,36 @@ export function assembleFromJSON(input: {
     }
   }
 
-  // Physics-based text rewrite (lunar flag motion, etc.)
-  const fieldsToRewrite = [
-    { key: "subject.primary", get: () => normalizedDoc.subject.primary, set: (v: string) => { normalizedDoc.subject.primary = v; } },
-    { key: "subject.action", get: () => normalizedDoc.subject.action, set: (v: string) => { normalizedDoc.subject.action = v; } },
-    { key: "scene.environment", get: () => normalizedDoc.scene.environment, set: (v: string) => { normalizedDoc.scene.environment = v; } },
-    { key: "scene.moodLighting", get: () => normalizedDoc.scene.moodLighting, set: (v: string) => { normalizedDoc.scene.moodLighting = v; } },
-  ];
-  for (const field of fieldsToRewrite) {
-    const { text: rewritten, rewrites } = rewriteForPhysics(field.get(), physicsRules);
-    if (rewrites.length > 0) {
-      field.set(rewritten);
-      normalizeLog.push(...rewrites.map(r => `${r} (${field.key})`));
+  // Physics-based text rewrite — ALL layers (subject, scene, reinforcement, audio, continuity, global)
+  const allLayerRewrites = sanitizeAllFieldsForPhysics(normalizedDoc, physicsRules);
+  normalizeLog.push(...allLayerRewrites.rewrites);
+
+  // Lunar-specific lighting sanitizer
+  if (physicsRules.environmentType === "lunar") {
+    const lunarLight = sanitizeLunarLighting(normalizedDoc.scene.moodLighting);
+    if (lunarLight.rewrites.length > 0) {
+      normalizedDoc.scene.moodLighting = lunarLight.text;
+      normalizeLog.push(...lunarLight.rewrites);
+    }
+
+    // Lunar camera rewrite
+    const lunarCam = sanitizeLunarCamera(normalizedDoc.camera.motion, normalizedDoc.subject.action);
+    if (lunarCam.rewrites.length > 0) {
+      normalizedDoc.camera.motion = lunarCam.motion;
+      normalizeLog.push(...lunarCam.rewrites);
     }
   }
 
-  // Physics consistency violations → validation issues
+  // Physics consistency violations → validation issues (ALL fields including audio/reinforcement)
   const physicsViolations = checkPhysicsConsistency(physicsRules, {
     "subject.primary": normalizedDoc.subject.primary,
     "subject.action": normalizedDoc.subject.action,
     "scene.environment": normalizedDoc.scene.environment,
     "scene.moodLighting": normalizedDoc.scene.moodLighting,
     "reinforcement.styleSuffix": normalizedDoc.reinforcement.styleSuffix,
+    "audio.hint": normalizedDoc.audio.hint,
+    "global.style": normalizedDoc.global.style,
+    "continuity.ambient": normalizedDoc.continuity.ambient || "",
   });
 
   // Extract anchors from normalized doc text
@@ -1467,6 +1476,62 @@ export function assembleFromJSON(input: {
     continuity: sequenceContinuity,
   });
 
+  // ── Shot splitting — single shot → multi-shot sequence ──
+  const splitResult = enforceMinimumShotCount({
+    sceneType: effectiveSceneType,
+    subjectPrimary: normalizedDoc.subject.primary,
+    action: normalizedDoc.subject.action,
+    environment: normalizedDoc.scene.environment,
+    moodLighting: normalizedDoc.scene.moodLighting,
+    durationSec: dur,
+    camera: {
+      framing: normalizedDoc.camera.framing,
+      angle: normalizedDoc.camera.angle,
+      motion: normalizedDoc.camera.motion,
+    },
+    currentShotCount: 1,
+  });
+  const sequenceShots: ShotDescriptor[] = splitResult
+    ? splitResult.shots
+    : [{
+        shotId: "shot_1",
+        startSec: 0,
+        endSec: dur,
+        camera: {
+          framing: normalizedDoc.camera.framing,
+          angle: normalizedDoc.camera.angle,
+          motion: normalizedDoc.camera.motion,
+        },
+        subject: normalizedDoc.subject.primary,
+        action: normalizedDoc.subject.action,
+        environment: normalizedDoc.scene.environment,
+        moodLighting: normalizedDoc.scene.moodLighting,
+        focus: `${normalizedDoc.subject.primary} — ${normalizedDoc.subject.action}`.slice(0, 120),
+      }];
+  if (splitResult?.wasSplit) {
+    normalizeLog.push(...splitResult.splitLog);
+    // Update temporal beats from split shots
+    temporalBeats.length = 0;
+    for (const shot of sequenceShots) {
+      temporalBeats.push({
+        startSec: shot.startSec,
+        endSec: shot.endSec,
+        focus: shot.focus,
+      });
+    }
+  }
+
+  // ── Sequence density validation ──
+  const seqDensityIssues = validateSequenceDensity({
+    sceneType: effectiveSceneType,
+    shotCount: sequenceShots.length,
+    action: normalizedDoc.subject.action,
+    durationSec: dur,
+    hasPlaceAnchors: placeAnchors.length > 0,
+    hasEvidence: evidence.length > 0,
+    hasTemporalBeats: temporalBeats.length >= 2,
+  });
+
   // Build StructuredSequenceDocument — 유일한 1급 산출물
   const shotPlan = input.cut.videoPromptJson
     ? videoPromptJsonToShotPlan(
@@ -1508,6 +1573,7 @@ export function assembleFromJSON(input: {
     cameraPlan,
     temporalBeats,
     densityScore,
+    shots: sequenceShots,
 
     // ── Legacy / Existing ──
     shotPlan,
@@ -1544,6 +1610,7 @@ export function assembleFromJSON(input: {
   // Collect all issues from all sources into a unified list
   const allValidationIssues: Array<{ rule: string; severity: "error" | "warning"; message: string }> = [
     ...validation.issues.map(i => ({ rule: i.rule, severity: i.severity as "error" | "warning", message: i.message })),
+    ...seqDensityIssues,
   ];
 
   // Density check — environment scenes need minimum density 60

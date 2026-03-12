@@ -39,6 +39,7 @@ export function detectPhysicsRules(
     return {
       hasWind: false,
       hasAtmosphere: false,
+      hasAudibleEnvironment: false,
       gravity: "low",
       flagMotionSource: "pole vibration or rigid support, not wind",
       skyConstraint: "pitch-black sky with visible stars",
@@ -60,6 +61,7 @@ export function detectPhysicsRules(
     return {
       hasWind: false,
       hasAtmosphere: false,
+      hasAudibleEnvironment: false,
       gravity: "zero",
       skyConstraint: "black void with stars or planetary body",
       lightConstraint: "single harsh directional light source (sun) or ambient starlight",
@@ -78,6 +80,7 @@ export function detectPhysicsRules(
     return {
       hasWind: false,
       hasAtmosphere: false,
+      hasAudibleEnvironment: true,  // underwater has sound propagation
       gravity: "earth",
       skyConstraint: "water surface above with light filtering through",
       lightConstraint: "caustic light patterns from above, decreasing with depth",
@@ -95,6 +98,7 @@ export function detectPhysicsRules(
     return {
       hasWind: false,
       hasAtmosphere: true,
+      hasAudibleEnvironment: true,
       gravity: "earth",
       bannedExpressions: [
         "strong wind", "gust",
@@ -108,6 +112,7 @@ export function detectPhysicsRules(
   return {
     hasWind: true,
     hasAtmosphere: true,
+    hasAudibleEnvironment: true,
     gravity: "earth",
     bannedExpressions: [],
     environmentType: "earth_outdoor",
@@ -227,43 +232,80 @@ export function rewriteForPhysics(
   let result = text;
   const rewrites: string[] = [];
 
-  if (rules.environmentType === "lunar") {
-    // "Flag waving gently" → "Flag held rigid by pole support"
-    const flagWaveRe = /\bflag\s+(waving|fluttering|blowing|rippling)\s*(gently|softly|slowly)?/gi;
+  if (rules.environmentType === "lunar" || rules.environmentType === "space") {
+    // "Flag waving gently" / "flag waving in the vacuum" → rigid pole
+    const flagWaveRe = /\bflag\s+(waving|fluttering|blowing|rippling)\s*(gently|softly|slowly|in\s+the\s+vacuum|in\s+the\s+wind)?/gi;
     if (flagWaveRe.test(result)) {
-      result = result.replace(flagWaveRe, "flag held rigid by pole support, subtle pole vibration");
-      rewrites.push("[physics] Rewrote flag motion: wind → pole vibration (lunar)");
+      result = result.replace(flagWaveRe, "flag held rigid by support bar, subtle fabric tremor from pole vibration");
+      rewrites.push("[physics] Rewrote flag motion → pole vibration (no atmosphere)");
     }
 
-    // "waving gently" (no flag context) → "subtle pole vibration"
-    // Only if in subject/action context
-    const genericWaveRe = /\b(waving|fluttering)\s+(gently|softly|slowly|in\s+the\s+wind)/gi;
+    // Generic "waving/fluttering" → mechanical
+    const genericWaveRe = /\b(waving|fluttering)\s+(gently|softly|slowly|in\s+the\s+(wind|vacuum|breeze))/gi;
     if (genericWaveRe.test(result)) {
       result = result.replace(genericWaveRe, "held rigid with subtle mechanical vibration");
-      rewrites.push("[physics] Rewrote wind-based motion → mechanical vibration (lunar)");
+      rewrites.push("[physics] Rewrote wind-based motion → mechanical vibration");
     }
 
     // "wind" standalone → remove
     const windRe = /,?\s*\b(gentle\s+)?wind\b/gi;
     if (windRe.test(result)) {
-      result = result.replace(windRe, "").replace(/\s{2,}/g, " ").trim();
-      rewrites.push("[physics] Removed wind reference (lunar — no atmosphere)");
+      result = result.replace(windRe, "").replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+      rewrites.push("[physics] Removed wind reference (no atmosphere)");
     }
 
-    // "haze" / "mist" → remove
+    // "haze" / "mist" / "fog" → remove
     const hazeRe = /,?\s*\b(atmospheric\s+)?(haze|mist|fog)\b/gi;
     if (hazeRe.test(result)) {
-      result = result.replace(hazeRe, "").replace(/\s{2,}/g, " ").trim();
-      rewrites.push("[physics] Removed atmospheric haze (lunar — no atmosphere)");
+      result = result.replace(hazeRe, "").replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+      rewrites.push("[physics] Removed atmospheric haze (no atmosphere)");
+    }
+
+    // "overcast" → "even illumination from direct overhead sunlight"
+    if (/\bovercast\b/i.test(result)) {
+      result = result.replace(/\bovercast\b/gi, "even illumination from direct overhead sunlight");
+      rewrites.push("[physics] Rewrote overcast → direct sunlight (no atmosphere)");
+    }
+
+    // "cloudy" → remove
+    if (/\bcloudy?\b/i.test(result)) {
+      result = result.replace(/,?\s*\bcloudy?\b/gi, "").replace(/\s{2,}/g, " ").trim();
+      rewrites.push("[physics] Removed cloud reference (no atmosphere)");
+    }
+
+    // "diffused glow" / "soft diffused daylight" → "unfiltered harsh light"
+    const diffusedRe = /\b(soft\s+)?diffused\s+(glow|daylight|light|illumination)/gi;
+    if (diffusedRe.test(result)) {
+      result = result.replace(diffusedRe, "unfiltered harsh direct light");
+      rewrites.push("[physics] Rewrote diffused light → unfiltered direct (no atmospheric scattering)");
+    }
+
+    // "atmospheric glow" → remove
+    if (/\batmospheric\s+glow\b/i.test(result)) {
+      result = result.replace(/\batmospheric\s+glow\b/gi, "stark reflected surface light");
+      rewrites.push("[physics] Rewrote atmospheric glow → surface reflection (no atmosphere)");
+    }
+
+    // "blue-grey cast" in lunar → "stark grey surface with black sky"
+    if (rules.environmentType === "lunar" && /\bblue[\s-]?grey\s+cast\b/i.test(result)) {
+      result = result.replace(/\bblue[\s-]?grey\s+cast\b/gi, "neutral grey surface tones under harsh unfiltered sunlight");
+      rewrites.push("[physics] Rewrote blue-grey cast → neutral grey surface (lunar)");
     }
   }
 
-  if (rules.environmentType === "space") {
-    // Remove wind references
-    const windRe = /,?\s*\b(gentle\s+)?wind\b/gi;
-    if (windRe.test(result)) {
-      result = result.replace(windRe, "").replace(/\s{2,}/g, " ").trim();
-      rewrites.push("[physics] Removed wind reference (space — no atmosphere)");
+  // ── Audio/sound descriptors (no-atmosphere environments) ──
+  if (!rules.hasAtmosphere) {
+    // "Diegetic ambient sound" / "diegetic sound" / "ambient sound" / "ambient audio"
+    const audioDescriptorRe = /\b(natural\s+)?(diegetic\s+)?(ambient\s+)?(sound|audio)\b/gi;
+    if (audioDescriptorRe.test(result)) {
+      result = result.replace(audioDescriptorRe, "").replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+      rewrites.push("[physics] Removed audio/sound descriptors (no atmosphere)");
+    }
+
+    // "Diegetic ambient sound" as full phrase (catch remaining)
+    if (/\bdiegetic\b/i.test(result)) {
+      result = result.replace(/\bdiegetic\b/gi, "").replace(/\s{2,}/g, " ").trim();
+      rewrites.push("[physics] Removed diegetic reference (no atmosphere)");
     }
   }
 
@@ -277,4 +319,155 @@ export function rewriteForPhysics(
   }
 
   return { text: result, rewrites };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. Full-Layer Physics Sanitizer
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * SingleShotDocument의 ALL text fields에 물리 법칙 적용.
+ * source-of-truth + reinforcement + audio + continuity + global style 전체 커버.
+ *
+ * grep: sanitizeAllFieldsForPhysics
+ */
+export function sanitizeAllFieldsForPhysics(
+  doc: {
+    subject: { primary: string; action: string; bodySignal?: string; blocking?: string };
+    scene: { environment: string; moodLighting: string };
+    reinforcement: { styleSuffix: string; mediumLock?: string };
+    audio: { hint: string };
+    continuity: { ambient?: string; lightingDirection?: string };
+    global: { style: string };
+  },
+  rules: PhysicsRules,
+): { rewrites: string[] } {
+  const rewrites: string[] = [];
+
+  const fields: Array<{ key: string; get: () => string; set: (v: string) => void }> = [
+    { key: "subject.primary", get: () => doc.subject.primary, set: (v) => { doc.subject.primary = v; } },
+    { key: "subject.action", get: () => doc.subject.action, set: (v) => { doc.subject.action = v; } },
+    { key: "scene.environment", get: () => doc.scene.environment, set: (v) => { doc.scene.environment = v; } },
+    { key: "scene.moodLighting", get: () => doc.scene.moodLighting, set: (v) => { doc.scene.moodLighting = v; } },
+    { key: "reinforcement.styleSuffix", get: () => doc.reinforcement.styleSuffix, set: (v) => { doc.reinforcement.styleSuffix = v; } },
+    { key: "audio.hint", get: () => doc.audio.hint, set: (v) => { doc.audio.hint = v; } },
+    { key: "global.style", get: () => doc.global.style, set: (v) => { doc.global.style = v; } },
+  ];
+
+  // Optional fields
+  if (doc.subject.bodySignal) {
+    fields.push({ key: "subject.bodySignal", get: () => doc.subject.bodySignal!, set: (v) => { doc.subject.bodySignal = v; } });
+  }
+  if (doc.continuity.ambient) {
+    fields.push({ key: "continuity.ambient", get: () => doc.continuity.ambient!, set: (v) => { doc.continuity.ambient = v; } });
+  }
+  if (doc.continuity.lightingDirection) {
+    fields.push({ key: "continuity.lightingDirection", get: () => doc.continuity.lightingDirection!, set: (v) => { doc.continuity.lightingDirection = v; } });
+  }
+  if (doc.reinforcement.mediumLock) {
+    fields.push({ key: "reinforcement.mediumLock", get: () => doc.reinforcement.mediumLock!, set: (v) => { doc.reinforcement.mediumLock = v; } });
+  }
+
+  for (const field of fields) {
+    const text = field.get();
+    if (!text) continue;
+    const { text: rewritten, rewrites: fieldRewrites } = rewriteForPhysics(text, rules);
+    if (fieldRewrites.length > 0) {
+      field.set(rewritten);
+      rewrites.push(...fieldRewrites.map(r => `${r} (${field.key})`));
+    }
+  }
+
+  // ── Lunar/Space: force audio to vacuum silence ──
+  if (!rules.hasAtmosphere) {
+    doc.audio.hint = "Vacuum silence — no audible environment";
+    rewrites.push("[physics] Forced audio → vacuum silence (no atmosphere) (audio.hint)");
+    if (doc.continuity.ambient) {
+      doc.continuity.ambient = "vacuum silence";
+      rewrites.push("[physics] Forced continuity.ambient → vacuum silence");
+    }
+  }
+
+  return { rewrites };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Lunar-Specific Lighting Sanitizer
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Lunar scene에서 moodLighting을 물리적으로 정확하게 교정.
+ * "cold daylight entering from upper right, weak diffused glow, blue-grey cast"
+ * → "harsh unfiltered sunlight from upper right, pitch-black sky, stark grey regolith surface"
+ *
+ * grep: sanitizeLunarLighting
+ */
+export function sanitizeLunarLighting(moodLighting: string): { text: string; rewrites: string[] } {
+  let result = moodLighting;
+  const rewrites: string[] = [];
+
+  // "cold daylight" → "harsh unfiltered sunlight"
+  if (/\bcold\s+daylight\b/i.test(result)) {
+    result = result.replace(/\bcold\s+daylight\b/gi, "harsh unfiltered sunlight");
+    rewrites.push("[lunar-light] cold daylight → harsh unfiltered sunlight");
+  }
+
+  // "weak diffused glow" → "stark high-contrast illumination"
+  if (/\bweak\s+diffused\s+glow\b/i.test(result)) {
+    result = result.replace(/\bweak\s+diffused\s+glow\b/gi, "stark high-contrast illumination with razor-sharp shadows");
+    rewrites.push("[lunar-light] weak diffused glow → stark high-contrast illumination");
+  }
+
+  // "blue-grey cast" → "neutral grey tones under direct sunlight"
+  if (/\bblue[\s-]?grey\s+cast\b/i.test(result)) {
+    result = result.replace(/\bblue[\s-]?grey\s+cast\b/gi, "neutral grey surface tones, pitch-black sky");
+    rewrites.push("[lunar-light] blue-grey cast → neutral grey surface, black sky");
+  }
+
+  // "entering from" → "from" (sunlight doesn't "enter" on the moon)
+  if (/\bentering\s+from\b/i.test(result)) {
+    result = result.replace(/\bentering\s+from\b/gi, "from");
+    rewrites.push("[lunar-light] entering from → from (direct exposure, no medium)");
+  }
+
+  // Ensure "pitch-black sky" is present
+  if (!/\b(pitch[\s-]?black|black)\s+sky\b/i.test(result) && !/\bsky\b/i.test(result)) {
+    result = `${result}, pitch-black sky`;
+    rewrites.push("[lunar-light] Added pitch-black sky");
+  }
+
+  return { text: result, rewrites };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Lunar Camera Rewrite
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Lunar environment scene camera를 물리적으로 적절하게 교정.
+ * "Static wide shot"에 progression action이 있으면 slow pan/track으로.
+ *
+ * grep: sanitizeLunarCamera
+ */
+export function sanitizeLunarCamera(
+  motion: string,
+  action: string,
+): { motion: string; rewrites: string[] } {
+  const rewrites: string[] = [];
+  let result = motion;
+
+  // "Static wide shot" + progression → slow cinematic pan
+  const hasProgression = /→|->|then\s|followed\s+by|finally\b/i.test(action);
+  if (/\bstatic\b/i.test(result) && hasProgression) {
+    result = "slow lateral pan revealing the scene";
+    rewrites.push("[lunar-camera] Static + progression → slow lateral pan");
+  }
+
+  // Generic "Static" alone → "slow contemplative pan across the terrain"
+  if (/^\s*static\s*$/i.test(result.trim())) {
+    result = "very slow contemplative pan across the lunar terrain";
+    rewrites.push("[lunar-camera] Static → slow contemplative pan (lunar environment)");
+  }
+
+  return { motion: result, rewrites };
 }
