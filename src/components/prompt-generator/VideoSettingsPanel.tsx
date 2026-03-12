@@ -302,14 +302,24 @@ export default function VideoSettingsPanel({
 
           <Separator style={{ background: "#c4b80030" }} />
 
-          {/* 오디오 — 항상 ON 고정 */}
+          {/* 오디오 ON/OFF 토글 */}
           <div className="flex items-center justify-between">
             <Label className="text-xs">네이티브 오디오 생성</Label>
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-medium" style={{ color: "#22c55e" }}>항상 ON</span>
-              <div className="relative w-10 h-5 rounded-full" style={{ background: "#22c55e" }}>
-                <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow" style={{ left: "22px" }} />
-              </div>
+              <span className="text-[10px] font-medium" style={{ color: config.generateAudio ? "#22c55e" : "#888" }}>
+                {config.generateAudio ? "ON" : "OFF"}
+              </span>
+              <button
+                type="button"
+                className="relative w-10 h-5 rounded-full transition-colors"
+                style={{ background: config.generateAudio ? "#22c55e" : "#ccc" }}
+                onClick={() => update({ generateAudio: !config.generateAudio })}
+              >
+                <div
+                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                  style={{ left: config.generateAudio ? "22px" : "2px" }}
+                />
+              </button>
             </div>
           </div>
 

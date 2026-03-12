@@ -283,10 +283,10 @@ interface GenerateVideoRequest {
   firstFrameBase64?: string;
   lastFrameBase64?: string;
   multiShot?: KlingMultiShot[];
+  generateAudio?: boolean; // true = sound "on", false = sound "off"
   // ── Legacy Veo fields (무시됨) ──────────────────────────────────────────
   mode?: string;
   resolution?: string;
-  generateAudio?: boolean;
   personGeneration?: string;
   seed?: number;
   sampleCount?: number;
@@ -423,6 +423,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const duration = toKlingDuration(req.durationSeconds ?? 8);
     const aspectRatio = toKlingAspectRatio(req.aspectRatio ?? "16:9");
 
+    // Audio: generateAudio 설정 + physics override (무대기 환경은 강제 off)
+    const physicsNoAtmo = req.structuredSequence?.physicsRules && !req.structuredSequence.physicsRules.hasAtmosphere;
+    const soundParam: "on" | "off" = physicsNoAtmo ? "off" : (req.generateAudio !== false ? "on" : "off");
+
     // base64 검증
     const strippedFirst = req.firstFrameBase64 ? stripDataPrefix(req.firstFrameBase64) : "";
     const strippedLast  = req.lastFrameBase64  ? stripDataPrefix(req.lastFrameBase64)  : "";
@@ -452,6 +456,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           negative_prompt: klingNegativePrompt,
           duration,
           aspect_ratio:    aspectRatio,
+          sound:           soundParam,
         });
         taskId = result.taskId;
         modeUsed = "extend";
@@ -476,6 +481,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           negative_prompt: klingNegativePrompt,
           aspect_ratio:    aspectRatio,
           duration,
+          sound:           soundParam,
           ...(validFirst ? { image:      validFirst } : {}),
           ...(validLast  ? { image_tail: validLast  } : {}),
           ...(req.multiShot && req.multiShot.length > 0 ? { multiShot: req.multiShot } : {}),

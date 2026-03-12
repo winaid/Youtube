@@ -1235,7 +1235,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         resolution: cfg.resolution,
         aspectRatio: cfg.aspectRatio,
-        generateAudio: true,
+        generateAudio: cfg.generateAudio,
         negativePrompt: negativePrompt || undefined,
         personGeneration: cfg.personGeneration,
         sampleCount: cfg.sampleCount,

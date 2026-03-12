@@ -72,6 +72,7 @@ export interface KlingExtendRequest {
   negative_prompt?: string;
   duration?: number;  // EvoLink o3: 3~15초 정수 지원
   aspect_ratio?: "16:9" | "9:16" | "1:1";
+  sound?: "on" | "off"; // o3 사운드: "on"=사운드 생성, "off"=무음
 }
 
 export interface KlingTaskStatus {
@@ -172,7 +173,7 @@ export async function klingExtend(
     duration:        req.duration ?? 5,
     aspect_ratio:    req.aspect_ratio ?? "16:9",
     image:           req.lastFrameBase64,
-    sound:           "on",  // EvoLink o3 사운드 ON
+    sound:           req.sound ?? "on",
   });
 }
 
