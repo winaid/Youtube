@@ -721,14 +721,13 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
   }
   result.timing.beats = dedupedBeats;
 
-  // Fix 3: Remove positive/negative conflicts (공통 헬퍼)
+  // Fix 3: Remove positive/negative conflicts — 모든 4개 negative layer 전체 적용
   const positiveText = `${result.global.style} ${result.reinforcement.styleSuffix}`;
-  const fmResult = sanitizeNegativesAgainstPositive(result.negatives.failureMode, positiveText);
-  result.negatives.failureMode = fmResult.cleaned;
-  for (const r of fmResult.removed) fixes.push(`Removed conflicting negative "${r}" (present in positive style)`);
-  const ssResult = sanitizeNegativesAgainstPositive(result.negatives.sceneSpecific, positiveText);
-  result.negatives.sceneSpecific = ssResult.cleaned;
-  for (const r of ssResult.removed) fixes.push(`Removed conflicting negative "${r}" (present in positive style)`);
+  for (const layer of ["universal", "sceneSpecific", "failureMode", "user"] as const) {
+    const layerResult = sanitizeNegativesAgainstPositive(result.negatives[layer], positiveText);
+    result.negatives[layer] = layerResult.cleaned;
+    for (const r of layerResult.removed) fixes.push(`Removed conflicting negative "${r}" from ${layer} (present in positive style)`);
+  }
 
   // Fix 4: Clean 3D/CGI in cinematic realism
   const isCR = /cinematic\s*realism/i.test(result.global.style + " " + result.global.styleId);

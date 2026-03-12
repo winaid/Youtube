@@ -1334,11 +1334,30 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                   originalHead: fallbackPrompt.slice(0, 100),
                   sanitizedHead: sanitizedPrompt.slice(0, 100),
                 });
-                // Safety retry는 직접 prompt를 보냄 — 예외적 string fallback
+                // Safety retry — structuredSequence source of truth 유지
+                // sanitizedPrompt를 shotPlan.action에 반영하되, structuredSequence 구조를 보존
+                const retryBody = { ...body };
+                if (retryBody.structuredSequence && typeof retryBody.structuredSequence === "object") {
+                  const retrySeq = JSON.parse(JSON.stringify(retryBody.structuredSequence));
+                  retrySeq.shotPlan.action = sanitizedPrompt.slice(0, 500);
+                  retrySeq.shotPlan.negativeDirectives = [
+                    ...(retrySeq.shotPlan.negativeDirectives || []),
+                    "graphic violence", "gore", "blood", "injury detail", "medical procedure",
+                  ];
+                  retryBody.structuredSequence = retrySeq;
+                  delete retryBody.prompt;
+                  console.log(`[CUT ${cutNumber}] Safety 재시도: structuredSequence 유지`, {
+                    actionLen: retrySeq.shotPlan.action.length,
+                    addedNegatives: 5,
+                  });
+                } else {
+                  // 극한 fallback: structuredSequence 없으면 string 사용
+                  (retryBody as Record<string, unknown>).prompt = sanitizedPrompt;
+                }
                 const retryRes = await fetch("/api/generate-video", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ ...body, prompt: sanitizedPrompt }),
+                  body: JSON.stringify(retryBody),
                 });
                 if (retryRes.ok) {
                   const retryData = await retryRes.json();

@@ -45,7 +45,15 @@ import {
   autoFixPayload,
 } from "../src/lib/final-payload-validator";
 
+import { sanitizeShotDocument } from "../src/lib/sequence-assembler";
 import type { SingleShotDocument } from "../src/lib/sequence-assembler";
+
+import {
+  computeAssetStatus,
+  canExtendScene,
+  visibleInLibrary,
+  type VideoRecord,
+} from "../src/lib/video-history";
 
 // ═══════════════════════════════════════════════════════════════════
 // Helper: minimal SingleShotDocument builder
@@ -545,6 +553,106 @@ console.log("\n[16] Positive keyword validation");
   });
   const noPosIssue = fullResult.issues.find(i => i.rule === "positive_keywords_missing");
   assert(!noPosIssue, "No positive keyword issue when all are present");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 17. sanitizeShotDocument — ALL 4 negative layers sanitized
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[17] sanitizeShotDocument — all negative layers");
+{
+  // "cinematic" is in the positive style but also in universal negatives
+  const doc = makeShotDoc({
+    global: { style: "cinematic realism", styleId: "live-action", aspectRatio: "16:9", totalDurationSec: 8 },
+  });
+  // Inject conflicts into each layer
+  doc.negatives.universal = ["watermark", "cinematic", "blurry"];
+  doc.negatives.sceneSpecific = ["photorealistic", "subtitle"];
+  doc.negatives.failureMode = ["cinematic realism", "low quality"];
+  doc.negatives.user = ["realism", "logo"];
+
+  const { doc: sanitized, fixes } = sanitizeShotDocument(doc);
+
+  // "cinematic" should be removed from universal (conflicts with style "cinematic realism")
+  assert(
+    !sanitized.negatives.universal.includes("cinematic"),
+    "universal: removed 'cinematic' conflicting with positive style"
+  );
+  // "watermark" should remain (not in positive style text)
+  assert(
+    sanitized.negatives.universal.includes("watermark"),
+    "universal: kept 'watermark' (not in positive)"
+  );
+  // failureMode: "cinematic realism" should be removed
+  assert(
+    !sanitized.negatives.failureMode.includes("cinematic realism"),
+    "failureMode: removed 'cinematic realism' conflicting with positive"
+  );
+  // user: "realism" should be removed (present in positive "cinematic realism")
+  assert(
+    !sanitized.negatives.user.includes("realism"),
+    "user: removed 'realism' conflicting with positive style"
+  );
+  // Verify fixes logged all 4 layers
+  const layersFixed = new Set(fixes.filter(f => f.includes("Removed conflicting negative")).map(f => {
+    const m = f.match(/from (\w+)/);
+    return m ? m[1] : "";
+  }));
+  assert(layersFixed.size >= 2, `At least 2 different layers had conflicts resolved (got ${layersFixed.size})`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 18. Video history — computeAssetStatus, canExtendScene, visibleInLibrary
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[18] Video history status helpers");
+{
+  const baseRecord: VideoRecord = {
+    id: "vid-test-1",
+    operationName: "op-1",
+    engine: "veo",
+    gcsUri: "",
+    proxyUri: "",
+    prompt: "test",
+    mode: "generate",
+    durationSec: 8,
+    cutNumber: 1,
+    status: "completed",
+    createdAt: Date.now(),
+  };
+
+  // GENERATED: no URIs
+  assert(computeAssetStatus(baseRecord) === "GENERATED", "No URIs → GENERATED");
+  assert(!canExtendScene(baseRecord), "No URIs → cannot extend");
+  assert(!visibleInLibrary(baseRecord), "No URIs → not visible in library");
+
+  // ASSET_STORED_INTERNAL: only gcsUri
+  const internal = { ...baseRecord, gcsUri: "gs://bucket/video.mp4" };
+  assert(computeAssetStatus(internal) === "ASSET_STORED_INTERNAL", "gcsUri only → ASSET_STORED_INTERNAL");
+  assert(!canExtendScene(internal), "gcsUri only → cannot extend (no canonicalVideoUri)");
+
+  // ASSET_STORED_PUBLIC: only proxyUri
+  const pub = { ...baseRecord, proxyUri: "https://proxy.example.com/video.mp4" };
+  assert(computeAssetStatus(pub) === "ASSET_STORED_PUBLIC", "proxyUri only → ASSET_STORED_PUBLIC");
+
+  // SCENE_EXTENSION_READY: canonicalVideoUri but no proxyUri
+  const extReady = { ...baseRecord, canonicalVideoUri: "gs://bucket/final.mp4" };
+  assert(computeAssetStatus(extReady) === "SCENE_EXTENSION_READY", "canonicalVideoUri only → SCENE_EXTENSION_READY");
+  assert(canExtendScene(extReady), "canonicalVideoUri gs:// → can extend");
+
+  // VISIBLE_IN_LIBRARY: both proxyUri and canonicalVideoUri
+  const visible = { ...baseRecord, proxyUri: "https://proxy.example.com/v.mp4", canonicalVideoUri: "gs://bucket/final.mp4" };
+  assert(computeAssetStatus(visible) === "VISIBLE_IN_LIBRARY", "proxyUri + canonicalVideoUri → VISIBLE_IN_LIBRARY");
+  assert(canExtendScene(visible), "VISIBLE_IN_LIBRARY → can extend");
+  assert(visibleInLibrary(visible), "VISIBLE_IN_LIBRARY → visible in library");
+
+  // Failed record always GENERATED
+  const failedRecord = { ...visible, status: "failed" as const };
+  assert(computeAssetStatus(failedRecord) === "GENERATED", "Failed record → always GENERATED");
+  assert(!canExtendScene(failedRecord), "Failed → cannot extend");
+  assert(!visibleInLibrary(failedRecord), "Failed → not visible");
+
+  // canExtendScene with https:// canonical URI
+  const httpsCanonical = { ...baseRecord, canonicalVideoUri: "https://storage.googleapis.com/bucket/v.mp4" };
+  assert(canExtendScene(httpsCanonical), "https:// canonicalVideoUri → can extend");
 }
 
 // ═══════════════════════════════════════════════════════════════════

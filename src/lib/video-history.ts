@@ -107,6 +107,10 @@ export function clearVideoHistory(): void {
 export function computeAssetStatus(record: VideoRecord): VideoAssetStatus {
   if (record.status === "failed") return "GENERATED"; // 실패 시 최초 상태 고정
 
+  // VISIBLE_IN_LIBRARY: proxyUri 있고 canonicalVideoUri도 있을 때 라이브러리 표시 가능
+  if (record.canonicalVideoUri && record.proxyUri) {
+    return "VISIBLE_IN_LIBRARY";
+  }
   if (record.canonicalVideoUri) {
     return "SCENE_EXTENSION_READY";
   }
@@ -117,6 +121,24 @@ export function computeAssetStatus(record: VideoRecord): VideoAssetStatus {
     return "ASSET_STORED_INTERNAL";
   }
   return "GENERATED";
+}
+
+/**
+ * Scene Extension 가능 여부 — canonicalVideoUri(gs:// 또는 https://)가 있어야 함.
+ * SCENE_EXTENSION_READY 또는 VISIBLE_IN_LIBRARY 상태에서만 true.
+ */
+export function canExtendScene(record: VideoRecord): boolean {
+  if (record.status === "failed") return false;
+  return !!record.canonicalVideoUri &&
+    (record.canonicalVideoUri.startsWith("gs://") || record.canonicalVideoUri.startsWith("https://"));
+}
+
+/**
+ * 라이브러리 표시 가능 여부 — 재생 가능한 proxyUri + 안정적 canonicalVideoUri 모두 필요.
+ */
+export function visibleInLibrary(record: VideoRecord): boolean {
+  if (record.status === "failed") return false;
+  return !!record.proxyUri && !!record.canonicalVideoUri;
 }
 
 /**

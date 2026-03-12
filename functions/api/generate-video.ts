@@ -144,6 +144,27 @@ function serializeSequenceToPrompt(
     });
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Final Validation — 서버 마지막 관문: pos/neg 충돌 재검증
+  // ═══════════════════════════════════════════════════════════════
+  const criticalPosNegWords = ["watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic", "text overlay"];
+  const promptLower = prompt.toLowerCase();
+  const finalFixLog: string[] = [];
+  uniqueNeg = uniqueNeg.filter(neg => {
+    const negLower = neg.toLowerCase().trim();
+    if (criticalPosNegWords.some(w => negLower.includes(w)) && promptLower.includes(negLower)) {
+      finalFixLog.push(`[server-final-validation] Removed conflicting negative "${neg}" (found in prompt)`);
+      return false;
+    }
+    return true;
+  });
+  if (finalFixLog.length > 0) {
+    console.log("[serializeSequenceToPrompt] final validation fixes:", {
+      cutNumber: seq.cutNumber,
+      fixes: finalFixLog,
+    });
+  }
+
   const negStr = uniqueNeg.join(", ");
 
   // Veo: embed negatives (no separate negative prompt field)
