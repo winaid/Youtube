@@ -514,6 +514,20 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   cinematography: { lighting: [], composition: [], lens: [], cameraMove: [], countryStyle: [], colorGrade: [] },
 };
 
+// ===== Duration 추적 메타 =====
+export interface DurationMeta {
+  /** UI에서 사용자가 요청한 값 (slider 값, 0=auto) */
+  requestedSecondsPerScene?: number;
+  /** safeDuration 등으로 정규화된 값 (3-15) */
+  normalizedSecondsPerScene: number;
+  /** Kling API에 실제 전송된 값 (toKlingDuration 후) */
+  sentSecondsPerScene?: number;
+  /** 어디서 결정됐는지 */
+  source: "slider" | "auto" | "api-response" | "fallback";
+  /** 보정/클램핑 경고 */
+  warnings: string[];
+}
+
 // ===== 영상 생성 상태 =====
 export type VideoGenStatus = "idle" | "generating" | "polling" | "completed" | "failed";
 

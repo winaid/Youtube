@@ -38,6 +38,10 @@ interface InputPanelProps {
   isLoading: boolean;
   prefillScenario?: string;
   onPrefillConsumed?: () => void;
+  /** 부모가 소유하는 장면당 초 (0=자동, 3-15=명시) */
+  secondsPerScene: number;
+  /** 장면당 초 변경 콜백 */
+  onSecondsPerSceneChange: (v: number) => void;
 }
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
@@ -232,7 +236,7 @@ function persistCustomDirectors(dirs: DirectorPersona[]) {
   } catch { /* storage full */ }
 }
 
-export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -246,7 +250,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [isSearching, setIsSearching] = useState(false);
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>(loadCustomDirectors);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
-  const [cutDuration, setCutDuration] = useState<number>(8);
+  // cutDuration은 부모(PromptGenerator)가 소유. 여기서는 prop alias만 사용.
+  const cutDuration = secondsPerScene;
+  const setCutDuration = onSecondsPerSceneChange;
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
@@ -1335,10 +1341,28 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             <p className="text-[9px] text-muted-foreground">
               {cutDuration === 0
                 ? "길이와 장면 수를 기준으로 자동 계산"
-                : cutDuration >= 10
-                  ? `⚠ ${cutDuration}초는 Kling 전용 — 각 장면을 ${cutDuration}초 기준으로 생성`
-                  : `각 장면을 ${cutDuration}초 기준으로 생성`}
+                : cutDuration >= 1 && cutDuration < DURATION_MIN
+                  ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MIN}초 (최소 허용 길이로 보정)`
+                  : cutDuration > DURATION_MAX
+                    ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MAX}초 (최대 허용 길이로 보정)`
+                    : cutDuration >= 10
+                      ? `⚠ ${cutDuration}초는 Kling 전용 — 각 장면을 ${cutDuration}초 기준으로 생성`
+                      : `각 장면을 ${cutDuration}초 기준으로 생성`}
             </p>
+            {/* reconciliation 미리보기 */}
+            {cutDuration > 0 && cutCount !== "auto" && typeof cutCount === "number" && (
+              <p className="text-[9px]" style={{ color: "#b45309" }}>
+                {(() => {
+                  const applied = Math.min(DURATION_MAX, Math.max(DURATION_MIN, cutDuration));
+                  const expectedTotal = applied * cutCount;
+                  const durationNum = typeof duration === "number" ? duration : 0;
+                  if (durationNum > 0 && Math.abs(expectedTotal - durationNum) > 1) {
+                    return `⚠ ${applied}초 × ${cutCount}장면 = ${expectedTotal}초 (목표 ${durationNum}초와 차이 ${Math.abs(expectedTotal - durationNum)}초)`;
+                  }
+                  return `${applied}초 × ${cutCount}장면 = ${expectedTotal}초`;
+                })()}
+              </p>
+            )}
           </div>
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />

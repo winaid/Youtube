@@ -107,7 +107,7 @@ export interface KlingTaskStatus {
 export async function klingGenerate(
   env: KlingEnv,
   req: KlingGenerateRequest,
-): Promise<{ taskId: string }> {
+): Promise<{ taskId: string; sentDuration: number }> {
   const headers = klingHeaders(env);
   const model = req.model ?? (req.image ? KLING_MODELS.IMAGE_TO_VIDEO : KLING_MODELS.TEXT_TO_VIDEO);
 
@@ -179,7 +179,7 @@ export async function klingGenerate(
 
   const taskId = data.id ?? data.task_id;
   if (!taskId) throw new Error("Kling generate: no task id in response");
-  return { taskId };
+  return { taskId, sentDuration: (body.duration as number) ?? 5 };
 }
 
 // ── Extend (last-frame image-to-video) ──────────────────────────────────────
@@ -187,7 +187,7 @@ export async function klingGenerate(
 export async function klingExtend(
   env: KlingEnv,
   req: KlingExtendRequest,
-): Promise<{ taskId: string }> {
+): Promise<{ taskId: string; sentDuration: number }> {
   // 빈 문자열·공백만 있는 경우도 차단 (data:image/png;base64, 만 있으면 strip 후 "" or " ")
   if (!req.lastFrameBase64 || req.lastFrameBase64.trim().length < 100) {
     throw new Error(

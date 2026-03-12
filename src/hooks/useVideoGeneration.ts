@@ -31,6 +31,7 @@ import {
   type ShotVariant,
   type ShotSnapshots,
   type CutProvenance,
+  type DurationMeta,
 } from "@/types";
 import {
   createInitialVariantState,
@@ -187,6 +188,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
   // ── 3-way comparison 스냅샷 저장 (per cut) ──
   const shotSnapshotsRef = useRef<Map<number, ShotSnapshots>>(new Map());
+
+  // ── Duration 추적 메타 (마지막 생성 기준) ──
+  const [lastDurationMeta, setLastDurationMeta] = useState<DurationMeta | null>(null);
 
   // cuts 변경 시 clips 초기화 + 시퀀스 플랜 동기화
   useEffect(() => {
@@ -1482,6 +1486,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         modeUsed?: "generate" | "extend";
         sourceVideo?: string;
         warning?: string;
+        durationMeta?: {
+          requestedSecondsPerScene?: number;
+          normalizedSecondsPerScene?: number;
+          sentSecondsPerScene?: number;
+          warnings?: string[];
+        };
         _diag?: {
           authMethod?: string;
           urlVersion?: string;
@@ -1508,6 +1518,21 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             modelUsed: (data as Record<string, unknown>).modelUsed as string | undefined,
             modeUsed: data.modeUsed,
           };
+        }
+      }
+
+      // ── Duration meta 추적 ──
+      if (data.durationMeta) {
+        const dm = data.durationMeta;
+        setLastDurationMeta({
+          requestedSecondsPerScene: dm.requestedSecondsPerScene,
+          normalizedSecondsPerScene: dm.normalizedSecondsPerScene ?? DURATION_FALLBACK,
+          sentSecondsPerScene: dm.sentSecondsPerScene,
+          source: dm.requestedSecondsPerScene !== undefined ? "slider" : "fallback",
+          warnings: dm.warnings ?? [],
+        });
+        if (dm.warnings && dm.warnings.length > 0) {
+          console.warn(`[CUT ${cutNumber}] duration 보정:`, dm.warnings);
         }
       }
 
@@ -2171,5 +2196,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     progress,
     // 3-way comparison snapshots
     shotSnapshots: shotSnapshotsRef.current,
+    // Duration 추적 메타
+    lastDurationMeta,
   };
 }

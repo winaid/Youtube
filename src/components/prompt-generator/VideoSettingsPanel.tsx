@@ -233,7 +233,10 @@ export default function VideoSettingsPanel({
               max={15}
               step={1}
               value={config.durationSeconds ?? 6}
-              onChange={(e) => update({ durationSeconds: Number(e.target.value) as VeoClipDuration })}
+              onChange={(e) => {
+                const d = Number(e.target.value);
+                update({ durationSeconds: d as VeoClipDuration, ...(d >= 10 ? { engine: "kling" as const } : {}) });
+              }}
               className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
               style={{ accentColor: "#787fff" }}
             />

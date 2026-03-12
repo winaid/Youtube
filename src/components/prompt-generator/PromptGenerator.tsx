@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
+import { DURATION_FALLBACK } from "@/lib/duration-reconciliation";
 import { generatePrompt } from "@/lib/mock-generator";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
@@ -19,6 +20,7 @@ export default function PromptGenerator() {
   const [activeTab, setActiveTab] = useState<"prompt" | "story" | "history" | "videos">("prompt");
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
+  const [secondsPerScene, setSecondsPerScene] = useState<number>(DURATION_FALLBACK);
 
   const handleGenerate = async (input: PromptInput) => {
     setStatus("loading");
@@ -120,10 +122,12 @@ export default function PromptGenerator() {
               isLoading={status === "loading"}
               prefillScenario={prefillScenario}
               onPrefillConsumed={() => setPrefillScenario("")}
+              secondsPerScene={secondsPerScene}
+              onSecondsPerSceneChange={setSecondsPerScene}
             />
           </div>
           <div className="min-w-0">
-            <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} />
+            <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} secondsPerScene={secondsPerScene} onSecondsPerSceneChange={setSecondsPerScene} />
           </div>
         </div>
       ) : activeTab === "story" ? (

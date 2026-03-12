@@ -473,7 +473,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const sourceVideo = req.sourceVideo || req.previousVideoUri || "";
 
     // ── Kling 생성 ────────────────────────────────────────────────────────────
-    const duration = toKlingDuration(req.durationSeconds && req.durationSeconds > 0 ? req.durationSeconds : 8);
+    const requestedDuration = req.durationSeconds;
+    const normalizedDuration = req.durationSeconds && req.durationSeconds > 0 ? req.durationSeconds : 8;
+    const duration = toKlingDuration(normalizedDuration);
+    const durationWarnings: string[] = [];
+    if (requestedDuration !== undefined && requestedDuration !== duration) {
+      durationWarnings.push(`요청 ${requestedDuration}초 → Kling 전송 ${duration}초 (클램핑 적용)`);
+    }
     const aspectRatio = toKlingAspectRatio(req.aspectRatio ?? "16:9");
 
     // Audio: generateAudio 설정 + physics override (무대기 환경은 강제 off)
@@ -499,6 +505,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     let taskId: string;
     let modeUsed: "generate" | "extend";
+    let sentDuration: number = duration;
 
     try {
       if (videoMode === "extend" && validLast) {
@@ -512,6 +519,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           sound:           soundParam,
         });
         taskId = result.taskId;
+        sentDuration = result.sentDuration;
         modeUsed = "extend";
       } else {
         if (!validFirst && videoMode === "extend" && !sourceVideo) {
@@ -540,6 +548,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           ...(req.multiShot && req.multiShot.length > 0 ? { multiShot: req.multiShot } : {}),
         });
         taskId = result.taskId;
+        sentDuration = result.sentDuration;
         modeUsed = "generate";
       }
     } catch (klingErr) {
@@ -575,6 +584,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       mode: videoMode,
       cutNumber: cutNumberRaw,
       engine: "kling",
+      durationRequested: requestedDuration,
+      durationNormalized: normalizedDuration,
+      durationSent: sentDuration,
     });
 
     return Response.json({
@@ -585,6 +597,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       modelUsed: KLING_MODELS.TEXT_TO_VIDEO,
       sourceVideo: sourceVideo || undefined,
       status: "RUNNING",
+      durationMeta: {
+        requestedSecondsPerScene: requestedDuration,
+        normalizedSecondsPerScene: normalizedDuration,
+        sentSecondsPerScene: sentDuration,
+        warnings: durationWarnings,
+      },
     });
   } catch (error) {
     console.error("[generate-video] 처리 오류:", error);

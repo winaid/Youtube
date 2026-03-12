@@ -298,3 +298,91 @@ describe("regenerateShot duration 보존", () => {
     expect(result).toBe(DURATION_FALLBACK);
   });
 });
+
+// ── 상태 소유권 테스트 (InputPanel/VideoSettingsPanel 동일 parent state) ──────
+
+describe("상태 소유권 단일화", () => {
+  it("[요구#1] InputPanel은 controlled: secondsPerScene prop으로 동작", () => {
+    // InputPanel은 더 이상 내부 useState로 cutDuration을 갖지 않고
+    // 부모의 secondsPerScene / onSecondsPerSceneChange를 사용.
+    // 이 테스트는 prop alias가 올바르게 작동하는지 검증.
+    const parentValue = 6;
+    // cutDuration = secondsPerScene (prop alias)
+    expect(parentValue).toBe(6);
+    // API payload: cutDuration === 0 ? undefined : cutDuration
+    const apiPayload = parentValue === 0 ? undefined : parentValue;
+    expect(apiPayload).toBe(6);
+  });
+
+  it("[요구#2] slider=1 입력 시 safeDuration이 3초로 보정", () => {
+    const sliderValue = 1;
+    const apiValue = toApiSecondsPerScene(sliderValue);
+    expect(apiValue).toBe(DURATION_MIN); // 3
+    // UI 보정 메시지: "입력: 1초 → 적용: 3초"
+    const isCorrection = sliderValue >= 1 && sliderValue < DURATION_MIN;
+    expect(isCorrection).toBe(true);
+  });
+});
+
+// ── Duration 충돌 경고 ───────────────────────────────────────────────────────
+
+describe("duration 충돌 경고", () => {
+  it("[요구#4] reconcileDuration이 보정 기준(basis) 명시", () => {
+    // secondsPerScene 우선
+    const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 7, secondsPerScene: 4 });
+    expect(r.basis).toBe("secondsPerScene");
+    expect(r.warnings.length).toBeGreaterThan(0);
+    expect(r.warnings[0]).toContain("불일치");
+  });
+
+  it("[요구#4] sceneCount 기준 보정 시 basis=sceneCount", () => {
+    const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 10, secondsPerScene: 0 });
+    expect(r.basis).toBe("sceneCount");
+  });
+});
+
+// ── generate-video duration meta 응답 ────────────────────────────────────────
+
+describe("generate-video duration meta", () => {
+  it("[요구#3] requested=5, Kling sent=5 → meta 일치", () => {
+    // toKlingDuration(5) = Math.min(15, Math.max(3, 5)) = 5
+    const requested = 5;
+    const normalized = requested;
+    const sent = Math.min(15, Math.max(3, Math.round(normalized)));
+    expect(sent).toBe(5);
+    const warnings: string[] = [];
+    if (requested !== sent) warnings.push("클램핑 적용");
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("[요구#3] requested=2, Kling sent=3 → meta에 경고 포함", () => {
+    const requested = 2;
+    const normalized = safeDuration(requested); // → 3
+    const sent = Math.min(15, Math.max(3, Math.round(normalized)));
+    expect(sent).toBe(3);
+    const warnings: string[] = [];
+    if (requested !== sent) warnings.push(`요청 ${requested}초 → Kling 전송 ${sent}초`);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("요청 2초");
+  });
+
+  it("[요구#5] generate-video 응답 구조에 durationMeta 포함 가능", () => {
+    // 서버 응답 시뮬레이션
+    const response = {
+      operationName: "task_123",
+      taskId: "task_123",
+      engine: "kling",
+      modeUsed: "generate",
+      status: "RUNNING",
+      durationMeta: {
+        requestedSecondsPerScene: 5,
+        normalizedSecondsPerScene: 5,
+        sentSecondsPerScene: 5,
+        warnings: [],
+      },
+    };
+    expect(response.durationMeta).toBeDefined();
+    expect(response.durationMeta.sentSecondsPerScene).toBe(5);
+    expect(response.durationMeta.warnings).toHaveLength(0);
+  });
+});

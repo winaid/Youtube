@@ -27,6 +27,10 @@ interface ResultPanelProps {
   directorName?: string;
   region?: string;
   animationMode?: string;
+  /** 부모가 소유하는 장면당 초 */
+  secondsPerScene?: number;
+  /** VideoSettingsPanel에서 duration 변경 시 부모에 통지 */
+  onSecondsPerSceneChange?: (v: number) => void;
 }
 
 export default function ResultPanel({
@@ -38,6 +42,8 @@ export default function ResultPanel({
   directorName: _directorName,
   region,
   animationMode,
+  secondsPerScene,
+  onSecondsPerSceneChange,
 }: ResultPanelProps) {
   const [jsonCopied, setJsonCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -83,7 +89,7 @@ export default function ResultPanel({
     }
   }, [animationMode, videoGen]);
 
-  // 프롬프트 생성 시 cutDuration → videoGen config에 자동 동기화
+  // 프롬프트 생성 시 cutDuration → videoGen config + 부모에 자동 동기화
   useEffect(() => {
     if (!result || result.cuts.length === 0) return;
     const dur = result.cuts[0].durationSec;
@@ -91,6 +97,8 @@ export default function ResultPanel({
       const clampedDur = Math.min(15, Math.max(3, dur));
       const engine = clampedDur >= 10 ? "kling" : videoGen.config.engine;
       videoGen.updateConfig({ durationSeconds: clampedDur, engine });
+      // 부모에도 통지 → InputPanel 슬라이더와 동기화
+      onSecondsPerSceneChange?.(clampedDur);
     }
   // result가 새로 생성될 때만 실행
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -853,7 +861,13 @@ export default function ResultPanel({
         <>
           <VideoSettingsPanel
             config={videoGen.config}
-            onConfigChange={videoGen.updateConfig}
+            onConfigChange={(cfg) => {
+              videoGen.updateConfig(cfg);
+              // duration이 변경되면 부모에도 통지 → InputPanel과 동기화
+              if (cfg.durationSeconds !== undefined && onSecondsPerSceneChange) {
+                onSecondsPerSceneChange(cfg.durationSeconds);
+              }
+            }}
             storyboardImages={storyboardImages}
           />
           <VideoGenerationPanel
