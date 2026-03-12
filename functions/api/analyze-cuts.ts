@@ -85,7 +85,7 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
       return Response.json({
         error: `AI 분석 실패: ${res.status}`,
         detail: errText.slice(0, 500),
-        authMode: context.env.GOOGLE_SERVICE_ACCOUNT_JSON ? "service-account" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : "none",
+        authMode: context.env.GEMINI_API_KEY ? "api-key" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : "none",
       }, { status: 500 });
     }
 

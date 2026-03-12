@@ -593,7 +593,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                   rawVideoUri: `"${ruri.slice(0, 60)}"`,
                   fallback: hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame 사용)" : "TEXT_TO_VIDEO (연속성 완전 손실)",
                   continuityScore,
-                  possibleFix: "R2 (VIDEO_BUCKET 바인딩) 또는 GOOGLE_SERVICE_ACCOUNT_JSON 설정으로 업로드 가능",
+                  possibleFix: "R2 (VIDEO_BUCKET 바인딩) 또는 VIDEO_BUCKET(R2) 설정으로 업로드 가능",
                 }
               );
             }
@@ -1202,7 +1202,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             canonicalVideoUri: canonicalPrevUri || "(없음)",
             rawVideoUri: rawPrevUri ? `${rawPrevUri.slice(0, 60)}…` : "(없음)",
             firstFrameBase64: firstFrameBase64 ? `(${firstFrameBase64.length}자) → IMAGE_TO_VIDEO fallback` : "(없음) → TEXT_TO_VIDEO fallback",
-            fix: "VIDEO_BUCKET(R2) 바인딩 또는 GOOGLE_SERVICE_ACCOUNT_JSON 설정으로 업로드/GCS URI 가능",
+            fix: "VIDEO_BUCKET(R2) 바인딩 또는 VIDEO_BUCKET(R2) 설정으로 업로드/GCS URI 가능",
           }
         );
       }
@@ -1458,8 +1458,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           urlHasProject: d.urlHasProject,
           veoMode: d.veoMode,
           sceneExtensionAttempted: d.sceneExtensionAttempted,
-          gcsUriExpected: d.authMethod === "SERVICE_ACCOUNT" || d.urlHasProject
-            ? "✓ GCS URI 반환 예상" : "✗ base64 반환 가능성 높음 — GOOGLE_CLOUD_PROJECT_ID 환경변수 확인 필요",
+          videoUrlExpected: "✓ Kling returns HTTPS URL directly",
         });
       }
 

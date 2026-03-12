@@ -2451,8 +2451,7 @@ console.log("\n[62] Timing rebalance");
   console.log("\n[69] Env cleanup (no Veo/Vertex env required)");
 
   // Architecture assertion: Kling only needs KLING_API_KEY
-  // Veo/Vertex env (GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_CLOUD_PROJECT_ID)
-  // should not be required for generation
+  // Removed Vertex env (SA, project ID) — only KLING_API_KEY + GEMINI_API_KEY needed
   assert(PROVIDER_CAPABILITIES.kling.id === "kling", "Kling provider active");
   assert(PROVIDER_ROLES.kling.role === "generation", "Kling is generation engine");
   assert(PROVIDER_ROLES.gemini_qa.role === "qa", "Gemini is QA engine");
