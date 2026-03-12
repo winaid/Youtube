@@ -1221,20 +1221,20 @@ export function assembleFromJSON(input: {
     negativeCount: rawDoc.negatives.universal.length + rawDoc.negatives.sceneSpecific.length + rawDoc.negatives.failureMode.length + rawDoc.negatives.user.length,
   };
 
-  // Step 2: Validate
-  const validation = validateShotDocument(rawDoc);
-
-  // Step 3: Sanitize
+  // Step 2: Sanitize (BEFORE validation — so validation reflects cleaned state)
   const { doc: sanitizedDoc, fixes: sanitizeFixes } = sanitizeShotDocument(rawDoc);
 
-  // Step 4: Resolve conflicts
+  // Step 3: Resolve conflicts
   const { doc: resolvedDoc, resolutions: conflictResolutions } = resolveConflicts(sanitizedDoc);
 
-  // Step 5: Normalize (전역 정규화 — sceneType 추론, characterRef 정리, 과부하 감지, coverage 보강)
+  // Step 4: Normalize (전역 정규화 — sceneType 추론, characterRef 정리, 과부하 감지, coverage 보강)
   const normalized = normalizeSequence(resolvedDoc);
   const normalizedDoc = normalized.doc;
   const normalizeLog = normalized.log;
   const normalizeWarnings = normalized.warnings;
+
+  // Step 5: Validate AFTER normalization — so structuredSequence.validation reflects the cleaned state
+  const validation = validateShotDocument(normalizedDoc);
 
   // Drift warning (validation + normalize 결과 통합)
   let driftWarning: string | undefined;
@@ -1317,13 +1317,27 @@ export function assembleFromJSON(input: {
     driftWarning = `FINAL PAYLOAD pos/neg conflict: ${finalPayload.debug.validationIssues.join("; ")}`;
   }
 
-  // Update structuredSequence.validation with final builder state
-  if (finalPayload.valid) {
+  // Always update structuredSequence.validation with final builder state
+  // (validation now runs AFTER normalization, so it reflects cleaned state.
+  //  But final builder may catch additional issues — always use the most accurate result.)
+  if (finalPayload.valid && validation.valid) {
     structuredSequence.validation = {
       valid: true,
       errors: 0,
-      warnings: structuredSequence.validation?.warnings || 0,
-      issues: structuredSequence.validation?.issues?.filter(i => i.severity !== "error") || [],
+      warnings: validation.issues.filter(i => i.severity === "warning").length,
+      issues: validation.issues.filter(i => i.severity === "warning").map(i => ({ rule: i.rule, severity: i.severity, message: i.message })),
+    };
+  } else if (!finalPayload.valid) {
+    // Final builder found issues post-serialization — merge
+    const builderIssues = finalPayload.debug.validationIssues.map(v => {
+      const m = v.match(/^\[(error|warning)\]\s*(\S+):\s*(.+)$/);
+      return m ? { rule: m[2], severity: m[1] as "error" | "warning", message: m[3] } : { rule: "final_builder", severity: "error" as const, message: v };
+    });
+    structuredSequence.validation = {
+      valid: false,
+      errors: builderIssues.filter(i => i.severity === "error").length,
+      warnings: builderIssues.filter(i => i.severity === "warning").length,
+      issues: builderIssues,
     };
   }
 

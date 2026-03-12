@@ -25,6 +25,7 @@ import {
   normalizeSequence,
   normalizeLightingDescription,
   rewriteEnvironmentAction,
+  applySceneTypeRewrite,
 } from "../src/lib/sequence-normalizer";
 
 import {
@@ -934,6 +935,212 @@ console.log("\n[28] preview isolation — fallback fields are debug-only");
   // Same input → same output (deterministic)
   assert(result1.prompt === result2.prompt, "Same input produces same prompt (deterministic)");
   assert(result1.debug.payloadSnapshot === result2.debug.payloadSnapshot, "Same input produces same snapshot");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 29: Environment battle vocabulary rewrite (Round 4)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[29] Environment battle vocabulary rewrite");
+{
+  const r1 = rewriteEnvironmentAction(
+    "Explosions erupt across the battlefield as tanks advance",
+    "war-torn landscape",
+    { framing: "WS", motion: "slow pan" },
+  );
+  assert(r1.rewritten, "Battle vocab triggers rewrite");
+  assert(!/\bexplosion/i.test(r1.text), `No 'explosion' in result: "${r1.text}"`);
+  assert(!/\btanks?\b/i.test(r1.text), `No 'tanks' in result: "${r1.text}"`);
+  assert(!/\bbattlefield\b/i.test(r1.text), `No 'battlefield' in result: "${r1.text}"`);
+
+  const r2 = rewriteEnvironmentAction(
+    "soldiers march across the ruined city",
+    "ruined cityscape",
+    { framing: "LS", motion: "slow push-in" },
+  );
+  assert(r2.rewritten, "'soldiers march' triggers rewrite");
+  assert(!/\bsoldiers?\b/i.test(r2.text), `No 'soldiers' in result: "${r2.text}"`);
+
+  const r3 = rewriteEnvironmentAction(
+    "tanks and soldiers advance through smoke",
+    "devastated terrain",
+    { framing: "WS", motion: "drone flyover" },
+  );
+  assert(r3.rewritten, "'tanks and soldiers' triggers rewrite");
+  assert(!/\btanks?\b/i.test(r3.text), `No 'tanks' in result: "${r3.text}"`);
+  assert(!/\bsoldiers?\b/i.test(r3.text), `No 'soldiers' in result: "${r3.text}"`);
+
+  const r4 = rewriteEnvironmentAction(
+    "wind sweeps across the desolate plain",
+    "desolate plain",
+    { framing: "WS", motion: "slow pan" },
+  );
+  assert(!r4.rewritten, "Non-battle env action NOT rewritten");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 30: applySceneTypeRewrite on structured doc fields
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[30] applySceneTypeRewrite on structured doc fields");
+{
+  const doc1 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "war-torn battlefield", moodLighting: "overcast" },
+    subject: { primary: "soldiers marching through ruins", action: "troops advance across the terrain" },
+  });
+  const result1 = applySceneTypeRewrite(doc1, "environment");
+  assert(!/\bsoldiers?\b/i.test(doc1.subject.primary), `No 'soldiers' in subject.primary: "${doc1.subject.primary}"`);
+  assert(!/\btroops?\b/i.test(doc1.subject.action), `No 'troops' in subject.action: "${doc1.subject.action}"`);
+  assert(result1.rewrites.length > 0, "Has rewrites logged");
+
+  const doc2 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "war zone", moodLighting: "smoke-filled" },
+    subject: { primary: "ruined landscape", action: "smoke drifts" },
+  });
+  doc2.timing.beats = [
+    { startSec: 0, endSec: 3, description: "Explosions erupt across the battlefield" },
+    { startSec: 3, endSec: 6, description: "soldiers march through smoke" },
+  ];
+  applySceneTypeRewrite(doc2, "environment");
+  assert(!/\bexplosion/i.test(doc2.timing.beats[0].description), `No 'explosion' in beat: "${doc2.timing.beats[0].description}"`);
+  assert(!/\bsoldiers?\b/i.test(doc2.timing.beats[1].description), `No 'soldiers' in beat: "${doc2.timing.beats[1].description}"`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 31: normalizeSequence environment full pipeline (Round 4)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[31] normalizeSequence environment full pipeline (Round 4)");
+{
+  const doc1 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "war-torn landscape near Tiananmen Square", moodLighting: "overcast grey sky, smoke haze" },
+    subject: {
+      primary: "Tanks and soldiers advancing through destroyed buildings",
+      action: "Explosions erupt across the battlefield while troops fight",
+    },
+    camera: { framing: "WS", motion: "slow drone flyover" },
+  });
+  const result1 = normalizeSequence(doc1);
+  assert(!/\bsoldiers?\b/i.test(result1.doc.subject.primary), `No 'soldiers' in subject.primary: "${result1.doc.subject.primary}"`);
+  assert(!/\btanks?\b/i.test(result1.doc.subject.primary), `No 'tanks' in subject.primary: "${result1.doc.subject.primary}"`);
+  assert(!/\bexplosion/i.test(result1.doc.subject.action), `No 'explosion' in subject.action: "${result1.doc.subject.action}"`);
+  assert(!/\btroops?\b/i.test(result1.doc.subject.action), `No 'troops' in subject.action: "${result1.doc.subject.action}"`);
+  assert(result1.log.some(l => l.includes("[vocab]")), "Has vocab rewrite log entries");
+
+  // Battle scene should KEEP battle vocabulary
+  const doc2 = makeShotDoc({
+    scene: { shotCategory: "battle", environment: "war-torn landscape", moodLighting: "harsh, fiery glow" },
+    subject: {
+      primary: "soldiers charging forward",
+      action: "Explosions erupt as tanks advance",
+    },
+    camera: { framing: "MS", motion: "dynamic tracking" },
+  });
+  const result2 = normalizeSequence(doc2);
+  assert(/\bsoldiers?\b/i.test(result2.doc.subject.primary), "Battle scene keeps 'soldiers'");
+  assert(/\bexplosion/i.test(result2.doc.subject.action), "Battle scene keeps 'explosion'");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 32: pos/neg cleanup covers ALL fields (Round 4)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[32] pos/neg cleanup covers ALL text fields");
+{
+  const doc1 = makeShotDoc({
+    subject: { primary: "a landscape view", action: "camera reveals watermark-free cinematic vista with logo branding" },
+    global: { style: "realistic" },
+  });
+  doc1.negatives.universal = ["watermark", "logo"];
+  const r1 = normalizeSequence(doc1);
+  assert(!/\bwatermark\b/i.test(r1.doc.subject.action), `No 'watermark' in subject.action: "${r1.doc.subject.action}"`);
+  assert(!/\blogo\b/i.test(r1.doc.subject.action), `No 'logo' in subject.action: "${r1.doc.subject.action}"`);
+
+  const doc2 = makeShotDoc({
+    scene: { environment: "cinematic watermark city with subtitle overlays", moodLighting: "golden" },
+    global: { style: "realistic" },
+  });
+  doc2.negatives.universal = ["watermark", "subtitle"];
+  const r2 = normalizeSequence(doc2);
+  assert(!/\bwatermark\b/i.test(r2.doc.scene.environment), `No 'watermark' in environment: "${r2.doc.scene.environment}"`);
+  assert(!/\bsubtitle\b/i.test(r2.doc.scene.environment), `No 'subtitle' in environment: "${r2.doc.scene.environment}"`);
+
+  // Guard pattern preservation
+  const doc3 = makeShotDoc({
+    subject: { primary: "landscape", action: "no watermark, clean vista" },
+    scene: { environment: "city without watermark overlay" },
+    global: { style: "realistic" },
+  });
+  doc3.negatives.universal = ["watermark"];
+  const r3 = normalizeSequence(doc3);
+  assert(/no watermark/i.test(r3.doc.subject.action), "Preserved 'no watermark' guard in action");
+  assert(/without watermark/i.test(r3.doc.scene.environment), "Preserved 'without watermark' guard in environment");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 33: Final payload pos_neg zero after full pipeline (Round 4)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[33] Final payload pos_neg zero after full pipeline");
+{
+  const doc1 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "war-torn battlefield", moodLighting: "overcast grey, smoke haze" },
+    subject: {
+      primary: "Tanks and soldiers amid destroyed buildings",
+      action: "Explosions erupt across the battlefield",
+    },
+    camera: { framing: "WS", motion: "slow drone flyover" },
+    global: { style: "photorealistic cinematic realism" },
+  });
+  doc1.negatives.universal = ["watermark", "text overlay", "caption", "subtitle", "logo"];
+  doc1.negatives.sceneSpecific = ["photorealistic", "cinematic"];
+
+  const normalized1 = normalizeSequence(doc1);
+  const fp1 = buildFinalProviderPayload({ document: normalized1.doc, provider: "veo" });
+  const posNeg1 = fp1.debug.validationIssues.filter(v => v.includes("pos_neg_conflict"));
+  assert(posNeg1.length === 0, `Veo: 0 pos_neg_conflict, got ${posNeg1.length}: ${posNeg1.join("; ")}`);
+  assert(!fp1.blocked, `Veo: not blocked: ${fp1.blockReason || ""}`);
+
+  // Kling provider
+  const doc2 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "war-torn landscape", moodLighting: "overcast" },
+    subject: { primary: "devastated terrain", action: "smoke drifts across rubble" },
+    camera: { framing: "WS", motion: "slow pan" },
+    global: { style: "photorealistic cinematic" },
+  });
+  doc2.negatives.universal = ["watermark", "caption", "subtitle", "logo"];
+  doc2.negatives.sceneSpecific = ["photorealistic", "cinematic"];
+  const normalized2 = normalizeSequence(doc2);
+  const fp2 = buildFinalProviderPayload({ document: normalized2.doc, provider: "kling" });
+  const posNeg2 = fp2.debug.validationIssues.filter(v => v.includes("pos_neg_conflict"));
+  assert(posNeg2.length === 0, `Kling: 0 pos_neg_conflict, got ${posNeg2.length}: ${posNeg2.join("; ")}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 34: Hard-block enforcement + payload snapshot (Round 4)
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[34] Hard-block enforcement + payload snapshot");
+{
+  // Test hard-block path
+  const doc1 = makeShotDoc({
+    subject: { primary: "a watermark branded logo cinematic scene", action: "caption subtitle overlay appears" },
+    global: { style: "watermark cinematic photorealistic logo caption subtitle" },
+  });
+  doc1.negatives.universal = ["watermark", "caption", "subtitle", "logo"];
+  const fp1 = buildFinalProviderPayload({ document: doc1, provider: "veo" });
+  // Builder should either fix or block — both are acceptable
+  if (fp1.debug.validationIssues.some(v => v.includes("pos_neg_conflict"))) {
+    assert(fp1.blocked, "Blocked when pos_neg_conflict persists");
+    assert(fp1.blockReason !== undefined, "Has block reason");
+  } else {
+    assert(!fp1.blocked, "Auto-fixed: not blocked");
+  }
+
+  // Payload snapshot consistency
+  const doc2 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "mountain valley", moodLighting: "golden hour" },
+  });
+  const fp2 = buildFinalProviderPayload({ document: doc2, provider: "veo" });
+  const snap = JSON.parse(fp2.debug.payloadSnapshot);
+  assert(snap.prompt === fp2.prompt, "Snapshot prompt matches actual prompt");
+  assert(snap.negativePrompt === fp2.negativePrompt, "Snapshot negativePrompt matches");
+  assert(snap.provider === "veo", "Snapshot provider matches");
+  assert(fp2.debug.builtBy === "buildFinalProviderPayload", "builtBy marker present");
 }
 
 // ═══════════════════════════════════════════════════════════════════

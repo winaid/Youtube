@@ -16,7 +16,7 @@
  */
 
 import type { SingleShotDocument } from "@/lib/sequence-assembler";
-import { resolveSceneType, type SceneType } from "@/lib/scene-type-rules";
+import { resolveSceneType, applySceneTypeVocabularyRules, type SceneType } from "@/lib/scene-type-rules";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Scene Type Inference
@@ -462,45 +462,94 @@ export interface ActionDensityRewriteResult {
 const ARROW_PATTERN = /(.+?)\s*[→➜➡>]\s*(.+?)\s*[→➜➡>]\s*(.+)/;
 const PROGRESSION_PATTERN = /\b(fills?\s+the\s+frame|dominates?|takes?\s+over|draws?\s+attention|comes?\s+into\s+focus|emerges?|reveals?)\b/gi;
 
+/** Battle/character-centric vocabulary that must be rewritten for environment scenes */
+const ENV_BATTLE_VOCAB: Array<{ pattern: RegExp; replacement: string }> = [
+  // Character-centric actions
+  { pattern: /\bsoldiers?\s+(?:march|advance|retreat|charge|fight|attack|fire|shoot|engage)\w*\b/gi, replacement: "distant figures moving across the terrain" },
+  { pattern: /\bsoldiers?\s+and\s+\w+/gi, replacement: "scattered debris and rubble" },
+  { pattern: /\btanks?\s+(?:and\s+)?soldiers?\b/gi, replacement: "rusted metal wreckage and scattered rubble" },
+  { pattern: /\bsoldiers?\b/gi, replacement: "distant figures" },
+  { pattern: /\btanks?\s+(?:roll|advance|move|push|drive)\w*\b/gi, replacement: "charred metal wreckage scattered across the ground" },
+  { pattern: /\btanks?\b/gi, replacement: "charred metal debris" },
+  // Explosion/battle actions
+  { pattern: /\bexplosions?\s+erupt\w*\s*(?:across|over|through|in)?\s*(?:the\s+)?(?:battlefield|city|landscape|terrain|ground|area|zone)?\b/gi, replacement: "smoke rises from impact craters across the terrain" },
+  { pattern: /\bexplosions?\s+(?:rock|shake|tear|rip|destroy)\w*\b/gi, replacement: "smoke columns rising from scorched ground" },
+  { pattern: /\bexplosions?\b/gi, replacement: "smoke plumes" },
+  { pattern: /\bbombs?\s+(?:fall|drop|explode|detonate|hit|strike|rain)\w*\b/gi, replacement: "impact craters visible in the terrain" },
+  { pattern: /\bbombing\s+(?:raid|run|campaign)\w*\b/gi, replacement: "crater-scarred landscape" },
+  { pattern: /\bbombard(?:ment|ing|ed)?\b/gi, replacement: "scorched terrain" },
+  { pattern: /\bartillery\s+(?:fire|shell|barrage|strike)\w*\b/gi, replacement: "cratered landscape with scattered debris" },
+  { pattern: /\bartillery\b/gi, replacement: "debris field" },
+  { pattern: /\bgunfire\b/gi, replacement: "distant echoes" },
+  // Battle-specific nouns
+  { pattern: /\bbattlefield\b/gi, replacement: "war-scarred terrain" },
+  { pattern: /\bcombat\s+zone\b/gi, replacement: "devastated landscape" },
+  { pattern: /\bwar\s+zone\b/gi, replacement: "devastated landscape" },
+  { pattern: /\bfight(?:ing|s)?\s+(?:break|erupt|rage|intensif)\w*\b/gi, replacement: "dust and haze drift across the terrain" },
+  { pattern: /\bclash(?:es|ing)?\s+(?:between|of)\b/gi, replacement: "marks of destruction across" },
+  // Character-centric verbs in environment
+  { pattern: /\b(?:troops?|forces?|army|armies|battalion|regiment|squad)\s+(?:advance|retreat|attack|defend|deploy|march|charge|engage|fight|assault)\w*\b/gi, replacement: "landscape scarred by conflict" },
+  { pattern: /\b(?:troops?|forces?|army|armies|battalion|regiment|squad)\b/gi, replacement: "distant silhouettes" },
+];
+
 export function rewriteEnvironmentAction(
   actionText: string,
   subjectPrimary: string,
   camera: { framing: string; motion: string },
 ): ActionDensityRewriteResult {
-  // Check for arrow-based progression
-  const arrowMatch = actionText.match(ARROW_PATTERN);
-  if (!arrowMatch) {
-    // Check for dense progression language even without arrows
-    const progMatches = actionText.match(PROGRESSION_PATTERN);
+  let text = actionText;
+  let rewritten = false;
+
+  // Phase 1: Battle/character vocabulary rewrite (runs BEFORE arrow check)
+  for (const { pattern, replacement } of ENV_BATTLE_VOCAB) {
+    if (pattern.test(text)) {
+      text = text.replace(pattern, replacement);
+      pattern.lastIndex = 0;
+      rewritten = true;
+    }
+    pattern.lastIndex = 0;
+  }
+
+  // Cleanup after battle vocab rewrite
+  if (rewritten) {
+    text = text.replace(/\.\s*\./g, ".").replace(/,\s*,/g, ",").replace(/\s{2,}/g, " ").trim();
+  }
+
+  // Phase 2: Arrow-based progression rewrite
+  const arrowMatch = text.match(ARROW_PATTERN);
+  if (arrowMatch) {
+    // Has arrow pattern — rewrite to continuous exploration
+    const parts = text.split(/\s*[→➜➡>]\s*/);
+    const keySubjects: string[] = [];
+    for (const part of parts) {
+      const cleaned = part
+        .replace(PROGRESSION_PATTERN, "")
+        .replace(/\b(the|a|an|in|of|with|from|to|and|or)\b/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      PROGRESSION_PATTERN.lastIndex = 0;
+      if (cleaned.length > 3) keySubjects.push(cleaned);
+    }
+
+    const primarySubject = keySubjects.length > 0 ? keySubjects[keySubjects.length - 1] : subjectPrimary;
+    const contextElements = keySubjects.slice(0, -1).join(", ");
+
+    if (contextElements) {
+      text = `a wide establishing view reveals ${contextElements}, with continuous focus settling on ${primarySubject}`;
+    } else {
+      text = `a wide establishing view with continuous spatial exploration of ${primarySubject}`;
+    }
+    rewritten = true;
+  } else if (!rewritten) {
+    // No arrows, no battle vocab — check for dense progression language
+    const progMatches = text.match(PROGRESSION_PATTERN);
     PROGRESSION_PATTERN.lastIndex = 0;
     if (!progMatches || progMatches.length < 2) {
       return { text: actionText, rewritten: false };
     }
-  }
-
-  // Extract key elements from the progression
-  const parts = actionText.split(/\s*[→➜➡>]\s*/);
-  const keySubjects: string[] = [];
-  for (const part of parts) {
-    // Extract the main noun/subject from each segment
-    const cleaned = part
-      .replace(PROGRESSION_PATTERN, "")
-      .replace(/\b(the|a|an|in|of|with|from|to|and|or)\b/gi, "")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    PROGRESSION_PATTERN.lastIndex = 0;
-    if (cleaned.length > 3) keySubjects.push(cleaned);
-  }
-
-  // Build continuous exploration description
-  const primarySubject = keySubjects.length > 0 ? keySubjects[keySubjects.length - 1] : subjectPrimary;
-  const contextElements = keySubjects.slice(0, -1).join(", ");
-
-  let rewrittenAction: string;
-  if (contextElements) {
-    rewrittenAction = `a wide establishing view reveals ${contextElements}, with continuous focus settling on ${primarySubject}`;
-  } else {
-    rewrittenAction = `a wide establishing view with continuous spatial exploration of ${primarySubject}`;
+    // Has progression language — rewrite
+    text = `a wide establishing view with continuous spatial exploration of ${subjectPrimary}`;
+    rewritten = true;
   }
 
   // Suggest camera motion fix if static
@@ -510,7 +559,101 @@ export function rewriteEnvironmentAction(
     motionSuggestion = "slow push-in";
   }
 
-  return { text: rewrittenAction, rewritten: true, motionSuggestion };
+  return { text, rewritten, motionSuggestion };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7b. Scene Type Vocabulary Rewrite on Structured Doc Fields
+// ═══════════════════════════════════════════════════════════════════
+
+export interface SceneTypeRewriteResult {
+  rewrites: string[];
+  framingChange?: { from: string; to: string };
+}
+
+/**
+ * applySceneTypeVocabularyRules를 구조화된 문서 필드에 직접 적용.
+ * normalizeSequence 내부에서 호출 — 직렬화 전 source of truth를 수정.
+ *
+ * grep: applySceneTypeRewrite
+ */
+export function applySceneTypeRewrite(
+  doc: SingleShotDocument,
+  sceneType: SceneType,
+): SceneTypeRewriteResult {
+  const rewrites: string[] = [];
+  let framingChange: { from: string; to: string } | undefined;
+
+  // Apply vocabulary rules to each text field
+  const fields: Array<{ key: string; get: () => string; set: (v: string) => void }> = [
+    { key: "subject.primary", get: () => doc.subject.primary, set: (v) => { doc.subject.primary = v; } },
+    { key: "subject.action", get: () => doc.subject.action, set: (v) => { doc.subject.action = v; } },
+    { key: "scene.environment", get: () => doc.scene.environment, set: (v) => { doc.scene.environment = v; } },
+    { key: "scene.moodLighting", get: () => doc.scene.moodLighting, set: (v) => { doc.scene.moodLighting = v; } },
+    { key: "global.style", get: () => doc.global.style, set: (v) => { doc.global.style = v; } },
+    { key: "reinforcement.styleSuffix", get: () => doc.reinforcement.styleSuffix, set: (v) => { doc.reinforcement.styleSuffix = v; } },
+  ];
+
+  for (const field of fields) {
+    const original = field.get();
+    if (!original) continue;
+
+    // First: apply scene-type-rules.ts vocabulary rules (banned/replacements)
+    const result = applySceneTypeVocabularyRules(original, sceneType, field.key === "subject.primary" ? doc.camera.framing : undefined);
+    let text = result.text;
+    let changed = result.removals.length > 0 || result.replacements.length > 0;
+
+    // Second: for environment scenes, apply battle vocabulary rewrite on all fields
+    if (sceneType === "environment") {
+      for (const { pattern, replacement } of ENV_BATTLE_VOCAB) {
+        if (pattern.test(text)) {
+          text = text.replace(pattern, replacement);
+          pattern.lastIndex = 0;
+          changed = true;
+        }
+        pattern.lastIndex = 0;
+      }
+      text = text.replace(/\.\s*\./g, ".").replace(/,\s*,/g, ",").replace(/\s{2,}/g, " ").trim();
+    }
+
+    if (changed) {
+      field.set(text);
+      for (const r of result.removals) rewrites.push(`[vocab] Removed "${r}" from ${field.key}`);
+      for (const r of result.replacements) rewrites.push(`[vocab] ${field.key}: ${r}`);
+      if (text !== result.text) rewrites.push(`[vocab] Rewrote battle vocabulary in ${field.key}`);
+    }
+    if (result.framingChange && !framingChange) {
+      framingChange = result.framingChange;
+    }
+  }
+
+  // Apply framing restriction
+  if (framingChange) {
+    doc.camera.framing = framingChange.to;
+    rewrites.push(`[framing] ${framingChange.from} → ${framingChange.to} (restricted by ${sceneType} rules)`);
+  }
+
+  // For environment scenes, also apply battle vocab rewrite to timing beats
+  if (sceneType === "environment") {
+    for (const beat of doc.timing.beats) {
+      let beatChanged = false;
+      let beatText = beat.description;
+      for (const { pattern, replacement } of ENV_BATTLE_VOCAB) {
+        if (pattern.test(beatText)) {
+          beatText = beatText.replace(pattern, replacement);
+          pattern.lastIndex = 0;
+          beatChanged = true;
+        }
+        pattern.lastIndex = 0;
+      }
+      if (beatChanged) {
+        beat.description = beatText.replace(/\s{2,}/g, " ").trim();
+        rewrites.push(`[vocab] Rewrote battle vocabulary in timing beat`);
+      }
+    }
+  }
+
+  return { rewrites, framingChange };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -638,6 +781,16 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
     }
   }
 
+  // ── 4c. Scene type vocabulary rewrite on structured doc fields ──
+  // applySceneTypeVocabularyRules를 직렬화 전 structured fields에 직접 적용.
+  // 이전에는 serialized string에만 적용되어 environment battle vocab이 통과됨.
+  if (effectiveSceneType) {
+    const rewriteResult = applySceneTypeRewrite(result, effectiveSceneType);
+    for (const r of rewriteResult.rewrites) {
+      log.push(r);
+    }
+  }
+
   // ── 5. Lighting normalization ──────────────────────────────────
   const lightingResult = normalizeLightingDescription(result.scene.moodLighting);
   if (lightingResult.normalized) {
@@ -675,8 +828,7 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
   }
 
   // ── 7. Final positive/negative cleanup ─────────────────────────
-  // 이전 단계에서 텍스트가 변경되었을 수 있으므로 재검사
-  const positiveText = `${result.global.style} ${result.reinforcement.styleSuffix} ${result.subject.primary}`.toLowerCase();
+  // 이전 단계에서 텍스트가 변경되었을 수 있으므로 ALL text fields 재검사
   const criticalWords = ["watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic", "text overlay"];
 
   const allNeg = [
@@ -686,18 +838,34 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
     ...result.negatives.user,
   ];
 
+  // Check ALL positive text fields — not just style
+  const positiveFields: Array<{ key: string; get: () => string; set: (v: string) => void }> = [
+    { key: "global.style", get: () => result.global.style, set: (v) => { result.global.style = v; } },
+    { key: "reinforcement.styleSuffix", get: () => result.reinforcement.styleSuffix, set: (v) => { result.reinforcement.styleSuffix = v; } },
+    { key: "subject.primary", get: () => result.subject.primary, set: (v) => { result.subject.primary = v; } },
+    { key: "subject.action", get: () => result.subject.action, set: (v) => { result.subject.action = v; } },
+    { key: "scene.environment", get: () => result.scene.environment, set: (v) => { result.scene.environment = v; } },
+    { key: "scene.moodLighting", get: () => result.scene.moodLighting, set: (v) => { result.scene.moodLighting = v; } },
+  ];
+
   for (const word of criticalWords) {
     const wordLc = word.toLowerCase();
     const isInNeg = allNeg.some(n => n.toLowerCase().includes(wordLc));
     if (!isInNeg) continue;
 
-    // "no watermark" 등은 OK
-    const noPattern = new RegExp(`\\b(?:no|avoid|without)\\s+${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
-    if (positiveText.includes(wordLc) && !noPattern.test(positiveText)) {
-      // positive에서 제거
-      result.global.style = result.global.style.replace(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), "").replace(/\s{2,}/g, " ").trim();
-      result.reinforcement.styleSuffix = result.reinforcement.styleSuffix.replace(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), "").replace(/\s{2,}/g, " ").trim();
-      log.push(`[pos-neg] Removed "${word}" from positive style (conflict with negatives)`);
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const noPattern = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${escapedWord}`, "i");
+    const removeRe = new RegExp(`\\b${escapedWord}\\b`, "gi");
+
+    for (const field of positiveFields) {
+      const text = field.get();
+      if (!text) continue;
+      const textLc = text.toLowerCase();
+      if (!textLc.includes(wordLc)) continue;
+      if (noPattern.test(text)) continue; // guard: "no watermark" etc.
+
+      field.set(text.replace(removeRe, "").replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim());
+      log.push(`[pos-neg] Removed "${word}" from ${field.key} (conflict with negatives)`);
     }
   }
 
