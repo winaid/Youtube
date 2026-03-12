@@ -657,6 +657,175 @@ export function applySceneTypeRewrite(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// 7c. WHERE/WHAT Anchor Enrichment for Environment Scenes
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * WHERE (장소 정체성 오브젝트) — 시각적으로 확인 가능한 구조물/지형.
+ * 분위기만으로는 불충분. 구체적 물리 오브젝트가 1개 이상 필요.
+ *
+ * grep: PLACE_IDENTITY_ANCHORS
+ */
+const PLACE_IDENTITY_ANCHORS: Array<{ check: RegExp; examples: string[] }> = [
+  { check: /\b(gate|arch|archway|entrance|portal|doorway|gateway)\b/i, examples: ["weathered stone gate", "reinforced iron gate"] },
+  { check: /\b(square|plaza|courtyard|piazza|forum|agora)\b/i, examples: ["open stone plaza", "wide empty square"] },
+  { check: /\b(runway|tarmac|airfield|airstrip|landing\s+strip)\b/i, examples: ["cracked concrete runway", "abandoned airstrip"] },
+  { check: /\b(tank\s+wreck|burnt\s+vehicle|destroyed\s+(?:tank|truck|car|jeep)|wreckage|hulk)\b/i, examples: ["charred tank wreck", "overturned vehicle hull"] },
+  { check: /\b(palace|castle|fortress|citadel|stronghold|fort)\b/i, examples: ["palace wall", "fortress rampart"] },
+  { check: /\b(wall|rampart|barricade|barrier|fence|perimeter)\b/i, examples: ["crumbling concrete wall", "bullet-scarred barrier"] },
+  { check: /\b(compass\s+rose|map\s+border|legend|cartouche|scale\s+bar)\b/i, examples: ["brass compass rose", "engraved map border"] },
+  { check: /\b(monument|statue|memorial|obelisk|pillar|column|cenotaph|stele)\b/i, examples: ["stone monument", "toppled statue base"] },
+  { check: /\b(bridge|overpass|viaduct|crossing)\b/i, examples: ["collapsed bridge span", "damaged stone bridge"] },
+  { check: /\b(tower|minaret|bell\s+tower|watchtower|spire|turret)\b/i, examples: ["scorched watchtower", "damaged tower silhouette"] },
+  { check: /\b(building|structure|edifice|ruin|rubble\s+pile)\b/i, examples: ["bombed-out building facade", "structural ruin"] },
+  { check: /\b(road|highway|path|trail|track|route)\b/i, examples: ["cratered road surface", "broken asphalt path"] },
+  { check: /\b(crater|impact\s+(?:site|zone|crater)|bomb\s+crater)\b/i, examples: ["deep impact crater", "artillery crater"] },
+  { check: /\b(trench|dugout|foxhole|bunker|pillbox)\b/i, examples: ["abandoned trench line", "concrete bunker"] },
+  { check: /\b(river|canal|stream|waterway|bank|shore|coastline)\b/i, examples: ["muddy riverbank", "dried-out canal"] },
+];
+
+export interface PlaceIdentityResult {
+  hasAnchor: boolean;
+  matchedAnchors: string[];
+  injectedAnchor?: string;
+}
+
+/**
+ * Environment scene에 장소 정체성 오브젝트가 1개 이상 있는지 검사.
+ * 없으면 environment/subject 텍스트에서 맥락을 추론해 적절한 앵커를 반환.
+ *
+ * grep: ensurePlaceIdentityAnchor
+ */
+export function ensurePlaceIdentityAnchor(
+  subjectPrimary: string,
+  environment: string,
+  moodLighting: string,
+): PlaceIdentityResult {
+  const fullText = `${subjectPrimary} ${environment} ${moodLighting}`;
+  const matchedAnchors: string[] = [];
+
+  for (const { check, examples } of PLACE_IDENTITY_ANCHORS) {
+    if (check.test(fullText)) {
+      const match = fullText.match(check);
+      if (match) matchedAnchors.push(match[0]);
+    }
+  }
+
+  if (matchedAnchors.length > 0) {
+    return { hasAnchor: true, matchedAnchors };
+  }
+
+  // No anchor found — pick contextually appropriate one
+  const fullLc = fullText.toLowerCase();
+  let injected: string;
+
+  if (/\b(war|battle|combat|destroy|devastat|ruin|bombed|shell|attack|conflict|scarred)\b/i.test(fullLc)) {
+    injected = "crumbling concrete wall with bullet marks";
+  } else if (/\b(city|urban|town|street|block|district|downtown)\b/i.test(fullLc)) {
+    injected = "weathered stone building facade";
+  } else if (/\b(desert|arid|sand|dune|barren)\b/i.test(fullLc)) {
+    injected = "lone rock formation on the horizon";
+  } else if (/\b(forest|wood|jungle|canopy|tree)\b/i.test(fullLc)) {
+    injected = "massive fallen tree trunk across the path";
+  } else if (/\b(mountain|alpine|peak|ridge|cliff)\b/i.test(fullLc)) {
+    injected = "jagged rock outcrop at the ridge line";
+  } else if (/\b(ocean|sea|coast|beach|shore|harbor|port|dock)\b/i.test(fullLc)) {
+    injected = "weathered wooden dock jutting into water";
+  } else if (/\b(field|plain|meadow|grassland|steppe|savanna)\b/i.test(fullLc)) {
+    injected = "lone fence post leaning at an angle";
+  } else if (/\b(snow|ice|frozen|arctic|tundra|glacier)\b/i.test(fullLc)) {
+    injected = "frozen signpost half-buried in snow";
+  } else {
+    injected = "weathered stone structure in the mid-ground";
+  }
+
+  return { hasAnchor: false, matchedAnchors: [], injectedAnchor: injected };
+}
+
+/**
+ * WHAT (상황 증거) — 현재 상황을 시각적으로 증명하는 동적/정적 요소.
+ * 단순 분위기가 아닌 구체적 시각 증거가 1개 이상 필요.
+ *
+ * grep: SITUATION_EVIDENCE_PATTERNS
+ */
+const SITUATION_EVIDENCE_PATTERNS: Array<{ check: RegExp; examples: string[] }> = [
+  { check: /\b(smoke\s+plume|smoke\s+column|rising\s+smoke|billowing\s+smoke)\b/i, examples: ["thick smoke plumes rising from rubble"] },
+  { check: /\b(damaged\s+ground|cratered|pockmark|scarred\s+earth|scorched\s+ground|charred\s+ground)\b/i, examples: ["blast-cratered ground"] },
+  { check: /\b(waving\s+flag|flag\s+flutter|banner\s+(?:wave|flutter|snap|hang))\b/i, examples: ["torn flag waving in the wind"] },
+  { check: /\b(empty\s+(?:plaza|square|street|road|field)|abandoned|deserted|desolate)\b/i, examples: ["eerily empty plaza"] },
+  { check: /\b(crowd|formation|column\s+of|marching|procession|convoy)\b/i, examples: ["distant column of figures moving"] },
+  { check: /\b(barricade|roadblock|checkpoint|sandbag|wire)\b/i, examples: ["makeshift barricade of debris"] },
+  { check: /\b(broken\s+vehicle|burnt\s+(?:car|truck|bus)|overturned|wrecked\s+(?:car|truck|vehicle))\b/i, examples: ["burnt vehicle shell on the roadside"] },
+  { check: /\b(debris|rubble|wreckage|shattered\s+glass|scattered\s+(?:brick|concrete|metal))\b/i, examples: ["scattered concrete debris"] },
+  { check: /\b(fire|flame|blaze|burning|ember|smolder)\b/i, examples: ["small fires smoldering in wreckage"] },
+  { check: /\b(dust\s+cloud|haze\s+of\s+dust|dust\s+hangs?|airborne\s+dust|particulate)\b/i, examples: ["dust haze hanging in the air"] },
+  { check: /\b(puddle|flood|water\s+pool|standing\s+water|mud)\b/i, examples: ["muddy puddles reflecting grey sky"] },
+  { check: /\b(shadow|long\s+shadow|silhouette|cast\s+shadow)\b/i, examples: ["long shadows stretching across ground"] },
+  { check: /\b(wind|gust|breeze|flutter|ripple)\b/i, examples: ["wind rippling through loose debris"] },
+  { check: /\b(rain|drizzle|downpour|wet\s+surface|puddle)\b/i, examples: ["rain streaking across surfaces"] },
+  { check: /\b(fog|mist|vapor|steam)\b/i, examples: ["low fog clinging to the ground"] },
+];
+
+export interface SituationEvidenceResult {
+  hasEvidence: boolean;
+  matchedEvidence: string[];
+  injectedEvidence?: string;
+}
+
+/**
+ * Environment scene에 상황 증거가 1개 이상 있는지 검사.
+ * 없으면 맥락에서 적절한 증거를 생성.
+ *
+ * grep: ensureSituationEvidence
+ */
+export function ensureSituationEvidence(
+  subjectPrimary: string,
+  action: string,
+  environment: string,
+  moodLighting: string,
+): SituationEvidenceResult {
+  const fullText = `${subjectPrimary} ${action} ${environment} ${moodLighting}`;
+  const matchedEvidence: string[] = [];
+
+  for (const { check } of SITUATION_EVIDENCE_PATTERNS) {
+    if (check.test(fullText)) {
+      const match = fullText.match(check);
+      if (match) matchedEvidence.push(match[0]);
+    }
+  }
+
+  if (matchedEvidence.length > 0) {
+    return { hasEvidence: true, matchedEvidence };
+  }
+
+  // No evidence found — pick contextually appropriate one
+  const fullLc = fullText.toLowerCase();
+  let injected: string;
+
+  if (/\b(war|battle|combat|destroy|devastat|ruin|bombed|shell|conflict|scarred)\b/i.test(fullLc)) {
+    injected = "scattered debris and thin smoke drifting across the ground";
+  } else if (/\b(city|urban|town|street)\b/i.test(fullLc)) {
+    injected = "loose paper and dust drifting across empty pavement";
+  } else if (/\b(desert|arid|sand|dune)\b/i.test(fullLc)) {
+    injected = "fine sand particles carried by the wind across the ground";
+  } else if (/\b(forest|wood|jungle)\b/i.test(fullLc)) {
+    injected = "shafts of light filtering through branches, leaves drifting down";
+  } else if (/\b(mountain|alpine|peak|ridge)\b/i.test(fullLc)) {
+    injected = "loose gravel shifting on the slope, wind-carried dust";
+  } else if (/\b(ocean|sea|coast|shore)\b/i.test(fullLc)) {
+    injected = "foam-streaked waves washing across the shore";
+  } else if (/\b(snow|ice|frozen|arctic)\b/i.test(fullLc)) {
+    injected = "wind-driven snow particles sweeping across the surface";
+  } else if (/\b(rain|storm|thunder)\b/i.test(fullLc)) {
+    injected = "rain streaking across surfaces, puddles forming on the ground";
+  } else {
+    injected = "subtle dust particles drifting through the ambient light";
+  }
+
+  return { hasEvidence: false, matchedEvidence: [], injectedEvidence: injected };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 8. Normalize Pipeline (전체 정규화)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -824,6 +993,42 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
           log.push(`[coverage] Added missing ${effectiveSceneType} elements: ${enrichment}`);
         }
       }
+    }
+  }
+
+  // ── 6b. WHERE/WHAT anchor enrichment (environment only) ─────────
+  // Gemini 품질 검사에서 장소 정체성(WHERE)과 상황 증거(WHAT) 부족 방지.
+  // source-of-truth에 직접 주입.
+  if (effectiveSceneType === "environment") {
+    // WHERE — 장소 정체성 오브젝트
+    const placeResult = ensurePlaceIdentityAnchor(
+      result.subject.primary,
+      result.scene.environment,
+      result.scene.moodLighting,
+    );
+    if (!placeResult.hasAnchor && placeResult.injectedAnchor) {
+      result.scene.environment = result.scene.environment
+        ? `${result.scene.environment}, ${placeResult.injectedAnchor}`
+        : placeResult.injectedAnchor;
+      log.push(`[WHERE] Injected place identity anchor: "${placeResult.injectedAnchor}"`);
+    } else if (placeResult.hasAnchor) {
+      log.push(`[WHERE] Place identity present: ${placeResult.matchedAnchors.join(", ")}`);
+    }
+
+    // WHAT — 상황 증거
+    const evidenceResult = ensureSituationEvidence(
+      result.subject.primary,
+      result.subject.action,
+      result.scene.environment,
+      result.scene.moodLighting,
+    );
+    if (!evidenceResult.hasEvidence && evidenceResult.injectedEvidence) {
+      result.subject.action = result.subject.action
+        ? `${result.subject.action}, ${evidenceResult.injectedEvidence}`
+        : evidenceResult.injectedEvidence;
+      log.push(`[WHAT] Injected situation evidence: "${evidenceResult.injectedEvidence}"`);
+    } else if (evidenceResult.hasEvidence) {
+      log.push(`[WHAT] Situation evidence present: ${evidenceResult.matchedEvidence.join(", ")}`);
     }
   }
 

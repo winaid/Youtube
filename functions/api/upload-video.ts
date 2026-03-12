@@ -177,15 +177,20 @@ export const onRequestPost: PagesFunction<UploadEnv> = async (context) => {
 
         // canonical URI 생성
         const domain = context.env.VIDEO_BUCKET_DOMAIN;
+
+        // R2 key 기반 재생 URL (proxy-video 통해 서빙)
+        const requestOrigin = new URL(context.request.url).origin;
+        const proxyUri = `/api/proxy-video?r2key=${encodeURIComponent(key)}`;
+        const absoluteProxyUri = `${requestOrigin}/api/proxy-video?r2key=${encodeURIComponent(key)}`;
+
+        // canonicalVideoUri: 커스텀 도메인이 있으면 직접 URL, 없으면 proxy 절대 URL로 승격
+        // proxy 절대 URL도 HTTPS이므로 Scene Extension에 사용 가능
         const canonicalVideoUri = domain
           ? `https://${domain}/${key}`
-          : undefined;
+          : absoluteProxyUri;
 
-        // R2 key 기반 내부 재생 URL (domain 없어도 proxy-video로 서빙 가능)
-        const proxyUri = `/api/proxy-video?r2key=${encodeURIComponent(key)}`;
-
-        diag.canonicalVideoUri = canonicalVideoUri || null;
-        diag.sceneExtensionEligible = !!canonicalVideoUri;
+        diag.canonicalVideoUri = canonicalVideoUri;
+        diag.sceneExtensionEligible = true;  // R2 업로드 성공 시 항상 extension 가능
 
         console.log("[upload-video] R2 업로드 성공", {
           key,

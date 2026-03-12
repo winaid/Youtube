@@ -505,11 +505,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                       storage: uploadData.storage,
                     });
                   } else if (uploadData.proxyUri) {
-                    // R2에 업로드했지만 도메인 없음 → proxyUri로 대체
+                    // R2 업로드 성공했지만 canonicalVideoUri 없는 레거시 경우 (새 서버는 항상 canonical 반환)
+                    // proxyUri를 canonical로 승격 (절대 URL이면 Scene Extension 가능)
+                    const isAbsolute = uploadData.proxyUri.startsWith("https://");
                     clipUpdate.uploadStatus = "success";
                     clipUpdate.uploadStorage = "r2";
-                    clipUpdate.sceneExtensionEligible = false; // proxyUri는 Scene Extension에 사용 불가
-                    console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2, 도메인 없음) — proxyUri만 사용 가능. Scene Extension 불가`);
+                    if (isAbsolute) {
+                      clipUpdate.canonicalVideoUri = uploadData.proxyUri;
+                      clipUpdate.sceneExtensionEligible = true;
+                      console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2 proxy → canonical):`, uploadData.proxyUri.slice(0, 80));
+                    } else {
+                      clipUpdate.sceneExtensionEligible = false;
+                      console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2, relative proxy) — Scene Extension 불가`);
+                    }
                   }
                 } else {
                   const errText = await uploadRes.text().catch(() => "");

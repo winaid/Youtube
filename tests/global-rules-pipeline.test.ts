@@ -26,6 +26,8 @@ import {
   normalizeLightingDescription,
   rewriteEnvironmentAction,
   applySceneTypeRewrite,
+  ensurePlaceIdentityAnchor,
+  ensureSituationEvidence,
 } from "../src/lib/sequence-normalizer";
 
 import {
@@ -62,6 +64,7 @@ import {
   computeAssetStatus,
   canExtendScene,
   visibleInLibrary,
+  sceneExtensionReady,
   type VideoRecord,
 } from "../src/lib/video-history";
 
@@ -69,12 +72,13 @@ import {
 // Helper: minimal SingleShotDocument builder
 // ═══════════════════════════════════════════════════════════════════
 
-function makeShotDoc(overrides: Partial<SingleShotDocument> & { scene?: Partial<SingleShotDocument["scene"]>; subject?: Partial<SingleShotDocument["subject"]>; camera?: Partial<SingleShotDocument["camera"]>; global?: Partial<SingleShotDocument["global"]>; continuity?: Partial<SingleShotDocument["continuity"]>; reinforcement?: Partial<SingleShotDocument["reinforcement"]> }): SingleShotDocument {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeShotDoc(overrides: Record<string, any> = {}): SingleShotDocument {
   return {
     shotId: "shot_1",
     cutNumber: 1,
     global: { style: "cinematic realism", styleId: "live-action", aspectRatio: "16:9", totalDurationSec: 8, ...overrides.global },
-    continuity: { primarySubject: "test", environment: "test env", lightingDirection: "natural", mustPersist: [], ...overrides.continuity },
+    continuity: { primarySubject: "test", environment: "test env", lightingDirection: "natural", ambient: "", colorAnchor: "", mustPersist: [], ...overrides.continuity },
     camera: { framing: "MS", angle: "eye_level", motion: "slow push-in", ...overrides.camera },
     scene: { shotCategory: "character-driven", environment: "test env", moodLighting: "golden hour light", ...overrides.scene },
     subject: { primary: "a man walks through a field", action: "walking forward slowly", ...overrides.subject },
@@ -83,7 +87,7 @@ function makeShotDoc(overrides: Partial<SingleShotDocument> & { scene?: Partial<
     reinforcement: { styleSuffix: "cinematic realism, live-action footage", ...overrides.reinforcement },
     negatives: { universal: ["text overlay", "watermark", "subtitle", "logo", "blurry", "low quality"], sceneSpecific: [], failureMode: [], user: [] },
     audio: { hint: "Diegetic ambient sound" },
-  };
+  } as SingleShotDocument;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1141,6 +1145,189 @@ console.log("\n[34] Hard-block enforcement + payload snapshot");
   assert(snap.negativePrompt === fp2.negativePrompt, "Snapshot negativePrompt matches");
   assert(snap.provider === "veo", "Snapshot provider matches");
   assert(fp2.debug.builtBy === "buildFinalProviderPayload", "builtBy marker present");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 35: WHERE anchor (place identity) enrichment
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[35] WHERE anchor — place identity enrichment");
+{
+  // Already has a place anchor → no injection
+  const r1 = ensurePlaceIdentityAnchor(
+    "crumbling wall of an old palace",
+    "war-torn cityscape",
+    "overcast grey",
+  );
+  assert(r1.hasAnchor, "Detects existing place anchor (wall, palace)");
+  assert(r1.matchedAnchors.length > 0, `Matched: ${r1.matchedAnchors.join(", ")}`);
+
+  // No place anchor → injection
+  const r2 = ensurePlaceIdentityAnchor(
+    "wide landscape with smoke",
+    "devastated area after conflict",
+    "overcast sky, haze",
+  );
+  assert(!r2.hasAnchor, "No anchor in pure atmosphere text");
+  assert(!!r2.injectedAnchor, `Injected: "${r2.injectedAnchor}"`);
+  assert(r2.injectedAnchor!.length > 5, "Injected anchor is descriptive");
+
+  // Desert context → contextual anchor
+  const r3 = ensurePlaceIdentityAnchor(
+    "vast empty expanse",
+    "arid desert landscape",
+    "harsh sunlight",
+  );
+  assert(!r3.hasAnchor, "No existing anchor in desert text");
+  assert(/rock|formation/i.test(r3.injectedAnchor || ""), `Desert anchor has rock/formation: "${r3.injectedAnchor}"`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 36: WHAT anchor (situation evidence) enrichment
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[36] WHAT anchor — situation evidence enrichment");
+{
+  // Already has situation evidence → no injection
+  const r1 = ensureSituationEvidence(
+    "ruined buildings",
+    "thick smoke plumes rising from rubble",
+    "war-torn cityscape",
+    "overcast grey",
+  );
+  assert(r1.hasEvidence, "Detects existing situation evidence (smoke plumes)");
+  assert(r1.matchedEvidence.length > 0, `Matched: ${r1.matchedEvidence.join(", ")}`);
+
+  // No evidence → injection
+  const r2 = ensureSituationEvidence(
+    "wide landscape",
+    "the terrain stretches into the distance",
+    "empty area",
+    "morning light",
+  );
+  assert(!r2.hasEvidence, "No evidence in abstract description");
+  assert(!!r2.injectedEvidence, `Injected: "${r2.injectedEvidence}"`);
+
+  // War context → war-appropriate evidence
+  const r3 = ensureSituationEvidence(
+    "devastated terrain",
+    "the view reveals destruction",
+    "war-scarred landscape",
+    "overcast",
+  );
+  assert(!r3.hasEvidence, "No specific evidence patterns in abstract war text");
+  assert(/debris|smoke/i.test(r3.injectedEvidence || ""), `War evidence has debris/smoke: "${r3.injectedEvidence}"`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 37: normalizeSequence injects WHERE/WHAT for environment
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[37] normalizeSequence WHERE/WHAT injection for environment");
+{
+  // Environment with NO place anchor, NO situation evidence
+  const doc = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "vast area after conflict", moodLighting: "overcast, hazy" },
+    subject: { primary: "wide landscape with distant haze", action: "the terrain stretches into the distance" },
+    camera: { framing: "WS", motion: "slow pan" },
+  });
+  const result = normalizeSequence(doc);
+
+  // Should have injected WHERE
+  const whereLog = result.log.filter(l => l.includes("[WHERE]"));
+  assert(whereLog.length > 0, "Has [WHERE] log entry");
+  assert(whereLog.some(l => l.includes("Injected")), `WHERE was injected: ${whereLog[0]}`);
+
+  // Should have injected WHAT
+  const whatLog = result.log.filter(l => l.includes("[WHAT]"));
+  assert(whatLog.length > 0, "Has [WHAT] log entry");
+  assert(whatLog.some(l => l.includes("Injected")), `WHAT was injected: ${whatLog[0]}`);
+
+  // Environment with existing anchors — should NOT inject
+  const doc2 = makeShotDoc({
+    scene: { shotCategory: "environment", environment: "palace wall overlooking a wide square", moodLighting: "overcast" },
+    subject: { primary: "stone gate with bullet marks", action: "scattered debris and smoke drifting across the ground" },
+    camera: { framing: "WS", motion: "slow crane" },
+  });
+  const result2 = normalizeSequence(doc2);
+  const where2 = result2.log.filter(l => l.includes("[WHERE]"));
+  const what2 = result2.log.filter(l => l.includes("[WHAT]"));
+  assert(where2.some(l => l.includes("present")), "WHERE already present — no injection");
+  assert(what2.some(l => l.includes("present")), "WHAT already present — no injection");
+
+  // Battle scene — should NOT get WHERE/WHAT injection
+  const doc3 = makeShotDoc({
+    scene: { shotCategory: "battle", environment: "open field", moodLighting: "fiery" },
+    subject: { primary: "charging soldiers", action: "explosions erupt" },
+    camera: { framing: "MS", motion: "tracking" },
+  });
+  const result3 = normalizeSequence(doc3);
+  const where3 = result3.log.filter(l => l.includes("[WHERE]"));
+  assert(where3.length === 0, "Battle scene does NOT get WHERE injection");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Section 38: Scene Extension readiness
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n[38] Scene Extension readiness");
+{
+  // proxyUri only → NOT ready for Scene Extension
+  const r1 = sceneExtensionReady({
+    id: "vid-1", operationName: "op", engine: "veo",
+    gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
+    prompt: "", mode: "generate", durationSec: 8,
+    cutNumber: 1, status: "completed", createdAt: Date.now(),
+  });
+  assert(!r1.ready, "proxyUri only → not ready");
+  assert(r1.hasProxy, "Has proxy");
+  assert(!r1.hasCanonical, "No canonical");
+
+  // canonicalVideoUri (https://) → ready
+  const r2 = sceneExtensionReady({
+    id: "vid-2", operationName: "op", engine: "veo",
+    gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
+    canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
+    prompt: "", mode: "generate", durationSec: 8,
+    cutNumber: 1, status: "completed", createdAt: Date.now(),
+  });
+  assert(r2.ready, "HTTPS canonical → ready");
+  assert(r2.hasProxy, "Has proxy");
+  assert(r2.hasCanonical, "Has canonical");
+
+  // canonicalVideoUri (gs://) → ready
+  const r3 = sceneExtensionReady({
+    id: "vid-3", operationName: "op", engine: "veo",
+    gcsUri: "gs://bucket/video.mp4", proxyUri: "/api/proxy-video?uri=gs://bucket/video.mp4",
+    canonicalVideoUri: "gs://bucket/video.mp4",
+    prompt: "", mode: "generate", durationSec: 8,
+    cutNumber: 1, status: "completed", createdAt: Date.now(),
+  });
+  assert(r3.ready, "GCS canonical → ready");
+  assert(r3.hasCanonical, "Has canonical (gs://)");
+
+  // failed → NOT ready
+  const r4 = sceneExtensionReady({
+    id: "vid-4", operationName: "op", engine: "veo",
+    gcsUri: "", proxyUri: "", canonicalVideoUri: "https://example.com/video.mp4",
+    prompt: "", mode: "generate", durationSec: 8,
+    cutNumber: 1, status: "failed", createdAt: Date.now(),
+  });
+  assert(!r4.ready, "Failed status → not ready");
+
+  // computeAssetStatus with canonical → VISIBLE_IN_LIBRARY or SCENE_EXTENSION_READY
+  const proxyOnlyStatus = computeAssetStatus({
+    id: "vid-5", operationName: "op", engine: "veo",
+    gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
+    prompt: "", mode: "generate", durationSec: 8,
+    cutNumber: 1, status: "completed", createdAt: Date.now(),
+  });
+  assert(proxyOnlyStatus === "ASSET_STORED_PUBLIC", `proxyUri only → ASSET_STORED_PUBLIC, got: ${proxyOnlyStatus}`);
+
+  const canonicalStatus = computeAssetStatus({
+    id: "vid-6", operationName: "op", engine: "veo",
+    gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
+    canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
+    prompt: "", mode: "generate", durationSec: 8,
+    cutNumber: 1, status: "completed", createdAt: Date.now(),
+  });
+  assert(canonicalStatus === "VISIBLE_IN_LIBRARY", `canonical + proxy → VISIBLE_IN_LIBRARY, got: ${canonicalStatus}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════

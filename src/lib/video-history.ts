@@ -142,6 +142,39 @@ export function visibleInLibrary(record: VideoRecord): boolean {
 }
 
 /**
+ * Scene Extension readiness 판단.
+ * - proxyUri만 있고 canonicalVideoUri 없음 → VISIBLE_IN_LIBRARY true, SCENE_EXTENSION_READY false
+ * - canonicalVideoUri (gs:// 또는 https://) 있음 → SCENE_EXTENSION_READY true
+ *
+ * grep: sceneExtensionReady
+ */
+export function sceneExtensionReady(record: VideoRecord): {
+  ready: boolean;
+  reason: string;
+  hasProxy: boolean;
+  hasCanonical: boolean;
+} {
+  if (record.status === "failed") {
+    return { ready: false, reason: "generation failed", hasProxy: false, hasCanonical: false };
+  }
+
+  const hasProxy = !!record.proxyUri;
+  const hasCanonical = !!record.canonicalVideoUri &&
+    (record.canonicalVideoUri.startsWith("gs://") || record.canonicalVideoUri.startsWith("https://"));
+
+  if (hasCanonical) {
+    return { ready: true, reason: "canonical URI available", hasProxy, hasCanonical };
+  }
+  if (hasProxy) {
+    return { ready: false, reason: "proxyUri only — no canonical URI for Scene Extension", hasProxy, hasCanonical: false };
+  }
+  if (record.gcsUri) {
+    return { ready: false, reason: "internal GCS URI only — not publicly accessible", hasProxy: false, hasCanonical: false };
+  }
+  return { ready: false, reason: "no video URI available", hasProxy: false, hasCanonical: false };
+}
+
+/**
  * 기존 레코드의 asset status를 업데이트.
  * 업로드 완료/Scene Extension 가능 등 상태 변경 시 호출.
  */
