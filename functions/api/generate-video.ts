@@ -49,15 +49,16 @@ interface StructuredSequencePayload {
 }
 
 /**
- * 서버 사이드 last-mile 직렬화.
+ * 서버 사이드 last-mile 직렬화 + final validation.
  * StructuredSequencePayload → provider 전송용 문자열.
- * 이 함수는 provider가 structured input을 지원하지 않을 때만 호출한다.
- * source of truth는 structuredSequence이며, 이 반환값은 일시적 transport payload.
+ *
+ * 이 함수가 서버에서 provider payload를 만드는 유일한 경로다.
+ * 반환값의 prompt/negativePrompt만 provider에 전송해야 한다.
  */
 function serializeSequenceToPrompt(
   seq: StructuredSequencePayload,
   provider: "veo" | "kling",
-): { prompt: string; negativePrompt: string } {
+): { prompt: string; negativePrompt: string; valid: boolean; blocked: boolean; blockReason?: string; payloadSnapshot: string } {
   // videoPromptJson이 있으면 기존 provider 렌더러 사용 (최적화된 포맷)
   if (seq.videoPromptJson) {
     if (provider === "kling") {
@@ -186,9 +187,63 @@ function serializeSequenceToPrompt(
     .replace(/\s{2,}/g, " ")
     .trim();
 
+  // ═══════════════════════════════════════════════════════════════
+  // Hard-fix: "Avoid:" 제외한 본문에서 pos/neg 충돌 최종 제거
+  // ═══════════════════════════════════════════════════════════════
+  const ZERO_TOLERANCE = ["watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic"];
+  const avoidIdx = prompt.search(/\.\s*Avoid:\s*/i);
+  let body = avoidIdx >= 0 ? prompt.slice(0, avoidIdx) : prompt;
+  const avoidPart = avoidIdx >= 0 ? prompt.slice(avoidIdx) : "";
+  const effectiveNeg = provider === "kling" ? negStr.split(", ") : (avoidPart.match(/Avoid:\s*(.+)/i)?.[1]?.split(",").map(s => s.trim()) || []);
+
+  for (const word of ZERO_TOLERANCE) {
+    const wl = word.toLowerCase();
+    if (!effectiveNeg.some(n => n.toLowerCase().includes(wl))) continue;
+    if (!body.toLowerCase().includes(wl)) continue;
+    const guardRe = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (guardRe.test(body)) continue;
+    body = body.replace(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), "")
+      .replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+    finalFixLog.push(`[hard-fix] Removed "${word}" from prompt body (zero-tolerance conflict)`);
+  }
+  prompt = (body + avoidPart).replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim();
+
+  // ═══════════════════════════════════════════════════════════════
+  // Hard-block check: pos/neg 충돌이 여전히 남아 있으면 차단
+  // ═══════════════════════════════════════════════════════════════
+  let blocked = false;
+  let blockReason: string | undefined;
+  const bodyAfterFix = (avoidIdx >= 0 ? prompt.slice(0, prompt.search(/\.\s*Avoid:\s*/i)) : prompt).toLowerCase();
+  const remainingConflicts = ZERO_TOLERANCE.filter(w => {
+    const wl = w.toLowerCase();
+    if (!effectiveNeg.some(n => n.toLowerCase().includes(wl))) return false;
+    if (!bodyAfterFix.includes(wl)) return false;
+    const guardRe = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    return !guardRe.test(bodyAfterFix);
+  });
+  if (remainingConflicts.length > 0) {
+    blocked = true;
+    blockReason = `pos_neg_conflict: ${remainingConflicts.join(", ")} still in prompt after hard-fix`;
+  }
+
+  const payloadSnapshot = JSON.stringify({ prompt, negativePrompt: provider === "kling" ? negStr : "", provider });
+
+  if (finalFixLog.length > 0) {
+    console.log("[serializeSequenceToPrompt] final validation fixes:", {
+      cutNumber: seq.cutNumber,
+      fixes: finalFixLog,
+      blocked,
+      blockReason,
+    });
+  }
+
   return {
     prompt,
     negativePrompt: provider === "kling" ? negStr : "",
+    valid: !blocked,
+    blocked,
+    blockReason,
+    payloadSnapshot,
   };
 }
 
@@ -256,17 +311,30 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let fallbackReason: string | undefined;
     const hasStructuredSequence = !!req.structuredSequence?.shotPlan;
 
+    // payloadSnapshot: 로그에 찍힌 payload와 실제 전송 payload 일치 보장용
+    let payloadSnapshot: string | undefined;
+
     if (hasStructuredSequence) {
       // 1순위: structuredSequence — 서버에서 마지막 직렬화
       // 엔진 결정 전이므로 일단 Veo로 직렬화 (아래에서 Kling이면 재직렬화)
       const serialized = serializeSequenceToPrompt(req.structuredSequence!, "veo");
+      if (serialized.blocked) {
+        console.error("[generate-video] BLOCKED by final validation:", serialized.blockReason);
+        return Response.json(
+          { error: `Generation blocked: ${serialized.blockReason}`, blocked: true },
+          { status: 422 },
+        );
+      }
       finalPromptForProvider = serialized.prompt;
+      payloadSnapshot = serialized.payloadSnapshot;
       usedPath = "structuredSequence";
       console.log("[generate-video] structuredSequence → 서버 직렬화 (last-mile)", {
         cutNumber: req.cutNumber,
         shotId: req.structuredSequence!.shotId,
         serializedLen: finalPromptForProvider.length,
         serializedPreview: finalPromptForProvider.slice(0, 120),
+        valid: serialized.valid,
+        blocked: serialized.blocked,
         validation: req.structuredSequence!.validation,
         hasVideoPromptJson: !!req.structuredSequence!.videoPromptJson,
         hasNegatives: !!req.structuredSequence!.negatives,
@@ -401,13 +469,23 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       let klingNegativePrompt = req.negativePrompt || "";
       if (hasStructuredSequence) {
         const klingResult = serializeSequenceToPrompt(req.structuredSequence!, "kling");
+        if (klingResult.blocked) {
+          console.error("[generate-video] Kling BLOCKED by final validation:", klingResult.blockReason);
+          return Response.json(
+            { error: `Generation blocked: ${klingResult.blockReason}`, blocked: true },
+            { status: 422 },
+          );
+        }
         finalPromptForProvider = klingResult.prompt;
+        payloadSnapshot = klingResult.payloadSnapshot;
         if (klingResult.negativePrompt) {
           klingNegativePrompt = klingResult.negativePrompt;
         }
         console.log("[generate-video] Kling: structuredSequence → 서버 재직렬화 (last-mile)", {
           promptLen: finalPromptForProvider.length,
           negativeLen: klingResult.negativePrompt.length,
+          valid: klingResult.valid,
+          blocked: klingResult.blocked,
           structuredPath: true,
           stringFallback: false,
         });
@@ -563,6 +641,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // Scene Extension이 최우선: 사용자가 "이전 영상을 입력으로 넣어 이어서 생성"을 원하므로
     // previousVideoUri(gs://) 가 있으면 반드시 video input으로 넣음.
     // firstFrameBase64(프레임 기반 image-to-video)는 이전 영상이 없을 때 continuity 보조 수단.
+    // ── Payload consistency check: logged === transmitted ──────────────
+    if (payloadSnapshot) {
+      const expectedPrompt = JSON.parse(payloadSnapshot).prompt;
+      if (expectedPrompt !== finalPromptForProvider) {
+        console.error("[generate-video] PAYLOAD MISMATCH: logged prompt ≠ transmitted prompt", {
+          snapshotLen: expectedPrompt.length,
+          transmittedLen: finalPromptForProvider.length,
+          diff: finalPromptForProvider.slice(0, 50) !== expectedPrompt.slice(0, 50) ? "prefix differs" : "suffix differs",
+        });
+      }
+    }
+
     const instance: Record<string, unknown> = { prompt: finalPromptForProvider };
 
     if (hasValidPrevUri) {

@@ -440,12 +440,18 @@ export interface VideoClip {
   verification?: PromptVerification; // Enhancement: prompt quality score
   qualityChecklist?: { items: Array<{ id: string; label: string; passed: boolean; detail?: string }>; passCount: number; totalCount: number };
   /**
-   * @deprecated source of truth는 structuredSequence.
-   * 이 필드는 디버그 미리보기 용도로만 존재하며, 생성/저장 경로에서 사용 금지.
-   * provider가 string-only일 때 서버에서 마지막 순간에 직렬화한 결과의 preview.
+   * @deprecated DEBUG ONLY — source of truth는 structuredSequence.
+   * 이 필드는 UI 디버그 미리보기 용도로만 존재.
+   * ⛔ 생성 요청 body에 포함 금지.
+   * ⛔ storage/history의 주 기록 필드로 사용 금지.
+   * ⛔ source-of-truth 판단에 사용 금지.
+   * provider가 string-only일 때 서버에서 마지막 순간에 직렬화한 결과의 preview일 뿐.
    */
   fallbackRenderedPrompt?: string;
-  /** @deprecated Use fallbackRenderedPrompt. 이전 이름 호환용. */
+  /**
+   * @deprecated DEBUG ONLY — 이전 이름 호환용.
+   * fallbackRenderedPrompt와 동일한 값. 생성/저장/전송 경로에서 절대 사용하지 말 것.
+   */
   finalPrompt?: string;
   assembledDebug?: { // 프롬프트 조립 블록별 분해 (디버그용)
     styleBlock: string;

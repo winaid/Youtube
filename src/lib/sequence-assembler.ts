@@ -15,6 +15,7 @@ import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
 import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
 import { normalizeSequence } from "@/lib/sequence-normalizer";
+import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -1304,23 +1305,20 @@ export function assembleFromJSON(input: {
     conflictResolutions: [...conflictResolutions, ...normalizeWarnings],
   };
 
-  // Preview — 디버그 전용. source of truth 아님.
-  // 이 값은 저장하거나 body에 넣으면 안 된다.
-  const serializedPreview = serializeForProvider(normalizedDoc, provider);
+  // Preview — buildFinalProviderPayload()로 조립. 디버그 전용.
+  // 이 값은 저장하거나 body에 넣으면 안 된다. source of truth는 structuredSequence.
+  const finalPayload = buildFinalProviderPayload({ document: normalizedDoc, provider });
 
   // ── Post-serialization validation — 최종 결과에 pos/neg 충돌이 남아있으면 driftWarning 강화
-  const finalValidationIssueText = serializedPreview.debug.sections._validationIssues || "";
-  const finalPosNegErrors = finalValidationIssueText.includes("pos_neg_conflict");
-  if (finalPosNegErrors && !driftWarning) {
-    driftWarning = `FINAL PAYLOAD pos/neg conflict detected after auto-fix: ${finalValidationIssueText}`;
+  if (finalPayload.blocked && !driftWarning) {
+    driftWarning = `BLOCKED: ${finalPayload.blockReason}`;
+  }
+  if (finalPayload.debug.validationIssues.some(v => v.includes("pos_neg_conflict")) && !driftWarning) {
+    driftWarning = `FINAL PAYLOAD pos/neg conflict: ${finalPayload.debug.validationIssues.join("; ")}`;
   }
 
-  // Update structuredSequence.validation with final serialized state
-  const finalErrorCount = finalValidationIssueText
-    ? finalValidationIssueText.split(" | ").filter(s => s.startsWith("[error]")).length
-    : 0;
-  if (finalErrorCount === 0) {
-    // Auto-fix resolved all errors — mark as valid
+  // Update structuredSequence.validation with final builder state
+  if (finalPayload.valid) {
     structuredSequence.validation = {
       valid: true,
       errors: 0,
@@ -1340,11 +1338,9 @@ export function assembleFromJSON(input: {
       blocked: normalized.blocked,
     },
     finalSnapshot: {
-      wordCount: serializedPreview.wordCount,
-      truncated: serializedPreview.debug.truncated,
-      validationIssues: finalValidationIssueText
-        ? finalValidationIssueText.split(" | ").length
-        : 0,
+      wordCount: finalPayload.wordCount,
+      truncated: finalPayload.debug.truncated,
+      validationIssues: finalPayload.debug.validationIssues.length,
     },
   };
 
@@ -1359,11 +1355,11 @@ export function assembleFromJSON(input: {
     },
     pipelineTrace,
     preview: {
-      renderedPrompt: serializedPreview.prompt,
-      renderedNegative: serializedPreview.negativePrompt,
-      wordCount: serializedPreview.wordCount,
-      sections: serializedPreview.debug.sections,
-      truncated: serializedPreview.debug.truncated,
+      renderedPrompt: finalPayload.prompt,
+      renderedNegative: finalPayload.negativePrompt,
+      wordCount: finalPayload.wordCount,
+      sections: finalPayload.debug.sections,
+      truncated: finalPayload.debug.truncated,
       isMapScene: normalizedDoc.scene.shotCategory === "map-graphic",
       isEnvironmentScene: normalizedDoc.scene.shotCategory === "environment",
     },
