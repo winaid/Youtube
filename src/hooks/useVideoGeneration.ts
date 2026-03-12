@@ -1859,6 +1859,16 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     setState((prev) => ({ ...prev, review: undefined }));
   }, []);
 
+  /** 특정 클립의 structuredSequence를 업데이트 (시퀀스 타임라인 편집기용) */
+  const updateClipStructuredSequence = useCallback((cutNumber: number, updated: import("@/types").StructuredSequenceDocument) => {
+    setState((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) =>
+        c.cutNumber === cutNumber ? { ...c, structuredSequence: updated } : c,
+      ),
+    }));
+  }, []);
+
   return {
     ...state,
     updateConfig,
@@ -1876,6 +1886,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     regenerateFromFeedback,
     regenerateAllFromFeedback,
     dismissReview,
+    updateClipStructuredSequence,
     completedCount,
     totalCount,
     progress,

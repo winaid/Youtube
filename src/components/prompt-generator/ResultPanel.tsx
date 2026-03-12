@@ -10,6 +10,7 @@ import CutCard from "./CutCard";
 import VideoGenerationPanel from "./VideoGenerationPanel";
 import VideoSettingsPanel from "./VideoSettingsPanel";
 import TimelineEditor from "./TimelineEditor";
+import SequenceTimelineEditor from "./SequenceTimelineEditor";
 import CharacterFaceManager from "./CharacterFaceManager";
 import OneClickPipeline from "./OneClickPipeline";
 import VideoHistoryPanel, { saveToHistory } from "./VideoHistoryPanel";
@@ -40,7 +41,7 @@ export default function ResultPanel({
   const [jsonCopied, setJsonCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [showJson, setShowJson] = useState(false);
-  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "timeline">("prompts");
+  const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "sequence" | "timeline">("prompts");
   const [ttsVoice] = useState("ko-KR-Wavenet-A");
   const [ttsRate] = useState(1.0);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -538,6 +539,7 @@ export default function ResultPanel({
         {([
           { key: "prompts", label: "프롬프트", color: "#787fff" },
           { key: "generate", label: "영상 생성", color: "#22c55e" },
+          { key: "sequence", label: "시퀀스", color: "#8b5cf6" },
           { key: "timeline", label: "타임라인", color: "#c4b800" },
         ] as const).map((tab) => (
           <button
@@ -939,6 +941,30 @@ export default function ResultPanel({
           />
 
         </>
+      )}
+
+      {/* 시퀀스 편집 섹션 */}
+      {activeSection === "sequence" && (
+        <div className="space-y-4">
+          {videoGen.clips.filter((c) => c.structuredSequence).length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground rounded-lg border-2 border-dashed">
+              structuredSequence가 있는 클립이 없습니다.<br />
+              &quot;영상 생성&quot; 탭에서 먼저 프롬프트를 생성하세요.
+            </div>
+          ) : (
+            videoGen.clips
+              .filter((c) => c.structuredSequence)
+              .map((clip) => (
+                <SequenceTimelineEditor
+                  key={clip.cutNumber}
+                  structuredSequence={clip.structuredSequence!}
+                  onApply={(updated) => {
+                    videoGen.updateClipStructuredSequence(clip.cutNumber, updated);
+                  }}
+                />
+              ))
+          )}
+        </div>
       )}
 
       {/* 타임라인 섹션 */}
