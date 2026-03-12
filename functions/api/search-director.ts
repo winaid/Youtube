@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -35,7 +35,7 @@ If the query is a movie/anime title, find the director of that work AND suggest 
 Return ONLY valid JSON array, no markdown fences, no explanation.
 If no match, return empty array [].`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, "gemini-3.1-flash-lite-preview"), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

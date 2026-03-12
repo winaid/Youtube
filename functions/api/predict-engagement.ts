@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -47,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const urlTemplate = buildGeminiUrl(context.env, "gemini-3.1-pro-preview");
+    const urlTemplate = buildGeminiUrl(context.env, GEMINI_MODEL_PRO);
 
     const sceneList = (input.scenes || [])
       .map((s, i) => `Scene ${i + 1}: ${s.sceneDescription}`)

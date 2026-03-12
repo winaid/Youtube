@@ -11,6 +11,18 @@ export interface GeminiEnv {
   GOOGLE_CLOUD_API_KEY?: string; // TTS + legacy Gemini fallback
 }
 
+// === 모델 상수 (Google AI Studio) ===
+// 모델 변경 시 여기만 수정하면 전체 엔드포인트에 반영됨.
+
+/** 무거운 추론 (프롬프트 생성, 분석, 리뷰) */
+export const GEMINI_MODEL_PRO   = "gemini-2.5-pro-preview-05-06";
+/** 경량 추론 (검증, 분류, 추출) */
+export const GEMINI_MODEL_FLASH = "gemini-2.5-flash-preview-05-20";
+/** 이미지 생성 (primary) */
+export const GEMINI_MODEL_IMAGE       = "gemini-2.0-flash-preview-image-generation";
+/** 이미지 생성 (fallback) */
+export const GEMINI_MODEL_IMAGE_FB    = "imagen-3.0-generate-002";
+
 // === Gemini API URL 빌더 ===
 
 /**

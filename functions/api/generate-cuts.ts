@@ -9,16 +9,14 @@
  *   Step2: maxTokens=8192  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192  (컷 N/2+1~N 상세) — Step2와 병렬
  */
-import { GeminiEnv, streamingGenerate } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate, GEMINI_MODEL_FLASH } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 
 type Env = GeminiEnv;
 
-// Google AI Studio 모델 (Vertex 아님).
-// 아웃라인: 빠른 Flash로 구조 생성, 상세: Pro로 품질 확보.
-const MODEL_OUTLINE = "gemini-2.5-flash-preview-05-20";
-const MODEL_DETAIL  = "gemini-2.5-flash-preview-05-20";
+const MODEL_OUTLINE = GEMINI_MODEL_FLASH;
+const MODEL_DETAIL  = GEMINI_MODEL_FLASH;
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**

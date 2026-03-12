@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -57,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const urlTemplate = buildGeminiUrl(context.env, "gemini-3.1-flash-lite-preview");
+    const urlTemplate = buildGeminiUrl(context.env, GEMINI_MODEL_FLASH);
 
     const imageParts = frames.map((frame) => ({
       inlineData: {

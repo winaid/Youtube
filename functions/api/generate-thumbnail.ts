@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_IMAGE, GEMINI_MODEL_IMAGE_FB } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -39,7 +39,7 @@ IMPORTANT composition & camera rules:
 
 Make it eye-catching, high contrast, and optimized for small display sizes. Use bold colors and clear focal points.`;
 
-    const models = ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"];
+    const models = [GEMINI_MODEL_IMAGE_FB, GEMINI_MODEL_IMAGE];
 
     let lastError: string | null = null;
 

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_IMAGE, GEMINI_MODEL_IMAGE_FB } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -58,7 +58,7 @@ ${prompt}`;
 
     // 1차: 나노바나나 2 (Gemini 3.1 Flash Image) — 7.5배 빠르고 4K 지원, 가성비 최고
     try {
-      const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, "gemini-3.1-flash-image-preview"), {
+      const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_IMAGE), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -79,7 +79,7 @@ ${prompt}`;
     }
 
     // 2차: 나노바나나 프로 (Gemini 3 Pro Image) — 고품질 폴백
-    const fallbackRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, "gemini-3-pro-image-preview"), {
+    const fallbackRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_IMAGE_FB), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),

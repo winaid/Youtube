@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -48,7 +48,7 @@ JSON으로만 응답:
   ]
 }`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, "gemini-3.1-pro-preview"), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
