@@ -418,7 +418,13 @@ export default function ResultPanel({
                 {result.fallbackReason && <span className="block mt-0.5">사유: {result.fallbackReason}</span>}
               </p>
               <p className="text-xs mt-1 opacity-80">
-                해결: GEMINI_API_KEY가 올바르게 설정되어 있는지, API 할당량이 남아있는지 확인하세요.
+                {result.fallbackReason?.includes("MODEL_NOT_FOUND") || result.fallbackReason?.includes("deprecated")
+                  ? "원인: 모델명이 변경되었습니다. _gemini-keys.ts의 모델 상수를 최신 버전으로 업데이트하세요."
+                  : result.fallbackReason?.includes("MISSING_API_KEY") || result.fallbackReason?.includes("No auth")
+                  ? "원인: GEMINI_API_KEY가 설정되지 않았습니다. Cloudflare Pages 환경변수에서 설정하세요."
+                  : result.fallbackReason?.includes("429") || result.fallbackReason?.includes("quota")
+                  ? "원인: API 할당량 초과입니다. 잠시 후 다시 시도하거나 GEMINI_API_KEY_2를 추가 설정하세요."
+                  : "확인사항: ① GEMINI_API_KEY 환경변수 설정 여부 ② API 할당량 ③ 모델명이 최신인지 확인"}
               </p>
             </div>
           )}

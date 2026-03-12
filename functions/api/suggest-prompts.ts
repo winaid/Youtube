@@ -120,7 +120,7 @@ JSON 배열로만 응답 (마크다운 없이):
       return Response.json({
         error: `Gemini API error: ${res.status}`,
         detail: errText.slice(0, 500),
-        authMode: context.env.GEMINI_API_KEY ? "gemini-api-key" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : "none",
+        authMode: context.env.GEMINI_API_KEY ? "gemini-api-key" : context.env.GEMINI_API_KEY_2 ? "gemini-api-key-2" : "none",
       }, { status: 500 });
     }
 
@@ -152,7 +152,7 @@ JSON 배열로만 응답 (마크다운 없이):
     return Response.json({
       error: "Failed to generate prompts",
       detail: error instanceof Error ? error.message : String(error),
-      authMode: context.env.GEMINI_API_KEY ? "gemini-api-key" : context.env.GOOGLE_CLOUD_API_KEY ? "cloud-api-key" : "none",
+      authMode: context.env.GEMINI_API_KEY ? "gemini-api-key" : context.env.GEMINI_API_KEY_2 ? "gemini-api-key-2" : "none",
     }, { status: 500 });
   }
 };

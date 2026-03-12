@@ -2,24 +2,26 @@
  * Gemini API Key 인증 유틸리티 (Google AI Studio).
  *
  * 인증: API Key 방식만 사용 (Vertex AI / SA 아님).
- * 우선순위: GEMINI_API_KEY → GOOGLE_CLOUD_API_KEY → GEMINI_API_KEY_2
+ * 우선순위: GEMINI_API_KEY → GEMINI_API_KEY_2
+ * (GOOGLE_CLOUD_API_KEY는 TTS 전용 — Gemini 호출에 사용하지 않음)
  */
 
 export interface GeminiEnv {
   GEMINI_API_KEY?: string;
   GEMINI_API_KEY_2?: string;
-  GOOGLE_CLOUD_API_KEY?: string; // TTS + legacy Gemini fallback
+  GOOGLE_CLOUD_API_KEY?: string; // TTS 전용 — Gemini 호출에 사용하지 않음
 }
 
 // === 모델 상수 (Google AI Studio) ===
 // 모델 변경 시 여기만 수정하면 전체 엔드포인트에 반영됨.
+// 최종 업데이트: 2026-03-12
 
-/** 무거운 추론 (프롬프트 생성, 분석, 리뷰) */
-export const GEMINI_MODEL_PRO   = "gemini-2.5-pro-preview-05-06";
-/** 경량 추론 (검증, 분류, 추출) */
-export const GEMINI_MODEL_FLASH = "gemini-2.5-flash-preview-05-20";
-/** 이미지 생성 (primary) */
-export const GEMINI_MODEL_IMAGE       = "gemini-2.0-flash-preview-image-generation";
+/** 무거운 추론 (프롬프트 생성, 분석, 리뷰) — Gemini 3.1 Pro Preview */
+export const GEMINI_MODEL_PRO   = "gemini-3.1-pro-preview";
+/** 경량 추론 (검증, 분류, 추출) — Gemini 3 Flash */
+export const GEMINI_MODEL_FLASH = "gemini-3-flash-preview";
+/** 이미지 생성 (primary) — Nano Banana 2 */
+export const GEMINI_MODEL_IMAGE       = "gemini-3.1-flash-image-preview";
 /** 이미지 생성 (fallback) */
 export const GEMINI_MODEL_IMAGE_FB    = "imagen-3.0-generate-002";
 
@@ -37,8 +39,8 @@ export function buildGeminiUrl(env: GeminiEnv, model: string, method = "generate
 export function getApiKeys(env: GeminiEnv): string[] {
   const keys: string[] = [];
   if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY);
-  if (env.GOOGLE_CLOUD_API_KEY) keys.push(env.GOOGLE_CLOUD_API_KEY);
   if (env.GEMINI_API_KEY_2) keys.push(env.GEMINI_API_KEY_2);
+  // GOOGLE_CLOUD_API_KEY는 TTS 전용 — Gemini 호출 fallback에 사용하지 않음
   return keys;
 }
 
@@ -67,7 +69,11 @@ function fetchWithKeyFallback(
 ): Promise<Response> {
   if (keys.length === 0) {
     return Promise.resolve(
-      new Response(JSON.stringify({ error: "No API keys configured" }), {
+      new Response(JSON.stringify({
+        error: "GEMINI_API_KEY 환경변수가 설정되지 않았습니다.",
+        code: "MISSING_API_KEY",
+        help: "Cloudflare Pages 환경변수에 GEMINI_API_KEY를 설정하세요.",
+      }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }),
@@ -86,9 +92,15 @@ function fetchWithKeyFallback(
       if (isDeprecatedModelError(res.status, body)) {
         const modelMatch = url.match(/models\/([^:?/]+)/);
         const modelName = modelMatch?.[1] ?? "unknown";
-        console.error(`[Gemini] Model "${modelName}" is deprecated or not available. Update model name.`);
+        console.error(`[Gemini] Model "${modelName}" is deprecated or not available. Update _gemini-keys.ts model constants.`);
         return new Response(
-          JSON.stringify({ error: `Model "${modelName}" is no longer available. This is NOT an API key issue — update the model name in code.`, detail: body.slice(0, 300) }),
+          JSON.stringify({
+            error: `모델 "${modelName}"이(가) deprecated되었거나 존재하지 않습니다.`,
+            code: "MODEL_NOT_FOUND",
+            help: "이것은 API key 문제가 아닙니다. _gemini-keys.ts의 모델 상수를 최신 모델명으로 업데이트하세요.",
+            currentModels: { pro: GEMINI_MODEL_PRO, flash: GEMINI_MODEL_FLASH, image: GEMINI_MODEL_IMAGE },
+            detail: body.slice(0, 300),
+          }),
           { status: res.status, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -117,7 +129,11 @@ export async function fetchWithAuth(
   const keys = getApiKeys(env);
   if (keys.length === 0) {
     return new Response(
-      JSON.stringify({ error: "No auth configured. Set GEMINI_API_KEY." }),
+      JSON.stringify({
+        error: "GEMINI_API_KEY 환경변수가 설정되지 않았습니다.",
+        code: "MISSING_API_KEY",
+        help: "Cloudflare 대시보드 > Pages > Settings > Environment variables에서 GEMINI_API_KEY를 설정하세요. Google AI Studio(aistudio.google.com)에서 키를 발급받을 수 있습니다.",
+      }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -144,7 +160,7 @@ export async function streamingGenerate(
 
   const keys = getApiKeys(env);
   if (keys.length === 0) {
-    return { text: "", error: "No auth configured", status: 500 };
+    return { text: "", error: "GEMINI_API_KEY 환경변수가 설정되지 않았습니다. Cloudflare Pages 환경변수를 확인하세요.", status: 500 };
   }
   const res = await fetchWithKeyFallback(keys, url, init);
 
