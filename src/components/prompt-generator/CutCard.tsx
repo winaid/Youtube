@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Cut, CharacterSeed, VideoPromptJson } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots } from "@/types";
+import ShotComparisonPanel from "./ShotComparisonPanel";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ interface CutCardProps {
   onGenerateSceneTts?: () => void;
   onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
   onEnglishRefine?: (cutNumber: number) => Promise<void>;
+  shotSnapshots?: ShotSnapshots;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -308,6 +310,7 @@ export default function CutCard({
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
   userVeoMode: _userVeoMode,
+  shotSnapshots,
 }: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
   const [feedbackText, setFeedbackText] = useState("");
@@ -582,6 +585,16 @@ export default function CutCard({
         )}
 
         <Accordion type="single" collapsible className="w-full">
+          {shotSnapshots && (
+            <AccordionItem value="comparison" className="border-none">
+              <AccordionTrigger className="text-xs py-1 hover:no-underline" style={{ color: "#6b5ce7" }}>
+                3-way 비교 (Original / AutoFixed / Final)
+              </AccordionTrigger>
+              <AccordionContent className="pt-2">
+                <ShotComparisonPanel snapshots={shotSnapshots} />
+              </AccordionContent>
+            </AccordionItem>
+          )}
           <AccordionItem value="prompts" className="border-none">
             <AccordionTrigger className="text-xs py-1 hover:no-underline" style={{ color: "#787fff" }}>
               프롬프트 보기 / 수정하기

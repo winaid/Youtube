@@ -669,6 +669,63 @@ export interface VideoGenerationState {
   sequenceFidelity?: import("@/lib/sequence-plan").SequenceFidelityResult;
 }
 
+// ===== Shot 3-way Comparison (original / autoFixed / finalSent) =====
+
+/** 단일 필드 diff 결과 */
+export interface FieldDiff {
+  field: string;
+  original: unknown;
+  autoFixed: unknown;
+  finalSent: unknown;
+  /** 변경 단계: "autofix" | "server" | "both" | "none" */
+  changedAt: "autofix" | "server" | "both" | "none";
+}
+
+/** 한 컷의 3-way comparison 결과 */
+export interface ShotComparison {
+  cutNumber: number;
+  shotId: string;
+  diffs: FieldDiff[];
+  /** 변경된 필드만 필터링한 수 */
+  changedCount: number;
+  totalFields: number;
+}
+
+/** 생성 요청의 provenance (출처/추적) 메타 */
+export interface CutProvenance {
+  cutNumber: number;
+  /** generate-cuts 응답 source: "gemini" | "deterministic_fallback" */
+  source?: string;
+  /** generate-cuts 응답 품질: "ok" | "degraded" */
+  quality?: "ok" | "degraded";
+  reason?: string;
+  warnings?: string[];
+  /** 실제 사용된 Kling 모델 */
+  modelUsed?: string;
+  /** generate-video 응답 modeUsed */
+  modeUsed?: string;
+  /** preflight QA score */
+  qaScore?: number;
+  /** autofix 적용 수 */
+  autoFixCount?: number;
+  /** sanitize fix 로그 */
+  sanitizeFixes?: string[];
+  /** conflict resolution 로그 */
+  conflictResolutions?: string[];
+}
+
+/** 3-way snapshot 세트 (per cut) */
+export interface ShotSnapshots {
+  cutNumber: number;
+  /** assembleFromJSON 직후, QA autofix 이전 */
+  original?: StructuredSequenceDocument;
+  /** applyQualityFixes 이후 */
+  autoFixed?: StructuredSequenceDocument;
+  /** API 전송 body에 포함된 최종 */
+  finalSent?: StructuredSequenceDocument;
+  provenance?: CutProvenance;
+}
+
 // ===== 캐릭터 얼굴 레퍼런스 =====
 export interface CharacterFaceRef {
   characterId: string; // CharacterSeed.id와 매칭

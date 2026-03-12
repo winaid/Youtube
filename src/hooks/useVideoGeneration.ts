@@ -28,6 +28,8 @@ import {
   DEFAULT_VEO_CONFIG,
   type StructuredSequenceDocument,
   type ShotVariant,
+  type ShotSnapshots,
+  type CutProvenance,
 } from "@/types";
 import {
   createInitialVariantState,
@@ -181,6 +183,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   // 동일 cutNumber에 대한 중복 폴링 방지
   const activePolls = useRef<Set<number>>(new Set());
   const autoModeRef = useRef(false);
+
+  // ── 3-way comparison 스냅샷 저장 (per cut) ──
+  const shotSnapshotsRef = useRef<Map<number, ShotSnapshots>>(new Map());
 
   // cuts 변경 시 clips 초기화 + 시퀀스 플랜 동기화
   useEffect(() => {
@@ -997,6 +1002,13 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
       const sequence = assembled.structuredSequence;
 
+      // ── 3-way snapshot: original (assembleFromJSON 직후, QA 전) ──
+      const snapshotOriginal = JSON.parse(JSON.stringify(sequence)) as StructuredSequenceDocument;
+      shotSnapshotsRef.current.set(cutNumber, {
+        cutNumber,
+        original: snapshotOriginal,
+      });
+
       // ── PREFLIGHT DRIFT DETECTION (비용 보호) ──────────────────────
       if (assembled.diagnostics.driftWarning) {
         console.error(`[CUT ${cutNumber}] ⛔ ${assembled.diagnostics.driftWarning}`);
@@ -1016,6 +1028,18 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           // 수정된 sequence로 교체
           Object.assign(sequence, fixed);
           console.log(`[CUT ${cutNumber}] 🔧 QA auto-fix: ${appliedFixes.length} fixes`, appliedFixes);
+
+          // ── 3-way snapshot: autoFixed (QA 적용 후) ──
+          const snap = shotSnapshotsRef.current.get(cutNumber);
+          if (snap) {
+            snap.autoFixed = JSON.parse(JSON.stringify(sequence)) as StructuredSequenceDocument;
+            snap.provenance = {
+              ...snap.provenance,
+              cutNumber,
+              qaScore: qaResult.score,
+              autoFixCount: appliedFixes.length,
+            };
+          }
         }
         if (qaResult.issues.length > 0) {
           console.log(`[CUT ${cutNumber}] 📋 QA preflight: score=${qaResult.score}/100, errors=${qaResult.issues.filter(i => i.severity === "error").length}, warnings=${qaResult.issues.filter(i => i.severity === "warning").length}`);
@@ -1297,6 +1321,20 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         // Veo 멀티샷도 여기서 문자열로 조합하지 않음 — 서버에서 structuredSequence 기반 처리
       };
 
+      // ── 3-way snapshot: finalSent (API 전송 직전) ──
+      {
+        const snap = shotSnapshotsRef.current.get(cutNumber);
+        if (snap) {
+          snap.finalSent = JSON.parse(JSON.stringify(sequence)) as StructuredSequenceDocument;
+          snap.provenance = {
+            ...snap.provenance,
+            cutNumber,
+            sanitizeFixes: sequence.sanitizeFixes,
+            conflictResolutions: sequence.conflictResolutions,
+          };
+        }
+      }
+
       // ── 타이밍: 시퀀스 조립 완료 ──────────────────────────────────────────
       const tBuildDone = performance.now();
       const buildMs = Math.round(tBuildDone - t0);
@@ -1458,6 +1496,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         modeUsed: data.modeUsed,
         sourceVideo: data.sourceVideo,
       });
+
+      // ── 3-way snapshot: provenance에 서버 응답 메타 기록 ──
+      {
+        const snap = shotSnapshotsRef.current.get(cutNumber);
+        if (snap) {
+          snap.provenance = {
+            ...snap.provenance,
+            cutNumber,
+            modelUsed: (data as Record<string, unknown>).modelUsed as string | undefined,
+            modeUsed: data.modeUsed,
+          };
+        }
+      }
 
       if (data.warning) {
         console.warn(`CUT ${cutNumber} warning:`, data.warning);
@@ -2117,5 +2168,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     completedCount,
     totalCount,
     progress,
+    // 3-way comparison snapshots
+    shotSnapshots: shotSnapshotsRef.current,
   };
 }

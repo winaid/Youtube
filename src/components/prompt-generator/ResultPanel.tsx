@@ -712,6 +712,7 @@ export default function ResultPanel({
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
                   userVeoMode={videoGen.config.mode}
+                  shotSnapshots={videoGen.shotSnapshots.get(cut.cutNumber)}
                   storyboardImage={storyboardImages[cut.cutNumber]}
                   storyboardCandidates={storyboardCandidates[cut.cutNumber]}
                   storyboardLoading={storyboardLoading[cut.cutNumber]}
