@@ -4,7 +4,7 @@
  * Kling은 HTTPS URL을 직반환하므로 대부분 업로드 불필요 (needsUpload=false).
  * base64 fallback이 필요한 경우에만 R2 업로드.
  *
- * GCS 업로드 경로 제거됨 — Vertex/SA 의존성 없음.
+ * R2 전용 업로드 (GCS 경로 없음).
  */
 
 interface UploadEnv {

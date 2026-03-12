@@ -6,7 +6,7 @@
  *   Gemini = QA / validation / auto-fix (별도 route, 여기서 호출하지 않음)
  *
  * source of truth: structuredSequence (JSON-first)
- * Veo/Vertex 생성 경로: 제거됨
+ * Kling(EvoLink) 생성 전용
  */
 import {
   klingGenerate,

@@ -1331,7 +1331,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         console.error(`CUT ${cutNumber} 영상 생성 실패:`, errMsg, errData.details || "", errData.warning || "");
 
         // Safety filter 에러 → Gemini로 프롬프트 sanitize 후 1회 재시도
-        // Veo 실제 에러 메시지 패턴 (Vertex AI / Google Video AI 공통):
+        // Kling 안전 필터 에러 메시지 패턴:
         //   "could not generate videos based on the prompt"
         //   "You will not be charged for this request"
         //   "Try rephrasing the prompt"

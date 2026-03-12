@@ -2445,13 +2445,12 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [69] Env cleanup (no Veo/Vertex env required)
+// [69] Env cleanup (Kling + Gemini API key only)
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[69] Env cleanup (no Veo/Vertex env required)");
+  console.log("\n[69] Env cleanup (Kling + Gemini API key only)");
 
-  // Architecture assertion: Kling only needs KLING_API_KEY
-  // Removed Vertex env (SA, project ID) — only KLING_API_KEY + GEMINI_API_KEY needed
+  // Architecture assertion: Kling(EvoLink) = KLING_API_KEY, Gemini(AI Studio) = GEMINI_API_KEY
   assert(PROVIDER_CAPABILITIES.kling.id === "kling", "Kling provider active");
   assert(PROVIDER_ROLES.kling.role === "generation", "Kling is generation engine");
   assert(PROVIDER_ROLES.gemini_qa.role === "qa", "Gemini is QA engine");

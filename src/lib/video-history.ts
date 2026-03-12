@@ -1,9 +1,8 @@
 /**
  * video-history.ts — 영상 생성 히스토리 (localStorage 기반)
  *
- * Vertex Veo는 storageUri로 GCS에 결과를 저장하지만,
- * 우리 앱에서 생성 이력을 관리하려면 자체 저장이 필요.
- * DB 없이 localStorage로 우선 구현, 향후 D1/Supabase로 마이그레이션 가능.
+ * 영상 생성 이력 관리 (localStorage 기반).
+ * 향후 D1/Supabase로 마이그레이션 가능.
  */
 
 /** Asset 생명 주기 상태 (VideoClip.assetStatus와 동기) */

@@ -1,8 +1,8 @@
 /**
- * Gemini API Key 인증 유틸리티.
+ * Gemini API Key 인증 유틸리티 (Google AI Studio).
  *
- * Vertex AI 서비스 계정(OAuth2) 제거됨 — API Key 방식만 사용.
- * 인증 우선순위: GEMINI_API_KEY → GOOGLE_CLOUD_API_KEY → GEMINI_API_KEY_2
+ * 인증: API Key 방식만 사용 (Vertex AI / SA 아님).
+ * 우선순위: GEMINI_API_KEY → GOOGLE_CLOUD_API_KEY → GEMINI_API_KEY_2
  */
 
 export interface GeminiEnv {
@@ -14,10 +14,9 @@ export interface GeminiEnv {
 // === Gemini API URL 빌더 ===
 
 /**
- * Gemini 모델 URL 생성 (generativelanguage.googleapis.com).
- * Vertex AI 경로 제거 — Gemini API key 전용.
+ * Google AI Studio Gemini 모델 URL 생성.
  */
-export function buildVertexUrl(env: GeminiEnv, model: string, method = "generateContent"): string {
+export function buildGeminiUrl(env: GeminiEnv, model: string, method = "generateContent"): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}`;
 }
 
@@ -77,8 +76,7 @@ function fetchWithKeyFallback(
 // === 메인 인증 함수 ===
 
 /**
- * Gemini API 호출 (API Key 인증).
- * Vertex AI OAuth2 제거 — API Key fallback만 사용.
+ * Gemini API 호출 (API Key 인증, key fallback 지원).
  */
 export async function fetchWithAuth(
   env: GeminiEnv,
@@ -105,7 +103,7 @@ export async function streamingGenerate(
   model: string,
   requestBody: Record<string, unknown>,
 ): Promise<{ text: string; error?: string; status?: number; truncated?: boolean }> {
-  const url = buildVertexUrl(env, model, "streamGenerateContent") + "?alt=sse";
+  const url = buildGeminiUrl(env, model, "streamGenerateContent") + "?alt=sse";
 
   const init: RequestInit = {
     method: "POST",

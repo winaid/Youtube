@@ -1,7 +1,8 @@
 /**
  * upload-video.test.ts — R2 스토리지 업로드 + Scene Extension 자격 테스트
  *
- * Architecture: R2 only (GCS/Vertex removed).
+ * 아키텍처: R2 전용 (GCS/SA 제거됨).
+ * Kling(EvoLink)은 HTTPS URL을 직반환하므로 대부분 업로드 불필요.
  * 실행: npx tsx tests/upload-video.test.ts
  */
 
@@ -71,7 +72,7 @@ interface UploadState {
   uploadError?: string;
 }
 
-// 2a. 서버가 canonicalVideoUri 직접 반환 → skipped (Kling HTTPS URL)
+// 2a. Kling(EvoLink)이 HTTPS URL 직반환 → skipped
 function simulateServerProvided(): UploadState {
   return {
     uploadStatus: "skipped",
@@ -108,7 +109,7 @@ assert(s3.uploadStatus === "failed", "업로드 실패 → uploadStatus=failed")
 assert(s3.sceneExtensionEligible === false, "업로드 실패 → sceneExtensionEligible=false");
 assert(!!s3.uploadError, "업로드 실패 → uploadError 포함");
 
-// 2d. 업로드 불필요 (Kling이 HTTPS URL 직반환)
+// 2d. 업로드 불필요 (Kling(EvoLink) HTTPS URL 직반환)
 function simulateNoUploadNeeded(): UploadState {
   return {
     uploadStatus: "none",
@@ -168,7 +169,7 @@ console.log("\n═══ 4. Upload Response Handling ═══");
 
 // 4c. 스토리지 미설정 (501)
 {
-  const res = { error: "영상 업로드 스토리지가 설정되지 않았습니다", guide: { option1: "Cloudflare R2: VIDEO_BUCKET 바인딩 + VIDEO_BUCKET_DOMAIN 환경변수 설정", note: "Kling은 HTTPS URL을 직반환하므로 대부분 업로드 불필요" } };
+  const res = { error: "영상 업로드 스토리지가 설정되지 않았습니다", guide: { option1: "Cloudflare R2: VIDEO_BUCKET 바인딩 + VIDEO_BUCKET_DOMAIN 환경변수 설정", note: "Kling(EvoLink)은 HTTPS URL을 직반환하므로 대부분 업로드 불필요" } };
   assert(!!res.guide, "스토리지 미설정 → 가이드 포함");
   assert(res.guide.note.includes("Kling"), "가이드에 Kling 직반환 안내 포함");
 }

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -101,7 +101,7 @@ JSON 배열로만 응답 (마크다운 없이):
 ❌ {"title":"호세 리잘이 안과 의사이자 독립운동가로 영웅이 된 방법"} → 독립운동, 환자 유치 아님
 ❌ {"title":"메리 퍼트넘 자코비가 논문으로 성차별을 뚫은 방법"} → 학술 커리어, 마케팅 아님`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-pro-preview"), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, "gemini-3.1-pro-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

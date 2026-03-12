@@ -1,8 +1,7 @@
 /**
  * check-video.ts — 2-API 아키텍처: Kling 전용 상태 폴링
  *
- * Veo/Vertex 폴링 경로: 제거됨
- * Kling 폴링만 유지.
+ * Kling(EvoLink) 폴링만 유지.
  */
 import { klingCheckStatus, type KlingEnv } from "./_kling-api";
 

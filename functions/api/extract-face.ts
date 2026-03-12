@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildVertexUrl } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -50,7 +50,7 @@ JSON으로만 응답:
 
 얼굴이 없으면 빈 배열을 반환: { "faces": [] }`;
 
-    const res = await fetchWithAuth(context.env, buildVertexUrl(context.env, "gemini-3.1-flash-lite-preview"), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, "gemini-3.1-flash-lite-preview"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
