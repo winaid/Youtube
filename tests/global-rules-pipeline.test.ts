@@ -2482,6 +2482,207 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// [71] Scene-specific auto-fix: environment
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[71] Scene-specific auto-fix: environment");
+
+  const envDoc: any = {
+    sceneType: "environment",
+    durationSec: 8,
+    shotPlan: {
+      subject: { primary: "vast mountain landscape", secondary: [], action: "camera explores", blocking: "" },
+      camera: { framing: "CU", angle: "eye_level", motion: "static" },
+      environment: "Alpine valley with snow peaks",
+      moodLighting: "golden hour sunlight",
+      action: "camera slowly reveals the valley",
+    },
+    negatives: { universal: [], sceneSpecific: [], failureMode: [], user: [] },
+    placeIdentityAnchors: [],
+    situationEvidence: [],
+  };
+
+  const qaResult = preflightQualityCheck(envDoc);
+  assert(qaResult.issues.some(i => i.category === "environment" && i.message.includes("close framing")), "Environment CU detected");
+
+  const { fixed, appliedFixes } = applyQualityFixes(envDoc, qaResult);
+  assert(fixed.shotPlan.camera.framing === "WS", "Environment framing fixed to WS");
+  assert(fixed.shotPlan.camera.motion === "slow push-in", "Environment static → slow push-in");
+  assert(appliedFixes.some(f => f.includes("framing → WS")), "Framing fix logged");
+  assert(appliedFixes.some(f => f.includes("slow push-in")), "Motion fix logged");
+
+  // Anchors auto-fill
+  assert(fixed.placeIdentityAnchors.length > 0, "placeIdentityAnchors auto-filled");
+  assert(fixed.situationEvidence.length > 0, "situationEvidence auto-filled");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [72] Scene-specific auto-fix: map
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[72] Scene-specific auto-fix: map");
+
+  const mapDoc: any = {
+    sceneType: "map-graphic",
+    durationSec: 8,
+    shotPlan: {
+      subject: { primary: "topographic map of Korean peninsula", secondary: [], action: "camera pans", blocking: "" },
+      camera: { framing: "MS", angle: "eye_level", motion: "slow pan" },
+      environment: "physical relief map surface",
+      moodLighting: "diffused natural light",
+      action: "territorial borders highlighted",
+    },
+    negatives: { universal: [], sceneSpecific: [], failureMode: [], user: [] },
+    placeIdentityAnchors: ["Korean peninsula"],
+    situationEvidence: ["territorial borders"],
+  };
+
+  const qaResult = preflightQualityCheck(mapDoc);
+  assert(qaResult.issues.some(i => i.category === "map" && i.message.includes("non-wide framing")), "Map MS framing detected");
+  assert(qaResult.issues.some(i => i.category === "map" && i.message.includes("non-overhead")), "Map eye_level angle detected");
+
+  const { fixed, appliedFixes } = applyQualityFixes(mapDoc, qaResult);
+  assert(fixed.shotPlan.camera.angle === "overhead", "Map angle fixed to overhead");
+  assert(fixed.shotPlan.camera.framing === "WS", "Map framing fixed to WS");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [73] Scene-specific auto-fix: character
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[73] Scene-specific auto-fix: character");
+
+  const charDoc: any = {
+    sceneType: "character-driven",
+    durationSec: 8,
+    shotPlan: {
+      subject: { primary: "young woman in red coat, 30s", secondary: [], action: "walks through crowd", blocking: "center frame" },
+      camera: { framing: "MS", angle: "eye_level", motion: "tracking" },
+      environment: "busy Seoul street at night",
+      moodLighting: "neon-lit urban glow",
+      action: "walks through crowd, looking around nervously",
+    },
+    negatives: { universal: [], sceneSpecific: [], failureMode: [], user: [] },
+    placeIdentityAnchors: ["Seoul street"],
+    situationEvidence: ["walks through crowd"],
+  };
+
+  const qaResult = preflightQualityCheck(charDoc);
+  assert(qaResult.issues.some(i => i.category === "character" && i.message.includes("missing characterRef")), "Character missing ref detected");
+
+  const { fixed, appliedFixes } = applyQualityFixes(charDoc, qaResult);
+  assert(fixed.shotPlan.subject.characterRef === "young woman in red coat, 30s", "characterRef auto-filled from primary");
+  assert(appliedFixes.some(f => f.includes("characterRef")), "characterRef fix logged");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [74] Scene-specific auto-fix: sceneType inference
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[74] Scene-specific auto-fix: sceneType inference");
+
+  const unknownDoc: any = {
+    sceneType: "unknown",
+    durationSec: 8,
+    shotPlan: {
+      subject: { primary: "vast mountain landscape with forest", secondary: [], action: "camera pans across valley", blocking: "" },
+      camera: { framing: "WS", angle: "eye_level", motion: "slow pan" },
+      environment: "mountain valley",
+      moodLighting: "golden hour",
+      action: "camera reveals the landscape",
+    },
+    negatives: { universal: [], sceneSpecific: [], failureMode: [], user: [] },
+    placeIdentityAnchors: ["mountain valley"],
+    situationEvidence: ["camera reveals"],
+  };
+
+  const qaResult = preflightQualityCheck(unknownDoc);
+  assert(qaResult.issues.some(i => i.category === "sceneType"), "sceneType unknown detected");
+
+  const { fixed } = applyQualityFixes(unknownDoc, qaResult);
+  assert(fixed.sceneType === "environment", "sceneType inferred as environment from mountain/landscape");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [75] Lunar scene regression: QA → fix → serialize
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[75] Lunar scene regression: QA → fix → serialize");
+
+  const lunarDoc: any = {
+    sceneType: "environment",
+    durationSec: 8,
+    shotPlan: {
+      subject: { primary: "lunar surface with craters", secondary: [], action: "camera slowly pans", blocking: "" },
+      camera: { framing: "WS", angle: "high_angle", motion: "slow pan" },
+      environment: "lunar mare with dust",
+      moodLighting: "harsh direct sunlight, no diffusion",
+      action: "earthrise in background",
+    },
+    negatives: { universal: ["watermark"], sceneSpecific: [], failureMode: [], user: [] },
+    placeIdentityAnchors: ["lunar surface"],
+    situationEvidence: ["earthrise"],
+    physicsRules: {
+      environmentType: "lunar",
+      hasWind: false,
+      hasAtmosphere: false,
+      hasAudibleEnvironment: false,
+      gravity: "low",
+      bannedExpressions: ["wind", "breeze", "clouds", "rain", "fog"],
+      negativeInjections: ["wind", "breeze", "atmospheric haze"],
+    },
+  };
+
+  const qaResult = preflightQualityCheck(lunarDoc);
+  // Should pass — no banned expressions in this clean lunar doc
+  assert(qaResult.issues.filter(i => i.category === "lunar").length === 0, "Clean lunar doc has no lunar violations");
+  assert(qaResult.score >= 50, `Lunar doc score acceptable: ${qaResult.score}`);
+
+  // Now add a violation
+  lunarDoc.shotPlan.moodLighting = "overcast sky with soft clouds";
+  const badResult = preflightQualityCheck(lunarDoc);
+  assert(badResult.issues.some(i => i.category === "lunar" && i.message.includes("overcast")), "Lunar violation: overcast detected");
+  assert(badResult.issues.some(i => i.category === "lunar" && i.message.includes("clouds")), "Lunar violation: clouds detected");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [76] QA score-based hard block
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[76] QA score-based hard block");
+
+  // Create a doc with many errors to trigger score < 30
+  const badDoc: any = {
+    sceneType: "unknown",
+    durationSec: 8,
+    shotPlan: {
+      subject: { primary: "wind blows across foggy clouds", secondary: [], action: "", blocking: "" },
+      camera: { framing: "CU", angle: "eye_level", motion: "static" },
+      environment: "",
+      moodLighting: "",
+      action: "",
+    },
+    negatives: { universal: ["wind"], sceneSpecific: [], failureMode: [], user: [] },
+    placeIdentityAnchors: [],
+    situationEvidence: [],
+    physicsRules: {
+      environmentType: "lunar",
+      hasWind: false,
+      hasAtmosphere: false,
+      hasAudibleEnvironment: false,
+      gravity: "low",
+      bannedExpressions: ["wind", "fog", "clouds"],
+      negativeInjections: [],
+    },
+  };
+
+  const qaResult = preflightQualityCheck(badDoc);
+  assert(qaResult.score < 30, `Bad doc score < 30: ${qaResult.score}`);
+  assert(qaResult.valid === false, "Bad doc is not valid");
+  assert(qaResult.issues.filter(i => i.severity === "error").length >= 3, `Multiple errors: ${qaResult.issues.filter(i => i.severity === "error").length}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Summary
 // ═══════════════════════════════════════════════════════════════════
 console.log(`\n${"═".repeat(60)}`);

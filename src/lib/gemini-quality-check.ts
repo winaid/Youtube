@@ -232,7 +232,44 @@ export function preflightQualityCheck(
     }
   }
 
-  // ── 12. lunar/space rules ─────────────────────────────────────
+  // ── 12. map scene rules ──────────────────────────────────────
+  if (seq.sceneType === "map-graphic" || seq.sceneType === "map_visualization") {
+    const framing = seq.shotPlan?.camera?.framing?.toUpperCase();
+    if (framing && !["WS", "LS", "MLS"].includes(framing)) {
+      issues.push({
+        category: "map",
+        severity: "error",
+        message: `Map scene with non-wide framing "${framing}" — must be WS/LS/MLS`,
+        autoFixable: true,
+        suggestedFix: "Change framing to WS",
+      });
+    }
+    const angle = seq.shotPlan?.camera?.angle?.toLowerCase();
+    if (angle && angle !== "overhead" && angle !== "high_angle") {
+      issues.push({
+        category: "map",
+        severity: "warning",
+        message: `Map scene with non-overhead angle "${angle}" — should be overhead`,
+        autoFixable: true,
+        suggestedFix: "Change angle to overhead",
+      });
+    }
+  }
+
+  // ── 13. character scene rules ───────────────────────────────
+  if (seq.sceneType === "character-driven" || seq.sceneType === "character") {
+    if (!seq.shotPlan?.subject?.characterRef) {
+      issues.push({
+        category: "character",
+        severity: "error",
+        message: "Character scene missing characterRef — required for consistency",
+        autoFixable: true,
+        suggestedFix: "Auto-fill characterRef from primary subject",
+      });
+    }
+  }
+
+  // ── 14. lunar/space rules ─────────────────────────────────────
   if (seq.physicsRules?.environmentType === "lunar" || seq.physicsRules?.environmentType === "space") {
     const allText = JSON.stringify(seq.shotPlan).toLowerCase();
     const LUNAR_BANNED = ["wind", "breeze", "overcast", "clouds", "rain", "fog", "haze", "atmospheric"];
@@ -315,10 +352,92 @@ export function applyQualityFixes(
         break;
       }
       case "environment": {
+        // Environment scene: force wide framing + continuous camera
         if (issue.message.includes("close framing") && fixed.shotPlan?.camera) {
           fixed.shotPlan.camera.framing = "WS";
           appliedFixes.push("[QA] Environment framing → WS");
         }
+        // Environment scene: ensure continuous camera motion for longer scenes
+        if (fixed.shotPlan?.camera && fixed.durationSec > 3) {
+          const motion = fixed.shotPlan.camera.motion?.toLowerCase() || "";
+          if (!motion || motion === "static") {
+            fixed.shotPlan.camera.motion = "slow push-in";
+            appliedFixes.push("[QA] Environment static camera → slow push-in");
+          }
+        }
+        break;
+      }
+      case "character": {
+        // Character scene: ensure characterRef exists
+        if (fixed.shotPlan && !fixed.shotPlan.subject?.characterRef) {
+          const subjectPrimary = fixed.shotPlan.subject?.primary || "";
+          if (subjectPrimary) {
+            fixed.shotPlan.subject.characterRef = subjectPrimary;
+            appliedFixes.push(`[QA] Character scene: auto-fill characterRef from primary subject`);
+          }
+        }
+        break;
+      }
+      case "map": {
+        // Map scene: force overhead angle + WS framing
+        if (fixed.shotPlan?.camera) {
+          if (fixed.shotPlan.camera.angle !== "overhead") {
+            fixed.shotPlan.camera.angle = "overhead";
+            appliedFixes.push("[QA] Map scene: angle → overhead");
+          }
+          const framing = fixed.shotPlan.camera.framing?.toUpperCase();
+          if (framing && !["WS", "LS", "MLS"].includes(framing)) {
+            fixed.shotPlan.camera.framing = "WS";
+            appliedFixes.push("[QA] Map scene: framing → WS");
+          }
+        }
+        break;
+      }
+      case "anchors": {
+        // Missing WHERE anchors: extract from environment field
+        if (issue.message.includes("placeIdentityAnchors") && fixed.shotPlan) {
+          const env = fixed.shotPlan.environment || fixed.shotPlan.locationCue || "";
+          if (env) {
+            if (!fixed.placeIdentityAnchors) fixed.placeIdentityAnchors = [];
+            if (fixed.placeIdentityAnchors.length === 0) {
+              fixed.placeIdentityAnchors.push(env.slice(0, 100));
+              appliedFixes.push(`[QA] Auto-fill placeIdentityAnchors from environment: "${env.slice(0, 50)}"`);
+            }
+          }
+        }
+        // Missing WHAT evidence: extract from action field
+        if (issue.message.includes("situationEvidence") && fixed.shotPlan) {
+          const action = fixed.shotPlan.action || "";
+          if (action) {
+            if (!fixed.situationEvidence) fixed.situationEvidence = [];
+            if (fixed.situationEvidence.length === 0) {
+              fixed.situationEvidence.push(action.slice(0, 100));
+              appliedFixes.push(`[QA] Auto-fill situationEvidence from action: "${action.slice(0, 50)}"`);
+            }
+          }
+        }
+        break;
+      }
+      case "sceneType": {
+        // Infer sceneType from shotPlan content
+        if (fixed.shotPlan && (!fixed.sceneType || fixed.sceneType === "unknown")) {
+          const allText = JSON.stringify(fixed.shotPlan).toLowerCase();
+          if (/\b(map|terrain|topograph|globe|continent|border)\b/.test(allText)) {
+            fixed.sceneType = "map-graphic";
+            appliedFixes.push("[QA] Inferred sceneType → map-graphic");
+          } else if (/\b(character|person|man|woman|face|portrait)\b/.test(allText)) {
+            fixed.sceneType = "character-driven";
+            appliedFixes.push("[QA] Inferred sceneType → character-driven");
+          } else if (/\b(landscape|mountain|ocean|forest|desert|valley|horizon)\b/.test(allText)) {
+            fixed.sceneType = "environment";
+            appliedFixes.push("[QA] Inferred sceneType → environment");
+          }
+        }
+        break;
+      }
+      case "shot_splitting": {
+        // Shot splitting is handled by sequence-assembler's enforceMinimumShotCount
+        appliedFixes.push(`[QA] ${issue.message} — deferred to shot-splitting engine`);
         break;
       }
       case "lunar":
