@@ -121,13 +121,8 @@ export function buildVertexUrl(env: GeminiEnv, model: string, method = "generate
 }
 
 /**
- * Veo 전용 Vertex AI URL 빌더 — us-central1 리전 엔드포인트 사용.
- *
- * 왜 별도 함수가 필요한가?
- *  - Veo predictLongRunning은 리전 엔드포인트(us-central1)에서만 GCS URI 반환.
- *    global 엔드포인트를 쓰면 base64 인라인으로 반환되어 Scene Extension 불가.
- *  - fetchPredictOperation 도 동일한 리전 엔드포인트여야 operationName 매칭.
- *    createVeoFetchUrl() 도 us-central1 고정.
+ * @deprecated Veo 생성 경로 제거됨. Kling 전용 아키텍처로 전환.
+ * Gemini QA 용도로 buildVertexUrl()만 유지.
  */
 export function buildVeoUrl(env: GeminiEnv, model: string, method = "predictLongRunning"): string {
   const location = "us-central1";
@@ -145,9 +140,7 @@ export function buildVeoUrl(env: GeminiEnv, model: string, method = "predictLong
 }
 
 /**
- * Veo 전용 fetchPredictOperation URL 빌더.
- * operationName에서 리전을 추출하되, global이면 us-central1 로 대체.
- * buildVeoUrl()과 동일 리전이어야 operation 조회 성공.
+ * @deprecated Veo 폴링 경로 제거됨. Kling 전용 아키텍처로 전환.
  */
 export function buildVeoFetchUrl(env: GeminiEnv, operationName: string): string {
   const locMatch = operationName.match(/locations\/([^/]+)\//);

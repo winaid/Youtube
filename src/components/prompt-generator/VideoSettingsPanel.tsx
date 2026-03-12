@@ -126,9 +126,9 @@ export default function VideoSettingsPanel({
   const pricePerSec = 0.15;
   const estimatedCost = pricePerSec * config.durationSeconds * config.sampleCount;
 
-  const engineLabels: Record<VideoEngine, string> = { veo: "Veo 3.1", kling: "Kling", auto: "Auto" };
+  const engineLabels: Record<VideoEngine, string> = { kling: "Kling", auto: "Auto" };
   const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };
-  const engineColors: Record<VideoEngine, string> = { veo: "#787fff", kling: "#e85d04", auto: "#22c55e" };
+  const engineColors: Record<VideoEngine, string> = { kling: "#e85d04", auto: "#22c55e" };
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#c4b80040" }}>
@@ -144,9 +144,9 @@ export default function VideoSettingsPanel({
           <div className="flex items-center gap-2">
             <Badge
               className="text-[10px] text-white"
-              style={{ background: engineColors[config.engine ?? "veo"] }}
+              style={{ background: engineColors[(config.engine === "veo" ? "kling" : config.engine) ?? "kling"] }}
             >
-              {engineLabels[config.engine ?? "veo"]}
+              {engineLabels[(config.engine === "veo" ? "kling" : config.engine) ?? "kling"]}
             </Badge>
             <Badge
               variant="outline"

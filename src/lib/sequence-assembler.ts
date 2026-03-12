@@ -25,21 +25,8 @@ import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor }
 // ═══════════════════════════════════════════════════════════════════
 
 export interface ProviderCapability {
-  id: "veo" | "kling";
-  /**
-   * Provider가 structured JSON payload를 직접 이해하는지 여부.
-   *
-   * false = provider가 string prompt만 받을 수 있음.
-   *         그러나 이것은 데이터 모델의 문제가 아니라 serialize 타이밍의 문제.
-   *         source of truth는 언제나 StructuredSequenceDocument이며,
-   *         false일 때는 마지막 전송 직전에 renderSequenceForProvider()로 직렬화할 뿐.
-   */
+  id: "kling";
   acceptsStructuredPayload: boolean;
-  /**
-   * supportsStructuredSequence = true → structuredSequence를 JSON 그대로 전달
-   * false → 마지막 단계에서만 serializeSequenceForProvider(sequence) 호출
-   * serialize 결과는 source of truth가 아니며, debug preview 용으로만 사용
-   */
   supportsStructuredSequence: boolean;
   supportsNegativePrompt: boolean;
   supportsShotMetadata: boolean;
@@ -47,16 +34,11 @@ export interface ProviderCapability {
   defaultAudio: boolean;
 }
 
+/**
+ * 2-API 아키텍처: Kling = 유일한 생성 provider.
+ * Veo 항목 제거됨. Gemini는 QA provider (여기서 관리하지 않음).
+ */
 export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
-  veo: {
-    id: "veo",
-    acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
-    supportsStructuredSequence: false, // string-only → serializeSequenceForProvider() 호출
-    supportsNegativePrompt: false,
-    supportsShotMetadata: false,
-    maxPromptWords: 250,
-    defaultAudio: true,
-  },
   kling: {
     id: "kling",
     acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
@@ -990,11 +972,11 @@ function buildCameraLine(doc: SingleShotDocument): string {
  * 4. Character ref  5. Action  6. Mood/Lighting
  * 7. Timing beats  8. Continuity  9. Style suffix
  * 10. Medium lock  11. Audio  12. No text guard
- * 13. Negatives (Veo=embed, Kling=separate)
+ * 13. Negatives (Kling = separate negative_prompt)
  */
 export function serializeForProvider(
   doc: SingleShotDocument,
-  provider: "veo" | "kling" = "veo",
+  provider: "kling" = "kling",
 ): SerializedShot {
   const cap = PROVIDER_CAPABILITIES[provider];
   const sections: Record<string, string> = {};
@@ -1266,7 +1248,7 @@ export function assembleFromJSON(input: {
   config: VeoGenerationConfig;
   prevCut?: Cut;
 }): AssembleFromJSONResult {
-  const provider = (input.config.engine === "kling" ? "kling" : "veo") as "veo" | "kling";
+  const provider = "kling" as const;
 
   // Step 1: Build JSON document
   const rawDoc = buildShotDocument(input);
@@ -1737,7 +1719,7 @@ export function assembleFromJSON(input: {
  */
 export function renderSequenceForProvider(
   sequence: StructuredSequenceDocument,
-  provider: "veo" | "kling",
+  provider: "kling" = "kling",
 ): { prompt: string; negativePrompt: string } {
   // shotPlan → SingleShotDocument를 재구성하지 않고
   // ShotPlan의 필드를 직접 사용하여 deterministic 직렬화

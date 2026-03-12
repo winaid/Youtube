@@ -109,7 +109,7 @@ function makeTestCuts(count: number = 3): Cut[] {
 
 function makeTestConfig(): VeoGenerationConfig {
   return {
-    engine: "veo",
+    engine: "kling",
     videoMode: "extend",
     mode: "fast",
     durationSeconds: 8,
@@ -229,7 +229,7 @@ section("4. runSequencePipeline 통합 테스트");
 {
   const cuts = makeTestCuts(3);
   const result = runSequencePipeline(cuts, {
-    styleId: "cinematic-realism", style: "cinematic realism", provider: "veo",
+    styleId: "cinematic-realism", style: "cinematic realism", provider: "kling",
   });
 
   assert(result.plan.shots.length === 3, "3 shots in plan");
@@ -248,7 +248,7 @@ section("5. Asset Status Computation");
 
 {
   const base: VideoRecord = {
-    id: "vid-test", operationName: "op-1", engine: "veo", gcsUri: "", proxyUri: "",
+    id: "vid-test", operationName: "op-1", engine: "kling", gcsUri: "", proxyUri: "",
     prompt: "test", mode: "generate", durationSec: 8, cutNumber: 1,
     status: "completed", createdAt: Date.now(),
   };
@@ -256,7 +256,7 @@ section("5. Asset Status Computation");
   assert(computeAssetStatus({ ...base }) === "GENERATED", "no URIs → GENERATED");
   assert(computeAssetStatus({ ...base, gcsUri: "gs://b/v.mp4" }) === "ASSET_STORED_INTERNAL", "gcsUri → INTERNAL");
   assert(computeAssetStatus({ ...base, proxyUri: "https://p.com/v.mp4" }) === "ASSET_STORED_PUBLIC", "proxyUri → PUBLIC");
-  assert(computeAssetStatus({ ...base, canonicalVideoUri: "gs://c/v.mp4", proxyUri: "h" }) === "SCENE_EXTENSION_READY", "canonical → READY");
+  assert(computeAssetStatus({ ...base, canonicalVideoUri: "gs://c/v.mp4" }) === "SCENE_EXTENSION_READY", "canonical → READY");
   assert(computeAssetStatus({ ...base, status: "failed", canonicalVideoUri: "gs://x" }) === "GENERATED", "failed → GENERATED");
   console.log(`  ✓ All asset status transitions verified`);
 }
@@ -322,14 +322,7 @@ section("8. renderSequenceForProvider 마지막 직렬화");
   const result = assembleFromJSON({ cut: cuts[0], config: cfg });
   const seq = result.structuredSequence;
 
-  // Veo용 직렬화
-  const veo = renderSequenceForProvider(seq, "veo");
-  assert(typeof veo.prompt === "string", "Veo prompt은 문자열");
-  assert(veo.prompt.length > 50, "Veo prompt 충분한 길이");
-  assert(veo.negativePrompt === "", "Veo negative는 embed (별도 필드 없음)");
-  assert(veo.prompt.includes("Avoid:"), "Veo prompt에 negative embed됨");
-
-  // Kling용 직렬화
+  // Kling용 직렬화 (Veo 제거됨 — Kling만 사용)
   const kling = renderSequenceForProvider(seq, "kling");
   assert(typeof kling.prompt === "string", "Kling prompt은 문자열");
   assert(kling.prompt.length > 50, "Kling prompt 충분한 길이");
@@ -338,7 +331,7 @@ section("8. renderSequenceForProvider 마지막 직렬화");
   // 직렬화 결과가 structuredSequence에 저장되지 않음
   assert(!("serializedPrompt" in seq), "직렬화 후에도 serializedPrompt 없음");
 
-  console.log(`  ✓ Veo: ${veo.prompt.length}ch, Kling: ${kling.prompt.length}ch + neg ${kling.negativePrompt.length}ch`);
+  console.log(`  ✓ Kling: ${kling.prompt.length}ch + neg ${kling.negativePrompt.length}ch`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -369,7 +362,7 @@ section("9. Legacy compatibility");
   assert(result.structuredSequence.videoPromptJson === undefined, "videoPromptJson은 undefined");
 
   // renderSequenceForProvider도 정상 작동
-  const rendered = renderSequenceForProvider(result.structuredSequence, "veo");
+  const rendered = renderSequenceForProvider(result.structuredSequence, "kling");
   assert(rendered.prompt.length > 30, "fallback shotPlan에서도 렌더링 가능");
 
   console.log(`  ✓ Legacy cut (no videoPromptJson) → structuredSequence + render OK`);
@@ -421,7 +414,7 @@ section("11. Client source-of-truth: structuredSequence만으로 body 생성");
   const body: Record<string, unknown> = {
     structuredSequence: result.structuredSequence,
     cutNumber: 1,
-    engine: "veo",
+    engine: "kling",
   };
   assert(body.structuredSequence !== undefined, "body.structuredSequence 존재");
   assert(!("prompt" in body), "body에 prompt 없음");
@@ -449,7 +442,7 @@ section("12. Server fallback serialization");
   const seq = result.structuredSequence;
 
   // string-only provider (Veo)에서 서버가 마지막 직렬화 지점
-  const rendered = renderSequenceForProvider(seq, "veo");
+  const rendered = renderSequenceForProvider(seq, "kling");
   assert(typeof rendered.prompt === "string", "서버 직렬화 결과는 string");
   assert(rendered.prompt.length > 50, "직렬화 결과에 실질적 내용 있음");
 
@@ -512,7 +505,7 @@ section("14. Legacy compatibility: fallback only without structuredSequence");
 
   // sequence가 있으면 renderSequenceForProvider로 직렬화 가능
   assert(seq !== undefined, "sequence 존재");
-  const rendered = renderSequenceForProvider(seq, "veo");
+  const rendered = renderSequenceForProvider(seq, "kling");
   assert(rendered.prompt.length > 0, "sequence에서 직렬화 가능");
 
   // videoPromptJson 없는 레거시 cut에서도 structuredSequence 생성됨
@@ -533,7 +526,7 @@ section("14. Legacy compatibility: fallback only without structuredSequence");
   assert(legacyResult.structuredSequence.videoPromptJson === undefined, "레거시 cut에는 videoPromptJson 없음");
 
   // 레거시 sequence에서도 렌더링 가능
-  const legacyRendered = renderSequenceForProvider(legacyResult.structuredSequence, "veo");
+  const legacyRendered = renderSequenceForProvider(legacyResult.structuredSequence, "kling");
   assert(legacyRendered.prompt.length > 0, "레거시 sequence에서도 렌더링 가능");
 
   console.log(`  ✓ structuredSequence 없을 때만 videoPromptJson/prompt fallback 사용`);
@@ -571,7 +564,7 @@ section("15. Debug preview isolation");
 
   // acceptsStructuredPayload = false일 때도 source of truth는 structuredSequence
   // (renderSequenceForProvider는 sequence를 읽어 새 string을 만듦, sequence를 수정하지 않음)
-  const rendered = renderSequenceForProvider(seq, "veo");
+  const rendered = renderSequenceForProvider(seq, "kling");
   assert(!rendered.prompt.includes("COMPLETELY_CORRUPTED"), "직렬화에도 corrupt된 preview 미사용");
   assert(rendered.prompt.length > 50, "직렬화는 sequence에서 정상 작동");
 
@@ -588,7 +581,7 @@ section("16. Provider capability: acceptsStructuredPayload 의미");
 
   // acceptsStructuredPayload = false는 "source of truth가 string"을 의미하지 않음
   // "마지막 순간에 serialize 필요"를 의미함
-  assert(PROVIDER_CAPABILITIES.veo.acceptsStructuredPayload === false, "Veo: string-only provider");
+  assert(!("veo" in PROVIDER_CAPABILITIES), "Veo removed from PROVIDER_CAPABILITIES");
   assert(PROVIDER_CAPABILITIES.kling.acceptsStructuredPayload === false, "Kling: string-only provider");
 
   // 그래도 source of truth는 structuredSequence
@@ -601,7 +594,7 @@ section("16. Provider capability: acceptsStructuredPayload 의미");
   assert(result.structuredSequence !== undefined, "capability false여도 structuredSequence가 source of truth");
 
   // supportsStructuredSequence 필드가 더 이상 존재하지 않음
-  assert(!("supportsStructuredSequence" in PROVIDER_CAPABILITIES.veo), "supportsStructuredSequence 필드 제거됨");
+  assert(PROVIDER_CAPABILITIES.kling.supportsStructuredSequence === false, "Kling: string-only (no structured payload)");
 
   console.log(`  ✓ acceptsStructuredPayload false = serialize 타이밍 문제, 데이터 모델 문제 아님`);
 }
@@ -745,7 +738,7 @@ section("19. Environment: atmosphere enrichment in serialized output");
   const seq = result.structuredSequence;
 
   // Serialize for Veo
-  const rendered = renderSequenceForProvider(seq, "veo");
+  const rendered = renderSequenceForProvider(seq, "kling");
   const prompt = rendered.prompt.toLowerCase();
 
   // Should contain atmosphere details
@@ -992,7 +985,7 @@ section("23. Tiananmen Square: full environment scene E2E");
   assert(!("prompt" in result), "tiananmen: no prompt in assembleFromJSON result");
 
   // ── 8. Provider serialization
-  const veoRendered = renderSequenceForProvider(seq, "veo");
+  const veoRendered = renderSequenceForProvider(seq, "kling");
   const veoPromptLower = veoRendered.prompt.toLowerCase();
   assert(veoRendered.prompt.length > 80, "tiananmen: Veo prompt has substance");
   assert(veoPromptLower.includes("tiananmen"), "tiananmen: location in Veo prompt");
@@ -1002,20 +995,14 @@ section("23. Tiananmen Square: full environment scene E2E");
   // Atmosphere enrichment
   assert(veoPromptLower.includes("haze") || veoPromptLower.includes("shadow") || veoPromptLower.includes("depth"),
     "tiananmen: atmosphere enrichment in provider payload");
-  // Negative embedding (Veo: no separate negative field)
-  assert(veoPromptLower.includes("avoid:"), "tiananmen: Veo embeds negatives");
-  assert(veoRendered.negativePrompt === "", "tiananmen: Veo no separate negative field");
-
-  // ── 9. Kling serialization
-  const klingRendered = renderSequenceForProvider(seq, "kling");
-  assert(klingRendered.prompt.length > 50, "tiananmen: Kling prompt has substance");
-  assert(klingRendered.negativePrompt.length > 0, "tiananmen: Kling separate negative field");
+  // Kling: separate negative field (Veo removed)
+  assert(veoRendered.negativePrompt.length > 0, "tiananmen: Kling separate negative field");
 
   // ── 10. isEnvironmentScene flag
   assert(result.preview?.isEnvironmentScene === true, "tiananmen: isEnvironmentScene flag set");
 
   console.log(`  ✓ Tiananmen E2E: framing=${doc.camera.framing}, angle=${doc.camera.angle}, motion="${doc.camera.motion}"`);
-  console.log(`    Veo: ${veoRendered.prompt.length}ch | Kling: ${klingRendered.prompt.length}ch + neg ${klingRendered.negativePrompt.length}ch`);
+  console.log(`    Kling: ${veoRendered.prompt.length}ch + neg ${veoRendered.negativePrompt.length}ch`);
   console.log(`    Beats: ${doc.timing.beats.map(b => `${b.startSec}-${b.endSec}s`).join(", ")}`);
 }
 
@@ -1209,7 +1196,7 @@ section("27. Debug log: raw sequence → dedup → conflict → provider payload
   assert(result.diagnostics.validation !== undefined, "debug: validation in diagnostics");
 
   // final provider payload — serialized correctly
-  const payload = renderSequenceForProvider(seq, "veo");
+  const payload = renderSequenceForProvider(seq, "kling");
   assert(payload.prompt.length > 100, "debug: final payload has substance");
   assert(typeof payload.negativePrompt === "string", "debug: negativePrompt is string");
 

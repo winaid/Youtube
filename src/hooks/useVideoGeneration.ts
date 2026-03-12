@@ -735,7 +735,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         }
 
         if (data.status === "FAILED") {
-          console.error(`[CUT ${cutNumber}] Veo 생성 실패:`, data.error || "unknown error", { noRetry: data.noRetry, attempt });
+          console.error(`[CUT ${cutNumber}] 생성 실패:`, data.error || "unknown error", { noRetry: data.noRetry, attempt });
           // Enhancement 6: Auto-retry on failure
           // noRetry=true: 서버가 재시도 무의미 판정 (스택 오버플로 등 내부 로직 오류)
           setState((prev) => {
@@ -1190,26 +1190,21 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),
         legacyPromptLen: legacyPrompt.length,
         legacyPromptPrefix: legacyPrompt.slice(0, 120),
-        model: "veo-3.1-fast-generate-001",
+        model: "kling-o3",
       });
 
       // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
-      // 10s / 15s는 Kling 전용 — Veo 미지원이므로 엔진을 강제 override
-      const durSec = cfg.durationSeconds ?? 8;
-      const isKlingOnlyDuration = durSec >= 10;
-      const engine = isKlingOnlyDuration ? "kling" : (cfg.engine ?? "veo");
+      // 2-API 아키텍처: Kling = 유일한 생성 엔진
+      const engine = "kling" as const;
 
       // CUT 1은 이전 영상/프레임이 존재하지 않으므로 extend 절대 금지
-      // CUT 2 이상: cfg.videoMode 또는 기본값 "extend" 사용
       const videoMode = cutNumber === 1 ? "generate" : (cfg.videoMode ?? "extend");
 
       console.log(`[CUT ${cutNumber}] videoMode 결정`, {
         cutNumber,
         selectedMode: videoMode,
-        cfgMode: cfg.videoMode ?? null,
         reason: cutNumber === 1 ? "cut1_force_generate" : "normal",
-        durationSec: durSec,
-        engineOverride: isKlingOnlyDuration ? `Kling 강제 (${durSec}s >= 10s)` : null,
+        durationSec: cfg.durationSeconds ?? 8,
         engine,
       });
 
@@ -1392,7 +1387,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         updateClip(cutNumber, {
           status: "failed",
           error: isSafetyError
-            ? `Vertex AI 안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
+            ? `안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
             : errMsg,
         });
         return;
@@ -1451,7 +1446,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       startPolling(
         cutNumber,
         data.operationName ?? "",
-        data.engine ?? "veo",
+        data.engine ?? "kling",
         data.taskId,
         data.modeUsed === "extend",
         variantsToPreserve,

@@ -25,7 +25,7 @@ import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
 export interface BuildFinalPayloadInput {
   /** Normalized SingleShotDocument (assembleFromJSON 산출물) */
   document: SingleShotDocument;
-  provider: "veo" | "kling";
+  provider: "kling";
 }
 
 export interface FinalProviderPayload {

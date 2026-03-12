@@ -39,7 +39,7 @@ export interface ValidatePayloadInput {
   /** 씬 타입 */
   shotCategory?: string;
   /** Provider */
-  provider: "veo" | "kling";
+  provider: "kling";
   /** characterRef (있으면 검증) */
   characterRef?: string;
   /** action 텍스트 (있으면 overload/consistency 검증) */
@@ -178,7 +178,7 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
   // ── Rule 6: Word count check ───────────────────────────────────
   const wordCount = input.prompt.split(/\s+/).length;
   const minWords = sceneType === "environment" ? 60 : sceneType === "map_visualization" ? 40 : 50;
-  const maxWords = input.provider === "veo" ? 250 : 300;
+  const maxWords = 300; // Kling word cap
 
   if (wordCount < minWords) {
     issues.push({

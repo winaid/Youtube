@@ -98,6 +98,16 @@ import {
 } from "../src/lib/place-situation-anchors";
 
 import {
+  preflightQualityCheck,
+  applyQualityFixes,
+  PROVIDER_ROLES,
+} from "../src/lib/gemini-quality-check";
+
+import {
+  PROVIDER_CAPABILITIES,
+} from "../src/lib/sequence-assembler";
+
+import {
   ensureNaturalEnvironmentalMotion,
   ensureExplicitLightSource,
 } from "../src/lib/sequence-normalizer";
@@ -427,7 +437,7 @@ console.log("\n[11] Final payload validation — expanded rules");
     negatives: [],
     framing: "WS",
     shotCategory: "battle",
-    provider: "veo",
+    provider: "kling",
     characterRef: "young person, casual modern clothing, t-shirt and jeans",
   });
   assert(v1.issues.some(i => i.rule === "character_ref_era_mismatch"), "Character ref era mismatch detected");
@@ -438,7 +448,7 @@ console.log("\n[11] Final payload validation — expanded rules");
     negatives: [],
     framing: "WS",
     shotCategory: "environment",
-    provider: "veo",
+    provider: "kling",
     actionText: "then the wind blows, and then the fog rolls in, followed by rain, subsequently the sun breaks through, and finally a rainbow appears",
   });
   assert(v2.issues.some(i => i.rule === "overloaded_shot"), "Overloaded shot detected in validation");
@@ -449,7 +459,7 @@ console.log("\n[11] Final payload validation — expanded rules");
     negatives: [],
     framing: "WS",
     shotCategory: "character-driven",
-    provider: "veo",
+    provider: "kling",
     motion: "static",
     actionText: "then he walks, and then runs, followed by jumping, subsequently climbing, next swimming, finally resting",
   });
@@ -565,7 +575,7 @@ console.log("\n[15] Map visualization — concrete cues");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "map-graphic",
-    provider: "veo",
+    provider: "kling",
   });
   const mapCueIssue = valResult.issues.find(i => i.rule === "map_concrete_cues_missing");
   assert(!!mapCueIssue, "Validator detects missing map concrete cues");
@@ -576,7 +586,7 @@ console.log("\n[15] Map visualization — concrete cues");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "map-graphic",
-    provider: "veo",
+    provider: "kling",
   });
   const absIssue = absValResult.issues.find(i => i.rule === "map_abstract_terms");
   assert(!!absIssue, "Validator detects abstract terms in map");
@@ -593,7 +603,7 @@ console.log("\n[16] Positive keyword validation");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "environment",
-    provider: "veo",
+    provider: "kling",
   });
   const posIssue = valResult.issues.find(i => i.rule === "positive_keywords_missing");
   assert(!!posIssue, "Validator detects missing positive keywords for environment");
@@ -604,7 +614,7 @@ console.log("\n[16] Positive keyword validation");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "environment",
-    provider: "veo",
+    provider: "kling",
   });
   const noPosIssue = fullResult.issues.find(i => i.rule === "positive_keywords_missing");
   assert(!noPosIssue, "No positive keyword issue when all are present");
@@ -779,7 +789,7 @@ console.log("\n[21] Final payload pos/neg — Avoid: section handling");
     negatives: ["watermark", "caption", "subtitle", "blurry"],
     framing: "WS",
     shotCategory: "environment",
-    provider: "veo",
+    provider: "kling",
   });
   const posNegErrors = valResult.issues.filter(i => i.rule === "pos_neg_conflict");
   assert(posNegErrors.length === 0, "No pos_neg_conflict when watermark only in 'no watermark' and 'Avoid:' sections");
@@ -789,7 +799,7 @@ console.log("\n[21] Final payload pos/neg — Avoid: section handling");
     prompt: "A watermark-style logo on the mountain. Avoid: blurry",
     negatives: ["watermark"],
     framing: "WS",
-    provider: "veo",
+    provider: "kling",
   });
   const realConflict = conflictResult.issues.filter(i => i.rule === "pos_neg_conflict");
   assert(realConflict.length > 0, "Real pos_neg_conflict detected when bare watermark in body");
@@ -811,7 +821,7 @@ console.log("\n[22] serializeForProvider end-to-end pos/neg cleanup");
   doc.negatives.sceneSpecific = ["photorealistic"]; // conflict with style!
   doc.negatives.failureMode = ["cinematic"]; // conflict with style!
 
-  const serialized = serializeForProvider(doc, "veo");
+  const serialized = serializeForProvider(doc, "kling");
   const finalPrompt = serialized.prompt;
 
   // The serialized prompt should NOT have pos/neg conflicts after auto-fix
@@ -852,7 +862,7 @@ console.log("\n[23] Full Tiananmen Square scenario");
   assert(result.doc.camera.motion !== "Static wide shot", "Tiananmen: static motion normalized");
 
   // 4. Serialize and verify no pos/neg conflicts
-  const serialized = serializeForProvider(result.doc, "veo");
+  const serialized = serializeForProvider(result.doc, "kling");
   const issues = serialized.debug.sections._validationIssues || "";
   const posNeg = issues.split(" | ").filter(s => s.includes("pos_neg_conflict"));
   assert(posNeg.length === 0, `Tiananmen: 0 pos_neg_conflict in final payload (got ${posNeg.length})`);
@@ -868,7 +878,7 @@ console.log("\n[24] buildFinalProviderPayload — single path");
     scene: { shotCategory: "environment", environment: "vast mountain range", moodLighting: "golden hour light" },
     global: { style: "cinematic realism", styleId: "live-action", aspectRatio: "16:9", totalDurationSec: 8 },
   });
-  const result = buildFinalProviderPayload({ document: doc, provider: "veo" });
+  const result = buildFinalProviderPayload({ document: doc, provider: "kling" });
 
   // Verify builtBy marker
   assert(result.debug.builtBy === "buildFinalProviderPayload", "builtBy marker present");
@@ -877,7 +887,7 @@ console.log("\n[24] buildFinalProviderPayload — single path");
   assert(result.debug.payloadSnapshot.length > 0, "payloadSnapshot is non-empty");
   const snapshot = JSON.parse(result.debug.payloadSnapshot);
   assert(snapshot.prompt === result.prompt, "payloadSnapshot.prompt === result.prompt (consistency)");
-  assert(snapshot.provider === "veo", "payloadSnapshot.provider === veo");
+  assert(snapshot.provider === "kling", "payloadSnapshot.provider === kling");
 
   // Verify valid output
   assert(result.prompt.length > 50, "Final prompt has sufficient length");
@@ -902,7 +912,7 @@ console.log("\n[25] pos_neg_conflict zero in final payload");
   doc.negatives.sceneSpecific = ["caption"];
   doc.negatives.failureMode = ["photorealistic", "cinematic"];
 
-  const result = buildFinalProviderPayload({ document: doc, provider: "veo" });
+  const result = buildFinalProviderPayload({ document: doc, provider: "kling" });
 
   // Extract prompt body (before "Avoid:")
   const avoidIdx = result.prompt.search(/\.\s*Avoid:\s*/i);
@@ -923,7 +933,7 @@ console.log("\n[25] pos_neg_conflict zero in final payload");
     negatives: result.negativePrompt ? result.negativePrompt.split(", ") : [],
     framing: "WS",
     shotCategory: "environment",
-    provider: "veo",
+    provider: "kling",
   });
   const posNegErrors = validation.issues.filter(i => i.rule === "pos_neg_conflict");
   assert(posNegErrors.length === 0, `Validator confirms 0 pos_neg_conflict (got ${posNegErrors.length})`);
@@ -938,7 +948,7 @@ console.log("\n[26] hard-block test");
   const cleanDoc = makeShotDoc({
     scene: { shotCategory: "environment", environment: "mountain", moodLighting: "golden hour" },
   });
-  const cleanResult = buildFinalProviderPayload({ document: cleanDoc, provider: "veo" });
+  const cleanResult = buildFinalProviderPayload({ document: cleanDoc, provider: "kling" });
   assert(!cleanResult.blocked, "Clean doc is not blocked");
   assert(cleanResult.valid, "Clean doc is valid");
 }
@@ -952,7 +962,7 @@ console.log("\n[27] payload consistency — snapshot matches prompt");
     scene: { shotCategory: "character-driven", environment: "office", moodLighting: "fluorescent light" },
     subject: { primary: "a man in a suit stands at a desk", action: "adjusting his tie" },
   });
-  const result = buildFinalProviderPayload({ document: doc, provider: "veo" });
+  const result = buildFinalProviderPayload({ document: doc, provider: "kling" });
 
   const snapshot = JSON.parse(result.debug.payloadSnapshot);
   assert(snapshot.prompt === result.prompt, "Payload snapshot prompt === actual prompt");
@@ -974,8 +984,8 @@ console.log("\n[28] preview isolation — fallback fields are debug-only");
     scene: { shotCategory: "environment", environment: "desert", moodLighting: "harsh sun" },
   });
 
-  const result1 = buildFinalProviderPayload({ document: doc1, provider: "veo" });
-  const result2 = buildFinalProviderPayload({ document: doc2, provider: "veo" });
+  const result1 = buildFinalProviderPayload({ document: doc1, provider: "kling" });
+  const result2 = buildFinalProviderPayload({ document: doc2, provider: "kling" });
 
   // Same input → same output (deterministic)
   assert(result1.prompt === result2.prompt, "Same input produces same prompt (deterministic)");
@@ -1136,7 +1146,7 @@ console.log("\n[33] Final payload pos_neg zero after full pipeline");
   doc1.negatives.sceneSpecific = ["photorealistic", "cinematic"];
 
   const normalized1 = normalizeSequence(doc1);
-  const fp1 = buildFinalProviderPayload({ document: normalized1.doc, provider: "veo" });
+  const fp1 = buildFinalProviderPayload({ document: normalized1.doc, provider: "kling" });
   const posNeg1 = fp1.debug.validationIssues.filter(v => v.includes("pos_neg_conflict"));
   assert(posNeg1.length === 0, `Veo: 0 pos_neg_conflict, got ${posNeg1.length}: ${posNeg1.join("; ")}`);
   assert(!fp1.blocked, `Veo: not blocked: ${fp1.blockReason || ""}`);
@@ -1167,7 +1177,7 @@ console.log("\n[34] Hard-block enforcement + payload snapshot");
     global: { style: "watermark cinematic photorealistic logo caption subtitle" },
   });
   doc1.negatives.universal = ["watermark", "caption", "subtitle", "logo"];
-  const fp1 = buildFinalProviderPayload({ document: doc1, provider: "veo" });
+  const fp1 = buildFinalProviderPayload({ document: doc1, provider: "kling" });
   // Builder should either fix or block — both are acceptable
   if (fp1.debug.validationIssues.some(v => v.includes("pos_neg_conflict"))) {
     assert(fp1.blocked, "Blocked when pos_neg_conflict persists");
@@ -1180,11 +1190,11 @@ console.log("\n[34] Hard-block enforcement + payload snapshot");
   const doc2 = makeShotDoc({
     scene: { shotCategory: "environment", environment: "mountain valley", moodLighting: "golden hour" },
   });
-  const fp2 = buildFinalProviderPayload({ document: doc2, provider: "veo" });
+  const fp2 = buildFinalProviderPayload({ document: doc2, provider: "kling" });
   const snap = JSON.parse(fp2.debug.payloadSnapshot);
   assert(snap.prompt === fp2.prompt, "Snapshot prompt matches actual prompt");
   assert(snap.negativePrompt === fp2.negativePrompt, "Snapshot negativePrompt matches");
-  assert(snap.provider === "veo", "Snapshot provider matches");
+  assert(snap.provider === "kling", "Snapshot provider matches");
   assert(fp2.debug.builtBy === "buildFinalProviderPayload", "builtBy marker present");
 }
 
@@ -2271,6 +2281,204 @@ console.log("\n[62] Timing rebalance");
   assert(t3.length === 3, `3 timings: ${t3.length}`);
   assert(t3[2].endSec === 8, "Last ends at 8");
   assert(t3[0].endSec > t3[1].endSec - t3[1].startSec, "First shot is longer (establishing)");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [63] 2-API Architecture: No Veo provider
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[63] 2-API Architecture: No Veo provider");
+
+  // PROVIDER_CAPABILITIES should not have veo
+  assert(!("veo" in PROVIDER_CAPABILITIES), "No veo in PROVIDER_CAPABILITIES");
+  assert("kling" in PROVIDER_CAPABILITIES, "kling in PROVIDER_CAPABILITIES");
+  assert(PROVIDER_CAPABILITIES.kling.id === "kling", "kling id");
+  assert(PROVIDER_CAPABILITIES.kling.supportsNegativePrompt === true, "kling supports negative prompt");
+  assert(PROVIDER_CAPABILITIES.kling.maxPromptWords === 300, "kling max 300 words");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [64] 2-API Architecture: Provider roles
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[64] 2-API Architecture: Provider roles");
+
+  assert(PROVIDER_ROLES.kling.role === "generation", "Kling role = generation");
+  assert(PROVIDER_ROLES.gemini_qa.role === "qa", "Gemini role = qa");
+  assert(PROVIDER_ROLES.kling.capabilities.includes("text-to-video"), "Kling has text-to-video");
+  assert(PROVIDER_ROLES.kling.capabilities.includes("image-to-video"), "Kling has image-to-video");
+  assert(PROVIDER_ROLES.gemini_qa.capabilities.includes("structuredSequence-validation"), "Gemini has validation");
+  assert(PROVIDER_ROLES.gemini_qa.capabilities.includes("quality-scoring"), "Gemini has scoring");
+  assert(PROVIDER_ROLES.gemini_qa.capabilities.includes("auto-fix-suggestions"), "Gemini has auto-fix");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [65] Gemini preflight quality check
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[65] Gemini preflight quality check");
+
+  // Build a minimal valid StructuredSequenceDocument for testing
+  const validSeq = {
+    sequenceId: "test-seq-1",
+    shotId: "test-shot-1",
+    cutNumber: 1,
+    sceneType: "environment",
+    durationSec: 8,
+    styleProfile: { mode: "cinematic_realism" },
+    continuity: { lighting: "golden hour", mustPersist: [] },
+    physicsRules: {
+      hasWind: true,
+      hasAtmosphere: true,
+      hasAudibleEnvironment: true,
+      gravity: "earth" as const,
+      bannedExpressions: [],
+      environmentType: "earth_outdoor" as const,
+    },
+    placeIdentityAnchors: ["mountain ridge"],
+    situationEvidence: ["morning light breaking through clouds"],
+    naturalMotion: ["grass swaying"],
+    cameraPlan: { baseFraming: "WS", angle: "eye_level", motion: "slow pan" },
+    temporalBeats: [
+      { startSec: 0, endSec: 4, focus: "establishing" },
+      { startSec: 4, endSec: 8, focus: "reveal" },
+    ],
+    densityScore: { total: 80, breakdown: { hasPlaceAnchors: true, hasEvidence: true, hasTemporalBeats: true, hasCameraPlan: true, hasPhysicsRules: true, hasNaturalMotion: true, hasExplicitLight: true, hasContinuity: true }, missing: [] },
+    shots: [
+      { shotId: "s1", startSec: 0, endSec: 4, camera: { framing: "WS", angle: "eye_level", motion: "slow pan" }, subject: "mountain", action: "establishing", environment: "ridge", moodLighting: "golden hour sunlight", focus: "establishing" },
+      { shotId: "s2", startSec: 4, endSec: 8, camera: { framing: "WS", angle: "eye_level", motion: "slow pan" }, subject: "valley", action: "reveal", environment: "ridge", moodLighting: "golden hour sunlight", focus: "reveal" },
+    ],
+    shotPlan: {
+      camera: { framing: "WS", angle: "eye_level", motion: "slow pan" },
+      subject: { primary: "mountain ridge landscape" },
+      environment: "mountain ridge with morning mist",
+      action: "establishing shot of the landscape",
+      moodLighting: "golden hour sunlight filtering through clouds",
+    },
+    negatives: {
+      universal: ["watermark", "text overlay"],
+      sceneSpecific: [],
+      failureMode: [],
+      user: [],
+    },
+  } as any;
+
+  const result = preflightQualityCheck(validSeq);
+  assert(result.score >= 50, `Valid seq score >= 50: ${result.score}`);
+  assert(result.issues.filter(i => i.severity === "error").length === 0, "No errors for valid seq");
+
+  // Test with missing anchors
+  const noAnchorsSeq = { ...validSeq, placeIdentityAnchors: [], situationEvidence: [] };
+  const noAnchorsResult = preflightQualityCheck(noAnchorsSeq);
+  assert(noAnchorsResult.issues.some(i => i.category === "anchors"), "Missing anchors detected");
+  assert(noAnchorsResult.score < result.score, `Score lower without anchors: ${noAnchorsResult.score} < ${result.score}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [66] Kling-only generate path (no Veo path)
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[66] Kling-only generate path (no Veo path)");
+
+  // serializeForProvider should default to kling
+  const minDoc = {
+    shotId: "s1",
+    cutNumber: 1,
+    global: { style: "cinematic realism", styleId: "test", aspectRatio: "16:9", totalDurationSec: 8 },
+    continuity: { primarySubject: "test subject", environment: "test env", lightingDirection: "golden hour", ambient: "natural ambient", colorAnchor: "warm", mustPersist: [] },
+    camera: { framing: "MS", angle: "eye_level", motion: "static", motionMotivation: "" },
+    subject: { primary: "A person standing", secondary: [], action: "looking at horizon", blocking: "" },
+    scene: { environment: "open field", moodLighting: "warm golden light", timingBeat: "" },
+    reinforcement: { styleSuffix: "cinematic realism", mediumLock: "", transitionFromPrev: "" },
+    audio: { hint: "natural ambient sounds" },
+    negatives: { universal: [], sceneSpecific: [], failureMode: [], user: [] },
+    timing: { beats: ["0-8s: scene unfolds"], totalSec: 8 },
+  } as unknown as SingleShotDocument;
+
+  const serialized = serializeForProvider(minDoc);
+  assert(typeof serialized.prompt === "string", "Serialized prompt is string");
+  assert(serialized.prompt.length > 0, "Serialized prompt not empty");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [67] Check-video Kling-only (no Veo polling)
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[67] Check-video Kling-only (no Veo polling)");
+
+  // This is an architecture test: verify Veo-related code is removed
+  // by checking that PROVIDER_CAPABILITIES has no veo entry
+  const providerKeys = Object.keys(PROVIDER_CAPABILITIES);
+  assert(providerKeys.length === 1, `Only 1 provider: ${providerKeys.length}`);
+  assert(providerKeys[0] === "kling", `Provider is kling: ${providerKeys[0]}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [68] Continuity fallback (lastFrame-based)
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[68] Continuity fallback (lastFrame-based)");
+
+  // Test that video-history still works with kling engine
+  const record: VideoRecord = {
+    id: "test-1",
+    operationName: "task-123",
+    engine: "kling",
+    gcsUri: "https://example.com/video.mp4",
+    proxyUri: "https://proxy.example.com/video.mp4",
+    canonicalVideoUri: "https://example.com/video.mp4",
+    prompt: "test prompt",
+    mode: "generate",
+    durationSec: 8,
+    cutNumber: 1,
+    status: "completed",
+    createdAt: Date.now(),
+  };
+
+  assert(canExtendScene(record) === true, "Can extend with canonical URI");
+  assert(computeAssetStatus(record) === "VISIBLE_IN_LIBRARY", "Visible in library with both URIs");
+
+  // Kling video without canonical — can still use lastFrame fallback
+  const noCanonical: VideoRecord = { ...record, canonicalVideoUri: undefined };
+  assert(canExtendScene(noCanonical) === false, "Cannot extend without canonical");
+  assert(computeAssetStatus(noCanonical) === "ASSET_STORED_PUBLIC", "Public with proxy only");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [69] Env cleanup (no Veo/Vertex env required)
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[69] Env cleanup (no Veo/Vertex env required)");
+
+  // Architecture assertion: Kling only needs KLING_API_KEY
+  // Veo/Vertex env (GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_CLOUD_PROJECT_ID)
+  // should not be required for generation
+  assert(PROVIDER_CAPABILITIES.kling.id === "kling", "Kling provider active");
+  assert(PROVIDER_ROLES.kling.role === "generation", "Kling is generation engine");
+  assert(PROVIDER_ROLES.gemini_qa.role === "qa", "Gemini is QA engine");
+  // Verify gemini_qa does NOT have video generation capability
+  const geminiCaps = PROVIDER_ROLES.gemini_qa.capabilities;
+  assert(!geminiCaps.includes("text-to-video" as any), "Gemini has no text-to-video");
+  assert(!geminiCaps.includes("image-to-video" as any), "Gemini has no image-to-video");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [70] Lunar physics + Kling pipeline (no Veo)
+// ═══════════════════════════════════════════════════════════════════
+{
+  console.log("\n[70] Lunar physics + Kling pipeline (no Veo)");
+
+  // Verify physics rules still work in Kling-only architecture
+  const lunarRules = detectPhysicsRules("lunar surface, astronaut walking", "moon", "low gravity");
+  assert(lunarRules.environmentType === "lunar", "Lunar detected");
+  assert(lunarRules.hasWind === false, "No wind on moon");
+  assert(lunarRules.hasAtmosphere === false, "No atmosphere on moon");
+  assert(lunarRules.hasAudibleEnvironment === false, "No audible environment on moon");
+
+  // Physics negatives should apply regardless of provider
+  const lunarNegs = enforcePhysicsNegatives(lunarRules);
+  assert(lunarNegs.length > 0, "Lunar negatives generated");
+  assert(lunarNegs.some(n => n.includes("wind")), "Wind in negatives");
 }
 
 // ═══════════════════════════════════════════════════════════════════

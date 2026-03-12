@@ -247,7 +247,10 @@ export interface StoryAIPersona {
 }
 
 // ===== 영상 생성 엔진 & 모드 =====
-export type VideoEngine = "veo" | "kling" | "auto";
+/** Video generation engine. Kling = primary generation, veo = legacy (disabled). */
+export type VideoEngine = "kling" | "auto";
+/** @deprecated Veo engine removed. Use "kling" or "auto". */
+export type VideoEngineLegacy = "veo" | "kling" | "auto";
 export type VideoMode   = "generate" | "extend";
 
 // ===== JSON-first 구조화된 시퀀스 문서 =====
@@ -422,7 +425,7 @@ export type AssetStatus =
 
 // ===== Veo 3.1 영상 생성 설정 =====
 export interface VeoGenerationConfig {
-  engine: VideoEngine;         // 사용할 엔진 (veo | kling | auto)
+  engine: VideoEngine | "veo"; // 사용할 엔진 (kling | auto, veo = legacy disabled)
   videoMode: VideoMode;        // generate: 독립 생성 | extend: 이전 영상 이어서
   mode: "fast";
   durationSeconds: VeoClipDuration;
@@ -474,7 +477,7 @@ export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
 };
 
 export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
-  engine: "veo",
+  engine: "kling",            // ← Kling = primary generation engine
   videoMode: "extend",
   mode: "fast",
   durationSeconds: 6,
@@ -482,8 +485,6 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   aspectRatio: "16:9",
   generateAudio: true,
   animationMode: "tv-anime",
-  // "live action, real footage"는 global negative에서 제외:
-  // 로토스코핑은 실사 퍼포먼스 기반 움직임이 핵심 — 스타일별 STYLE_NEGATIVE_OVERRIDES에서 처리
   negativePrompt: "text overlay, watermark, logo, blurry, distorted face, photorealistic",
   personGeneration: "allow_all",
   sampleCount: 1,

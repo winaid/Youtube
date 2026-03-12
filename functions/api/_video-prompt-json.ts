@@ -83,8 +83,9 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
   }
 }
 
-// ─── Veo 렌더러 ───────────────────────────────────────────────────────────────
+// ─── Veo 렌더러 (LEGACY — Veo 생성 경로 제거됨, Gemini QA 참조용으로만 유지) ───
 
+/** @deprecated Veo 생성 경로 제거됨. Kling 전용으로 renderKlingPromptFromJson 사용. */
 export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   const hasCharacter = !!json.characterRef;
@@ -126,6 +127,7 @@ export function renderVeoPromptFromJson(json: VideoPromptJson): string {
   return parts.filter(Boolean).join(". ");
 }
 
+/** @deprecated Veo 생성 경로 제거됨. */
 export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
 
