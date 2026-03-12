@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { saveVideoRecord } from "@/lib/video-history";
 import { assembleFromJSON } from "@/lib/sequence-assembler";
+import { preflightQualityCheck, applyQualityFixes } from "@/lib/gemini-quality-check";
 import { generateQualityChecklist } from "@/lib/video-prompt-json";
 import {
   buildSequencePlan,
@@ -991,6 +992,34 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           structuredSequence: sequence,
         });
         return;
+      }
+
+      // ── Gemini QA: preflight quality check + auto-fix ──────────────────
+      if (sequence) {
+        const qaResult = preflightQualityCheck(sequence);
+        if (qaResult.autoFixCount > 0) {
+          const { fixed, appliedFixes } = applyQualityFixes(sequence, qaResult);
+          // 수정된 sequence로 교체
+          Object.assign(sequence, fixed);
+          console.log(`[CUT ${cutNumber}] 🔧 QA auto-fix: ${appliedFixes.length} fixes`, appliedFixes);
+        }
+        if (qaResult.issues.length > 0) {
+          console.log(`[CUT ${cutNumber}] 📋 QA preflight: score=${qaResult.score}/100, errors=${qaResult.issues.filter(i => i.severity === "error").length}, warnings=${qaResult.issues.filter(i => i.severity === "warning").length}`);
+        }
+        // score < 30 = hard block (심각한 품질 문제)
+        if (qaResult.score < 30) {
+          const errorSummary = qaResult.issues
+            .filter(i => i.severity === "error")
+            .map(i => i.message)
+            .join("; ");
+          console.error(`[CUT ${cutNumber}] ⛔ QA BLOCK: score=${qaResult.score}, errors: ${errorSummary}`);
+          updateClip(cutNumber, {
+            status: "failed",
+            error: `QA preflight blocked (score=${qaResult.score}): ${errorSummary}`,
+            structuredSequence: sequence,
+          });
+          return;
+        }
       }
 
       // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────

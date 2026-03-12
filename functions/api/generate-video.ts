@@ -134,9 +134,17 @@ function serializeSequenceToPrompt(
   if (shot.transitionFromPrev) parts.push(`Previous shot ends with ${shot.transitionFromPrev}`);
   if (shot.visualMedium) parts.push(shot.visualMedium);
 
-  // Audio: physics-aware — lunar/space scenes get vacuum silence
+  // Audio hint: only when sound is expected to be ON.
+  // When sound="off" (physics or user toggle), audio hint is omitted from prompt
+  // to avoid conflicting with the Kling sound parameter.
+  // The actual sound on/off control is via the Kling `sound` API param (set in onRequestPost).
   const isNoAtmosphere = seq.physicsRules && !seq.physicsRules.hasAtmosphere;
-  parts.push(isNoAtmosphere ? "Vacuum silence — no audible environment" : "Diegetic ambient sound");
+  if (isNoAtmosphere) {
+    // no-atmosphere: hint vacuum silence for model context (sound param will be "off")
+    parts.push("Vacuum silence — no audible environment");
+  }
+  // Normal atmosphere + sound ON: let Kling generate diegetic audio natively (no hint needed)
+  // Normal atmosphere + sound OFF: omit audio hint entirely (user chose silent)
   parts.push("No text overlay, no watermark");
 
   let prompt = parts.filter(Boolean).join(". ");
@@ -240,6 +248,49 @@ function serializeSequenceToPrompt(
   if (remainingConflicts.length > 0) {
     blocked = true;
     blockReason = `pos_neg_conflict: ${remainingConflicts.join(", ")} still in prompt after hard-fix`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Server hard gate: scene-type / shot-count / framing validation
+  // ═══════════════════════════════════════════════════════════════
+  const MULTI_SHOT_SCENE_TYPES = new Set([
+    "environment", "character-driven", "character", "crowd",
+    "battle", "map-graphic", "map_visualization", "cinematic_sequence",
+  ]);
+  const shotCount = seq.shots?.length ?? 1;
+  const sceneType = seq.sceneType || "unknown";
+  const durationSec = seq.durationSec ?? 8;
+
+  // Hard gate 1: environment/character/battle scenes with 1 shot AND duration > 3s → warn (not block)
+  if (MULTI_SHOT_SCENE_TYPES.has(sceneType) && shotCount < 2 && durationSec > 3) {
+    console.warn("[serializeSequenceToPrompt] ⚠️ HARD-GATE: single-shot multi-shot-required scene", {
+      sceneType,
+      shotCount,
+      durationSec,
+      cutNumber: seq.cutNumber,
+    });
+    finalFixLog.push(`[hard-gate] ${sceneType} scene has only ${shotCount} shot(s) for ${durationSec}s — should be 2+`);
+  }
+
+  // Hard gate 2: environment scene with close framing → force warn
+  if (sceneType === "environment" || sceneType === "map-graphic" || sceneType === "map_visualization") {
+    const framing = shot.camera?.framing?.toUpperCase();
+    if (framing && ["CU", "ECU", "MCU"].includes(framing)) {
+      console.warn("[serializeSequenceToPrompt] ⚠️ HARD-GATE: environment/map scene with close framing", {
+        sceneType,
+        framing,
+        cutNumber: seq.cutNumber,
+      });
+      finalFixLog.push(`[hard-gate] ${sceneType} scene has close framing "${framing}" — should be WS/LS`);
+    }
+  }
+
+  // Hard gate 3: empty prompt → block
+  if (prompt.trim().length < 20) {
+    blocked = true;
+    blockReason = blockReason
+      ? `${blockReason}; prompt_too_short (${prompt.trim().length} chars)`
+      : `prompt_too_short: only ${prompt.trim().length} chars after processing`;
   }
 
   const payloadSnapshot = JSON.stringify({ prompt, negativePrompt: negStr, provider });
