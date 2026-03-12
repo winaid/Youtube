@@ -15,8 +15,10 @@ import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-pla
 
 type Env = GeminiEnv;
 
-const MODEL_OUTLINE = "gemini-2.0-flash-001";
-const MODEL_DETAIL  = "gemini-2.0-flash-001";
+// Google AI Studio 모델 (Vertex 아님).
+// 아웃라인: 빠른 Flash로 구조 생성, 상세: Pro로 품질 확보.
+const MODEL_OUTLINE = "gemini-2.5-flash-preview-05-20";
+const MODEL_DETAIL  = "gemini-2.5-flash-preview-05-20";
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**

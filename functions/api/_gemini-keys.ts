@@ -30,7 +30,16 @@ export function getApiKeys(env: GeminiEnv): string[] {
   return keys;
 }
 
+/** 모델 deprecated/삭제 에러인지 판별 — key fallback 불필요 */
+function isDeprecatedModelError(status: number, body?: string): boolean {
+  if (!body) return false;
+  return (status === 404 || status === 400) &&
+    /no longer available|is not found|not supported|deprecated|does not exist/i.test(body);
+}
+
 function isRetryableError(status: number, body?: string): boolean {
+  // 모델 자체가 없으면 다른 key로 시도해도 무의미
+  if (isDeprecatedModelError(status, body)) return false;
   if (status === 401) return true;
   if (status === 429) return true;
   if (status === 403 && body && /quota|rate|RESOURCE_EXHAUSTED|exhausted/i.test(body)) return true;
@@ -61,6 +70,16 @@ function fetchWithKeyFallback(
 
     if (!res.ok) {
       const body = await res.text();
+      // 모델 deprecated → key 문제 아님, 즉시 에러 반환
+      if (isDeprecatedModelError(res.status, body)) {
+        const modelMatch = url.match(/models\/([^:?/]+)/);
+        const modelName = modelMatch?.[1] ?? "unknown";
+        console.error(`[Gemini] Model "${modelName}" is deprecated or not available. Update model name.`);
+        return new Response(
+          JSON.stringify({ error: `Model "${modelName}" is no longer available. This is NOT an API key issue — update the model name in code.`, detail: body.slice(0, 300) }),
+          { status: res.status, headers: { "Content-Type": "application/json" } },
+        );
+      }
       if (isRetryableError(res.status, body)) {
         console.warn(`API key ${i + 1} failed (${res.status}), trying key ${i + 2}...`);
         return tryKey(i + 1);
