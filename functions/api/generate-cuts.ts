@@ -13,6 +13,19 @@ import { GeminiEnv, streamingGenerate, GEMINI_MODEL_FLASH } from "./_gemini-keys
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 
+// ─── Degraded response 타입 ─────────────────────────────────────────────────
+interface GenerateCutsResponse {
+  ok: boolean;
+  degraded: boolean;
+  reason?: string;
+  source: "gemini" | "deterministic-fallback";
+  warnings: string[];
+  characterSeeds: CharacterSeed[];
+  cuts: ReturnType<typeof buildDeterministicCuts> extends (infer R)[] ? R[] : unknown[];
+  sequencePlan?: unknown;
+  sequenceValidation?: unknown;
+}
+
 type Env = GeminiEnv;
 
 const MODEL_OUTLINE = GEMINI_MODEL_FLASH;
@@ -510,7 +523,25 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
       }
     }
   } else if (result.error) {
-    throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
+    // Check if it's a timeout — try ultra-compact before throwing
+    if (result.timedOut || (result.status === 524)) {
+      console.warn(`[cuts:step1] TIMEOUT detected — attempting ultra-compact retry`);
+      const ultraPrompt = buildUltraCompactStep1Prompt(storyText, directorNameKo, cutCount, secPerCut);
+      const ultraResult = await streamingGenerate(env, MODEL_OUTLINE, {
+        contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
+      }, { timeoutMs: 30_000 });
+
+      if (!ultraResult.error && !ultraResult.timedOut && ultraResult.text) {
+        result = ultraResult;
+        parseMode = "compact_retry";
+        console.info(`[cuts:step1] ultra-compact recovery succeeded. responseLen=${result.text.length}`);
+      } else {
+        throw new Error(`step1 TIMEOUT + ultra-compact retry failed: ${result.error.slice(0, 300)}`);
+      }
+    } else {
+      throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
+    }
   }
 
   const parsed = safeParseObj(result.text);
@@ -885,6 +916,146 @@ JSON 배열로만 출력 (마크다운 없이):
   return arr as CutDetail[];
 }
 
+// ─── 결정론적 fallback (structuredSequence 기반) ─────────────────────────────
+
+/** 씬 타입별 물리 규칙 (lunar, underwater 등) */
+function getPhysicsForScene(storyText: string): { environmentType: string; bannedWords: string[] } {
+  const lower = storyText.toLowerCase();
+  if (/(lunar|moon|달 표면|달 기지|월면)/i.test(lower)) {
+    return { environmentType: "lunar", bannedWords: ["wind", "breeze", "overcast", "cloud", "haze", "fog", "rain", "wave", "sound of", "rustling"] };
+  }
+  if (/(underwater|해저|잠수|심해|ocean floor)/i.test(lower)) {
+    return { environmentType: "underwater", bannedWords: ["wind", "breeze", "sun", "overcast", "dry"] };
+  }
+  if (/(space|우주|무중력|zero.?g)/i.test(lower)) {
+    return { environmentType: "space", bannedWords: ["wind", "breeze", "overcast", "rain", "sound", "rustling"] };
+  }
+  return { environmentType: "earth_outdoor", bannedWords: [] };
+}
+
+/** MULTI_SHOT_SCENE_TYPES: 2-3 shots required */
+const MULTI_SHOT_SCENE_TYPES = ["cinematic_sequence", "character-driven", "crowd", "battle"];
+
+/**
+ * 결정론적 컷 생성 — Gemini 응답 없이 입력 데이터만으로 컷 생성.
+ * sceneType 글로벌 규칙 유지 (lunar 등).
+ */
+function buildDeterministicCuts(
+  storyText: string,
+  directorName: string,
+  cutCount: number,
+  secPerCut: number,
+  veoStyle: string,
+  regionFlavor: string,
+  animationMode: string,
+) {
+  const physics = getPhysicsForScene(storyText);
+  const storyExcerpt = storyText.slice(0, 200);
+  const shotCycle = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+  const purposeCycle = ["establish", "develop", "climax", "resolve"];
+  const movementCycle = [
+    "slow pan revealing space and atmosphere",
+    "subtle dolly forward as subject is introduced",
+    "slow push-in as tension builds",
+    "locked-off static — contained reaction",
+    "restrained reframing as focus narrows",
+  ];
+
+  const noTextSuffix = `${veoStyle}, directed by ${directorName}, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
+
+  // 물리 규칙에 따른 lighting
+  const defaultLighting = physics.environmentType === "lunar"
+    ? "Unfiltered direct sunlight from upper right, harsh white, pitch-black shadow."
+    : physics.environmentType === "underwater"
+      ? "Scattered daylight filtering through water, blue-green glow, soft caustics."
+      : "Golden hour warm light from left. Teal and orange grade.";
+
+  // 물리 규칙에 따른 banned word 필터
+  const cleanText = (text: string) => {
+    let cleaned = text;
+    for (const banned of physics.bannedWords) {
+      cleaned = cleaned.replace(new RegExp(`\\b${banned}\\b`, "gi"), "");
+    }
+    return cleaned.replace(/\s{2,}/g, " ").trim();
+  };
+
+  const cuts = Array.from({ length: cutCount }, (_, i) => {
+    const cutNumber = i + 1;
+    const shotType = shotCycle[i % shotCycle.length];
+    const purpose = i === 0 ? "establish" : i === cutCount - 1 ? "resolve" : purposeCycle[Math.min(i, purposeCycle.length - 1)];
+    const cameraMovement = movementCycle[i % movementCycle.length];
+    const subjectAction = i === 0 ? "camera reveals the space and atmosphere" : `subject moves through scene ${cutNumber}`;
+
+    const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
+    const shotDesc = shotLabel[shotType] || shotType;
+
+    const imagePrompt = cleanText(`${shotDesc} shot, eye-level. Scene from: ${storyExcerpt.slice(0, 60)}. ${defaultLighting} ${noTextSuffix}`);
+    const videoPrompt = cleanText(`${shotDesc} shot, eye-level. ${cameraMovement}. Scene ${cutNumber}: ${storyExcerpt.slice(0, 80)}. ${defaultLighting} ${noTextSuffix}`);
+    const endImagePrompt = cleanText(`Scene ${cutNumber} concludes. ${noTextSuffix}`);
+
+    const videoPromptJson: VideoPromptJson = {
+      shotSize: shotType,
+      cameraAngle: "eye-level",
+      cameraMovement,
+      subjectBlocking: "subject center-frame mid-ground",
+      subjectAction,
+      actionBeat: subjectAction,
+      bodySignal: "",
+      revealed: "new visual layer",
+      withheld: "",
+      timingBeat: `0s-${Math.ceil(secPerCut / 3)}s: establishing. ${Math.ceil(secPerCut / 3)}s-${Math.ceil(secPerCut * 2 / 3)}s: develop. ${Math.ceil(secPerCut * 2 / 3)}s-${secPerCut}s: resolve.`,
+      transitionFromPrev: i > 0 ? "cut" : "",
+      characterRef: "",
+      moodLighting: defaultLighting,
+      styleSuffix: noTextSuffix,
+      locationCue: "",
+      situationCue: "",
+      emotionalAnchor: "",
+    };
+
+    return {
+      cutNumber,
+      durationSec: secPerCut,
+      sceneDescription: `장면 ${cutNumber}`,
+      shotType,
+      subjectAction,
+      emotionalDelta: i === 0 ? "opening→neutral" : "neutral→neutral",
+      shotCategory: i === 0 ? "environment" as const : "character-driven" as const,
+      characterRole: i === 0 ? "absent" as const : "protagonist" as const,
+      cameraDirection: `Lens 35mm. ${cameraMovement.slice(0, 30)}. ${directorName} style.`,
+      moodLighting: defaultLighting,
+      imagePrompt,
+      endImagePrompt,
+      videoPrompt,
+      extendPrompt: i === 0 ? "" : `Continuing from previous scene. ${cameraMovement}. ${noTextSuffix}`,
+      transitionHint: i < cutCount - 1 ? "디졸브" : "페이드 아웃",
+      characterConsistency: "",
+      charactersInScene: [] as string[],
+      videoPromptJson,
+    };
+  });
+
+  return cuts;
+}
+
+/**
+ * Ultra-compact step1 프롬프트 — 토큰 최소화.
+ * compact retry 실패 시 마지막 시도.
+ */
+function buildUltraCompactStep1Prompt(
+  storyText: string,
+  directorNameKo: string,
+  cutCount: number,
+  secPerCut: number,
+): string {
+  const storySnippet = storyText.slice(0, 400);
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/컷 × ${cutCount}컷.
+시나리오: ${storySnippet}
+
+{"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
+"outlines":[{"cutNumber":1,"sceneKo":"≤20자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w","sceneBeat1":"≤8w","sceneBeat2":"≤8w","sceneBeat3":"≤8w","endHook":"≤6w"}]}`;
+}
+
 // ─── 메인 핸들러 ──────────────────────────────────────────────────────────────
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
@@ -1027,6 +1198,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let characterSeeds: CharacterSeed[];
     let outlines: CutOutline[];
 
+    let step1Degraded = false;
+    let step1DegradedReason = "";
+    const step1Warnings: string[] = [];
+
     try {
       ({ characterSeeds, outlines } = await step1Outlines(
         context.env,
@@ -1042,17 +1217,169 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const isTruncation = msg.includes("MAX_TOKENS") || msg.includes("truncat");
-      console.error("[generate-cuts] step1 failed:", msg, "isTruncation:", isTruncation);
-      // MAX_TOKENS는 서버 에러(502)가 아니라 요청 크기 문제 → 422 + 명확한 원인
-      const status = isTruncation ? 422 : 502;
-      return Response.json({
-        error: isTruncation
-          ? "Step 1 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요."
-          : "Step 1 (outlines) failed",
-        detail: msg,
-        step: 1,
-        cause: isTruncation ? "MAX_TOKENS" : "API_ERROR",
-      }, { status });
+      const isTimeout = msg.includes("TIMEOUT") || msg.includes("524") || msg.includes("timed out");
+      console.error("[generate-cuts] step1 failed:", msg, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
+
+      if (isTruncation && !isTimeout) {
+        // MAX_TOKENS는 서버 에러(502)가 아니라 요청 크기 문제 → 422 + 명확한 원인
+        return Response.json({
+          ok: false,
+          degraded: false,
+          error: "Step 1 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요.",
+          detail: msg,
+          step: 1,
+          cause: "MAX_TOKENS",
+          source: "gemini",
+          warnings: [],
+        }, { status: 422 });
+      }
+
+      // ── Timeout/API error → ultra-compact retry → deterministic fallback ──
+      if (isTimeout) {
+        console.warn("[generate-cuts] step1 timeout — attempting ultra-compact retry");
+        step1Warnings.push(`step1 timed out: ${msg.slice(0, 200)}`);
+
+        try {
+          const ultraPrompt = buildUltraCompactStep1Prompt(
+            String(storyText),
+            String(directorNameKo || directorName),
+            targetCuts,
+            secPerCut,
+          );
+          const retryResult = await streamingGenerate(context.env, MODEL_OUTLINE, {
+            contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
+          }, { timeoutMs: 30_000 });
+
+          if (!retryResult.error && !retryResult.timedOut) {
+            const parsed = safeParseObj(retryResult.text);
+            if (parsed && Array.isArray(parsed.outlines) && (parsed.outlines as unknown[]).length > 0) {
+              console.info("[generate-cuts] ultra-compact retry succeeded");
+              step1Warnings.push("step1 recovered via ultra-compact retry");
+              step1Degraded = true;
+              step1DegradedReason = "step1 timeout → ultra-compact retry succeeded";
+              // Parse outlines/seeds from ultra-compact (reuse existing parsing logic inline)
+              characterSeeds = Array.isArray(parsed.characterSeeds)
+                ? (parsed.characterSeeds as Array<Partial<CharacterSeed>>).map(s => ({
+                    id: String(s.id ?? "char-1"),
+                    label: String(s.label ?? "주인공"),
+                    appearance: String(s.appearance ?? "A young person, casual modern clothing").slice(0, 400),
+                    appearanceKo: String(s.appearanceKo ?? "캐주얼 의상의 젊은 인물").slice(0, 50),
+                  }))
+                : [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing", appearanceKo: "캐주얼 의상의 젊은 인물" }];
+              const shotCycleF = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+              outlines = (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => ({
+                cutNumber: Number(o.cutNumber ?? i + 1),
+                sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
+                emotion: String(o.emotion ?? "neutral"),
+                emotionalDelta: String(o.emotionalDelta ?? "neutral→neutral"),
+                purpose: String(o.purpose ?? "develop"),
+                shotType: String(o.shotType ?? shotCycleF[i % shotCycleF.length]),
+                cameraMovement: String(o.cameraMovement ?? "slow push-in"),
+                subjectAction: String(o.subjectAction ?? `action in scene ${i + 1}`),
+                transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
+                shotCategory: (o.shotCategory ?? "character-driven") as ShotCategory,
+                characterRole: (o.characterRole ?? "protagonist") as CharacterRole,
+                locationCue: String(o.locationCue ?? "location elements"),
+                situationCue: String(o.situationCue ?? "situation evidence"),
+                emotionalAnchor: String(o.emotionalAnchor ?? "emotional point"),
+                sceneBeat1: String(o.sceneBeat1 ?? "location establishing"),
+                sceneBeat2: String(o.sceneBeat2 ?? "situation visible"),
+                sceneBeat3: String(o.sceneBeat3 ?? "emotion revealed"),
+                endHook: String(o.endHook ?? "visual tension"),
+              }));
+              // Jump to post-step1 processing (outlines already set)
+            } else {
+              throw new Error("ultra-compact parse failed");
+            }
+          } else {
+            throw new Error(`ultra-compact also failed: ${retryResult.error?.slice(0, 200) ?? "timeout"}`);
+          }
+        } catch (retryErr) {
+          // ── Both Gemini attempts failed → deterministic fallback ──
+          const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          console.warn("[generate-cuts] ultra-compact retry also failed:", retryMsg, "→ deterministic fallback");
+          step1Warnings.push(`ultra-compact retry failed: ${retryMsg.slice(0, 200)}`);
+          step1Warnings.push("falling back to deterministic cut generation (no Gemini)");
+
+          const deterministicCuts = buildDeterministicCuts(
+            String(storyText),
+            String(directorName),
+            targetCuts,
+            secPerCut,
+            veoStyle,
+            regionFlavor,
+            String(animationMode),
+          );
+
+          const defaultSeeds: CharacterSeed[] = [{
+            id: "char-1",
+            label: "주인공",
+            appearance: "A young person, casual modern clothing, natural look",
+            appearanceKo: "캐주얼 의상의 젊은 인물",
+          }];
+
+          const sequencePlan = buildSequencePlanFromCuts(deterministicCuts, {
+            styleId: String(animationMode || "live-action"),
+            aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
+            directorId: String(directorName || ""),
+          });
+          const sequenceValidation = validateSequencePlan(sequencePlan);
+
+          return Response.json({
+            ok: true,
+            degraded: true,
+            reason: `step1 timeout (${msg.slice(0, 100)}) → ultra-compact retry failed → deterministic fallback`,
+            source: "deterministic-fallback",
+            warnings: step1Warnings,
+            characterSeeds: defaultSeeds,
+            cuts: deterministicCuts,
+            sequencePlan,
+            sequenceValidation,
+          } satisfies GenerateCutsResponse);
+        }
+      } else {
+        // Non-timeout, non-truncation error → still try deterministic fallback instead of 502
+        console.warn("[generate-cuts] step1 API error (non-timeout) — deterministic fallback");
+        step1Warnings.push(`step1 API error: ${msg.slice(0, 200)}`);
+        step1Warnings.push("falling back to deterministic cut generation");
+
+        const deterministicCuts = buildDeterministicCuts(
+          String(storyText),
+          String(directorName),
+          targetCuts,
+          secPerCut,
+          veoStyle,
+          regionFlavor,
+          String(animationMode),
+        );
+
+        const defaultSeeds: CharacterSeed[] = [{
+          id: "char-1",
+          label: "주인공",
+          appearance: "A young person, casual modern clothing, natural look",
+          appearanceKo: "캐주얼 의상의 젊은 인물",
+        }];
+
+        const sequencePlan = buildSequencePlanFromCuts(deterministicCuts, {
+          styleId: String(animationMode || "live-action"),
+          aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
+          directorId: String(directorName || ""),
+        });
+        const sequenceValidation = validateSequencePlan(sequencePlan);
+
+        return Response.json({
+          ok: true,
+          degraded: true,
+          reason: `step1 failed: ${msg.slice(0, 150)}`,
+          source: "deterministic-fallback",
+          warnings: step1Warnings,
+          characterSeeds: defaultSeeds,
+          cuts: deterministicCuts,
+          sequencePlan,
+          sequenceValidation,
+        } satisfies GenerateCutsResponse);
+      }
     }
 
     // 아웃라인 정규화
@@ -1124,16 +1451,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const isTruncation = msg.includes("MAX_TOKENS") || msg.includes("truncat");
-      console.error("[generate-cuts] step2/3 failed:", msg, "isTruncation:", isTruncation);
-      const status = isTruncation ? 422 : 502;
-      return Response.json({
-        error: isTruncation
-          ? "Step 2/3 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요."
-          : "Step 2/3 (details) failed",
-        detail: msg,
-        step: 2,
-        cause: isTruncation ? "MAX_TOKENS" : "API_ERROR",
-      }, { status });
+      const isTimeout = msg.includes("TIMEOUT") || msg.includes("524") || msg.includes("timed out");
+      console.error("[generate-cuts] step2/3 failed:", msg, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
+
+      if (isTruncation && !isTimeout) {
+        return Response.json({
+          ok: false,
+          degraded: false,
+          error: "Step 2/3 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요.",
+          detail: msg,
+          step: 2,
+          cause: "MAX_TOKENS",
+          source: "gemini",
+          warnings: step1Warnings,
+        }, { status: 422 });
+      }
+
+      // step2/3 실패 → details는 비워서 outline 기반 fallback만 사용
+      console.warn("[generate-cuts] step2/3 failed — proceeding with outline-only fallback");
+      step1Warnings.push(`step2/3 failed: ${msg.slice(0, 200)}`);
+      step1Warnings.push("proceeding with outline-only cuts (no detailed prompts)");
+      step1Degraded = true;
+      step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + `step2/3 failed: ${msg.slice(0, 100)}`;
+      // details1, details2 remain empty → cuts will use fallback prompts
     }
 
     // ── 병합 ──────────────────────────────────────────────────────────────────
@@ -1291,12 +1631,30 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.warn("[generate-cuts] ⚠️ sequence validation issues:", sequenceValidation.issues);
     }
 
-    return Response.json({ characterSeeds, cuts, sequencePlan, sequenceValidation });
+    return Response.json({
+      ok: true,
+      degraded: step1Degraded,
+      reason: step1DegradedReason || undefined,
+      source: "gemini" as const,
+      warnings: step1Warnings,
+      characterSeeds,
+      cuts,
+      sequencePlan,
+      sequenceValidation,
+    });
 
   } catch (error) {
     const errMsg   = error instanceof Error ? error.message  : String(error);
     const errStack = error instanceof Error ? (error.stack ?? "").slice(0, 800) : "";
     console.error("[generate-cuts] 예외:", errMsg, "\n", errStack);
-    return Response.json({ error: "Failed to generate cuts", detail: errMsg, stack: errStack }, { status: 500 });
+    return Response.json({
+      ok: false,
+      degraded: false,
+      error: "Failed to generate cuts",
+      detail: errMsg,
+      stack: errStack,
+      source: "gemini",
+      warnings: [],
+    }, { status: 500 });
   }
 };

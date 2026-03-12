@@ -59,8 +59,13 @@ function isRetryableError(status: number, body?: string): boolean {
   if (status === 403 && body && /quota|rate|RESOURCE_EXHAUSTED|exhausted/i.test(body)) return true;
   if ((status === 500 || status === 502) && body && /RESOURCE_EXHAUSTED|quota|overloaded|exhausted/i.test(body)) return true;
   if (status === 503) return true;
+  // Cloudflare timeout — retry with next key
+  if (status === 524) return true;
   return false;
 }
+
+// Re-export for testing
+export { isRetryableError };
 
 function fetchWithKeyFallback(
   keys: string[],
@@ -145,26 +150,49 @@ export async function fetchWithAuth(
 /**
  * streamGenerateContent로 호출하고 모든 청크를 수집하여 텍스트를 반환.
  */
+/** Default timeout for streamingGenerate (ms). Prevents Cloudflare 524. */
+export const STREAMING_TIMEOUT_MS = 55_000; // 55s — under Cloudflare's 60s edge timeout
+
 export async function streamingGenerate(
   env: GeminiEnv,
   model: string,
   requestBody: Record<string, unknown>,
-): Promise<{ text: string; error?: string; status?: number; truncated?: boolean }> {
+  options?: { timeoutMs?: number },
+): Promise<{ text: string; error?: string; status?: number; truncated?: boolean; timedOut?: boolean }> {
   const url = buildGeminiUrl(env, model, "streamGenerateContent") + "?alt=sse";
+  const timeoutMs = options?.timeoutMs ?? STREAMING_TIMEOUT_MS;
+
+  // AbortController for timeout — prevents Cloudflare 524
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
+    signal: controller.signal,
   };
 
   const keys = getApiKeys(env);
   if (keys.length === 0) {
+    clearTimeout(timer);
     return { text: "", error: "GEMINI_API_KEY 환경변수가 설정되지 않았습니다. Cloudflare Pages 환경변수를 확인하세요.", status: 500 };
   }
-  const res = await fetchWithKeyFallback(keys, url, init);
+
+  let res: Response;
+  try {
+    res = await fetchWithKeyFallback(keys, url, init);
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      console.warn(`[streamingGenerate] AbortController timeout after ${timeoutMs}ms. model=${model}`);
+      return { text: "", error: `TIMEOUT: streamingGenerate timed out after ${timeoutMs}ms`, status: 524, timedOut: true };
+    }
+    throw err;
+  }
 
   if (!res.ok) {
+    clearTimeout(timer);
     const errText = await res.text();
     return { text: "", error: errText, status: res.status };
   }
@@ -172,6 +200,7 @@ export async function streamingGenerate(
   // SSE 스트림에서 텍스트 청크 수집
   const reader = res.body?.getReader();
   if (!reader) {
+    clearTimeout(timer);
     return { text: "", error: "No response body", status: 500 };
   }
 
@@ -179,40 +208,64 @@ export async function streamingGenerate(
   const parts: string[] = [];
   let buffer = "";
   let truncated = false;
+  let timedOut = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const jsonStr = line.slice(6).trim();
-      if (!jsonStr || jsonStr === "[DONE]") continue;
-      try {
-        const chunk = JSON.parse(jsonStr) as {
-          candidates?: {
-            content?: { parts?: { text?: string }[] };
-            finishReason?: string;
-          }[];
-        };
-        const cand = chunk?.candidates?.[0];
-        const text = cand?.content?.parts?.[0]?.text;
-        if (text) parts.push(text);
-        if (cand?.finishReason === "MAX_TOKENS") {
-          truncated = true;
-          const charCount = parts.reduce((s, p) => s + p.length, 0);
-          console.warn(
-            `[streamingGenerate] finishReason=MAX_TOKENS — 출력 절단됨. 누적 ${charCount}자. 모델: ${model}`,
-          );
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr || jsonStr === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(jsonStr) as {
+            candidates?: {
+              content?: { parts?: { text?: string }[] };
+              finishReason?: string;
+            }[];
+          };
+          const cand = chunk?.candidates?.[0];
+          const text = cand?.content?.parts?.[0]?.text;
+          if (text) parts.push(text);
+          if (cand?.finishReason === "MAX_TOKENS") {
+            truncated = true;
+            const charCount = parts.reduce((s, p) => s + p.length, 0);
+            console.warn(
+              `[streamingGenerate] finishReason=MAX_TOKENS — 출력 절단됨. 누적 ${charCount}자. 모델: ${model}`,
+            );
+          }
+        } catch {
+          // skip malformed chunks
         }
-      } catch {
-        // skip malformed chunks
       }
     }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      timedOut = true;
+      console.warn(`[streamingGenerate] Stream read aborted after ${timeoutMs}ms. Collected ${parts.length} chunks so far. model=${model}`);
+    } else {
+      clearTimeout(timer);
+      throw err;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (timedOut) {
+    const partial = parts.join("");
+    return {
+      text: partial,
+      error: `TIMEOUT: streamingGenerate timed out after ${timeoutMs}ms (collected ${partial.length} chars)`,
+      status: 524,
+      truncated: partial.length > 0,
+      timedOut: true,
+    };
   }
 
   if (truncated) {
@@ -264,6 +317,7 @@ function classifyGeminiError(status: number, body: string): string {
   if (status === 403) return "PERMISSION_DENIED";
   if (status === 404 && /not found|deprecated|does not exist/i.test(body)) return "MODEL_NOT_FOUND";
   if (status === 429) return "RATE_LIMITED";
+  if (status === 524 || /TIMEOUT/i.test(body)) return "TIMEOUT";
   if (/MAX_TOKENS|truncat/i.test(body)) return "MAX_TOKENS_TRUNCATED";
   if (status === 500 || status === 502 || status === 503) return "SERVER_ERROR";
   return "UNKNOWN_ERROR";
@@ -284,6 +338,8 @@ function getErrorHelp(code: string): string {
       return "API 키에 해당 모델 접근 권한이 없습니다. Google AI Studio에서 권한을 확인하세요.";
     case "MAX_TOKENS_TRUNCATED":
       return "Gemini 응답이 토큰 한도로 잘렸습니다. 컷 수를 줄이거나 스토리를 축소하세요. 이것은 API 키 문제가 아닙니다.";
+    case "TIMEOUT":
+      return "Gemini 요청이 타임아웃되었습니다. 컷 수를 줄이거나 잠시 후 다시 시도하세요.";
     case "SERVER_ERROR":
       return "Gemini 서버 일시 오류. 잠시 후 다시 시도하세요.";
     default:
