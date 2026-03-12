@@ -32,6 +32,8 @@ import {
   type ShotSnapshots,
   type CutProvenance,
   type DurationMeta,
+  type NarrationTrack,
+  type AudioMeta,
 } from "@/types";
 import {
   createInitialVariantState,
@@ -191,6 +193,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
   // ── Duration 추적 메타 (마지막 생성 기준) ──
   const [lastDurationMeta, setLastDurationMeta] = useState<DurationMeta | null>(null);
+
+  // ── Narration Audio Pipeline 상태 ──
+  const [audioMeta, setAudioMeta] = useState<AudioMeta | null>(null);
+  const [narrationStatus, setNarrationStatus] = useState<"idle" | "generating" | "completed" | "failed">("idle");
 
   // cuts 변경 시 clips 초기화 + 시퀀스 플랜 동기화
   useEffect(() => {
@@ -1871,6 +1877,147 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     }));
   }, [state.review, state.clips, cuts, resetClip]);
 
+  // ═══════════════════════════════════════════════════════════════
+  // Narration Audio Pipeline
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * 전체 나레이션 생성: 완료된 모든 클립의 structuredSequence + sceneDescription 기반
+   * shot durationSec에 맞춰 TTS 생성 → R2 저장 → audioMeta 반환
+   */
+  const generateNarration = useCallback(async () => {
+    const completedClips = state.clips.filter(c => c.status === "completed");
+    if (completedClips.length === 0) return;
+
+    setNarrationStatus("generating");
+
+    // shot별 narration 데이터 수집 (structuredSequence source of truth)
+    const shots: Array<{
+      cutNumber: number;
+      shotId: string;
+      narrationText: string;
+      durationSec: number;
+      startSec: number;
+      endSec: number;
+    }> = [];
+
+    let cumulativeSec = 0;
+    for (const clip of completedClips) {
+      const cut = cuts.find(c => c.cutNumber === clip.cutNumber);
+      const seq = clip.structuredSequence;
+
+      // narrationText source: structuredSequence.narrationText > cut.sceneDescription
+      const narrationText = seq?.narrationText || cut?.sceneDescription || "";
+      const duration = seq?.durationSec || clip.durationSec || safeDuration(state.config.durationSeconds);
+
+      if (narrationText.trim()) {
+        shots.push({
+          cutNumber: clip.cutNumber,
+          shotId: seq?.shotId || `shot_${clip.cutNumber}`,
+          narrationText,
+          durationSec: duration,
+          startSec: cumulativeSec,
+          endSec: cumulativeSec + duration,
+        });
+      }
+
+      cumulativeSec += duration;
+    }
+
+    if (shots.length === 0) {
+      setNarrationStatus("completed");
+      setAudioMeta({
+        audioIncluded: false,
+        audioTracks: [],
+        narrationUsed: false,
+        deliveryMode: "none",
+        warnings: ["No narration text available for any shot"],
+      });
+      return;
+    }
+
+    try {
+      const sessionId = completedClips[0]?.operationName?.split("/").pop() || `session-${Date.now()}`;
+
+      const res = await fetch("/api/generate-narration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          shots,
+          voiceName: "ko-KR-Wavenet-A",
+          speakingRate: 1.0,
+        }),
+      });
+
+      const data = await res.json() as {
+        audioIncluded: boolean;
+        audioTracks?: Array<{
+          cutNumber: number;
+          audioUri: string;
+          text: string;
+          durationSec: number;
+          syncStatus: "exact" | "trimmed" | "padded";
+          generatedAt: number;
+        }>;
+        narrationUsed: boolean;
+        deliveryMode: "muxed" | "separate" | "none";
+        warnings?: string[];
+        errors?: Array<{ cutNumber: number; error: string }>;
+      };
+
+      const tracks: NarrationTrack[] = (data.audioTracks || []).map(t => ({
+        cutNumber: t.cutNumber,
+        audioUri: t.audioUri,
+        text: t.text,
+        durationSec: t.durationSec,
+        syncStatus: t.syncStatus,
+        generatedAt: t.generatedAt,
+      }));
+
+      // 각 clip에 narration URI 연결
+      for (const track of tracks) {
+        updateClip(track.cutNumber, {
+          narrationAudioUri: track.audioUri,
+          narrationStatus: "completed",
+        });
+      }
+
+      const meta: AudioMeta = {
+        audioIncluded: data.audioIncluded,
+        audioTracks: tracks,
+        narrationUsed: data.narrationUsed,
+        deliveryMode: data.deliveryMode,
+        warnings: data.warnings || [],
+      };
+
+      setAudioMeta(meta);
+      setNarrationStatus("completed");
+
+      console.log("[NARRATION] 생성 완료", {
+        trackCount: tracks.length,
+        totalShots: shots.length,
+        deliveryMode: data.deliveryMode,
+        warnings: data.warnings,
+      });
+    } catch (err) {
+      console.error("[NARRATION] 생성 실패:", err);
+      setNarrationStatus("failed");
+      setAudioMeta({
+        audioIncluded: false,
+        audioTracks: [],
+        narrationUsed: false,
+        deliveryMode: "none",
+        warnings: [`Narration generation failed: ${err instanceof Error ? err.message : String(err)}`],
+      });
+
+      // degraded warning — 각 clip에 실패 상태 기록
+      for (const clip of completedClips) {
+        updateClip(clip.cutNumber, { narrationStatus: "failed" });
+      }
+    }
+  }, [state.clips, cuts, state.config.durationSeconds, updateClip]);
+
   // ===== 전체 완료 감지 → 자동 리뷰 + 알림 =====
   const prevCompletedRef = useRef(0);
   useEffect(() => {
@@ -1924,6 +2071,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         }
       }
 
+      // 전체 완료 시 나레이션 자동 생성 (generateAudio가 켜져 있으면)
+      if (state.config.generateAudio && narrationStatus === "idle") {
+        console.log("[NARRATION] 전체 영상 완료 → 나레이션 자동 생성 시작");
+        generateNarration();
+      }
+
       // 첫 완료 → 자동 리뷰 시작
       if (!state.review || state.review.status === "idle") {
         sendNotification(
@@ -1937,7 +2090,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     if (completedCount < prevCompletedRef.current) {
       prevCompletedRef.current = completedCount;
     }
-  }, [completedCount, totalCount, state.review, state.sequencePlan, state.clips, reviewAllClips, sendNotification]);
+  }, [completedCount, totalCount, state.review, state.sequencePlan, state.clips, state.config.generateAudio, narrationStatus, reviewAllClips, sendNotification, generateNarration]);
 
   // 알림 권한 미리 요청
   useEffect(() => {
@@ -2198,5 +2351,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     shotSnapshots: shotSnapshotsRef.current,
     // Duration 추적 메타
     lastDurationMeta,
+    // Narration audio pipeline
+    generateNarration,
+    narrationStatus,
+    audioMeta,
   };
 }

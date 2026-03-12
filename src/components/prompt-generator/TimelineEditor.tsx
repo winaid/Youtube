@@ -120,6 +120,8 @@ export default function TimelineEditor({
   // vidA, vidB를 번갈아 사용: 한 쪽이 재생되는 동안 다른 쪽을 preload
   const vidA = useRef<HTMLVideoElement>(null);
   const vidB = useRef<HTMLVideoElement>(null);
+  // ── 나레이션 오디오 ref ──────────────────────────────────────────────────────
+  const narrationAudioRef = useRef<HTMLAudioElement>(null);
 
   // Refs (이벤트 핸들러에서 stale closure 방지)
   const activeSlotRef      = useRef<"a" | "b">("a");
@@ -151,6 +153,7 @@ export default function TimelineEditor({
     isCrossfadingRef.current = false;
     vidA.current?.pause();
     vidB.current?.pause();
+    narrationAudioRef.current?.pause();
     // opacity 초기화
     if (vidA.current) vidA.current.style.opacity = "1";
     if (vidB.current) vidB.current.style.opacity = "0";
@@ -257,6 +260,18 @@ export default function TimelineEditor({
 
     setDisplayCutNumber(clip.cutNumber);
 
+    // ── 나레이션 오디오 sync ──────────────────────────────────────────────────
+    const audioEl = narrationAudioRef.current;
+    if (audioEl && clip.narrationAudioUri) {
+      if (audioEl.src !== clip.narrationAudioUri) {
+        audioEl.src = clip.narrationAudioUri;
+      }
+      audioEl.currentTime = 0;
+      audioEl.play().catch(() => {});
+    } else if (audioEl) {
+      audioEl.pause();
+    }
+
     // 다음 클립 preload
     const nextClip = clips[playingIndex + 1];
     const inactiveVid  = getInactiveVid();
@@ -325,11 +340,21 @@ export default function TimelineEditor({
     for (let i = 0; i < completedClips.length; i++) {
       const clip = completedClips[i];
       if (!clip.videoUri) continue;
+      // Download video
       const a = document.createElement("a");
       a.href = clip.videoUri;
       a.download = `cut-${String(clip.cutNumber).padStart(2, "0")}.mp4`;
       a.target = "_blank";
       a.click();
+      // Download narration audio if available
+      if (clip.narrationAudioUri) {
+        await new Promise((r) => setTimeout(r, 300));
+        const audioA = document.createElement("a");
+        audioA.href = clip.narrationAudioUri;
+        audioA.download = `cut-${String(clip.cutNumber).padStart(2, "0")}-narration.mp3`;
+        audioA.target = "_blank";
+        audioA.click();
+      }
       if (i < completedClips.length - 1) await new Promise((r) => setTimeout(r, 500));
     }
     setDownloading(false);
@@ -403,6 +428,9 @@ export default function TimelineEditor({
             playsInline
             muted={false}
           />
+
+          {/* 나레이션 오디오 (hidden) */}
+          <audio ref={narrationAudioRef} style={{ display: "none" }} />
 
           {/* 재생 전 안내 */}
           {!isPlaying && (
@@ -514,6 +542,11 @@ export default function TimelineEditor({
                       {clipDuration.toFixed(1)}s
                     </span>
                   </div>
+                  {clip.narrationAudioUri && (
+                    <p className="text-[8px] truncate mt-0.5" style={{ color: "#16a34a" }}>
+                      audio
+                    </p>
+                  )}
                   {clip.seed && (
                     <p className="text-[8px] text-muted-foreground truncate mt-0.5">
                       Seed: {clip.seed}

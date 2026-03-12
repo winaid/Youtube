@@ -419,6 +419,10 @@ export interface StructuredSequenceDocument {
   sanitizeFixes?: string[];
   /** 충돌 해결 내역 */
   conflictResolutions?: string[];
+
+  // ── Audio / Narration (v3) ────────────────────────────
+  /** shot별 나레이션 텍스트 (TTS 소스) — generate-cuts에서 sceneDescription 기반 생성 */
+  narrationText?: string;
 }
 
 // ===== Asset 상태 분리 =====
@@ -525,6 +529,35 @@ export interface DurationMeta {
   /** 어디서 결정됐는지 */
   source: "slider" | "auto" | "api-response" | "fallback";
   /** 보정/클램핑 경고 */
+  warnings: string[];
+}
+
+// ===== Audio / Narration =====
+export interface NarrationTrack {
+  /** 컷 번호 */
+  cutNumber: number;
+  /** R2 저장 URI (mp3) */
+  audioUri: string;
+  /** TTS에 사용된 원문 */
+  text: string;
+  /** 오디오 길이 (초) */
+  durationSec: number;
+  /** shot duration과의 sync 상태 */
+  syncStatus: "exact" | "trimmed" | "padded";
+  /** 생성 타임스탬프 */
+  generatedAt: number;
+}
+
+export interface AudioMeta {
+  /** 오디오가 최종 결과물에 포함되었는지 */
+  audioIncluded: boolean;
+  /** 생성된 오디오 트랙 목록 */
+  audioTracks: NarrationTrack[];
+  /** 나레이션 사용 여부 */
+  narrationUsed: boolean;
+  /** mux 방식: "muxed" = video+audio 합성, "separate" = 별도 에셋, "none" = 실패 */
+  deliveryMode: "muxed" | "separate" | "none";
+  /** 오디오 생성 경고 */
   warnings: string[];
 }
 
@@ -653,6 +686,13 @@ export interface VideoClip {
   assetStatus?: AssetStatus;         // 자산 생명 주기 상태 (생성 상태와 분리)
   /** JSON-first source of truth — 모든 생성/저장/디버그의 1급 데이터 */
   structuredSequence?: StructuredSequenceDocument;
+  // ── Audio ──
+  /** 나레이션 오디오 URI (R2) */
+  narrationAudioUri?: string;
+  /** 나레이션 오디오 생성 상태 */
+  narrationStatus?: "idle" | "generating" | "completed" | "failed";
+  /** 오디오 메타 */
+  audioMeta?: AudioMeta;
 }
 
 // ===== AI 피드백 리뷰 =====
