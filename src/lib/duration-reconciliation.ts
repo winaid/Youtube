@@ -39,8 +39,25 @@ export const DURATION_MAX = 15;
 export const DURATION_SLIDER_MIN = 0;
 export const DURATION_SLIDER_MAX = 15;
 
+/**
+ * 중앙 fallback 기본값. 개별 파일에서 리터럴 8을 쓰지 말 것.
+ * duration이 undefined/null/0/NaN일 때만 사용.
+ */
+export const DURATION_FALLBACK = 8;
+
 /** 프리셋 빠른 버튼 */
 export const DURATION_PRESETS = [4, 6, 8, 10, 15] as const;
+
+/**
+ * duration 값을 안전하게 해석. 0/undefined/null/NaN → DURATION_FALLBACK.
+ * 양수면 DURATION_MIN~DURATION_MAX 클램핑.
+ * 모든 downstream 함수에서 `|| 8` 대신 이 함수를 사용.
+ */
+export function safeDuration(v: number | undefined | null): number {
+  const n = Number(v);
+  if (!n || n <= 0 || !Number.isFinite(n)) return DURATION_FALLBACK;
+  return Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(n)));
+}
 
 /**
  * secondsPerScene을 API payload용 값으로 변환.

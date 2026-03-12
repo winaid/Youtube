@@ -15,6 +15,7 @@ import {
   reevaluateSceneExtensionEligibilityAfterUpload,
   selectVideoModeForNextCut,
 } from "@/lib/scene-extension-readiness";
+import { DURATION_FALLBACK, safeDuration } from "@/lib/duration-reconciliation";
 import {
   Cut,
   VideoClip,
@@ -640,7 +641,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                 // prompt는 legacy 호환용 fallback일 뿐. source of truth는 structuredSequence.
                 prompt: cut?.videoPrompt?.slice(0, 500) || "",
                 mode: isExtend ? "extend" : "generate",
-                durationSec: cut?.durationSec || 8,
+                durationSec: cut?.durationSec && cut.durationSec > 0 ? cut.durationSec : DURATION_FALLBACK,
                 cutNumber,
                 sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
                 seed: clipUpdate.seed,
@@ -1271,7 +1272,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         cutNumber,
         selectedMode: videoMode,
         reason: cutNumber === 1 ? "cut1_force_generate" : "normal",
-        durationSec: cfg.durationSeconds ?? 8,
+        durationSec: safeDuration(cfg.durationSeconds),
         engine,
       });
 
@@ -1993,7 +1994,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         engine: "kling",
         videoMode: "generate", // shot-level always generates fresh
         mode: cfg.mode,
-        durationSeconds: Math.min(cfg.durationSeconds ?? 8, Math.max(4, Math.ceil(shotDuration))),
+        durationSeconds: Math.min(safeDuration(cfg.durationSeconds), Math.max(4, Math.ceil(shotDuration))),
         resolution: cfg.resolution,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,

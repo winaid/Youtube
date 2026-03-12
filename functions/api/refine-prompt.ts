@@ -1,4 +1,5 @@
 import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
 
@@ -11,7 +12,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "videoPrompt is required" }, { status: 400 });
     }
 
-    const duration = Number(durationSeconds) || 8;
+    const duration = safeDuration(Number(durationSeconds));
     const wordCount = String(videoPrompt).split(/\s+/).length;
 
     let systemPrompt: string;

@@ -165,7 +165,7 @@ export function buildSequencePlanFromCuts(
   for (let i = 0; i < cuts.length; i++) {
     const cut = cuts[i];
     const json = cut.videoPromptJson;
-    const dur = cut.durationSec || 8;
+    const dur = cut.durationSec && cut.durationSec > 0 ? cut.durationSec : 8;
     const shotId = `shot_${i + 1}`;
 
     const negatives: string[] = [];

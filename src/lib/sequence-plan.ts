@@ -148,7 +148,7 @@ export interface SequencePlan {
 /** Cut → ShotPlan 변환 */
 function cutToShotPlan(cut: Cut, index: number): ShotPlan {
   const json = cut.videoPromptJson;
-  const dur = cut.durationSec || 8;
+  const dur = cut.durationSec && cut.durationSec > 0 ? cut.durationSec : 8;
 
   // VideoPromptJson이 있으면 구조화된 데이터 사용, 없으면 string fallback
   if (json) {

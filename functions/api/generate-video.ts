@@ -261,7 +261,7 @@ function serializeSequenceToPrompt(
   ]);
   const shotCount = seq.shots?.length ?? 1;
   const sceneType = seq.sceneType || "unknown";
-  const durationSec = seq.durationSec ?? 8;
+  const durationSec = seq.durationSec && seq.durationSec > 0 ? seq.durationSec : 8;
 
   // Hard gate 1: environment/character/battle scenes with 1 shot AND duration > 3s → warn (not block)
   if (MULTI_SHOT_SCENE_TYPES.has(sceneType) && shotCount < 2 && durationSec > 3) {
@@ -473,7 +473,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const sourceVideo = req.sourceVideo || req.previousVideoUri || "";
 
     // ── Kling 생성 ────────────────────────────────────────────────────────────
-    const duration = toKlingDuration(req.durationSeconds ?? 8);
+    const duration = toKlingDuration(req.durationSeconds && req.durationSeconds > 0 ? req.durationSeconds : 8);
     const aspectRatio = toKlingAspectRatio(req.aspectRatio ?? "16:9");
 
     // Audio: generateAudio 설정 + physics override (무대기 환경은 강제 off)

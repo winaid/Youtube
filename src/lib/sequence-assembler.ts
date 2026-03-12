@@ -1301,7 +1301,7 @@ export function assembleFromJSON(input: {
   ];
 
   // ── Dense Sequence Fields (v2) ─────────────────────────────────────────
-  const dur = input.config.durationSeconds || 8;
+  const dur = input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8;
   const effectiveSceneType = normalizedDoc.scene.shotCategory || input.cut.shotCategory || "unknown";
   const isEnvScene = effectiveSceneType === "environment";
 
@@ -1520,14 +1520,14 @@ export function assembleFromJSON(input: {
     ? videoPromptJsonToShotPlan(
         input.cut.videoPromptJson,
         input.cut.cutNumber - 1,
-        input.config.durationSeconds || 8,
+        input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8,
         0,
         { shotCategory: input.cut.shotCategory, characterRole: input.cut.characterRole },
       )
     : {
         shotId: `shot_${input.cut.cutNumber}`,
         startSec: 0,
-        endSec: input.config.durationSeconds || 8,
+        endSec: input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8,
         shotType: "medium_action" as const,
         camera: { framing: normalizedDoc.camera.framing as "MS", angle: "eye_level" as const, motion: normalizedDoc.camera.motion },
         subject: { primary: normalizedDoc.subject.primary },

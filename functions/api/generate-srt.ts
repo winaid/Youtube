@@ -1,4 +1,5 @@
 import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
 
@@ -13,7 +14,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "scenes required" }, { status: 400 });
     }
 
-    const secPerScene = durationPerScene || 8;
+    const secPerScene = safeDuration(durationPerScene);
 
     const prompt = `너는 유튜브 쇼츠 자막 전문가야.
 아래 장면 설명들을 각 장면 ${secPerScene}초 안에 맞는 자막으로 변환해줘.

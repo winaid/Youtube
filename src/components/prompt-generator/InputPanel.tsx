@@ -7,6 +7,7 @@ import {
 } from "@/types";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
+import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -441,10 +442,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         setAiCutRecommendation(null);
         return;
       }
-      const rawCuts = data.recommendedCuts ?? 8;
-      const rawDur  = data.recommendedDuration ?? 8;
+      const rawCuts = data.recommendedCuts ?? DURATION_FALLBACK;
+      const rawDur  = data.recommendedDuration ?? DURATION_FALLBACK;
       const safeCuts = Math.min(10, Math.max(4, rawCuts));
-      const safeDur  = [4, 6, 8, 10, 15].includes(rawDur) ? rawDur : 8;
+      const safeDur  = safeDuration(rawDur);
       setAiCutRecommendation({
         recommendedCuts:     safeCuts,
         recommendedDuration: safeDur,

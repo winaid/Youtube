@@ -454,7 +454,7 @@ export function buildVisualDetails(input: PromptLayerInput): string {
  */
 export function buildTemporalAction(input: PromptLayerInput): string {
   const prompt = input.scenePrompt;
-  const dur = input.durationSec || 8;
+  const dur = input.durationSec && input.durationSec > 0 ? input.durationSec : 8;
 
   // 이미 temporal beats가 있으면 그대로
   if (/\d+s[-–]\d+s/.test(prompt) || /\bfirst\b[\s\S]*\bthen\b[\s\S]*\bfinally\b/i.test(prompt)) {

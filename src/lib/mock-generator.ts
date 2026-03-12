@@ -226,7 +226,7 @@ export async function generatePrompt(
       ? Math.min(120, Math.max(60, Math.round(input.storyText.length / 2)))
       : input.duration;
 
-  const cutDuration = input.cutDuration ?? 8;
+  const cutDuration = input.cutDuration && input.cutDuration > 0 ? input.cutDuration : 8;
   const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / cutDuration));
   const storyWords = input.storyText.slice(0, 30);
 

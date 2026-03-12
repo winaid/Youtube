@@ -355,7 +355,7 @@ function resolveCameraMotion(input: {
   animationMode?: string;
   durationSec: number;
 }): { cameraBlock: string; debug: { source: string; motionType: string; hasTimeline: boolean } } {
-  const dur = input.durationSec || 8;
+  const dur = input.durationSec && input.durationSec > 0 ? input.durationSec : 8;
   const mid1 = Math.floor(dur * 0.25);  // ~2s
   const mid2 = Math.floor(dur * 0.625); // ~5s
 
@@ -591,7 +591,7 @@ function ensureTemporalBeats(prompt: string, durationSec: number): string {
   if (/\d+s[-–]\d+s/.test(prompt) || /first\s+\d+\s*seconds?/i.test(prompt)) return prompt;
   if (/\bfirst\b[\s\S]*\bthen\b[\s\S]*\bfinally\b/i.test(prompt)) return prompt;
 
-  const dur = durationSec || 8;
+  const dur = durationSec && durationSec > 0 ? durationSec : 8;
   const mid = Math.floor(dur * 0.3);
   const mid2 = Math.floor(dur * 0.65);
 

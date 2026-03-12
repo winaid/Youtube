@@ -1081,7 +1081,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // cutDuration=0/undefined/null → 자동(8초 기본). 1~15 → 명시값. Kling: 3~15 클램핑.
     const rawSecPerCut = Number(cutDuration) || 0;
     const secPerCut = rawSecPerCut > 0 ? Math.min(15, Math.max(3, rawSecPerCut)) : 8;
-    const targetCuts = Math.min(Number(cutCount) || 8, 15);
+    const targetCuts = Math.min(Number(cutCount) || secPerCut, 15);
 
     console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts });
 
