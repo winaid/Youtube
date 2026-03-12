@@ -85,10 +85,11 @@ export default function ResultPanel({
   // 프롬프트 생성 시 cutDuration → videoGen config에 자동 동기화
   useEffect(() => {
     if (!result || result.cuts.length === 0) return;
-    const dur = result.cuts[0].durationSec as import("@/types").VeoClipDuration;
-    if (dur && videoGen.config.durationSeconds !== dur) {
-      const engine = dur >= 10 ? "kling" : videoGen.config.engine;
-      videoGen.updateConfig({ durationSeconds: dur, engine });
+    const dur = result.cuts[0].durationSec;
+    if (dur && dur > 0 && videoGen.config.durationSeconds !== dur) {
+      const clampedDur = Math.min(15, Math.max(3, dur));
+      const engine = clampedDur >= 10 ? "kling" : videoGen.config.engine;
+      videoGen.updateConfig({ durationSeconds: clampedDur, engine });
     }
   // result가 새로 생성될 때만 실행
   // eslint-disable-next-line react-hooks/exhaustive-deps

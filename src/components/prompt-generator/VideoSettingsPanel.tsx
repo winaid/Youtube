@@ -219,11 +219,31 @@ export default function VideoSettingsPanel({
 
           <Separator />
 
-          {/* 클립 길이 */}
+          {/* 클립 길이 (슬라이더) */}
           <div className="space-y-1.5">
-            <Label className="text-xs">클립 길이</Label>
-            <div className="flex gap-2">
-              {([4, 6, 8, 10, 15] as VeoClipDuration[]).map((d) => {
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">클립 길이</Label>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#787fff15", color: "#5a5ecc" }}>
+                {config.durationSeconds}초
+              </span>
+            </div>
+            <input
+              type="range"
+              min={3}
+              max={15}
+              step={1}
+              value={config.durationSeconds ?? 6}
+              onChange={(e) => update({ durationSeconds: Number(e.target.value) as VeoClipDuration })}
+              className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+              style={{ accentColor: "#787fff" }}
+            />
+            <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
+              <span>3초</span>
+              <span>15초</span>
+            </div>
+            {/* 프리셋 빠른 버튼 */}
+            <div className="flex gap-1">
+              {([4, 6, 8, 10, 15] as const).map((d) => {
                 const isKlingOnly = d >= 10;
                 const isSelected = config.durationSeconds === d;
                 return (
@@ -231,7 +251,7 @@ export default function VideoSettingsPanel({
                     key={d}
                     size="sm"
                     variant={isSelected ? "default" : "outline"}
-                    className="flex-1 text-xs relative"
+                    className="flex-1 text-[10px] h-6 px-0 relative"
                     style={
                       isSelected
                         ? { background: "#787fff", color: "white" }
@@ -239,13 +259,12 @@ export default function VideoSettingsPanel({
                           ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
                           : {}
                     }
-                    onClick={() => update({ durationSeconds: d })}
-                    title={isKlingOnly ? "Kling 전용 (Veo 미지원)" : undefined}
+                    onClick={() => update({ durationSeconds: d as VeoClipDuration })}
                   >
-                    {d}초
-                    {isKlingOnly && (
+                    {d}
+                    {isKlingOnly && !isSelected && (
                       <span
-                        className="absolute -top-1 -right-1 text-[7px] px-0.5 rounded leading-tight"
+                        className="absolute -top-0.5 -right-0.5 text-[6px] px-0.5 rounded leading-tight"
                         style={{ background: "#f97316", color: "white" }}
                       >
                         K
@@ -257,7 +276,7 @@ export default function VideoSettingsPanel({
             </div>
             {(config.durationSeconds ?? 6) >= 10 && (
               <p className="text-[10px]" style={{ color: "#f97316" }}>
-                ⚠ {config.durationSeconds}초는 Kling 전용 — 영상 생성 시 Kling 엔진이 자동 선택됩니다
+                ⚠ {config.durationSeconds}초는 Kling 전용
               </p>
             )}
           </div>

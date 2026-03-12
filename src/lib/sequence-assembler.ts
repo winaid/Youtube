@@ -143,7 +143,8 @@ export interface BuildShotDocumentInput {
   prevCut?: Cut;
 }
 
-function parseTimingBeats(timingBeat?: string, durationSec: number = 8): TimingBeat[] {
+function parseTimingBeats(timingBeat?: string, durationSec?: number): TimingBeat[] {
+  durationSec = durationSec && durationSec > 0 ? durationSec : 8;
   if (!timingBeat) {
     const mid1 = Math.floor(durationSec * 0.25);
     const mid2 = Math.floor(durationSec * 0.625);
@@ -369,7 +370,7 @@ export function enrichEnvironmentPositives(globalStyle: string): string {
 export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocument {
   const { cut, config, prevCut } = input;
   const json = cut.videoPromptJson;
-  const dur = config.durationSeconds || 8;
+  const dur = config.durationSeconds && config.durationSeconds > 0 ? config.durationSeconds : 8;
 
   const styleEntry = getStyleById(config.animationMode || "") ?? getStyleByLegacyMode(config.animationMode || "");
   const styleId = styleEntry?.id || config.animationMode || "live-action";

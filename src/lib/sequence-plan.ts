@@ -234,7 +234,7 @@ export function buildSequencePlan(
 
     // 시간 누적 배치
     shot.startSec = currentTime;
-    shot.endSec = currentTime + (cut.durationSec || 8);
+    shot.endSec = currentTime + (cut.durationSec && cut.durationSec > 0 ? cut.durationSec : 8);
     currentTime = shot.endSec;
 
     shots.push(shot);

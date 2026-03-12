@@ -6,9 +6,11 @@ export type StyleFamily = "all" | "live_action" | "animation_2d" | "animation_3d
 export type Duration = 60 | 90 | 120 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 export type VeoResolution = "720p" | "1080p" | "4k";
+// 0 = 자동 (UI 전용, API에는 null/undefined로 변환)
+// 1~15 = 명시값 (초 단위)
 // 4 | 6 | 8 → Veo + Kling 모두 가능
 // 10 | 15   → Kling 전용 (Veo 미지원)
-export type VeoClipDuration = 4 | 6 | 8 | 10 | 15;
+export type VeoClipDuration = number;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
 export interface SignatureTechniques {

@@ -24,6 +24,8 @@ interface GenerateCutsResponse {
   cuts: ReturnType<typeof buildDeterministicCuts> extends (infer R)[] ? R[] : unknown[];
   sequencePlan?: unknown;
   sequenceValidation?: unknown;
+  /** 실제 사용된 장면당 초 (클라이언트 동기화용) */
+  secPerCut?: number;
 }
 
 type Env = GeminiEnv;
@@ -1076,8 +1078,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       characterPersonas,
     } = await context.request.json() as Record<string, string | number | object>;
 
-    const secPerCut  = Number(cutDuration) || 8;
+    // cutDuration=0/undefined/null → 자동(8초 기본). 1~15 → 명시값. Kling: 3~15 클램핑.
+    const rawSecPerCut = Number(cutDuration) || 0;
+    const secPerCut = rawSecPerCut > 0 ? Math.min(15, Math.max(3, rawSecPerCut)) : 8;
     const targetCuts = Math.min(Number(cutCount) || 8, 15);
+
+    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts });
 
     if (!storyText || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });
@@ -1336,6 +1342,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             cuts: deterministicCuts,
             sequencePlan,
             sequenceValidation,
+            secPerCut,
           } satisfies GenerateCutsResponse);
         }
       } else {
@@ -1378,6 +1385,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           cuts: deterministicCuts,
           sequencePlan,
           sequenceValidation,
+          secPerCut,
         } satisfies GenerateCutsResponse);
       }
     }
@@ -1641,6 +1649,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       cuts,
       sequencePlan,
       sequenceValidation,
+      secPerCut,
     });
 
   } catch (error) {

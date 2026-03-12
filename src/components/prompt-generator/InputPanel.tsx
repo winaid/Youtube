@@ -520,7 +520,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       duration,
       aspectRatio,
       cutCount: cutCount === "auto" ? undefined : cutCount,
-      cutDuration,
+      cutDuration: cutDuration === 0 ? undefined : cutDuration,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
         : undefined,
@@ -1278,30 +1278,50 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
 
-          {/* 장면당 초 */}
+          {/* 장면당 초 (슬라이더) */}
           <div className="space-y-2">
-            <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면당 초</Label>
-            <div className="grid grid-cols-5 gap-1.5">
-              {([4, 6, 8, 10, 15] as const).map((sec) => {
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면당 초</Label>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{ background: cutDuration === 0 ? "#f0f0ff" : "#787fff15", color: cutDuration === 0 ? "#787fff" : "#5a5ecc" }}>
+                {cutDuration === 0 ? "자동" : `${cutDuration}초`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={15}
+              step={1}
+              value={cutDuration}
+              onChange={(e) => setCutDuration(Number(e.target.value))}
+              className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+              style={{ accentColor: "#787fff" }}
+            />
+            <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
+              <span>자동</span>
+              <span>15초</span>
+            </div>
+            {/* 프리셋 빠른 버튼 */}
+            <div className="flex gap-1">
+              {([0, 4, 6, 8, 10, 15] as const).map((sec) => {
                 const isKlingOnly = sec >= 10;
+                const isSelected = cutDuration === sec;
                 return (
                   <button
                     key={sec}
-                    className="h-8 rounded-lg text-xs font-medium transition-all relative"
+                    className="flex-1 h-6 rounded text-[10px] font-medium transition-all relative"
                     style={
-                      cutDuration === sec
-                        ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
+                      isSelected
+                        ? { background: "#787fff", color: "white" }
                         : isKlingOnly
                           ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
-                          : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                          : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
                     }
                     onClick={() => setCutDuration(sec)}
-                    title={isKlingOnly ? "Kling 전용 (Veo 미지원)" : undefined}
                   >
-                    {sec}초
-                    {isKlingOnly && (
+                    {sec === 0 ? "자동" : `${sec}`}
+                    {isKlingOnly && !isSelected && (
                       <span
-                        className="absolute -top-1 -right-1 text-[7px] px-0.5 rounded leading-tight"
+                        className="absolute -top-0.5 -right-0.5 text-[6px] px-0.5 rounded leading-tight"
                         style={{ background: "#f97316", color: "white" }}
                       >
                         K
@@ -1311,11 +1331,13 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 );
               })}
             </div>
-            {cutDuration >= 10 && (
-              <p className="text-[9px]" style={{ color: "#f97316" }}>
-                ⚠ {cutDuration}초는 Kling 전용 — 영상 생성 시 Kling 엔진이 자동 선택됩니다
-              </p>
-            )}
+            <p className="text-[9px] text-muted-foreground">
+              {cutDuration === 0
+                ? "길이와 장면 수를 기준으로 자동 계산"
+                : cutDuration >= 10
+                  ? `⚠ ${cutDuration}초는 Kling 전용 — 각 장면을 ${cutDuration}초 기준으로 생성`
+                  : `각 장면을 ${cutDuration}초 기준으로 생성`}
+            </p>
           </div>
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
