@@ -21,6 +21,8 @@ import {
   mergeSelectedChainsToOutput,
   mergeSelectedNodeToOutput,
   mergeAllChainsToOutput,
+  type ExportChain,
+  type MergeError,
 } from "@/lib/nodes-to-sequence";
 import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
 import {
@@ -646,5 +648,333 @@ describe("merge export — partial update of existing result", () => {
     if (!result.success) return;
     expect(result.output.cuts.length).toBe(3);
     expect(result.output.totalCuts).toBe(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Duplicate target cutNumber 충돌 방어
+// ═══════════════════════════════════════════════════════════════════
+
+describe("merge — duplicate target cutNumber conflict detection", () => {
+  function makeBaseOutput(cutCount: number): PromptOutput {
+    return {
+      projectTitle: "Conflict Test",
+      conceptSummary: "conflict test",
+      totalCuts: cutCount,
+      globalStylePrompt: "cinematic",
+      directorPersonaPrompt: "director",
+      characterSeeds: [],
+      continuityRules: [],
+      cuts: Array.from({ length: cutCount }, (_, i) => makeCut(i + 1)),
+    };
+  }
+
+  it("should reject merge when 2 chains target the same cutNumber", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    // chains[0]과 chains[1]이 각각 cutNumber 1, 2를 가리킨다.
+    // chains[0]의 provenance를 수동으로 cutNumber=2로 변경해서 충돌 유발
+    const duplicateChain: ExportChain = {
+      ...chains[0],
+      videoNode: {
+        ...chains[0].videoNode,
+        provenance: {
+          createdAt: Date.now(),
+          importMeta: {
+            source: "structured-sequence-import",
+            importedAt: Date.now(),
+            cutNumber: 2, // chains[1]과 동일
+          },
+        },
+      },
+    };
+
+    const result = mergeSelectedChainsToOutput([duplicateChain, chains[1]], baseOutput);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(result.reason).toContain("동시에 대응");
+    expect(result.reason).toContain("2");
+    expect((result as MergeError).conflictedCutNumbers).toEqual([2]);
+    expect((result as MergeError).conflictedChainNodeIds).toHaveLength(2);
+  });
+
+  it("should reject merge when 3 chains target the same cutNumber", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    // 3개 모두 cutNumber=1로 설정
+    const makeConflicting = (chain: ExportChain): ExportChain => ({
+      ...chain,
+      videoNode: {
+        ...chain.videoNode,
+        provenance: {
+          createdAt: Date.now(),
+          importMeta: { source: "structured-sequence-import", importedAt: Date.now(), cutNumber: 1 },
+        },
+      },
+    });
+
+    const result = mergeSelectedChainsToOutput(
+      [makeConflicting(chains[0]), makeConflicting(chains[1]), makeConflicting(chains[2])],
+      baseOutput,
+    );
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect((result as MergeError).conflictedCutNumbers).toEqual([1]);
+    expect((result as MergeError).conflictedChainNodeIds).toHaveLength(3);
+  });
+
+  it("should not conflict when different chains target different cutNumbers", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    // chains[0]=cut1, chains[2]=cut3 → 충돌 없음
+    const result = mergeSelectedChainsToOutput([chains[0], chains[2]], baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.mergedCutNumbers).toEqual([1, 3]);
+  });
+
+  it("conflict error includes structured fields for UI display", () => {
+    const baseOutput = makeBaseOutput(2);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    const dup: ExportChain = {
+      ...chains[0],
+      videoNode: {
+        ...chains[0].videoNode,
+        provenance: {
+          createdAt: Date.now(),
+          importMeta: { source: "structured-sequence-import", importedAt: Date.now(), cutNumber: 1 },
+        },
+      },
+    };
+
+    const result = mergeSelectedChainsToOutput([chains[0], dup], baseOutput);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // 구조화된 충돌 정보 존재
+    const mergeErr = result as MergeError;
+    expect(mergeErr.conflictedCutNumbers).toBeDefined();
+    expect(mergeErr.conflictedChainNodeIds).toBeDefined();
+    expect(Array.isArray(mergeErr.conflictedCutNumbers)).toBe(true);
+    expect(Array.isArray(mergeErr.conflictedChainNodeIds)).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Provenance 기반 매칭 독립 테스트
+// ═══════════════════════════════════════════════════════════════════
+
+describe("merge — provenance.importMeta.cutNumber matching", () => {
+  function makeBaseOutput(cutCount: number): PromptOutput {
+    return {
+      projectTitle: "Provenance Match",
+      conceptSummary: "",
+      totalCuts: cutCount,
+      globalStylePrompt: "",
+      directorPersonaPrompt: "",
+      characterSeeds: [],
+      continuityRules: [],
+      cuts: Array.from({ length: cutCount }, (_, i) => makeCut(i + 1, {
+        videoPrompt: `Original ${i + 1}`,
+      })),
+    };
+  }
+
+  it("chain with provenance cutNumber=3 merges into cut 3, not cut 1", () => {
+    const baseOutput = makeBaseOutput(5);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    // chain[2]는 provenance cutNumber=3
+    const prov = chains[2].videoNode.provenance as { importMeta?: { cutNumber?: number } };
+    expect(prov?.importMeta?.cutNumber).toBe(3);
+
+    const result = mergeSelectedChainsToOutput([chains[2]], baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.mergedCutNumbers).toEqual([3]);
+    // Cut 1, 2, 4, 5 원본 유지
+    expect(result.output.cuts[0].videoPrompt).toBe("Original 1");
+    expect(result.output.cuts[1].videoPrompt).toBe("Original 2");
+    expect(result.output.cuts[3].videoPrompt).toBe("Original 4");
+    expect(result.output.cuts[4].videoPrompt).toBe("Original 5");
+    // Cut 3만 변경됨
+    expect(result.output.cuts[2].cutNumber).toBe(3);
+  });
+
+  it("provenance cutNumber가 baseOutput에 없는 경우 unmatched 처리", () => {
+    const baseOutput = makeBaseOutput(2); // cutNumber 1, 2만 존재
+    const canvasState = promptOutputToCanvasState(makeBaseOutput(5));
+    const chains = findAllChains(canvasState);
+
+    // chain[4]는 provenance cutNumber=5 → baseOutput에 없음
+    const result = mergeSelectedChainsToOutput([chains[4]], baseOutput);
+    expect(result.success).toBe(false);
+  });
+
+  it("provenance 없는 수동 chain은 매칭 실패, merge 거부", () => {
+    const baseOutput = makeBaseOutput(3);
+    const manualState = buildManualChain("manual");
+    const manualChains = findAllChains(manualState);
+
+    // 수동 chain은 provenance가 없으므로 cutNumber 매칭 불가
+    const prov = manualChains[0].videoNode.provenance as { importMeta?: { cutNumber?: number } };
+    expect(prov?.importMeta?.cutNumber).toBeUndefined();
+
+    const result = mergeSelectedChainsToOutput(manualChains, baseOutput);
+    expect(result.success).toBe(false);
+  });
+
+  it("provenance cutNumber 기반으로 비순차적 merge 가능 (cut 5, 2)", () => {
+    const baseOutput = makeBaseOutput(5);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    // cut 5와 cut 2만 선택
+    const result = mergeSelectedChainsToOutput([chains[4], chains[1]], baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.mergedCutNumbers).toEqual([5, 2]);
+    // 나머지 cuts 원본 유지
+    expect(result.output.cuts[0].videoPrompt).toBe("Original 1");
+    expect(result.output.cuts[2].videoPrompt).toBe("Original 3");
+    expect(result.output.cuts[3].videoPrompt).toBe("Original 4");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. 상위 메타 및 cut 순서 불변 검증
+// ═══════════════════════════════════════════════════════════════════
+
+describe("merge — output-level metadata and cut order invariance", () => {
+  function makeRichOutput(): PromptOutput {
+    return {
+      projectTitle: "Invariance Test Film",
+      conceptSummary: "Testing invariance",
+      totalCuts: 4,
+      globalStylePrompt: "noir aesthetic",
+      directorPersonaPrompt: "Kubrick-style",
+      characterSeeds: [
+        { id: "c1", label: "Hero", appearance: "tall", appearanceKo: "키 큰" },
+      ] as PromptOutput["characterSeeds"],
+      continuityRules: ["180-degree rule", "color consistency"],
+      cuts: [
+        makeCut(1, { videoPrompt: "wide establishing" }),
+        makeCut(2, { videoPrompt: "medium tracking" }),
+        makeCut(3, { videoPrompt: "close-up dialogue" }),
+        makeCut(4, { videoPrompt: "aerial finale" }),
+      ],
+    };
+  }
+
+  it("merge does not change projectTitle", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput([chains[1]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.projectTitle).toBe("Invariance Test Film");
+  });
+
+  it("merge does not change globalStylePrompt", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput([chains[0]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.globalStylePrompt).toBe("noir aesthetic");
+  });
+
+  it("merge does not change directorPersonaPrompt", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput([chains[2]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.directorPersonaPrompt).toBe("Kubrick-style");
+  });
+
+  it("merge does not change continuityRules", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput([chains[3]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.continuityRules).toEqual(["180-degree rule", "color consistency"]);
+  });
+
+  it("merge does not change characterSeeds", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput([chains[0]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.characterSeeds).toHaveLength(1);
+    expect((result.output.characterSeeds[0] as { id: string }).id).toBe("c1");
+  });
+
+  it("merge preserves totalCuts count", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput([chains[1]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.totalCuts).toBe(4);
+    expect(result.output.cuts.length).toBe(4);
+  });
+
+  it("merge preserves cut order (cutNumbers remain sequential)", () => {
+    const base = makeRichOutput();
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    // cut 2와 4만 merge
+    const result = mergeSelectedChainsToOutput([chains[1], chains[3]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.output.cuts.map(c => c.cutNumber)).toEqual([1, 2, 3, 4]);
+    // 비병합 cut은 원본 유지
+    expect(result.output.cuts[0].videoPrompt).toBe("wide establishing");
+    expect(result.output.cuts[2].videoPrompt).toBe("close-up dialogue");
+  });
+
+  it("merge does not mutate baseOutput", () => {
+    const base = makeRichOutput();
+    const originalCuts = base.cuts.map(c => ({ ...c }));
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    mergeSelectedChainsToOutput([chains[0]], base);
+
+    // base는 변경되지 않아야 함
+    expect(base.cuts.length).toBe(originalCuts.length);
+    base.cuts.forEach((c, i) => {
+      expect(c.cutNumber).toBe(originalCuts[i].cutNumber);
+      expect(c.videoPrompt).toBe(originalCuts[i].videoPrompt);
+    });
   });
 });

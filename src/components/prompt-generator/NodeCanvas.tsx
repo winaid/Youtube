@@ -506,8 +506,9 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     if (!onMergeToEditor || !importableOutput || !state.selectedNodeId) return;
     const result = mergeSelectedNodeToOutput(state, state.selectedNodeId, importableOutput);
     if (!result.success) {
+      const isConflict = "conflictedCutNumbers" in result && result.conflictedCutNumbers;
       setExportMessage({ text: result.reason, type: "error" });
-      setTimeout(() => setExportMessage(null), 3000);
+      setTimeout(() => setExportMessage(null), isConflict ? 5000 : 3000);
       return;
     }
     onMergeToEditor(result.output, result.mergedCutNumbers);
@@ -522,8 +523,9 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     if (!onMergeToEditor || !importableOutput) return;
     const result = mergeAllChainsToOutput(state, importableOutput);
     if (!result.success) {
+      const isConflict = "conflictedCutNumbers" in result && result.conflictedCutNumbers;
       setExportMessage({ text: result.reason, type: "error" });
-      setTimeout(() => setExportMessage(null), 3000);
+      setTimeout(() => setExportMessage(null), isConflict ? 5000 : 3000);
       return;
     }
     onMergeToEditor(result.output, result.mergedCutNumbers);

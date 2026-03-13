@@ -19,6 +19,8 @@ import {
   exportAllChainsToPromptOutput,
   exportFromSelectedNode,
   findAllChains,
+  mergeSelectedChainsToOutput,
+  mergeAllChainsToOutput,
 } from "@/lib/nodes-to-sequence";
 import {
   createInitialCanvasState,
@@ -445,5 +447,131 @@ describe("extended roundtrip preservation", () => {
     expect(result2.output.cuts[0].moodLighting).toBe("neon pink");
     expect(result2.output.globalStylePrompt).toBe("cinematic wide-angle");
     expect(result2.output.continuityRules).toEqual(["rule-1: maintain lighting", "rule-2: consistent wardrobe"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. Merge export 후 metadata preservation 검증
+// ═══════════════════════════════════════════════════════════════════
+
+describe("merge export preserves _preservedCut and output-level metadata", () => {
+  it("merged cut의 _preservedCut 보존 필드가 유지된다 (cameraDirection, moodLighting)", () => {
+    const original = makePromptOutput([
+      makeCut(1, {
+        cameraDirection: "tracking shot",
+        moodLighting: "neon glow",
+        imagePrompt: "ref-image-1",
+        endImagePrompt: "end-ref-1",
+        extendPrompt: "extend-1",
+        transitionHint: "fade",
+        characterConsistency: "uniform",
+        charactersInScene: ["hero", "sidekick"],
+      }),
+      makeCut(2, {
+        cameraDirection: "static wide",
+        moodLighting: "natural daylight",
+      }),
+      makeCut(3, {
+        cameraDirection: "handheld",
+        moodLighting: "candlelight",
+      }),
+    ]);
+
+    const canvasState = promptOutputToCanvasState(original);
+    const chains = findAllChains(canvasState);
+
+    // cut 1만 merge
+    const result = mergeSelectedChainsToOutput([chains[0]], original);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // merged cut 1: _preservedCut에서 복원된 보존 필드
+    const cut1 = result.output.cuts[0];
+    expect(cut1.cameraDirection).toBe("tracking shot");
+    expect(cut1.moodLighting).toBe("neon glow");
+    expect(cut1.imagePrompt).toBe("ref-image-1");
+    expect(cut1.endImagePrompt).toBe("end-ref-1");
+    expect(cut1.extendPrompt).toBe("extend-1");
+    expect(cut1.transitionHint).toBe("fade");
+    expect(cut1.characterConsistency).toBe("uniform");
+    expect(cut1.charactersInScene).toEqual(["hero", "sidekick"]);
+
+    // 비병합 cut 2, 3은 원본 그대로
+    expect(result.output.cuts[1].cameraDirection).toBe("static wide");
+    expect(result.output.cuts[1].moodLighting).toBe("natural daylight");
+    expect(result.output.cuts[2].cameraDirection).toBe("handheld");
+    expect(result.output.cuts[2].moodLighting).toBe("candlelight");
+  });
+
+  it("merge 후 output-level characterSeeds/continuityRules가 baseOutput에서 유지된다", () => {
+    const original = makePromptOutput([makeCut(1), makeCut(2)], {
+      characterSeeds: [
+        { id: "s1", label: "Alpha", appearance: "tall", appearanceKo: "키 큰" },
+        { id: "s2", label: "Beta", appearance: "short", appearanceKo: "작은" },
+      ] as PromptOutput["characterSeeds"],
+      continuityRules: ["eye-line", "color grade", "wardrobe"],
+      globalStylePrompt: "cyberpunk",
+      directorPersonaPrompt: "Villeneuve-inspired",
+    });
+
+    const canvasState = promptOutputToCanvasState(original);
+    const chains = findAllChains(canvasState);
+
+    const result = mergeSelectedChainsToOutput([chains[0]], original);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // baseOutput의 output-level 메타 유지 (merge가 덮어쓰지 않음)
+    expect(result.output.characterSeeds).toHaveLength(2);
+    expect((result.output.characterSeeds[0] as { id: string }).id).toBe("s1");
+    expect(result.output.continuityRules).toEqual(["eye-line", "color grade", "wardrobe"]);
+    expect(result.output.globalStylePrompt).toBe("cyberpunk");
+    expect(result.output.directorPersonaPrompt).toBe("Villeneuve-inspired");
+  });
+
+  it("mergeAllChainsToOutput도 _preservedCut 보존 필드를 유지한다", () => {
+    const original = makePromptOutput([
+      makeCut(1, { cameraDirection: "crane up", shotCategory: "establishing" }),
+      makeCut(2, { cameraDirection: "dolly in", characterRole: "antagonist" }),
+    ]);
+
+    const canvasState = promptOutputToCanvasState(original);
+    const result = mergeAllChainsToOutput(canvasState, original);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.output.cuts[0].cameraDirection).toBe("crane up");
+    expect(result.output.cuts[0].shotCategory).toBe("establishing");
+    expect(result.output.cuts[1].cameraDirection).toBe("dolly in");
+    expect(result.output.cuts[1].characterRole).toBe("antagonist");
+  });
+
+  it("canvas에서 prompt 수정 후 merge해도 보존 필드는 살아있다", () => {
+    const original = makePromptOutput([
+      makeCut(1, {
+        videoPrompt: "original prompt",
+        cameraDirection: "overhead crane",
+        moodLighting: "blue moonlight",
+      }),
+      makeCut(2),
+    ]);
+
+    let canvasState = promptOutputToCanvasState(original);
+    // 캔버스에서 cut 1의 prompt만 수정
+    const vidNode = canvasState.nodes.filter(n => n.type === "generate-video")[0];
+    canvasState = updateNodeData(canvasState, vidNode.id, { prompt: "EDITED prompt" });
+
+    const chains = findAllChains(canvasState);
+    const result = mergeSelectedChainsToOutput([chains[0]], original);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // prompt는 수정된 값
+    expect(result.output.cuts[0].videoPrompt).toBe("EDITED prompt");
+    // 보존 필드는 원본 유지
+    expect(result.output.cuts[0].cameraDirection).toBe("overhead crane");
+    expect(result.output.cuts[0].moodLighting).toBe("blue moonlight");
+    // cut 2는 원본 그대로
+    expect(result.output.cuts[1].videoPrompt).toBe("Video prompt for cut 2");
   });
 });

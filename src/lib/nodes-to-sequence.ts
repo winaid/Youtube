@@ -57,6 +57,10 @@ export interface MergeResult {
 export interface MergeError {
   success: false;
   reason: string;
+  /** 같은 cutNumber를 가리키는 chain이 2개 이상일 때 충돌 정보 */
+  conflictedCutNumbers?: number[];
+  /** 충돌에 관여한 chain nodeId 목록 */
+  conflictedChainNodeIds?: string[];
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -322,6 +326,34 @@ export function mergeSelectedChainsToOutput(
 
   if (!baseOutput.cuts || baseOutput.cuts.length === 0) {
     return { success: false, reason: "기존 결과에 cut이 없어 병합할 수 없습니다" };
+  }
+
+  // ── duplicate target cutNumber 충돌 감지 ──
+  // 같은 cutNumber를 가리키는 chain이 2개 이상이면 어떤 값을 쓸지 모호하므로 거부
+  const targetMap = new Map<number, string[]>(); // cutNumber → nodeId[]
+  for (const chain of chains) {
+    const cn = getProvenanceCutNumber(chain);
+    if (cn != null) {
+      const arr = targetMap.get(cn) || [];
+      arr.push(chain.videoNode.id);
+      targetMap.set(cn, arr);
+    }
+  }
+  const conflictedCutNumbers: number[] = [];
+  const conflictedChainNodeIds: string[] = [];
+  for (const [cn, nodeIds] of targetMap) {
+    if (nodeIds.length > 1) {
+      conflictedCutNumbers.push(cn);
+      conflictedChainNodeIds.push(...nodeIds);
+    }
+  }
+  if (conflictedCutNumbers.length > 0) {
+    return {
+      success: false,
+      reason: `Cut ${conflictedCutNumbers.join(", ")}번에 ${conflictedChainNodeIds.length}개 체인이 동시에 대응합니다. 같은 cut을 가리키는 중복 체인을 제거하세요.`,
+      conflictedCutNumbers,
+      conflictedChainNodeIds,
+    };
   }
 
   // cutNumber로 기존 cut을 인덱싱
