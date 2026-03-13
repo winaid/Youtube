@@ -916,3 +916,119 @@ describe("polling policy equivalence — hook and node use identical parameters"
     expect(body.cutNumber).toBe(3);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Hook post-processing extraction verification
+// ═══════════════════════════════════════════════════════════════════
+
+describe("hook post-processing extraction — polling loop simplified", () => {
+  it("hook has handlePollCompleted extracted function", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // handlePollCompleted must exist as a function
+    expect(hookSource).toContain("handlePollCompleted");
+    // handlePollFailed must exist as a function
+    expect(hookSource).toContain("handlePollFailed");
+  });
+
+  it("polling loop COMPLETED branch delegates to handlePollCompleted", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // The COMPLETED branch should call handlePollCompleted, not inline the logic
+    // Find the COMPLETED block and check it's a short delegation
+    const completedMatch = hookSource.match(
+      /if \(data\.status === "COMPLETED"\) \{[\s\S]*?return;.*?\/\/ 완료/
+    );
+    expect(completedMatch).not.toBeNull();
+    // The matched block should be short (delegation only, not 300+ lines of inline code)
+    const completedBlock = completedMatch![0];
+    const lineCount = completedBlock.split("\n").length;
+    // Should be under 20 lines (it was 300+ before extraction)
+    expect(lineCount).toBeLessThan(20);
+    expect(completedBlock).toContain("handlePollCompleted");
+  });
+
+  it("polling loop FAILED branch delegates to handlePollFailed", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    const failedMatch = hookSource.match(
+      /if \(data\.status === "FAILED"\) \{[\s\S]*?return;.*?\/\/ 실패/
+    );
+    expect(failedMatch).not.toBeNull();
+    const failedBlock = failedMatch![0];
+    const lineCount = failedBlock.split("\n").length;
+    expect(lineCount).toBeLessThan(10);
+    expect(failedBlock).toContain("handlePollFailed");
+  });
+
+  it("handlePollCompleted receives NormalizedVideoResult-compatible shape", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // handlePollCompleted's parameter type should include key NormalizedVideoResult fields
+    const fnDef = hookSource.match(
+      /const handlePollCompleted = async \(\s*pollData: \{[\s\S]*?\},/
+    );
+    expect(fnDef).not.toBeNull();
+    const paramBlock = fnDef![0];
+    expect(paramBlock).toContain("videoUri");
+    expect(paramBlock).toContain("rawVideoUri");
+    expect(paramBlock).toContain("canonicalVideoUri");
+    expect(paramBlock).toContain("needsUpload");
+    expect(paramBlock).toContain("seed");
+    expect(paramBlock).toContain("variants");
+    expect(paramBlock).toContain("_diag");
+  });
+
+  it("NormalizedVideoResult from pollVideoTask is compatible with handlePollCompleted input", async () => {
+    // Simulate a pollVideoTask result and verify it has all fields handlePollCompleted expects
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.com/compat.mp4",
+        rawVideoUri: "https://cdn.kling.com/raw.mp4",
+        canonicalVideoUri: "https://cdn.kling.com/compat.mp4",
+        needsUpload: false,
+        seed: "42",
+        variants: [{ videoUri: "https://cdn.kling.com/compat.mp4" }],
+        _diag: { test: true },
+      }),
+    });
+
+    const promise = pollVideoTask("compat-task", { maxAttempts: 2, fixedIntervalMs: 100 });
+    await vi.advanceTimersByTimeAsync(200);
+    const result = await promise;
+
+    // These are the exact fields handlePollCompleted expects
+    expect(result).toHaveProperty("videoUri");
+    expect(result).toHaveProperty("rawVideoUri");
+    expect(result).toHaveProperty("canonicalVideoUri");
+    expect(result).toHaveProperty("needsUpload");
+    expect(result).toHaveProperty("seed");
+    expect(result).toHaveProperty("variants");
+    expect(result).toHaveProperty("_diag");
+
+    // Shape is directly passable to handlePollCompleted
+    // (in a future refactor, the hook can do:
+    //   const result = await pollVideoTask(taskId, opts);
+    //   if (result.status === "completed") await handlePollCompleted(result, meta);
+    // )
+    expect(result.status).toBe("completed");
+  });
+});

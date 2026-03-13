@@ -401,6 +401,386 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
     updateClip(cutNumber, { status: "polling" });
 
+    // ══════════════════════════════════════════════════════════════════
+    // handlePollCompleted — COMPLETED 후처리 (upload/variant/frame/quality/record)
+    // polling loop에서 분리하여 pollVideoTask() 결과와 동일한 shape로 호출 가능
+    // ══════════════════════════════════════════════════════════════════
+    const handlePollCompleted = async (
+      pollData: {
+        videoUri?: string;
+        rawVideoUri?: string;
+        canonicalVideoUri?: string | null;
+        needsUpload?: boolean;
+        seed?: string;
+        variants?: VideoVariant[];
+        _diag?: Record<string, unknown>;
+      },
+      pollMeta: { pollCount: number; tPollStart: number },
+    ): Promise<void> => {
+      const finalUri = pollData.variants?.[0]?.videoUri || pollData.videoUri;
+      if (!finalUri) {
+        updateClip(cutNumber, { status: "failed", error: "영상 생성 완료되었으나 비디오 URL이 없습니다" });
+        return;
+      }
+
+      // ── Scene Extension 진단 ──
+      const diag = pollData._diag as {
+        sceneExtensionReady?: boolean;
+        primaryUriType?: string;
+        extractedKinds?: string[];
+      } | undefined;
+
+      if (diag && !diag.sceneExtensionReady) {
+        console.warn(`[CUT ${cutNumber}] ⚠️ Scene Extension 불가 (서버 진단)`, {
+          primaryUriType: diag.primaryUriType,
+          extractedKinds: diag.extractedKinds,
+          rawVideoUri: pollData.rawVideoUri ? `${pollData.rawVideoUri.slice(0, 60)}…` : "(empty)",
+          hint: "다음 컷은 IMAGE_TO_VIDEO 또는 TEXT_TO_VIDEO로 생성됩니다.",
+        });
+      }
+
+      // ── clipUpdate 구성 ──
+      const clipUpdate: Partial<VideoClip> = {
+        status: "completed",
+        videoUri: pollData.videoUri,
+        rawVideoUri: pollData.rawVideoUri,
+        seed: pollData.seed || undefined,
+        completedAt: Date.now(),
+      };
+
+      // ── Variant 병합 ──
+      if (pollData.variants && pollData.variants.length > 0) {
+        const newVariants = pollData.variants as VideoVariant[];
+        const merged = variantsToPreserve ? [...variantsToPreserve, ...newVariants] : newVariants;
+        const selectedIdx = variantsToPreserve ? merged.length - 1 : 0;
+        clipUpdate.variants = merged;
+        clipUpdate.selectedVariant = selectedIdx;
+
+        const variantWithUri = newVariants.find(v =>
+          v.rawVideoUri && (v.rawVideoUri.startsWith("gs://") || v.rawVideoUri.startsWith("https://"))
+        );
+        const bestVariant = variantWithUri || newVariants[0];
+        clipUpdate.videoUri = bestVariant.videoUri;
+        clipUpdate.rawVideoUri = bestVariant.rawVideoUri;
+        clipUpdate.seed = bestVariant.seed;
+
+        if (variantWithUri && variantWithUri !== newVariants[0]) {
+          console.log(`[CUT ${cutNumber}] URI가 있는 variant 선택 (Scene Extension 우선):`, {
+            selectedUri: variantWithUri.rawVideoUri?.slice(0, 60),
+          });
+        }
+      } else if (variantsToPreserve && clipUpdate.videoUri) {
+        const newVariant: VideoVariant = { videoUri: clipUpdate.videoUri, rawVideoUri: clipUpdate.rawVideoUri, seed: clipUpdate.seed };
+        clipUpdate.variants = [...variantsToPreserve, newVariant];
+        clipUpdate.selectedVariant = clipUpdate.variants.length - 1;
+      }
+
+      // ── Upload workflow ──
+      if (pollData.canonicalVideoUri) {
+        clipUpdate.canonicalVideoUri = pollData.canonicalVideoUri;
+        clipUpdate.uploadStatus = "skipped";
+        clipUpdate.sceneExtensionEligible = true;
+        console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (서버 제공):`, pollData.canonicalVideoUri.slice(0, 80));
+      } else if (pollData.needsUpload && clipUpdate.videoUri) {
+        clipUpdate.uploadStatus = "pending";
+        console.log(`[CUT ${cutNumber}] 📤 UPLOAD_PENDING → /api/upload-video 호출`);
+        try {
+          const videoDataUri = clipUpdate.videoUri;
+          let base64Data = "";
+          if (videoDataUri.startsWith("data:")) {
+            base64Data = videoDataUri.replace(/^data:[^;]+;base64,/, "");
+          } else if (videoDataUri.startsWith("/api/proxy-video")) {
+            clipUpdate.uploadStatus = "skipped";
+            clipUpdate.sceneExtensionEligible = false;
+            console.warn(`[CUT ${cutNumber}] videoUri가 프록시 URL — 업로드 스킵 (Scene Extension 불가)`);
+          }
+
+          if (base64Data.length > 1000) {
+            const uploadRes = await fetch("/api/upload-video", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                base64Data,
+                mimeType: "video/mp4",
+                cutNumber,
+                sessionId: operationName.split("/").slice(-1)[0] || "default",
+              }),
+            });
+
+            if (uploadRes.ok) {
+              const uploadData = await uploadRes.json() as {
+                canonicalVideoUri?: string;
+                proxyUri?: string;
+                storage?: string;
+                key?: string;
+                diag?: Record<string, unknown>;
+              };
+              if (uploadData.canonicalVideoUri) {
+                clipUpdate.canonicalVideoUri = uploadData.canonicalVideoUri;
+                clipUpdate.uploadStatus = "success";
+                clipUpdate.uploadStorage = uploadData.storage as "r2" | "gcs" | undefined;
+                clipUpdate.sceneExtensionEligible = true;
+                console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (업로드):`, {
+                  uri: uploadData.canonicalVideoUri.slice(0, 80),
+                  storage: uploadData.storage,
+                });
+              } else if (uploadData.proxyUri) {
+                const isAbsolute = uploadData.proxyUri.startsWith("https://");
+                clipUpdate.uploadStatus = "success";
+                clipUpdate.uploadStorage = "r2";
+                if (isAbsolute) {
+                  clipUpdate.canonicalVideoUri = uploadData.proxyUri;
+                  clipUpdate.sceneExtensionEligible = true;
+                  console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2 proxy → canonical):`, uploadData.proxyUri.slice(0, 80));
+                } else {
+                  clipUpdate.sceneExtensionEligible = false;
+                  console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2, relative proxy) — Scene Extension 불가`);
+                }
+              }
+            } else {
+              const errText = await uploadRes.text().catch(() => "");
+              clipUpdate.uploadStatus = "failed";
+              clipUpdate.uploadError = `HTTP ${uploadRes.status}: ${errText.slice(0, 200)}`;
+              clipUpdate.sceneExtensionEligible = false;
+              console.warn(`[CUT ${cutNumber}] ❌ UPLOAD_FAILED (${uploadRes.status}):`, errText.slice(0, 200));
+            }
+          }
+        } catch (uploadErr) {
+          clipUpdate.uploadStatus = "failed";
+          clipUpdate.uploadError = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+          clipUpdate.sceneExtensionEligible = false;
+          console.warn(`[CUT ${cutNumber}] ❌ UPLOAD_FAILED (exception):`, clipUpdate.uploadError);
+        }
+      } else {
+        clipUpdate.uploadStatus = "none";
+        clipUpdate.sceneExtensionEligible = !!clipUpdate.canonicalVideoUri;
+      }
+
+      updateClip(cutNumber, clipUpdate);
+
+      // ── 타이밍 ──
+      const tPollEnd = performance.now();
+      const pollTotalMs = Math.round(tPollEnd - pollMeta.tPollStart);
+      console.log(`[CUT ${cutNumber}] ⏱ polling`, {
+        pollCount: pollMeta.pollCount,
+        pollTotalMs,
+        avgPollMs: pollMeta.pollCount > 0 ? Math.round(pollTotalMs / pollMeta.pollCount) : 0,
+      });
+
+      // ── 완료 후 진단 로그 ──
+      {
+        const curi = clipUpdate.canonicalVideoUri ?? "";
+        const ruri = clipUpdate.rawVideoUri ?? "";
+        const effectiveUri = curi || ruri;
+        const ruriType = curi.startsWith("gs://") ? "CANONICAL_GCS ✓"
+          : curi.startsWith("https://") ? "CANONICAL_HTTPS ✓"
+          : ruri.startsWith("gs://") ? "GCS ✓"
+          : ruri.startsWith("https://") ? "HTTPS ✓"
+          : ruri === "" ? "EMPTY(base64) ✗"
+          : "DATA_URI ✗";
+        const willExtend = effectiveUri.length > 0 && !effectiveUri.startsWith("data:");
+        const hasLastFrame = !!clipUpdate.videoUri;
+        const continuityScore = willExtend ? 100 : hasLastFrame ? 60 : 0;
+        console.log(`[CUT ${cutNumber}] COMPLETED`, {
+          sourceCutId: cutNumber,
+          parentCutId: cutNumber - 1,
+          canonicalVideoUri: curi ? `${curi.slice(0, 80)}…` : "(없음)",
+          rawVideoUri: ruri ? `${ruri.slice(0, 80)}…` : "(empty)",
+          effectiveUriType: ruriType,
+          uploadStatus: clipUpdate.uploadStatus || "unknown",
+          uploadStorage: clipUpdate.uploadStorage || "(N/A)",
+          uploadError: clipUpdate.uploadError || "(없음)",
+          sceneExtensionEligible: clipUpdate.sceneExtensionEligible ?? false,
+          nextCutWillExtend: willExtend ? "✓ Scene Extension 가능" : "✗ Scene Extension 불가 → image/text fallback",
+          nextCutContinuityScore: continuityScore,
+          nextCutFallback: willExtend ? "SCENE_EXTENSION" : hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame)" : "TEXT_TO_VIDEO (연속성 없음)",
+          seed: clipUpdate.seed,
+        });
+        if (!willExtend) {
+          console.warn(
+            `[CUT ${cutNumber}] ⚠️ Scene Extension용 URI 없음 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
+            {
+              canonicalVideoUri: curi || "(없음)",
+              rawVideoUri: `"${ruri.slice(0, 60)}"`,
+              fallback: hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame 사용)" : "TEXT_TO_VIDEO (연속성 완전 손실)",
+              continuityScore,
+              possibleFix: "R2 (VIDEO_BUCKET 바인딩) 또는 VIDEO_BUCKET(R2) 설정으로 업로드 가능",
+            }
+          );
+        }
+      }
+
+      // ── 영상 기록 저장 (localStorage) ──
+      try {
+        const proxyUri = clipUpdate.videoUri || "";
+        const gcsUri = clipUpdate.canonicalVideoUri || clipUpdate.rawVideoUri || "";
+        if (!proxyUri) {
+          console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 건너뜀: proxyUri 없음`);
+        } else {
+          const cut = cuts.find((c) => c.cutNumber === cutNumber);
+          const clipForRecord = state.clips.find(c => c.cutNumber === cutNumber);
+          const saved = saveVideoRecord({
+            operationName,
+            engine,
+            gcsUri,
+            proxyUri,
+            prompt: cut?.videoPrompt?.slice(0, 500) || "",
+            mode: isExtend ? "extend" : "generate",
+            durationSec: cut?.durationSec && cut.durationSec > 0 ? cut.durationSec : DURATION_FALLBACK,
+            cutNumber,
+            sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
+            seed: clipUpdate.seed,
+            status: "completed",
+            structuredSequence: clipForRecord?.structuredSequence as unknown as Record<string, unknown> | undefined,
+          });
+          console.log(`[CUT ${cutNumber}] ✅ 영상 기록 저장됨 (id: ${saved.id})`);
+        }
+      } catch (err) {
+        console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 실패:`, err);
+      }
+
+      if (pollData.seed && onSeedDetected) {
+        onSeedDetected(cutNumber, pollData.seed);
+      }
+
+      // ── 마지막 프레임 캡처 + 품질 검증 ──
+      if (clipUpdate.videoUri) {
+        try {
+          const lastFrame = await captureVideoLastFrame(clipUpdate.videoUri);
+          if (lastFrame) {
+            updateClip(cutNumber, { lastFrameBase64: lastFrame });
+            console.log(`[CUT ${cutNumber}] lastFrame 저장 완료 — 다음 컷 continuity 준비됨`);
+
+            const cut = cuts.find((c) => c.cutNumber === cutNumber);
+            fetch("/api/verify-video-quality", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                frameBase64: lastFrame,
+                videoPrompt: cut?.videoPrompt || "",
+                sceneDescription: cut?.sceneDescription || "",
+                cutNumber,
+              }),
+            }).then(async (qRes) => {
+              if (qRes.ok) {
+                const quality = await qRes.json();
+                if (quality.overallScore !== undefined) {
+                  const rawScores = {
+                    promptMatch: quality.scores?.promptMatch ?? 0,
+                    visualQuality: quality.scores?.visualQuality ?? 0,
+                    faceQuality: quality.scores?.faceQuality ?? 0,
+                    motionCoherence: quality.scores?.motionCoherence ?? 0,
+                    styleConsistency: quality.scores?.styleConsistency ?? 0,
+                    composition: quality.scores?.composition ?? 0,
+                  };
+
+                  console.log(`[CUT ${cutNumber}] 🎯 QUALITY BREAKDOWN`, {
+                    overall: quality.overallScore,
+                    promptMatch: `${rawScores.promptMatch}/10`,
+                    visualQuality: `${rawScores.visualQuality}/10`,
+                    faceQuality: `${rawScores.faceQuality}/10`,
+                    motionCoherence: `${rawScores.motionCoherence}/10`,
+                    styleConsistency: `${rawScores.styleConsistency}/10`,
+                    composition: `${rawScores.composition}/10`,
+                    issues: quality.issues || [],
+                    suggestion: quality.suggestion || "(없음)",
+                  });
+
+                  updateClip(cutNumber, {
+                    verification: {
+                      overallScore: quality.overallScore,
+                      scores: {
+                        characterDescription: rawScores.promptMatch,
+                        cameraMovement: rawScores.composition,
+                        actionSequence: rawScores.motionCoherence,
+                        lightingMood: rawScores.styleConsistency,
+                        veoCompatibility: rawScores.visualQuality,
+                      },
+                      rawScores,
+                      issues: quality.issues || [],
+                      suggestions: quality.suggestion ? [quality.suggestion] : [],
+                    },
+                  });
+                }
+              }
+            }).catch(() => {});
+          }
+        } catch {
+          // Quality verification is optional, don't block
+        }
+      }
+
+      // ── 타이밍: 후처리 완료 ──
+      const tPostEnd = performance.now();
+      const postProcessMs = Math.round(tPostEnd - tPollEnd);
+      console.log(`[CUT ${cutNumber}] ⏱ postProcess`, { postProcessMs });
+      console.log(`[CUT ${cutNumber}] ⏱ TOTAL (polling loop)`, {
+        pollTotalMs,
+        postProcessMs,
+        totalMs: Math.round(tPostEnd - pollMeta.tPollStart),
+        pollCount: pollMeta.pollCount,
+      });
+
+      // ── 자동 모드 완료 체크 ──
+      if (autoModeRef.current) {
+        setState((prev) => {
+          const allDone = prev.clips.every(
+            (c) => c.status === "completed" || c.status === "failed"
+          );
+          if (allDone) {
+            autoModeRef.current = false;
+            return { ...prev, isAutoMode: false, currentAutoIndex: -1 };
+          }
+          return prev;
+        });
+      }
+    };
+
+    // ══════════════════════════════════════════════════════════════════
+    // handlePollFailed — FAILED 후처리 (auto-retry 포함)
+    // ══════════════════════════════════════════════════════════════════
+    const handlePollFailed = (
+      failData: { error?: string; noRetry?: boolean },
+      attempt: number,
+    ): void => {
+      console.error(`[CUT ${cutNumber}] 생성 실패:`, failData.error || "unknown error", { noRetry: failData.noRetry, attempt });
+      setState((prev) => {
+        const clip = prev.clips.find((c) => c.cutNumber === cutNumber);
+        const retryCount = clip?.retryCount || 0;
+        const cfg = prev.config;
+
+        if (!failData.noRetry && cfg.autoRetryOnFailure && retryCount < cfg.maxRetryCount) {
+          console.warn(`[CUT ${cutNumber}] 자동 재시도 ${retryCount + 1}/${cfg.maxRetryCount}`);
+          return {
+            ...prev,
+            clips: prev.clips.map((c) =>
+              c.cutNumber === cutNumber
+                ? { ...c, status: "idle" as VideoGenStatus, retryCount: retryCount + 1, error: `재시도 ${retryCount + 1}/${cfg.maxRetryCount}...` }
+                : c
+            ),
+          };
+        }
+
+        const newClips = prev.clips.map((c) =>
+          c.cutNumber === cutNumber
+            ? { ...c, status: "failed" as VideoGenStatus, error: failData.error || "생성 실패" }
+            : c
+        );
+
+        const allDone = newClips.every(
+          (c) => c.status === "completed" || c.status === "failed"
+        );
+        if (allDone && autoModeRef.current) {
+          autoModeRef.current = false;
+          return { ...prev, clips: newClips, isAutoMode: false, currentAutoIndex: -1 };
+        }
+        return { ...prev, clips: newClips };
+      });
+    };
+
+    // ══════════════════════════════════════════════════════════════════
+    // Polling loop — 순수하게 completion 감지에 집중, 후처리는 위 함수 호출
+    // ══════════════════════════════════════════════════════════════════
     let consecutiveErrors = 0;
     const tPollStart = performance.now();
     let pollCount = 0;
@@ -507,380 +887,23 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         }
 
         if (data.status === "COMPLETED") {
-          const finalUri = data.variants?.[0]?.videoUri || data.videoUri;
-          if (!finalUri) {
-            updateClip(cutNumber, { status: "failed", error: "영상 생성 완료되었으나 비디오 URL이 없습니다" });
-            return;
-          }
-
-          // ── Scene Extension 진단: check-video 응답의 _diag 확인 ──────────
-          const diag = (data as Record<string, unknown>)._diag as {
-            sceneExtensionReady?: boolean;
-            primaryUriType?: string;
-            extractedKinds?: string[];
-          } | undefined;
-
-          if (diag && !diag.sceneExtensionReady) {
-            console.warn(`[CUT ${cutNumber}] ⚠️ Scene Extension 불가 (서버 진단)`, {
-              primaryUriType: diag.primaryUriType,
-              extractedKinds: diag.extractedKinds,
-              rawVideoUri: data.rawVideoUri ? `${data.rawVideoUri.slice(0, 60)}…` : "(empty)",
-              hint: "다음 컷은 IMAGE_TO_VIDEO 또는 TEXT_TO_VIDEO로 생성됩니다.",
-            });
-          }
-
-          const clipUpdate: Partial<VideoClip> = {
-            status: "completed",
-            videoUri: data.videoUri,
-            rawVideoUri: data.rawVideoUri,
-            seed: data.seed || undefined,
-            completedAt: Date.now(),
-          };
-
-          if (data.variants && data.variants.length > 0) {
-            // 컷 추가 생성 모드: 기존 variants에 새 컷 append
-            const newVariants = data.variants as VideoVariant[];
-            const merged = variantsToPreserve ? [...variantsToPreserve, ...newVariants] : newVariants;
-            const selectedIdx = variantsToPreserve ? merged.length - 1 : 0; // 새 컷 선택
-            clipUpdate.variants = merged;
-            clipUpdate.selectedVariant = selectedIdx;
-
-            // URI가 있는 variant를 우선 선택 (Scene Extension을 위해)
-            const variantWithUri = newVariants.find(v =>
-              v.rawVideoUri && (v.rawVideoUri.startsWith("gs://") || v.rawVideoUri.startsWith("https://"))
-            );
-            const bestVariant = variantWithUri || newVariants[0];
-            clipUpdate.videoUri = bestVariant.videoUri;
-            clipUpdate.rawVideoUri = bestVariant.rawVideoUri;
-            clipUpdate.seed = bestVariant.seed;
-
-            if (variantWithUri && variantWithUri !== newVariants[0]) {
-              console.log(`[CUT ${cutNumber}] URI가 있는 variant 선택 (Scene Extension 우선):`, {
-                selectedUri: variantWithUri.rawVideoUri?.slice(0, 60),
-              });
-            }
-          } else if (variantsToPreserve && clipUpdate.videoUri) {
-            // 단일 결과 + 컷 추가 모드: 기존 + 새 컷 합치기
-            const newVariant: VideoVariant = { videoUri: clipUpdate.videoUri, rawVideoUri: clipUpdate.rawVideoUri, seed: clipUpdate.seed };
-            clipUpdate.variants = [...variantsToPreserve, newVariant];
-            clipUpdate.selectedVariant = clipUpdate.variants.length - 1;
-          }
-
-          // ── canonicalVideoUri: 서버 제공 또는 업로드 후 획득 ──────────────
-          if (data.canonicalVideoUri) {
-            // 서버(check-video)가 직접 GCS/HTTPS URI를 반환한 경우
-            clipUpdate.canonicalVideoUri = data.canonicalVideoUri;
-            clipUpdate.uploadStatus = "skipped";
-            clipUpdate.sceneExtensionEligible = true;
-            console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (서버 제공):`, data.canonicalVideoUri.slice(0, 80));
-          } else if (data.needsUpload && clipUpdate.videoUri) {
-            // base64만 있고 canonical URI 없음 → R2/GCS 업로드 시도
-            clipUpdate.uploadStatus = "pending";
-            console.log(`[CUT ${cutNumber}] 📤 UPLOAD_PENDING → /api/upload-video 호출`);
-            try {
-              // videoUri가 data: URI(base64 인라인)인 경우 base64 데이터 추출
-              const videoDataUri = clipUpdate.videoUri;
-              let base64Data = "";
-              if (videoDataUri.startsWith("data:")) {
-                base64Data = videoDataUri.replace(/^data:[^;]+;base64,/, "");
-              } else if (videoDataUri.startsWith("/api/proxy-video")) {
-                // 프록시 URL인 경우 base64 추출 불가 → 업로드 스킵
-                clipUpdate.uploadStatus = "skipped";
-                clipUpdate.sceneExtensionEligible = false;
-                console.warn(`[CUT ${cutNumber}] videoUri가 프록시 URL — 업로드 스킵 (Scene Extension 불가)`);
-              }
-
-              if (base64Data.length > 1000) {
-                const uploadRes = await fetch("/api/upload-video", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    base64Data,
-                    mimeType: "video/mp4",
-                    cutNumber,
-                    sessionId: operationName.split("/").slice(-1)[0] || "default",
-                  }),
-                });
-
-                if (uploadRes.ok) {
-                  const uploadData = await uploadRes.json() as {
-                    canonicalVideoUri?: string;
-                    proxyUri?: string;
-                    storage?: string;
-                    key?: string;
-                    diag?: Record<string, unknown>;
-                  };
-                  if (uploadData.canonicalVideoUri) {
-                    clipUpdate.canonicalVideoUri = uploadData.canonicalVideoUri;
-                    clipUpdate.uploadStatus = "success";
-                    clipUpdate.uploadStorage = uploadData.storage as "r2" | "gcs" | undefined;
-                    clipUpdate.sceneExtensionEligible = true;
-                    console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (업로드):`, {
-                      uri: uploadData.canonicalVideoUri.slice(0, 80),
-                      storage: uploadData.storage,
-                    });
-                  } else if (uploadData.proxyUri) {
-                    // R2 업로드 성공했지만 canonicalVideoUri 없는 레거시 경우 (새 서버는 항상 canonical 반환)
-                    // proxyUri를 canonical로 승격 (절대 URL이면 Scene Extension 가능)
-                    const isAbsolute = uploadData.proxyUri.startsWith("https://");
-                    clipUpdate.uploadStatus = "success";
-                    clipUpdate.uploadStorage = "r2";
-                    if (isAbsolute) {
-                      clipUpdate.canonicalVideoUri = uploadData.proxyUri;
-                      clipUpdate.sceneExtensionEligible = true;
-                      console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2 proxy → canonical):`, uploadData.proxyUri.slice(0, 80));
-                    } else {
-                      clipUpdate.sceneExtensionEligible = false;
-                      console.log(`[CUT ${cutNumber}] 📦 ASSET_STORED (R2, relative proxy) — Scene Extension 불가`);
-                    }
-                  }
-                } else {
-                  const errText = await uploadRes.text().catch(() => "");
-                  clipUpdate.uploadStatus = "failed";
-                  clipUpdate.uploadError = `HTTP ${uploadRes.status}: ${errText.slice(0, 200)}`;
-                  clipUpdate.sceneExtensionEligible = false;
-                  console.warn(`[CUT ${cutNumber}] ❌ UPLOAD_FAILED (${uploadRes.status}):`, errText.slice(0, 200));
-                }
-              }
-            } catch (uploadErr) {
-              // 업로드 실패는 생성 성공에 영향 없음 — Scene Extension만 불가
-              clipUpdate.uploadStatus = "failed";
-              clipUpdate.uploadError = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
-              clipUpdate.sceneExtensionEligible = false;
-              console.warn(`[CUT ${cutNumber}] ❌ UPLOAD_FAILED (exception):`, clipUpdate.uploadError);
-            }
-          } else {
-            // 업로드 불필요 (이미 canonical URI 있거나 videoUri 없음)
-            clipUpdate.uploadStatus = "none";
-            clipUpdate.sceneExtensionEligible = !!clipUpdate.canonicalVideoUri;
-          }
-
-          updateClip(cutNumber, clipUpdate);
-
-          // ── 타이밍: 폴링 완료 ──────────────────────────────────────────────────
-          const tPollEnd = performance.now();
-          const pollTotalMs = Math.round(tPollEnd - tPollStart);
-          console.log(`[CUT ${cutNumber}] ⏱ polling`, {
-            pollCount,
-            pollTotalMs,
-            avgPollMs: pollCount > 0 ? Math.round(pollTotalMs / pollCount) : 0,
-          });
-
-          // ── 완료 후 진단 로그 ───────────────────────────────────────────────
-          {
-            const curi = clipUpdate.canonicalVideoUri ?? "";
-            const ruri = clipUpdate.rawVideoUri ?? "";
-            const effectiveUri = curi || ruri;
-            const ruriType = curi.startsWith("gs://") ? "CANONICAL_GCS ✓"
-              : curi.startsWith("https://") ? "CANONICAL_HTTPS ✓"
-              : ruri.startsWith("gs://") ? "GCS ✓"
-              : ruri.startsWith("https://") ? "HTTPS ✓"
-              : ruri === "" ? "EMPTY(base64) ✗"
-              : "DATA_URI ✗";
-            const willExtend = effectiveUri.length > 0 && !effectiveUri.startsWith("data:");
-            const hasLastFrame = !!clipUpdate.videoUri;
-            const continuityScore = willExtend ? 100 : hasLastFrame ? 60 : 0;
-            console.log(`[CUT ${cutNumber}] COMPLETED`, {
-              sourceCutId: cutNumber,
-              parentCutId: cutNumber - 1,
-              canonicalVideoUri: curi ? `${curi.slice(0, 80)}…` : "(없음)",
-              rawVideoUri: ruri ? `${ruri.slice(0, 80)}…` : "(empty)",
-              effectiveUriType: ruriType,
-              uploadStatus: clipUpdate.uploadStatus || "unknown",
-              uploadStorage: clipUpdate.uploadStorage || "(N/A)",
-              uploadError: clipUpdate.uploadError || "(없음)",
-              sceneExtensionEligible: clipUpdate.sceneExtensionEligible ?? false,
-              nextCutWillExtend: willExtend ? "✓ Scene Extension 가능" : "✗ Scene Extension 불가 → image/text fallback",
-              nextCutContinuityScore: continuityScore,
-              nextCutFallback: willExtend ? "SCENE_EXTENSION" : hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame)" : "TEXT_TO_VIDEO (연속성 없음)",
-              seed: clipUpdate.seed,
-            });
-            if (!willExtend) {
-              console.warn(
-                `[CUT ${cutNumber}] ⚠️ Scene Extension용 URI 없음 → CUT ${cutNumber + 1}은 SCENE_EXTENSION 없이 생성됨.`,
-                {
-                  canonicalVideoUri: curi || "(없음)",
-                  rawVideoUri: `"${ruri.slice(0, 60)}"`,
-                  fallback: hasLastFrame ? "IMAGE_TO_VIDEO (lastFrame 사용)" : "TEXT_TO_VIDEO (연속성 완전 손실)",
-                  continuityScore,
-                  possibleFix: "R2 (VIDEO_BUCKET 바인딩) 또는 VIDEO_BUCKET(R2) 설정으로 업로드 가능",
-                }
-              );
-            }
-          }
-
-          // ── 영상 기록 저장 (localStorage) ────────────────────────────────────
-          try {
-            const proxyUri = clipUpdate.videoUri || "";
-            const gcsUri = clipUpdate.canonicalVideoUri || clipUpdate.rawVideoUri || "";
-            if (!proxyUri) {
-              console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 건너뜀: proxyUri 없음`, {
-                canonicalVideoUri: clipUpdate.canonicalVideoUri || "(없음)",
-                rawVideoUri: clipUpdate.rawVideoUri || "(없음)",
-                videoUri: clipUpdate.videoUri || "(없음)",
-              });
-            } else {
-              const cut = cuts.find((c) => c.cutNumber === cutNumber);
-              // structuredSequence를 1급 저장 대상으로 포함
-              const clipForRecord = state.clips.find(c => c.cutNumber === cutNumber);
-              const saved = saveVideoRecord({
-                operationName,
-                engine,
-                gcsUri,
-                proxyUri,
-                // prompt는 legacy 호환용 fallback일 뿐. source of truth는 structuredSequence.
-                prompt: cut?.videoPrompt?.slice(0, 500) || "",
-                mode: isExtend ? "extend" : "generate",
-                durationSec: cut?.durationSec && cut.durationSec > 0 ? cut.durationSec : DURATION_FALLBACK,
-                cutNumber,
-                sourceCutId: isExtend && cutNumber > 1 ? cutNumber - 1 : undefined,
-                seed: clipUpdate.seed,
-                status: "completed",
-                structuredSequence: clipForRecord?.structuredSequence as unknown as Record<string, unknown> | undefined,
-              });
-              console.log(`[CUT ${cutNumber}] ✅ 영상 기록 저장됨 (id: ${saved.id})`);
-            }
-          } catch (err) {
-            console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 실패:`, err);
-          }
-
-          if (data.seed && onSeedDetected) {
-            onSeedDetected(cutNumber, data.seed);
-          }
-
-          // 마지막 프레임 캡처 — (a) 다음 컷 continuity 저장, (b) 품질 검증
-          if (clipUpdate.videoUri) {
-            try {
-              const lastFrame = await captureVideoLastFrame(clipUpdate.videoUri);
-              if (lastFrame) {
-                // (a) 다음 컷 Scene Extension / image-to-video fallback용으로 저장
-                updateClip(cutNumber, { lastFrameBase64: lastFrame });
-                console.log(`[CUT ${cutNumber}] lastFrame 저장 완료 — 다음 컷 continuity 준비됨`);
-
-                // (b) 품질 검증 (fire-and-forget, 선택적)
-                const cut = cuts.find((c) => c.cutNumber === cutNumber);
-                fetch("/api/verify-video-quality", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    frameBase64: lastFrame,
-                    videoPrompt: cut?.videoPrompt || "",
-                    sceneDescription: cut?.sceneDescription || "",
-                    cutNumber,
-                  }),
-                }).then(async (qRes) => {
-                  if (qRes.ok) {
-                    const quality = await qRes.json();
-                    if (quality.overallScore !== undefined) {
-                      const rawScores = {
-                        promptMatch: quality.scores?.promptMatch ?? 0,
-                        visualQuality: quality.scores?.visualQuality ?? 0,
-                        faceQuality: quality.scores?.faceQuality ?? 0,
-                        motionCoherence: quality.scores?.motionCoherence ?? 0,
-                        styleConsistency: quality.scores?.styleConsistency ?? 0,
-                        composition: quality.scores?.composition ?? 0,
-                      };
-
-                      // 세부 점수 디버그 로그
-                      console.log(`[CUT ${cutNumber}] 🎯 QUALITY BREAKDOWN`, {
-                        overall: quality.overallScore,
-                        promptMatch: `${rawScores.promptMatch}/10`,
-                        visualQuality: `${rawScores.visualQuality}/10`,
-                        faceQuality: `${rawScores.faceQuality}/10`,
-                        motionCoherence: `${rawScores.motionCoherence}/10`,
-                        styleConsistency: `${rawScores.styleConsistency}/10`,
-                        composition: `${rawScores.composition}/10`,
-                        issues: quality.issues || [],
-                        suggestion: quality.suggestion || "(없음)",
-                      });
-
-                      updateClip(cutNumber, {
-                        verification: {
-                          overallScore: quality.overallScore,
-                          scores: {
-                            characterDescription: rawScores.promptMatch,
-                            cameraMovement: rawScores.composition,
-                            actionSequence: rawScores.motionCoherence,
-                            lightingMood: rawScores.styleConsistency,
-                            veoCompatibility: rawScores.visualQuality,
-                          },
-                          rawScores,
-                          issues: quality.issues || [],
-                          suggestions: quality.suggestion ? [quality.suggestion] : [],
-                        },
-                      });
-                    }
-                  }
-                }).catch(() => {});
-              }
-            } catch {
-              // Quality verification is optional, don't block
-            }
-          }
-
-          // ── 타이밍: 후처리 완료 ────────────────────────────────────────────────
-          const tPostEnd = performance.now();
-          const postProcessMs = Math.round(tPostEnd - tPollEnd);
-          console.log(`[CUT ${cutNumber}] ⏱ postProcess`, { postProcessMs });
-          console.log(`[CUT ${cutNumber}] ⏱ TOTAL (polling loop)`, {
-            pollTotalMs,
-            postProcessMs,
-            totalMs: Math.round(tPostEnd - tPollStart),
-            pollCount,
-          });
-
-          // 자동 모드: 완료 여부만 체크, 다음 컷 트리거는 autoMode useEffect가 담당
-          if (autoModeRef.current) {
-            setState((prev) => {
-              const allDone = prev.clips.every(
-                (c) => c.status === "completed" || c.status === "failed"
-              );
-              if (allDone) {
-                autoModeRef.current = false;
-                return { ...prev, isAutoMode: false, currentAutoIndex: -1 };
-              }
-              return prev;
-            });
-          }
+          await handlePollCompleted(
+            {
+              videoUri: data.videoUri,
+              rawVideoUri: data.rawVideoUri,
+              canonicalVideoUri: data.canonicalVideoUri,
+              needsUpload: data.needsUpload,
+              seed: data.seed,
+              variants: data.variants,
+              _diag: (data as Record<string, unknown>)._diag as Record<string, unknown> | undefined,
+            },
+            { pollCount, tPollStart },
+          );
           return; // 완료 → 루프 종료
         }
 
         if (data.status === "FAILED") {
-          console.error(`[CUT ${cutNumber}] 생성 실패:`, data.error || "unknown error", { noRetry: data.noRetry, attempt });
-          // Enhancement 6: Auto-retry on failure
-          // noRetry=true: 서버가 재시도 무의미 판정 (스택 오버플로 등 내부 로직 오류)
-          setState((prev) => {
-            const clip = prev.clips.find((c) => c.cutNumber === cutNumber);
-            const retryCount = clip?.retryCount || 0;
-            const cfg = prev.config;
-
-            if (!data.noRetry && cfg.autoRetryOnFailure && retryCount < cfg.maxRetryCount) {
-              console.warn(`[CUT ${cutNumber}] 자동 재시도 ${retryCount + 1}/${cfg.maxRetryCount}`);
-              return {
-                ...prev,
-                clips: prev.clips.map((c) =>
-                  c.cutNumber === cutNumber
-                    ? { ...c, status: "idle" as VideoGenStatus, retryCount: retryCount + 1, error: `재시도 ${retryCount + 1}/${cfg.maxRetryCount}...` }
-                    : c
-                ),
-              };
-            }
-
-            const newClips = prev.clips.map((c) =>
-              c.cutNumber === cutNumber
-                ? { ...c, status: "failed" as VideoGenStatus, error: data.error || "생성 실패" }
-                : c
-            );
-
-            const allDone = newClips.every(
-              (c) => c.status === "completed" || c.status === "failed"
-            );
-            if (allDone && autoModeRef.current) {
-              autoModeRef.current = false;
-              return { ...prev, clips: newClips, isAutoMode: false, currentAutoIndex: -1 };
-            }
-            return { ...prev, clips: newClips };
-          });
+          handlePollFailed({ error: data.error, noRetry: data.noRetry }, attempt);
           return; // 실패 → 루프 종료
         }
 
