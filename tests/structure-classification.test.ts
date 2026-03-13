@@ -464,3 +464,183 @@ describe("10. 기존 duration/merge 회귀 없음", () => {
     expect(result.output.cuts.length).toBe(2);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. classifyCuts 기존 값 보존 정책
+// ═══════════════════════════════════════════════════════════════════
+
+describe("11. classifyCuts 기존 값 보존 정책", () => {
+  it("기존 structureType/durationClass가 없으면 자동 부여한다", () => {
+    const cuts = [
+      { durationSec: 3, cutNumber: 1 },
+      { durationSec: 6, cutNumber: 2 },
+      { durationSec: 10, cutNumber: 3 },
+    ];
+    const result = classifyCuts(cuts);
+
+    expect(result[0].structureType).toBe("cut");
+    expect(result[0].durationClass).toBe("cut-like");
+    expect(result[1].durationClass).toBe("scene-like");
+    expect(result[2].durationClass).toBe("sequence-like");
+  });
+
+  it("기존 structureType이 있으면 덮어쓰지 않는다", () => {
+    const cuts = [
+      { durationSec: 3, cutNumber: 1, structureType: "scene" as const },
+    ];
+    const result = classifyCuts(cuts);
+    expect(result[0].structureType).toBe("scene"); // "cut"으로 덮어쓰지 않음
+  });
+
+  it("기존 durationClass가 있으면 덮어쓰지 않는다", () => {
+    const cuts = [
+      { durationSec: 3, cutNumber: 1, durationClass: "sequence-like" as const },
+    ];
+    const result = classifyCuts(cuts);
+    expect(result[0].durationClass).toBe("sequence-like"); // 3초지만 기존 값 유지
+  });
+
+  it("structureType만 있고 durationClass 없으면 durationClass만 자동 부여", () => {
+    const cuts = [
+      { durationSec: 6, cutNumber: 1, structureType: "scene" as const },
+    ];
+    const result = classifyCuts(cuts);
+    expect(result[0].structureType).toBe("scene");
+    expect(result[0].durationClass).toBe("scene-like"); // 자동 부여
+  });
+
+  it("durationClass만 있고 structureType 없으면 structureType만 자동 부여", () => {
+    const cuts = [
+      { durationSec: 6, cutNumber: 1, durationClass: "scene-like" as const },
+    ];
+    const result = classifyCuts(cuts);
+    expect(result[0].structureType).toBe("cut"); // 자동 부여
+    expect(result[0].durationClass).toBe("scene-like"); // 유지
+  });
+
+  it("groupId는 건드리지 않는다 — undefined 유지", () => {
+    const cuts = [{ durationSec: 6, cutNumber: 1 }];
+    const result = classifyCuts(cuts);
+    expect((result[0] as Record<string, unknown>).groupId).toBeUndefined();
+  });
+
+  it("groupId는 건드리지 않는다 — 기존 값 유지", () => {
+    const cuts = [{ durationSec: 6, cutNumber: 1, groupId: "g1" }];
+    const result = classifyCuts(cuts);
+    expect((result[0] as Record<string, unknown>).groupId).toBe("g1");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 12. generate-cuts 후처리 시뮬레이션 — 실제 경로와 동일한 패턴
+// ═══════════════════════════════════════════════════════════════════
+
+describe("12. generate-cuts 후처리 시뮬레이션", () => {
+  it("API 응답 형태의 raw cut에 classifyCuts 적용 시 올바른 분류 부여", () => {
+    // API 응답 시뮬레이션 (structureType/durationClass 없음)
+    const apiCuts: Cut[] = [
+      makeCut(1, 3),
+      makeCut(2, 5),
+      makeCut(3, 8),
+      makeCut(4, 12),
+    ];
+    const classified = classifyCuts(apiCuts);
+
+    expect(classified[0].structureType).toBe("cut");
+    expect(classified[0].durationClass).toBe("cut-like");
+
+    expect(classified[1].structureType).toBe("cut");
+    expect(classified[1].durationClass).toBe("scene-like");
+
+    expect(classified[2].structureType).toBe("cut");
+    expect(classified[2].durationClass).toBe("sequence-like");
+
+    expect(classified[3].structureType).toBe("cut");
+    expect(classified[3].durationClass).toBe("sequence-like");
+  });
+
+  it("fallback cut (기본 8초)에도 올바른 분류 부여", () => {
+    const fallbackCuts: Cut[] = [makeCut(1, 8), makeCut(2, 8), makeCut(3, 8)];
+    const classified = classifyCuts(fallbackCuts);
+
+    for (const cut of classified) {
+      expect(cut.structureType).toBe("cut");
+      expect(cut.durationClass).toBe("sequence-like"); // 8초 → sequence-like
+    }
+  });
+
+  it("이미 분류된 cut에 재적용해도 값이 변하지 않는다 (멱등성)", () => {
+    const cuts: Cut[] = [
+      makeCut(1, 5, { structureType: "scene", durationClass: "scene-like" }),
+    ];
+    const first = classifyCuts(cuts);
+    const second = classifyCuts(first);
+
+    expect(second[0].structureType).toBe("scene");
+    expect(second[0].durationClass).toBe("scene-like");
+  });
+
+  it("분류 후에도 기존 Cut 필드가 모두 보존된다", () => {
+    const cuts: Cut[] = [
+      makeCut(1, 6, {
+        shotCategory: "character-driven",
+        characterRole: "protagonist",
+        cameraDirection: "zoom in",
+        moodLighting: "warm sunset",
+      }),
+    ];
+    const classified = classifyCuts(cuts);
+    const c = classified[0];
+
+    expect(c.cutNumber).toBe(1);
+    expect(c.durationSec).toBe(6);
+    expect(c.videoPrompt).toBe("Prompt 1");
+    expect(c.shotCategory).toBe("character-driven");
+    expect(c.characterRole).toBe("protagonist");
+    expect(c.cameraDirection).toBe("zoom in");
+    expect(c.moodLighting).toBe("warm sunset");
+    expect(c.structureType).toBe("cut");
+    expect(c.durationClass).toBe("scene-like");
+  });
+
+  it("classifyCuts 후 roundtrip (import→export) 시 메타 유지", () => {
+    const cuts: Cut[] = [makeCut(1, 3), makeCut(2, 8)];
+    const classified = classifyCuts(cuts);
+    const output = makeOutput(classified);
+
+    const state = promptOutputToCanvasState(output);
+    const result = exportAllChainsToPromptOutput(state);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.output.cuts[0].structureType).toBe("cut");
+    expect(result.output.cuts[0].durationClass).toBe("cut-like");
+    expect(result.output.cuts[1].structureType).toBe("cut");
+    expect(result.output.cuts[1].durationClass).toBe("sequence-like");
+  });
+
+  it("classifyCuts 후 merge export 시 분류 메타 유지", () => {
+    const baseCuts: Cut[] = classifyCuts([makeCut(1, 3), makeCut(2, 5), makeCut(3, 10)]);
+    const baseOutput = makeOutput(baseCuts);
+
+    // cut 2 편집 시뮬레이션
+    const editCuts: Cut[] = classifyCuts([makeCut(2, 7)]);
+    const editOutput = makeOutput(editCuts);
+    const editState = promptOutputToCanvasState(editOutput);
+    const chains = findAllChains(editState);
+
+    const result = mergeSelectedChainsToOutput(chains, baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // 병합된 cut 2
+    expect(result.output.cuts[1].structureType).toBe("cut");
+    expect(result.output.cuts[1].durationClass).toBe("scene-like");
+
+    // 건드리지 않은 cut 1, 3
+    expect(result.output.cuts[0].structureType).toBe("cut");
+    expect(result.output.cuts[0].durationClass).toBe("cut-like");
+    expect(result.output.cuts[2].structureType).toBe("cut");
+    expect(result.output.cuts[2].durationClass).toBe("sequence-like");
+  });
+});

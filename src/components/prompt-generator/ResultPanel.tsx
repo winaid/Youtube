@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef } from "@/types";
 import { DURATION_FALLBACK } from "@/lib/duration-reconciliation";
+import { classifyCuts } from "@/lib/structure-classification";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -534,7 +535,7 @@ export default function ResultPanel({
                         if (data.cuts) {
                           onUpdateResult({
                             ...result,
-                            cuts: data.cuts,
+                            cuts: classifyCuts(data.cuts),
                             characterSeeds: data.characterSeeds || result.characterSeeds,
                             totalCuts: data.cuts.length,
                           });

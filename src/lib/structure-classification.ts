@@ -94,15 +94,16 @@ export function classifyUnit(input: {
  * - structureType: "cut" (단일 cut이므로)
  * - durationClass: duration 기반 분류
  *
+ * 기존에 값이 명시적으로 있으면 유지, 없을 때만 자동 부여.
  * groupId는 부여하지 않는다 (그룹 정보가 필요하면 별도 호출).
  */
-export function classifyCuts<T extends { durationSec: number }>(
+export function classifyCuts<T extends { durationSec: number; structureType?: StructureType; durationClass?: DurationClass }>(
   cuts: T[],
 ): (T & { structureType: StructureType; durationClass: DurationClass })[] {
   return cuts.map(cut => ({
     ...cut,
-    structureType: "cut" as const,
-    durationClass: classifyDurationClass(cut.durationSec),
+    structureType: cut.structureType ?? ("cut" as const),
+    durationClass: cut.durationClass ?? classifyDurationClass(cut.durationSec),
   }));
 }
 
