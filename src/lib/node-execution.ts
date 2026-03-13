@@ -61,17 +61,20 @@ async function executeGenerateImage(
       body: JSON.stringify({
         prompt: finalPrompt,
         aspectRatio: node.data.aspectRatio || "16:9",
-        model: node.data.model || "default",
+        sceneDescription: node.data.sceneDescription || undefined,
+        animationMode: node.data.animationMode || undefined,
       }),
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as { imageUrl?: string };
+    const data = await res.json() as { images?: { base64: string; mimeType: string }[]; error?: string };
 
-    if (data.imageUrl) {
-      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", data.imageUrl, "image"));
+    if (data.images && data.images.length > 0) {
+      const img = data.images[0];
+      const dataUri = `data:${img.mimeType};base64,${img.base64}`;
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", dataUri, "image"));
     } else {
-      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, "이미지 URL 없음"));
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, data.error || "이미지 생성 결과 없음"));
     }
   } catch (err) {
     callbacks.onStateChange(prev => updateNodeStatus(
@@ -99,27 +102,36 @@ async function executeGenerateVideo(
 
   callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "running"));
 
+  // 이미지 입력이 data URI면 base64만 추출
+  let firstFrameBase64: string | undefined;
+  if (imageInput?.asset) {
+    firstFrameBase64 = imageInput.asset.replace(/^data:[^;]+;base64,/, "");
+  }
+
   try {
     const res = await fetch("/api/generate-video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: finalPrompt,
-        imageUrl: imageInput?.asset,
-        durationSec: node.data.durationSec || 6,
+        firstFrameBase64,
+        durationSeconds: node.data.durationSec || 6,
         aspectRatio: node.data.aspectRatio || "16:9",
-        source: "node-canvas",
+        engine: "kling",
       }),
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const data = await res.json() as { operationName?: string; videoUrl?: string };
+    const data = await res.json() as { taskId?: string; operationName?: string; videoUrl?: string; videoUri?: string; status?: string };
 
-    if (data.videoUrl) {
+    const videoResult = data.videoUrl || data.videoUri;
+    const taskId = data.taskId || data.operationName;
+
+    if (videoResult) {
       // 즉시 완료 (캐시 히트 등)
-      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", data.videoUrl, "video"));
-      callbacks.onVideoOutputReady?.(node.id, data.videoUrl!, {
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", videoResult, "video"));
+      callbacks.onVideoOutputReady?.(node.id, videoResult, {
         nodeId: node.id,
         nodeLabel: node.label,
         prompt: finalPrompt,
@@ -128,9 +140,9 @@ async function executeGenerateVideo(
         sourceImageUrl: imageInput?.asset,
         generatedAt: Date.now(),
       });
-    } else if (data.operationName) {
+    } else if (taskId) {
       // 폴링 필요
-      await pollVideoGeneration(node.id, data.operationName, node, finalPrompt, imageInput?.asset, callbacks);
+      await pollVideoGeneration(node.id, taskId, node, finalPrompt, imageInput?.asset, callbacks);
     } else {
       callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, "비디오 생성 응답 없음"));
     }
@@ -144,7 +156,7 @@ async function executeGenerateVideo(
 
 async function pollVideoGeneration(
   nodeId: string,
-  operationName: string,
+  taskId: string,
   node: CanvasNode,
   prompt: string,
   sourceImageUrl: string | undefined,
@@ -157,13 +169,18 @@ async function pollVideoGeneration(
     await new Promise(resolve => setTimeout(resolve, INTERVAL));
 
     try {
-      const res = await fetch(`/api/poll-video?operationName=${encodeURIComponent(operationName)}`);
+      const res = await fetch("/api/check-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, engine: "kling" }),
+      });
       if (!res.ok) continue;
 
-      const data = await res.json() as { done?: boolean; videoUrl?: string };
-      if (data.done && data.videoUrl) {
-        callbacks.onStateChange(prev => updateNodeStatus(prev, nodeId, "success", data.videoUrl, "video"));
-        callbacks.onVideoOutputReady?.(nodeId, data.videoUrl!, {
+      const data = await res.json() as { status?: string; videoUri?: string; error?: string; progress?: number };
+
+      if (data.status === "COMPLETED" && data.videoUri) {
+        callbacks.onStateChange(prev => updateNodeStatus(prev, nodeId, "success", data.videoUri, "video"));
+        callbacks.onVideoOutputReady?.(nodeId, data.videoUri, {
           nodeId,
           nodeLabel: node.label,
           prompt,
@@ -174,6 +191,12 @@ async function pollVideoGeneration(
         });
         return;
       }
+
+      if (data.status === "FAILED") {
+        callbacks.onStateChange(prev => updateNodeStatus(prev, nodeId, "failed", undefined, undefined, data.error || "비디오 생성 실패"));
+        return;
+      }
+      // RUNNING — continue polling
     } catch {
       // 폴링 실패는 무시하고 재시도
     }
