@@ -52,6 +52,7 @@ import {
 } from "@/lib/shot-variants";
 import { extractEditable } from "@/lib/shot-editing";
 import {
+  submitVideoGeneration,
   getAdaptivePollInterval,
   sleep,
   buildDurationMeta,
@@ -1378,38 +1379,34 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const safePrevVideoUri = isCut1 ? undefined : previousVideoUri;
       const safeFirstFrame = isCut1 ? (cfg.firstFrameBase64 || (storyboardImages?.[1]) || undefined) : firstFrameBase64;
 
-      // ── JSON-first body 구성 ──────────────────────────────────────────
+      // ── JSON-first body 구성 (core submitVideoGeneration 사용) ──────────
       // structuredSequence가 1급 source of truth.
-      // prompt는 structuredSequence 없는 legacy fallback일 때만 포함.
-      // Veo 멀티샷은 서버에서 처리하도록 structuredSequence에 위임.
-      const body: Record<string, unknown> = {
-        // structuredSequence = 1급 source of truth
+      const submitParams = {
         structuredSequence: sequence,
         cutNumber,
         engine,
         videoMode,
         sourceVideo: safeSourceVideo,
-        mode: cfg.mode,
-        durationSeconds: cfg.durationSeconds,
-        resolution: cfg.resolution,
-        aspectRatio: cfg.aspectRatio,
-        generateAudio: cfg.generateAudio,
         negativePrompt: negativePrompt || undefined,
-        personGeneration: cfg.personGeneration,
-        sampleCount: cfg.sampleCount,
-        seed: cfg.seed,
-        previousVideoUri: safePrevVideoUri,
         firstFrameBase64: safeFirstFrame,
         lastFrameBase64: lastFrameBase64,
-        referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
+        durationSeconds: cfg.durationSeconds,
+        aspectRatio: cfg.aspectRatio,
+        generateAudio: cfg.generateAudio,
         ...(engine === "kling" && cut.multiShot && cut.multiShot.length > 0
           ? { multiShot: cut.multiShot }
           : {}),
-        // legacy fallback fields (서버가 structuredSequence 없을 때 사용)
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
-        // prompt는 structuredSequence 없는 극한 fallback으로만
-        // Veo 멀티샷도 여기서 문자열로 조합하지 않음 — 서버에서 structuredSequence 기반 처리
+        extraFields: {
+          mode: cfg.mode,
+          resolution: cfg.resolution,
+          personGeneration: cfg.personGeneration,
+          sampleCount: cfg.sampleCount,
+          seed: cfg.seed,
+          previousVideoUri: safePrevVideoUri,
+          referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
+        },
       };
 
       // ── 3-way snapshot: finalSent (API 전송 직전) ──
@@ -1454,33 +1451,20 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         negative: negativePrompt?.slice(0, 80) || "(없음)",
       });
 
+      // ── Submit via core helper ───────────────────────────────────────
       const tApiStart = performance.now();
-      const res = await fetch("/api/generate-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const tApiEnd = performance.now();
-      const apiRequestMs = Math.round(tApiEnd - tApiStart);
-
-      console.log(`[CUT ${cutNumber}] ⏱ apiRequest`, {
-        apiRequestMs,
-        httpStatus: res.status,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: "API 오류" }));
-        const errMsg = errData.error || `HTTP ${res.status}`;
-        console.error(`CUT ${cutNumber} 영상 생성 실패:`, errMsg, errData.details || "", errData.warning || "");
+      let data: VideoSubmitResult;
+      try {
+        data = await submitVideoGeneration(submitParams);
+      } catch (submitErr) {
+        const tApiEnd = performance.now();
+        const apiRequestMs = Math.round(tApiEnd - tApiStart);
+        const errMsg = submitErr instanceof Error ? submitErr.message : String(submitErr);
+        const statusCode = (submitErr as { statusCode?: number })?.statusCode;
+        const raiFiltered = (submitErr as { raiFiltered?: boolean })?.raiFiltered;
+        console.error(`CUT ${cutNumber} 영상 생성 실패 (${apiRequestMs}ms):`, errMsg);
 
         // Safety filter 에러 → Gemini로 프롬프트 sanitize 후 1회 재시도
-        // Kling 안전 필터 에러 메시지 패턴:
-        //   "could not generate videos based on the prompt"
-        //   "You will not be charged for this request"
-        //   "Try rephrasing the prompt"
-        //   "usage guidelines"
-        //   "could not be submitted"
-        //   raiFiltered: true
         const isSafetyError =
           errMsg.includes("could not generate videos") ||
           errMsg.includes("not be charged") ||
@@ -1488,10 +1472,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           errMsg.includes("usage guidelines") ||
           errMsg.includes("could not be submitted") ||
           errMsg.includes("safety") ||
-          errData.raiFiltered === true;
+          raiFiltered === true;
 
         if (isSafetyError && retryCount === 0) {
-          // Safety retry: 서버에서 직렬화된 prompt를 preview에서 가져와 sanitize 시도
           const fallbackPrompt = assembled.preview?.renderedPrompt || legacyPrompt;
           console.warn(`[CUT ${cutNumber}] Safety 차단 감지`, {
             blockReason: errMsg.slice(0, 200),
@@ -1513,39 +1496,31 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                   originalHead: fallbackPrompt.slice(0, 100),
                   sanitizedHead: sanitizedPrompt.slice(0, 100),
                 });
-                // Safety retry — structuredSequence source of truth 유지
-                // sanitizedPrompt를 shotPlan.action에 반영하되, structuredSequence 구조를 보존
-                const retryBody = { ...body };
-                if (retryBody.structuredSequence && typeof retryBody.structuredSequence === "object") {
-                  const retrySeq = JSON.parse(JSON.stringify(retryBody.structuredSequence));
+                // Safety retry via core submitVideoGeneration
+                const retryParams = { ...submitParams };
+                if (retryParams.structuredSequence && typeof retryParams.structuredSequence === "object") {
+                  const retrySeq = JSON.parse(JSON.stringify(retryParams.structuredSequence));
                   retrySeq.shotPlan.action = sanitizedPrompt.slice(0, 500);
                   retrySeq.shotPlan.negativeDirectives = [
                     ...(retrySeq.shotPlan.negativeDirectives || []),
                     "graphic violence", "gore", "blood", "injury detail", "medical procedure",
                   ];
-                  retryBody.structuredSequence = retrySeq;
-                  delete retryBody.prompt;
+                  retryParams.structuredSequence = retrySeq;
+                  delete (retryParams as Record<string, unknown>).prompt;
                   console.log(`[CUT ${cutNumber}] Safety 재시도: structuredSequence 유지`, {
                     actionLen: retrySeq.shotPlan.action.length,
                     addedNegatives: 5,
                   });
                 } else {
-                  // 극한 fallback: structuredSequence 없으면 string 사용
-                  (retryBody as Record<string, unknown>).prompt = sanitizedPrompt;
+                  (retryParams as Record<string, unknown>).prompt = sanitizedPrompt;
                 }
-                const retryRes = await fetch("/api/generate-video", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(retryBody),
-                });
-                if (retryRes.ok) {
-                  const retryData = await retryRes.json();
-                  updateClip(cutNumber, { operationName: retryData.operationName });
-                  startPolling(cutNumber, retryData.operationName);
+                try {
+                  const retryResult = await submitVideoGeneration(retryParams);
+                  updateClip(cutNumber, { operationName: retryResult.operationName });
+                  startPolling(cutNumber, retryResult.operationName);
                   return;
-                } else {
-                  const retryErr = await retryRes.json().catch(() => ({ error: "재시도 실패" }));
-                  console.error(`[CUT ${cutNumber}] Safety 재시도도 실패:`, retryErr.error);
+                } catch (retryErr) {
+                  console.error(`[CUT ${cutNumber}] Safety 재시도도 실패:`, retryErr instanceof Error ? retryErr.message : retryErr);
                 }
               } else {
                 console.warn(`[CUT ${cutNumber}] Sanitize 응답에 refinedVideoPrompt 없음:`, sanitized);
@@ -1560,24 +1535,14 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           status: "failed",
           error: isSafetyError
             ? `안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
-            : classifyVideoError(new Error(errMsg), res.status).message,
+            : classifyVideoError(submitErr, statusCode).message,
         });
         return;
       }
+      const tApiEnd = performance.now();
+      const apiRequestMs = Math.round(tApiEnd - tApiStart);
 
-      const raw = await res.json() as Record<string, unknown>;
-      const data = {
-        operationName: raw.operationName as string | undefined,
-        taskId: raw.taskId as string | undefined,
-        engine: (raw.engine as "kling") || "kling",
-        modeUsed: (raw.modeUsed as "generate" | "extend") || "generate",
-        modelUsed: (raw.modelUsed as string) || "",
-        sourceVideo: raw.sourceVideo as string | undefined,
-        warning: raw.warning as string | undefined,
-        status: (raw.status as string) || "RUNNING",
-        durationMeta: raw.durationMeta as VideoSubmitResult["durationMeta"],
-        _diag: raw._diag as Record<string, unknown> | undefined,
-      };
+      console.log(`[CUT ${cutNumber}] ⏱ apiRequest`, { apiRequestMs });
 
       updateClip(cutNumber, {
         operationName: data.operationName,
@@ -1588,7 +1553,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
       // ── 3-way snapshot: provenance에 서버 응답 메타 기록 (core helper) ──
       {
-        const providerMeta = extractProviderMeta(data as VideoSubmitResult);
+        const providerMeta = extractProviderMeta(data);
         const snap = shotSnapshotsRef.current.get(cutNumber);
         if (snap) {
           snap.provenance = {
@@ -1640,8 +1605,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
       startPolling(
         cutNumber,
-        data.operationName ?? "",
-        data.engine ?? "kling",
+        data.operationName,
+        data.engine,
         data.taskId,
         data.modeUsed === "extend",
         variantsToPreserve,
@@ -2548,52 +2513,44 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         },
       });
 
-      const res = await fetch("/api/generate-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      // ── Submit via core helper ──
+      const shotSubmitResult = await submitVideoGeneration({
+        structuredSequence: body.structuredSequence,
+        cutNumber,
+        engine: "kling",
+        videoMode: "generate",
+        durationSeconds: body.durationSeconds as number,
+        aspectRatio: body.aspectRatio as string,
+        generateAudio: body.generateAudio as boolean,
+        negativePrompt: body.negativePrompt as string | undefined,
+        extraFields: {
+          mode: body.mode,
+          resolution: body.resolution,
+          personGeneration: body.personGeneration,
+        },
       });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: "API 오류" }));
-        const errMsg = errData.error || `HTTP ${res.status}`;
-
-        setShotVariantState(prev => {
-          let next = setShotStatus(prev, shotId, "failed");
-          next = updateShotVariant(next, shotId, variantId, {
-            status: "failed",
-            error: errMsg,
-          });
-          return next;
-        });
-        return;
-      }
-
-      const data = await res.json() as {
-        operationName?: string;
-        taskId?: string;
-        engine?: string;
-        modeUsed?: string;
-      };
 
       // Update variant with operationName for polling
       setShotVariantState(prev =>
         updateShotVariant(prev, shotId, variantId, {
-          operationName: data.operationName,
+          operationName: shotSubmitResult.operationName,
         }),
       );
 
       // Start polling for this shot variant
-      if (data.operationName) {
-        pollShotVariant(cutNumber, shotId, variantId, data.operationName);
+      if (shotSubmitResult.operationName) {
+        pollShotVariant(cutNumber, shotId, variantId, shotSubmitResult.operationName);
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      const classified = classifyVideoError(
+        err,
+        (err as { statusCode?: number })?.statusCode,
+      );
       setShotVariantState(prev => {
         let next = setShotStatus(prev, shotId, "failed");
         next = updateShotVariant(next, shotId, variantId, {
           status: "failed",
-          error: errMsg,
+          error: classified.message,
         });
         return next;
       });

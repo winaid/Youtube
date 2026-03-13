@@ -16,7 +16,7 @@ import { DURATION_FALLBACK } from "@/lib/duration-reconciliation";
 
 /** video generation API submit 파라미터 */
 export interface VideoSubmitParams {
-  prompt: string;
+  prompt?: string;
   firstFrameBase64?: string;
   lastFrameBase64?: string;
   durationSeconds?: number;
@@ -35,6 +35,8 @@ export interface VideoSubmitParams {
   multiShot?: unknown[];
   /** source video for extend */
   sourceVideo?: string;
+  /** hook-specific 추가 필드 (mode, resolution, seed 등) — body에 그대로 spread */
+  extraFields?: Record<string, unknown>;
 }
 
 /** generate-video API 응답 */
@@ -49,6 +51,12 @@ export interface VideoSubmitResult {
   /** 즉시 완료 (캐시 히트 등) */
   videoUrl?: string;
   videoUri?: string;
+  /** 서버 경고 메시지 */
+  warning?: string;
+  /** extend용 source video */
+  sourceVideo?: string;
+  /** 서버 진단 정보 */
+  _diag?: Record<string, unknown>;
 }
 
 /** API에서 받는 raw durationMeta */
@@ -115,6 +123,8 @@ export interface PollOptions {
   onProgress?: (attempt: number, maxAttempts: number, progress?: number) => void;
   /** abort 시그널 */
   signal?: AbortSignal;
+  /** check-video 요청에 추가할 필드 (operationName, isExtend, cutNumber 등) */
+  extraPollBody?: Record<string, unknown>;
 }
 
 /** provider/model 메타 */
@@ -157,9 +167,11 @@ export async function submitVideoGeneration(
   params: VideoSubmitParams,
 ): Promise<VideoSubmitResult> {
   const body: Record<string, unknown> = {
-    prompt: params.prompt,
     engine: params.engine || "kling",
   };
+
+  // prompt — structuredSequence 우선, prompt는 fallback
+  if (params.prompt) body.prompt = params.prompt;
 
   // optional fields — 있을 때만 전송
   if (params.firstFrameBase64) body.firstFrameBase64 = params.firstFrameBase64;
@@ -176,6 +188,13 @@ export async function submitVideoGeneration(
   if (params.multiShot) body.multiShot = params.multiShot;
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
 
+  // hook-specific 추가 필드 passthrough
+  if (params.extraFields) {
+    for (const [k, v] of Object.entries(params.extraFields)) {
+      if (v !== undefined) body[k] = v;
+    }
+  }
+
   const res = await fetch("/api/generate-video", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -183,10 +202,15 @@ export async function submitVideoGeneration(
   });
 
   if (!res.ok) {
-    const errBody = await res.json().catch(() => ({})) as { error?: string };
+    const errBody = await res.json().catch(() => ({})) as Record<string, unknown>;
     throw Object.assign(
-      new Error(errBody.error || `HTTP ${res.status}`),
-      { statusCode: res.status },
+      new Error((errBody.error as string) || `HTTP ${res.status}`),
+      {
+        statusCode: res.status,
+        details: errBody.details as string | undefined,
+        warning: errBody.warning as string | undefined,
+        raiFiltered: errBody.raiFiltered as boolean | undefined,
+      },
     );
   }
 
@@ -202,6 +226,9 @@ export async function submitVideoGeneration(
     durationMeta: data.durationMeta as RawDurationMeta | undefined,
     videoUrl: data.videoUrl as string | undefined,
     videoUri: data.videoUri as string | undefined,
+    warning: data.warning as string | undefined,
+    sourceVideo: data.sourceVideo as string | undefined,
+    _diag: data._diag as Record<string, unknown> | undefined,
   };
 }
 
@@ -244,7 +271,7 @@ export async function pollVideoTask(
       res = await fetch("/api/check-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId, engine: "kling" }),
+        body: JSON.stringify({ taskId, engine: "kling", ...options.extraPollBody }),
       });
     } catch {
       consecutiveErrors++;

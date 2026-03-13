@@ -18,6 +18,8 @@ import {
   extractProviderMeta,
   classifyVideoError,
   getAdaptivePollInterval,
+  POLL_MAX_ATTEMPTS,
+  MAX_CONSECUTIVE_ERRORS,
   type VideoSubmitParams,
   type VideoSubmitResult,
   type NormalizedVideoResult,
@@ -764,5 +766,153 @@ describe("path unification — hook and node produce identical meta shapes", () 
       l.match(/^const\s+sleep\s*=/)
     );
     expect(localSleepDef).toHaveLength(0);
+  });
+
+  it("hook uses submitVideoGeneration (no inline fetch /api/generate-video)", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // Hook must import submitVideoGeneration
+    expect(hookSource).toContain("submitVideoGeneration");
+    expect(hookSource).toContain("from \"@/lib/video-generation-core\"");
+
+    // No direct fetch("/api/generate-video") calls should remain
+    const generateVideoFetches = hookSource.match(/fetch\(\s*["'`]\/api\/generate-video/g);
+    expect(generateVideoFetches).toBeNull();
+  });
+
+  it("hook polling uses same constants as core pollVideoTask", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // Hook must use core polling constants (not local definitions)
+    expect(hookSource).toContain("POLL_MAX_ATTEMPTS");
+    expect(hookSource).toContain("POLL_ERROR_BACKOFF");
+    expect(hookSource).toContain("MAX_CONSECUTIVE_ERRORS");
+    expect(hookSource).toContain("getAdaptivePollInterval");
+    expect(hookSource).toContain("classifyVideoError");
+
+    // No local POLL_MAX_ATTEMPTS definition
+    const localPollMax = hookSource.match(/const\s+POLL_MAX_ATTEMPTS\s*=/g);
+    expect(localPollMax).toBeNull();
+
+    // No local getAdaptivePollInterval definition
+    const localAdaptive = hookSource.match(/function\s+getAdaptivePollInterval\s*\(/g);
+    expect(localAdaptive).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Polling interval/backoff/retry policy equivalence
+// ═══════════════════════════════════════════════════════════════════
+
+describe("polling policy equivalence — hook and node use identical parameters", () => {
+  it("POLL_MAX_ATTEMPTS is shared (72)", () => {
+    expect(POLL_MAX_ATTEMPTS).toBe(72);
+  });
+
+  it("adaptive polling intervals match between hook and core", () => {
+    // Both paths use getAdaptivePollInterval from core
+    // Verify the policy: 0-17 → 5s, 18+ → 7s
+    for (let i = 0; i < 18; i++) {
+      expect(getAdaptivePollInterval(i)).toBe(5000);
+    }
+    for (let i = 18; i < 30; i++) {
+      expect(getAdaptivePollInterval(i)).toBe(7000);
+    }
+  });
+
+  it("error backoff schedule matches between hook and core", async () => {
+    const { POLL_ERROR_BACKOFF: imported } = await import("@/lib/video-generation-core");
+    expect(imported).toEqual([5000, 7500, 10000, 15000, 20000]);
+  });
+
+  it("MAX_CONSECUTIVE_ERRORS is shared (3)", () => {
+    expect(MAX_CONSECUTIVE_ERRORS).toBe(3);
+  });
+
+  it("submitVideoGeneration extraFields are passed through to API body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ taskId: "t1", status: "RUNNING" }),
+    });
+    globalThis.fetch = fetchMock;
+
+    await submitVideoGeneration({
+      structuredSequence: { shotPlan: {} },
+      engine: "kling",
+      cutNumber: 1,
+      extraFields: {
+        mode: "standard",
+        resolution: "1080p",
+        seed: "42",
+        personGeneration: "allow_adult",
+      },
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.mode).toBe("standard");
+    expect(body.resolution).toBe("1080p");
+    expect(body.seed).toBe("42");
+    expect(body.personGeneration).toBe("allow_adult");
+    // Core fields still present
+    expect(body.engine).toBe("kling");
+    expect(body.cutNumber).toBe(1);
+    expect(body.structuredSequence).toEqual({ shotPlan: {} });
+  });
+
+  it("submitVideoGeneration error includes statusCode and raiFiltered", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "safety filter", raiFiltered: true, details: "blocked" }),
+    });
+
+    try {
+      await submitVideoGeneration({ prompt: "test" });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect((err as Error).message).toBe("safety filter");
+      expect((err as { statusCode: number }).statusCode).toBe(400);
+      expect((err as { raiFiltered: boolean }).raiFiltered).toBe(true);
+      expect((err as { details: string }).details).toBe("blocked");
+    }
+  });
+
+  it("pollVideoTask supports extraPollBody", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.com/extra.mp4",
+        needsUpload: false,
+      }),
+    });
+    globalThis.fetch = fetchMock;
+
+    const promise = pollVideoTask("task-extra", {
+      maxAttempts: 2,
+      fixedIntervalMs: 100,
+      extraPollBody: {
+        operationName: "op-123",
+        isExtend: true,
+        cutNumber: 3,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    await promise;
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.taskId).toBe("task-extra");
+    expect(body.engine).toBe("kling");
+    expect(body.operationName).toBe("op-123");
+    expect(body.isExtend).toBe(true);
+    expect(body.cutNumber).toBe(3);
   });
 });
