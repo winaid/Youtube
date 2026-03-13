@@ -4,13 +4,25 @@
  * 역할:
  *  - 노드 타입별 실행 로직
  *  - Generate Image: /api/generate-image 호출
- *  - Generate Video: /api/generate-video 호출 (기존 Kling 파이프라인 연동)
+ *  - Generate Video: video-generation-core를 통해 기존 Kling 파이프라인과 동일한 경로로 실행
  *  - Viewer: 입력 에셋 패스스루
  *  - Text Input: data.text를 output으로 전달
  */
 
 import type { CanvasState, CanvasNode } from "./node-types";
-import { updateNodeStatus, getInputAssets } from "./node-types";
+import { updateNodeStatus, updateNodeData, getInputAssets } from "./node-types";
+import {
+  submitVideoGeneration,
+  pollVideoTask,
+  buildDurationMeta,
+  extractProviderMeta,
+  classifyVideoError,
+  type VideoSubmitResult,
+  type NormalizedVideoResult,
+  type ProviderMeta,
+  type VideoErrorClassification,
+} from "./video-generation-core";
+import type { DurationMeta } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Execution Context
@@ -30,6 +42,12 @@ export interface VideoOutputMeta {
   aspectRatio: string;
   sourceImageUrl?: string;
   generatedAt: number;
+  /** 기존 useVideoGeneration과 동일한 metadata shape */
+  durationMeta?: DurationMeta;
+  providerMeta?: ProviderMeta;
+  errorClassification?: VideoErrorClassification;
+  /** 정규화된 결과 전체 (선택적 소비) */
+  normalizedResult?: NormalizedVideoResult;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -108,101 +126,119 @@ async function executeGenerateVideo(
     firstFrameBase64 = imageInput.asset.replace(/^data:[^;]+;base64,/, "");
   }
 
+  const requestedDuration = (node.data.durationSec as number) || 6;
+  const requestedAspect = (node.data.aspectRatio as string) || "16:9";
+
   try {
-    const res = await fetch("/api/generate-video", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: finalPrompt,
-        firstFrameBase64,
-        durationSeconds: node.data.durationSec || 6,
-        aspectRatio: node.data.aspectRatio || "16:9",
-        engine: "kling",
-      }),
+    // ── Submit: 공통 core를 통해 기존 파이프라인과 동일한 API shape 사용 ──
+    const submitResult: VideoSubmitResult = await submitVideoGeneration({
+      prompt: finalPrompt,
+      firstFrameBase64,
+      durationSeconds: requestedDuration,
+      aspectRatio: requestedAspect,
+      engine: "kling",
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // provider/model 메타 추출 — 기존 useVideoGeneration과 동일
+    const providerMeta = extractProviderMeta(submitResult);
 
-    const data = await res.json() as { taskId?: string; operationName?: string; videoUrl?: string; videoUri?: string; status?: string };
+    // durationMeta 구축 — 기존 useVideoGeneration과 동일한 shape
+    const durationMeta = buildDurationMeta(requestedDuration, submitResult.durationMeta);
 
-    const videoResult = data.videoUrl || data.videoUri;
-    const taskId = data.taskId || data.operationName;
+    // 메타를 노드 data에 저장 (export 시 참조 가능)
+    callbacks.onStateChange(prev => updateNodeData(prev, node.id, {
+      _taskId: submitResult.taskId,
+      _providerMeta: providerMeta,
+      _durationMeta: durationMeta,
+    }));
 
-    if (videoResult) {
-      // 즉시 완료 (캐시 히트 등)
-      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", videoResult, "video"));
-      callbacks.onVideoOutputReady?.(node.id, videoResult, {
+    // 즉시 완료 (캐시 히트 등)
+    const immediateVideo = submitResult.videoUrl || submitResult.videoUri;
+    if (immediateVideo) {
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", immediateVideo, "video"));
+      callbacks.onVideoOutputReady?.(node.id, immediateVideo, {
         nodeId: node.id,
         nodeLabel: node.label,
         prompt: finalPrompt,
-        durationSec: (node.data.durationSec as number) || 6,
-        aspectRatio: (node.data.aspectRatio as string) || "16:9",
+        durationSec: requestedDuration,
+        aspectRatio: requestedAspect,
         sourceImageUrl: imageInput?.asset,
         generatedAt: Date.now(),
+        durationMeta,
+        providerMeta,
       });
-    } else if (taskId) {
-      // 폴링 필요
-      await pollVideoGeneration(node.id, taskId, node, finalPrompt, imageInput?.asset, callbacks);
-    } else {
+      return;
+    }
+
+    if (!submitResult.taskId) {
       callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, "비디오 생성 응답 없음"));
+      return;
+    }
+
+    // ── Polling: 공통 core의 adaptive polling 사용 ──
+    const pollResult = await pollVideoTask(submitResult.taskId, {
+      onProgress: (attempt, max, progress) => {
+        // 진행 중 상태는 node data에 progress 저장
+        callbacks.onStateChange(prev => updateNodeData(prev, node.id, {
+          _pollProgress: progress,
+          _pollAttempt: attempt,
+        }));
+      },
+    });
+
+    if (pollResult.status === "completed" && pollResult.videoUri) {
+      // 결과 메타를 노드에 저장
+      callbacks.onStateChange(prev => updateNodeData(prev, node.id, {
+        _canonicalVideoUri: pollResult.canonicalVideoUri,
+        _rawVideoUri: pollResult.rawVideoUri,
+        _seed: pollResult.seed,
+        _pollMeta: pollResult.pollMeta,
+        _diag: pollResult._diag,
+      }));
+
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", pollResult.videoUri, "video"));
+      callbacks.onVideoOutputReady?.(node.id, pollResult.videoUri, {
+        nodeId: node.id,
+        nodeLabel: node.label,
+        prompt: finalPrompt,
+        durationSec: requestedDuration,
+        aspectRatio: requestedAspect,
+        sourceImageUrl: imageInput?.asset,
+        generatedAt: Date.now(),
+        durationMeta,
+        providerMeta,
+        normalizedResult: pollResult,
+      });
+    } else {
+      // 실패 또는 타임아웃
+      const errorClass = classifyVideoError(
+        pollResult.error || "비디오 생성 실패",
+        undefined,
+      );
+
+      callbacks.onStateChange(prev => updateNodeData(prev, node.id, {
+        _errorClassification: errorClass,
+        _pollMeta: pollResult.pollMeta,
+      }));
+
+      callbacks.onStateChange(prev => updateNodeStatus(
+        prev, node.id, "failed", undefined, undefined,
+        pollResult.error || "비디오 생성 실패",
+      ));
     }
   } catch (err) {
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    const errorClass = classifyVideoError(err, statusCode);
+
+    callbacks.onStateChange(prev => updateNodeData(prev, node.id, {
+      _errorClassification: errorClass,
+    }));
+
     callbacks.onStateChange(prev => updateNodeStatus(
       prev, node.id, "failed", undefined, undefined,
-      err instanceof Error ? err.message : "비디오 생성 실패",
+      errorClass.message,
     ));
   }
-}
-
-async function pollVideoGeneration(
-  nodeId: string,
-  taskId: string,
-  node: CanvasNode,
-  prompt: string,
-  sourceImageUrl: string | undefined,
-  callbacks: ExecutionCallbacks,
-): Promise<void> {
-  const MAX_ATTEMPTS = 60;
-  const INTERVAL = 5000;
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, INTERVAL));
-
-    try {
-      const res = await fetch("/api/check-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId, engine: "kling" }),
-      });
-      if (!res.ok) continue;
-
-      const data = await res.json() as { status?: string; videoUri?: string; error?: string; progress?: number };
-
-      if (data.status === "COMPLETED" && data.videoUri) {
-        callbacks.onStateChange(prev => updateNodeStatus(prev, nodeId, "success", data.videoUri, "video"));
-        callbacks.onVideoOutputReady?.(nodeId, data.videoUri, {
-          nodeId,
-          nodeLabel: node.label,
-          prompt,
-          durationSec: (node.data.durationSec as number) || 6,
-          aspectRatio: (node.data.aspectRatio as string) || "16:9",
-          sourceImageUrl,
-          generatedAt: Date.now(),
-        });
-        return;
-      }
-
-      if (data.status === "FAILED") {
-        callbacks.onStateChange(prev => updateNodeStatus(prev, nodeId, "failed", undefined, undefined, data.error || "비디오 생성 실패"));
-        return;
-      }
-      // RUNNING — continue polling
-    } catch {
-      // 폴링 실패는 무시하고 재시도
-    }
-  }
-
-  callbacks.onStateChange(prev => updateNodeStatus(prev, nodeId, "failed", undefined, undefined, "생성 시간 초과"));
 }
 
 function executeViewer(
