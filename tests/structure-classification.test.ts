@@ -644,3 +644,88 @@ describe("12. generate-cuts 후처리 시뮬레이션", () => {
     expect(result.output.cuts[2].durationClass).toBe("sequence-like");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 13. UI 표시용 구조 메타 존재 검증
+// ═══════════════════════════════════════════════════════════════════
+
+describe("13. UI 표시용 구조 메타 존재 검증", () => {
+  it("classifyCuts 적용 후 모든 cut에 structureType/durationClass가 존재한다", () => {
+    const cuts: Cut[] = [makeCut(1, 3), makeCut(2, 6), makeCut(3, 10)];
+    const classified = classifyCuts(cuts);
+
+    for (const cut of classified) {
+      expect(cut.structureType).toBeDefined();
+      expect(cut.durationClass).toBeDefined();
+      // UI에서 .toUpperCase() 호출 가능
+      expect(cut.structureType.toUpperCase()).toBeTruthy();
+      expect(cut.durationClass).toBeTruthy();
+    }
+  });
+
+  it("값이 없는 cut에서는 structureType/durationClass가 undefined — UI에서 조건부 숨김 가능", () => {
+    const rawCut = makeCut(1, 5);
+    expect(rawCut.structureType).toBeUndefined();
+    expect(rawCut.durationClass).toBeUndefined();
+  });
+
+  it("roundtrip 후에도 UI 표시용 값이 유지된다", () => {
+    const classified = classifyCuts([makeCut(1, 3), makeCut(2, 8)]);
+    const output = makeOutput(classified);
+    const state = promptOutputToCanvasState(output);
+    const result = exportAllChainsToPromptOutput(state);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    for (const cut of result.output.cuts) {
+      expect(cut.structureType).toBeDefined();
+      expect(cut.durationClass).toBeDefined();
+    }
+  });
+
+  it("merge 후에도 수정된 cut의 UI 표시용 값이 유지된다", () => {
+    const base = makeOutput(classifyCuts([makeCut(1, 3), makeCut(2, 6)]));
+    const edit = makeOutput(classifyCuts([makeCut(1, 10)]));
+    const editState = promptOutputToCanvasState(edit);
+    const chains = findAllChains(editState);
+
+    const result = mergeSelectedChainsToOutput(chains, base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // 병합된 cut 1: 10초 → sequence-like
+    expect(result.output.cuts[0].structureType).toBe("cut");
+    expect(result.output.cuts[0].durationClass).toBe("sequence-like");
+    // 미수정 cut 2
+    expect(result.output.cuts[1].structureType).toBe("cut");
+    expect(result.output.cuts[1].durationClass).toBe("scene-like");
+  });
+
+  it("cut 편집(필드 업데이트) 시 구조 메타는 spread로 보존된다", () => {
+    const classified = classifyCuts([makeCut(1, 6)]);
+    const cut = classified[0];
+
+    // CutCard의 handleFieldSave 패턴 시뮬레이션
+    const updated = { ...cut, videoPrompt: "새로운 프롬프트" };
+    expect(updated.structureType).toBe("cut");
+    expect(updated.durationClass).toBe("scene-like");
+    expect(updated.videoPrompt).toBe("새로운 프롬프트");
+  });
+
+  it("cut 삭제/재정렬 후 남은 cut의 구조 메타가 유지된다", () => {
+    const classified = classifyCuts([makeCut(1, 3), makeCut(2, 6), makeCut(3, 10)]);
+
+    // cut 2 삭제 시뮬레이션
+    const afterDelete = classified.filter(c => c.cutNumber !== 2);
+    expect(afterDelete[0].structureType).toBe("cut");
+    expect(afterDelete[0].durationClass).toBe("cut-like");
+    expect(afterDelete[1].structureType).toBe("cut");
+    expect(afterDelete[1].durationClass).toBe("sequence-like");
+
+    // 재정렬 시뮬레이션 (reverse)
+    const reordered = [...classified].reverse();
+    expect(reordered[0].durationClass).toBe("sequence-like");
+    expect(reordered[1].durationClass).toBe("scene-like");
+    expect(reordered[2].durationClass).toBe("cut-like");
+  });
+});
