@@ -29,6 +29,7 @@ import {
 } from "@/lib/node-types";
 import { executeNode, type VideoOutputMeta } from "@/lib/node-execution";
 import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
+import { exportFromSelectedNode, exportAllChainsToPromptOutput, canExportFromNode } from "@/lib/nodes-to-sequence";
 import type { PromptOutput } from "@/types";
 import NodePalette from "./NodePalette";
 
@@ -41,6 +42,8 @@ interface NodeCanvasProps {
   onSendToTimeline?: (videoUrl: string, meta: VideoOutputMeta) => void;
   /** 외부에서 import할 PromptOutput (설정 시 import 버튼 활성화) */
   importableOutput?: PromptOutput | null;
+  /** 캔버스에서 편집기로 export할 때 호출 */
+  onExportToEditor?: (output: PromptOutput) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -354,7 +357,7 @@ function NodeSettings({ node }: { node: CanvasNode }) {
 // Main Component
 // ═══════════════════════════════════════════════════════════════════
 
-export default function NodeCanvas({ onSendToTimeline, importableOutput }: NodeCanvasProps) {
+export default function NodeCanvas({ onSendToTimeline, importableOutput, onExportToEditor }: NodeCanvasProps) {
   // ── 초기 상태: localStorage에서 복원 ──
   const [state, setState] = useState<CanvasState>(() => {
     if (typeof window === "undefined") return createInitialCanvasState();
@@ -455,6 +458,40 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput }: NodeC
     }
     saveCanvasState(imported, viewport);
   }, [importableOutput, state.nodes.length, viewport]);
+
+  // ── Export to editor ──
+  const [exportMessage, setExportMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  const selectedCanExport = useMemo(() => {
+    if (!state.selectedNodeId) return false;
+    return canExportFromNode(state, state.selectedNodeId);
+  }, [state]);
+
+  const handleExportSelected = useCallback(() => {
+    if (!onExportToEditor || !state.selectedNodeId) return;
+    const result = exportFromSelectedNode(state, state.selectedNodeId);
+    if (!result.success) {
+      setExportMessage({ text: result.reason, type: "error" });
+      setTimeout(() => setExportMessage(null), 3000);
+      return;
+    }
+    onExportToEditor(result.output);
+    setExportMessage({ text: `${result.output.totalCuts}컷을 편집기로 보냈습니다`, type: "success" });
+    setTimeout(() => setExportMessage(null), 3000);
+  }, [onExportToEditor, state]);
+
+  const handleExportAll = useCallback(() => {
+    if (!onExportToEditor) return;
+    const result = exportAllChainsToPromptOutput(state);
+    if (!result.success) {
+      setExportMessage({ text: result.reason, type: "error" });
+      setTimeout(() => setExportMessage(null), 3000);
+      return;
+    }
+    onExportToEditor(result.output);
+    setExportMessage({ text: `${result.output.totalCuts}컷 전체를 편집기로 보냈습니다`, type: "success" });
+    setTimeout(() => setExportMessage(null), 3000);
+  }, [onExportToEditor, state]);
 
   // ── Viewport controls ──
   const handleZoomIn = useCallback(() => {
@@ -654,10 +691,48 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput }: NodeC
             </Button>
           </>
         )}
+        {onExportToEditor && state.nodes.some(n => n.type === "generate-video") && (
+          <>
+            <div className="h-4 w-px bg-gray-200" />
+            {state.selectedNodeId && selectedCanExport && (
+              <Button
+                size="sm"
+                className="h-7 text-[10px] px-2 text-white"
+                style={{ background: "#22c55e" }}
+                onClick={handleExportSelected}
+                title="선택된 체인을 편집기로 보내기"
+              >
+                선택 항목 보내기
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] px-2"
+              onClick={handleExportAll}
+              title="전체 체인을 편집기로 보내기"
+            >
+              전체 보내기
+            </Button>
+          </>
+        )}
         <span className="text-[10px] text-muted-foreground ml-1">
           {state.nodes.length}개 노드 · {state.edges.length}개 연결
         </span>
       </div>
+
+      {/* Export feedback message */}
+      {exportMessage && (
+        <div
+          className="absolute top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-md text-xs font-medium"
+          style={{
+            background: exportMessage.type === "success" ? "#22c55e" : "#ef4444",
+            color: "white",
+          }}
+        >
+          {exportMessage.text}
+        </div>
+      )}
 
       {/* Canvas Area */}
       <div

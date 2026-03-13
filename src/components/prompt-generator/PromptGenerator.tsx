@@ -53,6 +53,13 @@ export default function PromptGenerator() {
     }
   };
 
+  const handleCanvasExport = useCallback((output: PromptOutput) => {
+    setResult(output);
+    setStatus("success");
+    setError(null);
+    setActiveTab("prompt");
+  }, []);
+
   const handleUseAsScenario = useCallback((scenarioText: string) => {
     setPrefillScenario(scenarioText);
     setActiveTab("prompt");
@@ -162,6 +169,7 @@ export default function PromptGenerator() {
               setCanvasOutputs(prev => [...prev, { videoUrl, meta }]);
             }}
             importableOutput={result}
+            onExportToEditor={handleCanvasExport}
           />
         </div>
       ) : activeTab === "story" ? (
