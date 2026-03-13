@@ -307,7 +307,7 @@ function getProjectTitle(chain: ExportChain): string {
 }
 
 /** chain의 provenance에서 원본 cutNumber를 추출한다 */
-function getProvenanceCutNumber(chain: ExportChain): number | null {
+export function getProvenanceCutNumber(chain: ExportChain): number | null {
   const prov = chain.videoNode.provenance as {
     importMeta?: { cutNumber?: number };
   } | undefined;

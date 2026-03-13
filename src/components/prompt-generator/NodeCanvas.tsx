@@ -35,8 +35,12 @@ import {
   canExportFromNode,
   mergeSelectedNodeToOutput,
   mergeAllChainsToOutput,
+  findChainFromNode,
+  findAllChains,
+  getProvenanceCutNumber,
   type MergeResult,
   type MergeError,
+  type MergeErrorCode,
 } from "@/lib/nodes-to-sequence";
 import type { PromptOutput } from "@/types";
 import NodePalette from "./NodePalette";
@@ -80,21 +84,34 @@ const CATEGORY_COLORS: Record<string, string> = {
 // Sub-components
 // ═══════════════════════════════════════════════════════════════════
 
+/** 노드 하이라이트 타입 */
+type NodeHighlight = "conflict" | "unmatched" | "no-provenance" | null;
+
+const HIGHLIGHT_STYLES: Record<string, { border: string; shadow: string; badge: string; label: string }> = {
+  conflict: { border: "#ef4444", shadow: "0 0 8px 2px rgba(239,68,68,0.35)", badge: "#ef4444", label: "충돌" },
+  unmatched: { border: "#f59e0b", shadow: "0 0 8px 2px rgba(245,158,11,0.35)", badge: "#f59e0b", label: "미대응" },
+  "no-provenance": { border: "#9ca3af", shadow: "none", badge: "#9ca3af", label: "병합 불가" },
+};
+
 /** 개별 노드 렌더링 */
 function CanvasNodeBox({
   node,
   isSelected,
+  highlight,
   onMouseDown,
   onPortMouseDown,
   onPortMouseUp,
 }: {
   node: CanvasNode;
   isSelected: boolean;
+  highlight?: NodeHighlight;
   onMouseDown: (e: React.MouseEvent) => void;
   onPortMouseDown: (portId: string) => void;
   onPortMouseUp: (portId: string) => void;
 }) {
-  const borderColor = isSelected ? "#787fff" : STATUS_COLORS[node.status] || "#e5e5e5";
+  const hlStyle = highlight ? HIGHLIGHT_STYLES[highlight] : null;
+  const borderColor = hlStyle ? hlStyle.border : isSelected ? "#787fff" : STATUS_COLORS[node.status] || "#e5e5e5";
+  const boxShadowExtra = hlStyle ? hlStyle.shadow : "none";
   const categoryColor = CATEGORY_COLORS[node.category] || "#787fff";
 
   return (
@@ -106,6 +123,7 @@ function CanvasNodeBox({
         width: node.width,
         minHeight: node.height,
         border: `2px solid ${borderColor}`,
+        boxShadow: boxShadowExtra !== "none" ? boxShadowExtra : undefined,
         background: "white",
         zIndex: isSelected ? 20 : 10,
       }}
@@ -119,6 +137,14 @@ function CanvasNodeBox({
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full" style={{ background: categoryColor }} />
           <span className="text-[11px] font-semibold" style={{ color: "#333" }}>{node.label}</span>
+          {hlStyle && (
+            <span
+              className="text-[8px] font-bold px-1 py-0.5 rounded"
+              style={{ background: hlStyle.badge, color: "white" }}
+            >
+              {hlStyle.label}
+            </span>
+          )}
         </div>
         <div
           className="w-2.5 h-2.5 rounded-full"
@@ -469,8 +495,41 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     saveCanvasState(imported, viewport);
   }, [importableOutput, state.nodes.length, viewport]);
 
+  // ── Node highlights (merge feedback) ──
+  const [nodeHighlights, setNodeHighlights] = useState<Map<string, NodeHighlight>>(new Map());
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyHighlights = useCallback((highlights: Map<string, NodeHighlight>, durationMs = 5000) => {
+    setNodeHighlights(highlights);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setNodeHighlights(new Map()), durationMs);
+  }, []);
+
+  const clearHighlights = useCallback(() => {
+    setNodeHighlights(new Map());
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+  }, []);
+
+  // ── Pre-merge provenance check ──
+  const selectedChainMergeInfo = useMemo(() => {
+    if (!state.selectedNodeId || !onMergeToEditor || !importableOutput) return null;
+    const chain = findChainFromNode(state, state.selectedNodeId);
+    if (!chain) return null;
+    const cutNumber = getProvenanceCutNumber(chain);
+    return { hasProvenance: cutNumber != null, cutNumber };
+  }, [state, onMergeToEditor, importableOutput]);
+
+  const allChainsMergeInfo = useMemo(() => {
+    if (!onMergeToEditor || !importableOutput) return null;
+    const chains = findAllChains(state);
+    if (chains.length === 0) return null;
+    const withProv = chains.filter(c => getProvenanceCutNumber(c) != null).length;
+    const withoutProv = chains.length - withProv;
+    return { total: chains.length, withProvenance: withProv, withoutProvenance: withoutProv };
+  }, [state, onMergeToEditor, importableOutput]);
+
   // ── Export to editor ──
-  const [exportMessage, setExportMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [exportMessage, setExportMessage] = useState<{ text: string; type: "success" | "error" | "warning" } | null>(null);
 
   const selectedCanExport = useMemo(() => {
     if (!state.selectedNodeId) return false;
@@ -505,30 +564,69 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
 
   // ── Merge export (부분 병합) ──
 
-  /** merge 실패 메시지 포맷 */
-  const showMergeError = useCallback((err: MergeError) => {
-    const timeout = err.code === "DUPLICATE_TARGET_CUT" ? 5000 : 3000;
-    setExportMessage({ text: err.reason, type: "error" });
-    setTimeout(() => setExportMessage(null), timeout);
+  /** MergeErrorCode 기반 UI 메시지 분기 */
+  const getMergeErrorDisplay = useCallback((err: MergeError): { text: string; timeout: number } => {
+    const codeMap: Record<MergeErrorCode, { text: string; timeout: number }> = {
+      EMPTY_CHAINS: { text: "병합할 체인이 없습니다.", timeout: 3000 },
+      EMPTY_BASE: { text: "기존 결과가 비어 있어 병합할 수 없습니다. 전체 보내기를 사용하세요.", timeout: 4000 },
+      DUPLICATE_TARGET_CUT: {
+        text: `Cut ${err.conflictedCutNumbers?.join(", ")}번 충돌 — 같은 cut을 가리키는 중복 체인을 제거하세요.`,
+        timeout: 5000,
+      },
+      NO_MATCHED_CHAINS: { text: err.reason, timeout: 4000 },
+      NO_CHAIN_FOUND: { text: "선택된 노드에서 체인을 찾을 수 없습니다.", timeout: 3000 },
+      NO_VIDEO_NODES: { text: "캔버스에 비디오 생성 노드가 없습니다.", timeout: 3000 },
+    };
+    return codeMap[err.code] || { text: err.reason, timeout: 3000 };
   }, []);
 
-  /** merge 성공 메시지 포맷 (partial / full 구분) */
+  /** merge 실패 메시지 + 노드 하이라이트 */
+  const showMergeError = useCallback((err: MergeError) => {
+    const display = getMergeErrorDisplay(err);
+    setExportMessage({ text: display.text, type: "error" });
+    setTimeout(() => setExportMessage(null), display.timeout);
+
+    // conflict 노드 → 빨간 하이라이트
+    if (err.code === "DUPLICATE_TARGET_CUT" && err.conflictedChainNodeIds) {
+      const hl = new Map<string, NodeHighlight>();
+      for (const id of err.conflictedChainNodeIds) hl.set(id, "conflict");
+      applyHighlights(hl, display.timeout);
+    }
+    // provenance 없는 chain → 회색 하이라이트
+    if (err.code === "NO_MATCHED_CHAINS") {
+      const chains = findAllChains(state);
+      const hl = new Map<string, NodeHighlight>();
+      for (const c of chains) {
+        if (getProvenanceCutNumber(c) == null) hl.set(c.videoNode.id, "no-provenance");
+      }
+      if (hl.size > 0) applyHighlights(hl, display.timeout);
+    }
+  }, [getMergeErrorDisplay, applyHighlights, state]);
+
+  /** merge 성공 메시지 + unmatched 하이라이트 */
   const showMergeSuccess = useCallback((res: MergeResult) => {
     const merged = res.mergedCutNumbers;
-    const unmatched = res.unmatchedChainNodeIds.length;
+    const unmatched = res.unmatchedChainNodeIds;
     let text: string;
-    const type: "success" | "error" = "success";
+    const type: "success" | "warning" = unmatched.length > 0 ? "warning" : "success";
 
-    if (unmatched > 0) {
-      // partial success
-      text = `Cut ${merged.join(",")} 병합 완료 — ${unmatched}개 체인 제외 (대응 cut 없음)`;
+    if (unmatched.length > 0) {
+      text = `Cut ${merged.join(",")} 병합 완료 — ${unmatched.length}개 체인 제외 (대응 cut 없음)`;
     } else {
-      // full success
       text = `Cut ${merged.join(",")} 병합 완료 (${merged.length}개)`;
     }
     setExportMessage({ text, type });
     setTimeout(() => setExportMessage(null), 3000);
-  }, []);
+
+    // unmatched 노드 amber 하이라이트
+    if (unmatched.length > 0) {
+      const hl = new Map<string, NodeHighlight>();
+      for (const id of unmatched) hl.set(id, "unmatched");
+      applyHighlights(hl, 5000);
+    } else {
+      clearHighlights();
+    }
+  }, [applyHighlights, clearHighlights]);
 
   const handleMergeSelected = useCallback(() => {
     if (!onMergeToEditor || !importableOutput || !state.selectedNodeId) return;
@@ -773,24 +871,44 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
           <>
             <div className="h-4 w-px bg-gray-200" />
             {state.selectedNodeId && selectedCanExport && (
-              <Button
-                size="sm"
-                className="h-7 text-[10px] px-2 text-white"
-                style={{ background: "#f59e0b" }}
-                onClick={handleMergeSelected}
-                title="선택된 체인만 기존 결과에 병합"
-              >
-                선택 병합
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  className="h-7 text-[10px] px-2 text-white"
+                  style={{
+                    background: selectedChainMergeInfo?.hasProvenance === false ? "#9ca3af" : "#f59e0b",
+                  }}
+                  onClick={handleMergeSelected}
+                  title={
+                    selectedChainMergeInfo?.hasProvenance === false
+                      ? "이 체인은 가져온 cut이 아니어서 병합 불가"
+                      : "선택된 체인만 기존 결과에 병합"
+                  }
+                >
+                  선택 병합
+                  {selectedChainMergeInfo?.hasProvenance === false && (
+                    <span className="ml-1 text-[8px] opacity-80">⚠</span>
+                  )}
+                </Button>
+              </>
             )}
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-[10px] px-2 border-amber-300 text-amber-700"
               onClick={handleMergeAll}
-              title="편집된 체인만 기존 결과에 부분 병합"
+              title={
+                allChainsMergeInfo && allChainsMergeInfo.withoutProvenance > 0
+                  ? `${allChainsMergeInfo.withoutProvenance}개 체인은 병합 불가 (provenance 없음)`
+                  : "편집된 체인만 기존 결과에 부분 병합"
+              }
             >
               전체 병합
+              {allChainsMergeInfo && allChainsMergeInfo.withoutProvenance > 0 && (
+                <span className="ml-1 text-[8px] text-amber-500">
+                  ({allChainsMergeInfo.withProvenance}/{allChainsMergeInfo.total})
+                </span>
+              )}
             </Button>
           </>
         )}
@@ -804,7 +922,7 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
         <div
           className="absolute top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-md text-xs font-medium"
           style={{
-            background: exportMessage.type === "success" ? "#22c55e" : "#ef4444",
+            background: exportMessage.type === "success" ? "#22c55e" : exportMessage.type === "warning" ? "#f59e0b" : "#ef4444",
             color: "white",
           }}
         >
@@ -860,6 +978,7 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
               key={node.id}
               node={node}
               isSelected={node.id === state.selectedNodeId}
+              highlight={nodeHighlights.get(node.id) ?? null}
               onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
               onPortMouseDown={(portId) => handlePortMouseDown(node.id, portId)}
               onPortMouseUp={(portId) => handlePortMouseUp(node.id, portId)}
