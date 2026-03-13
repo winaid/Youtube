@@ -253,6 +253,10 @@ export interface PreservedCutData {
   characterRole?: string;
   videoPromptJson?: unknown;
   extendPromptJson?: unknown;
+  // 구조 보조 메타 — roundtrip 보존
+  structureType?: string;   // "cut" | "scene" | "sequence"
+  durationClass?: string;   // "cut-like" | "scene-like" | "sequence-like"
+  groupId?: string;
 }
 
 /**

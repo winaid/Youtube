@@ -185,6 +185,12 @@ export interface ExtendPromptJson {
 /** 씬 타입 분류 (품질 평가 기준 선택에 사용) */
 export type SceneType = "character" | "environment" | "object-detail" | "map-graphic" | "transition-abstract";
 
+/** 구조 단위 분류 — cut/scene/sequence 중 어디에 해당하는지 (구조 힌트) */
+export type StructureType = "cut" | "scene" | "sequence";
+
+/** 길이 기반 분류 — duration으로 판단한 단위 성격 (soft rule) */
+export type DurationClass = "cut-like" | "scene-like" | "sequence-like";
+
 export interface Cut {
   cutNumber: number;
   durationSec: number;
@@ -205,6 +211,13 @@ export interface Cut {
   // JSON 기반 프롬프트 — string 필드와 공존 (점진적 마이그레이션)
   videoPromptJson?: VideoPromptJson;
   extendPromptJson?: ExtendPromptJson;
+  // 구조 보조 메타 — cut/scene/sequence 분류
+  /** 구조 단위 힌트 (cutCount 기반 등). 없으면 기본 "cut" */
+  structureType?: StructureType;
+  /** duration 기반 길이 분류 (soft rule). 없으면 미분류 */
+  durationClass?: DurationClass;
+  /** scene/sequence 그룹 ID — 같은 그룹에 속하는 cut끼리 공유 */
+  groupId?: string;
 }
 
 /** Fallback 원인 분류 — 사용자에게 정확한 안내를 위해 */

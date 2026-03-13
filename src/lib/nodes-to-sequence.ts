@@ -211,6 +211,10 @@ function chainToCut(chain: ExportChain, cutNumber: number): Cut {
   if (preserved?.characterRole) cut.characterRole = preserved.characterRole;
   if (preserved?.videoPromptJson) cut.videoPromptJson = preserved.videoPromptJson as Cut["videoPromptJson"];
   if (preserved?.extendPromptJson) cut.extendPromptJson = preserved.extendPromptJson as Cut["extendPromptJson"];
+  // 구조 보조 메타 복원
+  if (preserved?.structureType) cut.structureType = preserved.structureType as Cut["structureType"];
+  if (preserved?.durationClass) cut.durationClass = preserved.durationClass as Cut["durationClass"];
+  if (preserved?.groupId) cut.groupId = preserved.groupId;
 
   return cut;
 }

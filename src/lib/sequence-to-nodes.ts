@@ -60,6 +60,10 @@ function extractPreservedCutData(cut: Cut): PreservedCutData {
     ...(cut.characterRole ? { characterRole: cut.characterRole } : {}),
     ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
     ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
+    // 구조 보조 메타 보존
+    ...(cut.structureType ? { structureType: cut.structureType } : {}),
+    ...(cut.durationClass ? { durationClass: cut.durationClass } : {}),
+    ...(cut.groupId ? { groupId: cut.groupId } : {}),
   };
 }
 
