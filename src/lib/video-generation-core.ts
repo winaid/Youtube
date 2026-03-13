@@ -95,6 +95,8 @@ export interface NormalizedVideoResult {
   engine: "kling";
   needsUpload: boolean;
   error?: string;
+  /** 서버가 재시도 무의미 판정 (FAILED 시) */
+  noRetry?: boolean;
   /** 완료 시각 */
   completedAt: number;
   /** polling 메타 */
@@ -333,7 +335,9 @@ export async function pollVideoTask(
     }
 
     if (data.status === "FAILED") {
-      return makeFailedResult(attempt, startTime, data.error || "비디오 생성 실패");
+      const result = makeFailedResult(attempt, startTime, data.error || "비디오 생성 실패");
+      result.noRetry = data.noRetry;
+      return result;
     }
 
     // RUNNING — notify progress and continue

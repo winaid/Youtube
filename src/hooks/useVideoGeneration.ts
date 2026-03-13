@@ -53,15 +53,12 @@ import {
 import { extractEditable } from "@/lib/shot-editing";
 import {
   submitVideoGeneration,
-  getAdaptivePollInterval,
-  sleep,
+  pollVideoTask,
   buildDurationMeta,
   classifyVideoError,
   extractProviderMeta,
-  POLL_MAX_ATTEMPTS,
-  POLL_ERROR_BACKOFF,
-  MAX_CONSECUTIVE_ERRORS,
   type VideoSubmitResult,
+  type NormalizedVideoResult,
 } from "@/lib/video-generation-core";
 
 interface UseVideoGenerationOptions {
@@ -376,7 +373,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     return null;
   }, [state.config, cuts]);
 
-  // 폴링 시작 — for-loop + sleep 방식, 중복 실행 방지
+  // 폴링 시작 — core pollVideoTask() 위임, 중복 실행 방지
   const startPolling = useCallback(async (
     cutNumber: number,
     operationName: string,
@@ -779,144 +776,53 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     };
 
     // ══════════════════════════════════════════════════════════════════
-    // Polling loop — 순수하게 completion 감지에 집중, 후처리는 위 함수 호출
+    // Polling — core의 pollVideoTask()에 완전 위임
+    // interval / backoff / max attempts / terminal status 해석 모두 core 담당
+    // hook은 결과를 받아 handlePollCompleted / handlePollFailed만 호출
     // ══════════════════════════════════════════════════════════════════
-    let consecutiveErrors = 0;
     const tPollStart = performance.now();
-    let pollCount = 0;
 
     try {
-      for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-        // 첫 시도는 즉시, 이후엔 적응형 대기
-        if (attempt > 0) {
-          const waitMs = consecutiveErrors > 0
-            ? POLL_ERROR_BACKOFF[Math.min(consecutiveErrors - 1, POLL_ERROR_BACKOFF.length - 1)]
-            : getAdaptivePollInterval(attempt);
-          await sleep(waitMs);
-        }
+      const result: NormalizedVideoResult = await pollVideoTask(
+        taskId ?? operationName,
+        {
+          extraPollBody: {
+            operationName,
+            isExtend: isExtend ?? false,
+            cutNumber,
+          },
+          onProgress: (attempt, maxAttempts) => {
+            if (attempt % 12 === 11) {
+              console.log(`[CUT ${cutNumber}] 폴링 진행 중 — poll #${attempt + 1}/${maxAttempts}, engine=${engine}`);
+            }
+          },
+        },
+      );
 
-        // ── HTTP 요청
-        let res: Response;
-        try {
-          res = await fetch("/api/check-video", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              operationName,
-              engine,
-              taskId: taskId ?? operationName,
-              isExtend: isExtend ?? false,
-              cutNumber, // 서버 로그용
-            }),
-          });
-        } catch (networkErr) {
-          consecutiveErrors++;
-          console.warn(`[CUT ${cutNumber}] 네트워크 에러 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, networkErr);
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            const classified = classifyVideoError(networkErr);
-            updateClip(cutNumber, { status: "failed", error: classified.message });
-            return;
-          }
-          continue;
-        }
-
-        // ── HTTP 상태 처리
-        if (!res.ok) {
-          // 4xx: 클라이언트 문제 → 즉시 중단
-          if (res.status >= 400 && res.status < 500) {
-            const errText = await res.text().catch(() => "");
-            console.error(`[CUT ${cutNumber}] check-video 클라이언트 에러 ${res.status}:`, errText.slice(0, 300));
-            const classified = classifyVideoError(new Error(errText || `HTTP ${res.status}`), res.status);
-            updateClip(cutNumber, { status: "failed", error: classified.message });
-            return;
-          }
-          // 5xx: 서버 transient 에러 → response body에서 실제 원인 추출 후 최대 3회 재시도
-          consecutiveErrors++;
-          let serverErrDetail = "";
-          try {
-            const errBody = await res.json() as { error?: string; errorType?: string };
-            serverErrDetail = errBody.error ? ` (${errBody.error.slice(0, 120)})` : "";
-          } catch { /* body 읽기 실패는 무시 */ }
-          console.warn(`[CUT ${cutNumber}] check-video 서버 에러 ${res.status}${serverErrDetail} (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            const classified = classifyVideoError(new Error(serverErrDetail || `HTTP ${res.status}`), res.status);
-            updateClip(cutNumber, {
-              status: "failed",
-              error: classified.message,
-            });
-            return;
-          }
-          continue;
-        }
-
-        // 성공 응답 시 연속 에러 카운터 리셋
-        consecutiveErrors = 0;
-
-        // ── JSON 파싱 (실패해도 재시도)
-        let data: { status?: string; error?: string; videoUri?: string; rawVideoUri?: string; canonicalVideoUri?: string | null; needsUpload?: boolean; seed?: string; variants?: VideoVariant[]; noRetry?: boolean };
-        try {
-          data = await res.json();
-        } catch (parseErr) {
-          consecutiveErrors++;
-          console.warn(`[CUT ${cutNumber}] 응답 JSON 파싱 실패 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, parseErr);
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            const classified = classifyVideoError(new Error("JSON parse failed"));
-            updateClip(cutNumber, { status: "failed", error: classified.message });
-            return;
-          }
-          continue;
-        }
-
-        consecutiveErrors = 0; // 성공 시 리셋
-        pollCount++;
-
-        // ── 상태별 처리
-        // data.status가 없는데 data.error가 있으면 → 즉시 실패 (대기 루프 방지)
-        if (!data.status && data.error) {
-          console.error(`[CUT ${cutNumber}] status 없이 error 수신 (poll #${attempt}):`, data.error);
-          updateClip(cutNumber, { status: "failed", error: String(data.error) });
-          return;
-        }
-
-        if (data.status === "PENDING" || data.status === "RUNNING" || !data.status) {
-          // 아직 처리 중 → 다음 루프
-          if (attempt % 12 === 11) { // 매 1분마다 로그
-            console.log(`[CUT ${cutNumber}] 폴링 진행 중 — poll #${attempt + 1}/${POLL_MAX_ATTEMPTS}, engine=${engine}`);
-          }
-          continue;
-        }
-
-        if (data.status === "COMPLETED") {
-          await handlePollCompleted(
-            {
-              videoUri: data.videoUri,
-              rawVideoUri: data.rawVideoUri,
-              canonicalVideoUri: data.canonicalVideoUri,
-              needsUpload: data.needsUpload,
-              seed: data.seed,
-              variants: data.variants,
-              _diag: (data as Record<string, unknown>)._diag as Record<string, unknown> | undefined,
-            },
-            { pollCount, tPollStart },
-          );
-          return; // 완료 → 루프 종료
-        }
-
-        if (data.status === "FAILED") {
-          handlePollFailed({ error: data.error, noRetry: data.noRetry }, attempt);
-          return; // 실패 → 루프 종료
-        }
-
-        // 알 수 없는 상태 → 계속 폴링
-        console.warn(`[CUT ${cutNumber}] 알 수 없는 status: ${data.status} — 계속 대기`);
+      if (result.status === "completed") {
+        await handlePollCompleted(
+          {
+            videoUri: result.videoUri,
+            rawVideoUri: result.rawVideoUri,
+            canonicalVideoUri: result.canonicalVideoUri,
+            needsUpload: result.needsUpload,
+            seed: result.seed,
+            variants: result.variants,
+            _diag: result._diag,
+          },
+          { pollCount: result.pollMeta.totalAttempts, tPollStart },
+        );
+      } else if (result.status === "failed") {
+        handlePollFailed(
+          { error: result.error, noRetry: result.noRetry },
+          result.pollMeta.totalAttempts,
+        );
+      } else {
+        // timeout
+        const classified = classifyVideoError(new Error(result.error || "영상 생성 시간 초과"));
+        updateClip(cutNumber, { status: "failed", error: classified.message });
       }
-
-      // 최대 시도 횟수 초과
-      console.error(`[CUT ${cutNumber}] 최대 폴링 횟수(${POLL_MAX_ATTEMPTS}) 초과`);
-      const classified = classifyVideoError(new Error(`영상 생성 시간 초과 (${Math.round(POLL_MAX_ATTEMPTS * 5 / 60)}분 초과)`));
-      updateClip(cutNumber, { status: "failed", error: classified.message });
     } finally {
-      // 폴링 완료 시 반드시 activePolls에서 제거
       activePolls.current.delete(cutNumber);
       pollTimers.current.delete(cutNumber);
     }

@@ -740,7 +740,7 @@ describe("path unification — hook and node produce identical meta shapes", () 
     expect(result._diag).toBeDefined();
   });
 
-  it("hook useVideoGeneration imports all core helpers (static verification)", async () => {
+  it("hook useVideoGeneration imports core helpers (static verification)", async () => {
     // This test reads the hook source to verify it imports from video-generation-core
     const fs = await import("fs");
     const hookSource = fs.readFileSync(
@@ -750,22 +750,22 @@ describe("path unification — hook and node produce identical meta shapes", () 
 
     // Verify core helper imports
     expect(hookSource).toContain("from \"@/lib/video-generation-core\"");
+    expect(hookSource).toContain("submitVideoGeneration");
+    expect(hookSource).toContain("pollVideoTask");
     expect(hookSource).toContain("buildDurationMeta");
     expect(hookSource).toContain("classifyVideoError");
     expect(hookSource).toContain("extractProviderMeta");
-    expect(hookSource).toContain("getAdaptivePollInterval");
-    expect(hookSource).toContain("POLL_MAX_ATTEMPTS");
-    expect(hookSource).toContain("POLL_ERROR_BACKOFF");
-    expect(hookSource).toContain("MAX_CONSECUTIVE_ERRORS");
 
-    // Verify NO local duplicates of replaced functions
-    // (These should only appear as imports, not as local definitions)
-    const lines = hookSource.split("\\n");
-    const localSleepDef = lines.filter(l =>
-      l.match(/^(export\s+)?function\s+sleep\s*\(/) ||
-      l.match(/^const\s+sleep\s*=/)
-    );
-    expect(localSleepDef).toHaveLength(0);
+    // Polling constants should NOT be imported — fully delegated to pollVideoTask
+    expect(hookSource).not.toContain("getAdaptivePollInterval");
+    expect(hookSource).not.toContain("POLL_MAX_ATTEMPTS");
+    expect(hookSource).not.toContain("POLL_ERROR_BACKOFF");
+    expect(hookSource).not.toContain("MAX_CONSECUTIVE_ERRORS");
+
+    // No inline POST-based fetch("/api/check-video") — main polling is in core
+    // (pollShotVariant's GET-based check-video is a separate concern)
+    const postCheckVideoFetches = hookSource.match(/fetch\(\s*["']\/api\/check-video["']/g);
+    expect(postCheckVideoFetches).toBeNull();
   });
 
   it("hook uses submitVideoGeneration (no inline fetch /api/generate-video)", async () => {
@@ -784,27 +784,27 @@ describe("path unification — hook and node produce identical meta shapes", () 
     expect(generateVideoFetches).toBeNull();
   });
 
-  it("hook polling uses same constants as core pollVideoTask", async () => {
+  it("hook polling fully delegated to pollVideoTask (no inline constants)", async () => {
     const fs = await import("fs");
     const hookSource = fs.readFileSync(
       new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
       "utf-8",
     );
 
-    // Hook must use core polling constants (not local definitions)
-    expect(hookSource).toContain("POLL_MAX_ATTEMPTS");
-    expect(hookSource).toContain("POLL_ERROR_BACKOFF");
-    expect(hookSource).toContain("MAX_CONSECUTIVE_ERRORS");
-    expect(hookSource).toContain("getAdaptivePollInterval");
+    // Hook must use pollVideoTask from core — polling fully delegated
+    expect(hookSource).toContain("pollVideoTask");
     expect(hookSource).toContain("classifyVideoError");
 
-    // No local POLL_MAX_ATTEMPTS definition
-    const localPollMax = hookSource.match(/const\s+POLL_MAX_ATTEMPTS\s*=/g);
-    expect(localPollMax).toBeNull();
+    // Polling constants should NOT be imported — they're internal to pollVideoTask
+    expect(hookSource).not.toContain("POLL_MAX_ATTEMPTS");
+    expect(hookSource).not.toContain("POLL_ERROR_BACKOFF");
+    expect(hookSource).not.toContain("MAX_CONSECUTIVE_ERRORS");
+    expect(hookSource).not.toContain("getAdaptivePollInterval");
 
-    // No local getAdaptivePollInterval definition
-    const localAdaptive = hookSource.match(/function\s+getAdaptivePollInterval\s*\(/g);
-    expect(localAdaptive).toBeNull();
+    // No inline POST-based fetch("/api/check-video") — main polling is in core
+    // (pollShotVariant's GET-based check-video is a separate concern)
+    const postCheckVideoFetches = hookSource.match(/fetch\(\s*["']\/api\/check-video["']/g);
+    expect(postCheckVideoFetches).toBeNull();
   });
 });
 
@@ -935,28 +935,34 @@ describe("hook post-processing extraction — polling loop simplified", () => {
     expect(hookSource).toContain("handlePollFailed");
   });
 
-  it("polling loop COMPLETED branch delegates to handlePollCompleted", async () => {
+  it("polling delegates to pollVideoTask — no inline for-loop", async () => {
     const fs = await import("fs");
     const hookSource = fs.readFileSync(
       new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
       "utf-8",
     );
 
-    // The COMPLETED branch should call handlePollCompleted, not inline the logic
-    // Find the COMPLETED block and check it's a short delegation
-    const completedMatch = hookSource.match(
-      /if \(data\.status === "COMPLETED"\) \{[\s\S]*?return;.*?\/\/ 완료/
-    );
-    expect(completedMatch).not.toBeNull();
-    // The matched block should be short (delegation only, not 300+ lines of inline code)
-    const completedBlock = completedMatch![0];
-    const lineCount = completedBlock.split("\n").length;
-    // Should be under 20 lines (it was 300+ before extraction)
-    expect(lineCount).toBeLessThan(20);
-    expect(completedBlock).toContain("handlePollCompleted");
+    // Hook must call pollVideoTask() directly
+    expect(hookSource).toContain("pollVideoTask(");
+    // No inline for-loop polling — no fetch("/api/check-video")
+    expect(hookSource).not.toContain('fetch("/api/check-video"');
   });
 
-  it("polling loop FAILED branch delegates to handlePollFailed", async () => {
+  it("pollVideoTask result.status === completed delegates to handlePollCompleted", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // After pollVideoTask, completed branch calls handlePollCompleted
+    const completedMatch = hookSource.match(
+      /result\.status === "completed"\)[\s\S]*?handlePollCompleted/
+    );
+    expect(completedMatch).not.toBeNull();
+  });
+
+  it("pollVideoTask result.status === failed delegates to handlePollFailed", async () => {
     const fs = await import("fs");
     const hookSource = fs.readFileSync(
       new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
@@ -964,13 +970,9 @@ describe("hook post-processing extraction — polling loop simplified", () => {
     );
 
     const failedMatch = hookSource.match(
-      /if \(data\.status === "FAILED"\) \{[\s\S]*?return;.*?\/\/ 실패/
+      /result\.status === "failed"\)[\s\S]*?handlePollFailed/
     );
     expect(failedMatch).not.toBeNull();
-    const failedBlock = failedMatch![0];
-    const lineCount = failedBlock.split("\n").length;
-    expect(lineCount).toBeLessThan(10);
-    expect(failedBlock).toContain("handlePollFailed");
   });
 
   it("handlePollCompleted receives NormalizedVideoResult-compatible shape", async () => {
@@ -1024,11 +1026,112 @@ describe("hook post-processing extraction — polling loop simplified", () => {
     expect(result).toHaveProperty("variants");
     expect(result).toHaveProperty("_diag");
 
-    // Shape is directly passable to handlePollCompleted
-    // (in a future refactor, the hook can do:
+    // Shape is directly passable to handlePollCompleted — hook now does exactly this:
     //   const result = await pollVideoTask(taskId, opts);
     //   if (result.status === "completed") await handlePollCompleted(result, meta);
-    // )
     expect(result.status).toBe("completed");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. Hook polling execution path full unification
+// ═══════════════════════════════════════════════════════════════════
+
+describe("hook polling execution path — full unification with node-execution", () => {
+  it("hook imports pollVideoTask from core", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // pollVideoTask must be in imports
+    const importBlock = hookSource.match(
+      /import \{[\s\S]*?\} from "@\/lib\/video-generation-core"/
+    );
+    expect(importBlock).not.toBeNull();
+    expect(importBlock![0]).toContain("pollVideoTask");
+  });
+
+  it("hook does NOT contain inline polling constants (delegated to core)", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // These should NOT appear as imports or definitions — polling is fully delegated
+    expect(hookSource).not.toContain("getAdaptivePollInterval");
+    expect(hookSource).not.toContain("POLL_MAX_ATTEMPTS");
+    expect(hookSource).not.toContain("POLL_ERROR_BACKOFF");
+    expect(hookSource).not.toContain("MAX_CONSECUTIVE_ERRORS");
+  });
+
+  it("hook does NOT contain inline sleep import (polling timing delegated to core)", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // sleep should not be imported from core — only used internally by pollVideoTask
+    const importBlock = hookSource.match(
+      /import \{[\s\S]*?\} from "@\/lib\/video-generation-core"/
+    );
+    expect(importBlock).not.toBeNull();
+    expect(importBlock![0]).not.toContain("sleep");
+  });
+
+  it("hook passes extraPollBody with operationName/isExtend/cutNumber to pollVideoTask", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // The pollVideoTask call must include extraPollBody with these fields
+    const pollCall = hookSource.match(
+      /pollVideoTask\([\s\S]*?extraPollBody[\s\S]*?\)/
+    );
+    expect(pollCall).not.toBeNull();
+    const callBlock = pollCall![0];
+    expect(callBlock).toContain("operationName");
+    expect(callBlock).toContain("isExtend");
+    expect(callBlock).toContain("cutNumber");
+  });
+
+  it("hook and node-execution both use pollVideoTask from same module", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+    const nodeSource = fs.readFileSync(
+      new URL("../src/lib/node-execution.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // Both must import pollVideoTask from the same core module
+    const hookImport = hookSource.match(/pollVideoTask[\s\S]*?video-generation-core/);
+    const nodeImport = nodeSource.match(/pollVideoTask[\s\S]*?video-generation-core/);
+    expect(hookImport).not.toBeNull();
+    expect(nodeImport).not.toBeNull();
+  });
+
+  it("hook handles all three NormalizedVideoResult statuses (completed/failed/timeout)", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // All three statuses must be handled after pollVideoTask returns
+    expect(hookSource).toContain('result.status === "completed"');
+    expect(hookSource).toContain('result.status === "failed"');
+    // timeout is the else branch
+    const timeoutHandling = hookSource.match(
+      /\/\/ timeout[\s\S]*?classifyVideoError/
+    );
+    expect(timeoutHandling).not.toBeNull();
   });
 });
