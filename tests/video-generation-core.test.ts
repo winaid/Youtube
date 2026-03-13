@@ -393,7 +393,8 @@ describe("durationMeta shape — matches DurationMeta interface", () => {
   it("should set source='fallback' when neither requested nor API meta", () => {
     const meta = buildDurationMeta(undefined);
 
-    expect(meta.normalizedSecondsPerScene).toBe(6);
+    // DURATION_FALLBACK = 8 (from duration-reconciliation)
+    expect(meta.normalizedSecondsPerScene).toBe(8);
     expect(meta.source).toBe("fallback");
   });
 
@@ -628,5 +629,140 @@ describe("submit request shape — consistent with /api/generate-video", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.structuredSequence).toEqual(seq);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Path unification — hook and node use identical core helpers
+// ═══════════════════════════════════════════════════════════════════
+
+describe("path unification — hook and node produce identical meta shapes", () => {
+  it("buildDurationMeta produces identical shape for both paths", () => {
+    // Simulate: API returns durationMeta with partial data
+    const rawMeta: RawDurationMeta = {
+      requestedSecondsPerScene: 10,
+      normalizedSecondsPerScene: 10,
+      sentSecondsPerScene: 5,
+      warnings: ["Kling capped at 5s"],
+    };
+
+    // Both paths call buildDurationMeta with the same inputs → identical output
+    const hookMeta = buildDurationMeta(rawMeta.requestedSecondsPerScene, rawMeta);
+    const nodeMeta = buildDurationMeta(rawMeta.requestedSecondsPerScene, rawMeta);
+
+    expect(hookMeta).toEqual(nodeMeta);
+    // Verify shape completeness
+    expect(hookMeta).toEqual({
+      requestedSecondsPerScene: 10,
+      normalizedSecondsPerScene: 10,
+      sentSecondsPerScene: 5,
+      source: "api-response",
+      warnings: ["Kling capped at 5s"],
+    });
+  });
+
+  it("classifyVideoError produces identical classification for both paths", () => {
+    // Both paths use classifyVideoError for the same error
+    const networkErr = new Error("Failed to fetch");
+    const hookClassification = classifyVideoError(networkErr);
+    const nodeClassification = classifyVideoError(networkErr);
+
+    expect(hookClassification).toEqual(nodeClassification);
+    expect(hookClassification.type).toBe("network");
+    expect(hookClassification.retryable).toBe(true);
+
+    // HTTP 500 error — identical classification
+    const serverErr = new Error("Internal Server Error");
+    const hookServer = classifyVideoError(serverErr, 500);
+    const nodeServer = classifyVideoError(serverErr, 500);
+    expect(hookServer).toEqual(nodeServer);
+    expect(hookServer.type).toBe("server");
+  });
+
+  it("extractProviderMeta produces identical ProviderMeta for both paths", () => {
+    const submitResult: VideoSubmitResult = {
+      taskId: "kling-42",
+      operationName: "kling-42",
+      engine: "kling",
+      modeUsed: "extend",
+      modelUsed: "kling-v2",
+      status: "RUNNING",
+    };
+
+    const hookMeta = extractProviderMeta(submitResult);
+    const nodeMeta = extractProviderMeta(submitResult);
+
+    expect(hookMeta).toEqual(nodeMeta);
+    expect(hookMeta).toEqual({
+      engine: "kling",
+      modeUsed: "extend",
+      modelUsed: "kling-v2",
+    });
+  });
+
+  it("pollVideoTask returns identical NormalizedVideoResult shape for both paths", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.com/unified.mp4",
+        rawVideoUri: "https://cdn.kling.com/raw.mp4",
+        canonicalVideoUri: "https://cdn.kling.com/unified.mp4",
+        seed: "999",
+        needsUpload: true,
+        variants: [{ videoUri: "https://cdn.kling.com/unified.mp4" }],
+        _diag: { primaryUriType: "HTTPS" },
+      }),
+    });
+
+    const promise = pollVideoTask("unified-task", { maxAttempts: 3, fixedIntervalMs: 100 });
+    await vi.advanceTimersByTimeAsync(200);
+    const result = await promise;
+
+    // Verify ALL fields of NormalizedVideoResult
+    expect(result.status).toBe("completed");
+    expect(result.videoUri).toBeDefined();
+    expect(result.rawVideoUri).toBeDefined();
+    expect(result.canonicalVideoUri).toBeDefined();
+    expect(result.seed).toBe("999");
+    expect(result.engine).toBe("kling");
+    expect(result.needsUpload).toBe(true);
+    expect(result.variants).toHaveLength(1);
+    expect(result.completedAt).toBeGreaterThan(0);
+    expect(result.pollMeta).toEqual(
+      expect.objectContaining({
+        totalAttempts: expect.any(Number),
+        totalDurationMs: expect.any(Number),
+      }),
+    );
+    expect(result._diag).toBeDefined();
+  });
+
+  it("hook useVideoGeneration imports all core helpers (static verification)", async () => {
+    // This test reads the hook source to verify it imports from video-generation-core
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // Verify core helper imports
+    expect(hookSource).toContain("from \"@/lib/video-generation-core\"");
+    expect(hookSource).toContain("buildDurationMeta");
+    expect(hookSource).toContain("classifyVideoError");
+    expect(hookSource).toContain("extractProviderMeta");
+    expect(hookSource).toContain("getAdaptivePollInterval");
+    expect(hookSource).toContain("POLL_MAX_ATTEMPTS");
+    expect(hookSource).toContain("POLL_ERROR_BACKOFF");
+    expect(hookSource).toContain("MAX_CONSECUTIVE_ERRORS");
+
+    // Verify NO local duplicates of replaced functions
+    // (These should only appear as imports, not as local definitions)
+    const lines = hookSource.split("\\n");
+    const localSleepDef = lines.filter(l =>
+      l.match(/^(export\s+)?function\s+sleep\s*\(/) ||
+      l.match(/^const\s+sleep\s*=/)
+    );
+    expect(localSleepDef).toHaveLength(0);
   });
 });

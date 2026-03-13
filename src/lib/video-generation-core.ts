@@ -8,6 +8,7 @@
  */
 
 import type { DurationMeta } from "@/types";
+import { DURATION_FALLBACK } from "@/lib/duration-reconciliation";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -127,9 +128,9 @@ export interface ProviderMeta {
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
-const DEFAULT_MAX_POLL_ATTEMPTS = 72;
-const MAX_CONSECUTIVE_ERRORS = 3;
-const ERROR_BACKOFF = [5000, 7500, 10000, 15000, 20000];
+export const POLL_MAX_ATTEMPTS = 72;
+export const MAX_CONSECUTIVE_ERRORS = 3;
+export const POLL_ERROR_BACKOFF = [5000, 7500, 10000, 15000, 20000];
 
 // ═══════════════════════════════════════════════════════════════════
 // Adaptive Polling Interval
@@ -216,7 +217,7 @@ export async function pollVideoTask(
   taskId: string,
   options: PollOptions = {},
 ): Promise<NormalizedVideoResult> {
-  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_POLL_ATTEMPTS;
+  const maxAttempts = options.maxAttempts ?? POLL_MAX_ATTEMPTS;
   const useAdaptive = options.fixedIntervalMs == null;
   let consecutiveErrors = 0;
   const startTime = Date.now();
@@ -230,7 +231,7 @@ export async function pollVideoTask(
     // wait before polling (skip first attempt)
     if (attempt > 0) {
       const waitMs = consecutiveErrors > 0
-        ? ERROR_BACKOFF[Math.min(consecutiveErrors - 1, ERROR_BACKOFF.length - 1)]
+        ? POLL_ERROR_BACKOFF[Math.min(consecutiveErrors - 1, POLL_ERROR_BACKOFF.length - 1)]
         : useAdaptive
           ? getAdaptivePollInterval(attempt)
           : options.fixedIntervalMs!;
@@ -375,7 +376,7 @@ export function buildDurationMeta(
   requestedSeconds: number | undefined,
   rawMeta?: RawDurationMeta,
 ): DurationMeta {
-  const normalized = rawMeta?.normalizedSecondsPerScene ?? requestedSeconds ?? 6;
+  const normalized = rawMeta?.normalizedSecondsPerScene ?? requestedSeconds ?? DURATION_FALLBACK;
   const sent = rawMeta?.sentSecondsPerScene;
   const warnings = rawMeta?.warnings ?? [];
 
@@ -414,7 +415,7 @@ export function extractProviderMeta(submitResult: VideoSubmitResult): ProviderMe
 // Internal helpers
 // ═══════════════════════════════════════════════════════════════════
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 

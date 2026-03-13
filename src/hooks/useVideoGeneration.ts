@@ -51,22 +51,17 @@ import {
   type ShotVariantState,
 } from "@/lib/shot-variants";
 import { extractEditable } from "@/lib/shot-editing";
-
-const POLL_MAX_ATTEMPTS = 72; // 최대 6분
-const POLL_BACKOFF = [5000, 7500, 10000, 15000, 20000]; // 에러 시 백오프
-
-// 적응형 폴링: Veo는 보통 30-90초 소요 → 초반은 길게, 중반부터 짧게
-// [0-15s: skip] → [15-45s: 10s] → [45-90s: 5s] → [90s+: 7s]
-function getAdaptivePollInterval(attempt: number): number {
-  if (attempt < 3) return 5000;    // 0-15s: 첫 응답 도착 대기 (5s × 3)
-  if (attempt < 9) return 5000;    // 15-45s: 5s 간격 (자주 완료되는 구간)
-  if (attempt < 18) return 5000;   // 45-90s: 5s 간격
-  return 7000;                     // 90s+: 긴 생성일 때 서버 부담 경감
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import {
+  getAdaptivePollInterval,
+  sleep,
+  buildDurationMeta,
+  classifyVideoError,
+  extractProviderMeta,
+  POLL_MAX_ATTEMPTS,
+  POLL_ERROR_BACKOFF,
+  MAX_CONSECUTIVE_ERRORS,
+  type VideoSubmitResult,
+} from "@/lib/video-generation-core";
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
@@ -406,7 +401,6 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     updateClip(cutNumber, { status: "polling" });
 
     let consecutiveErrors = 0;
-    const MAX_CONSECUTIVE_ERRORS = 3;
     const tPollStart = performance.now();
     let pollCount = 0;
 
@@ -415,7 +409,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         // 첫 시도는 즉시, 이후엔 적응형 대기
         if (attempt > 0) {
           const waitMs = consecutiveErrors > 0
-            ? POLL_BACKOFF[Math.min(consecutiveErrors - 1, POLL_BACKOFF.length - 1)]
+            ? POLL_ERROR_BACKOFF[Math.min(consecutiveErrors - 1, POLL_ERROR_BACKOFF.length - 1)]
             : getAdaptivePollInterval(attempt);
           await sleep(waitMs);
         }
@@ -438,7 +432,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           consecutiveErrors++;
           console.warn(`[CUT ${cutNumber}] 네트워크 에러 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, networkErr);
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            updateClip(cutNumber, { status: "failed", error: "네트워크 연결 실패 — 인터넷 연결을 확인하세요" });
+            const classified = classifyVideoError(networkErr);
+            updateClip(cutNumber, { status: "failed", error: classified.message });
             return;
           }
           continue;
@@ -450,7 +445,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           if (res.status >= 400 && res.status < 500) {
             const errText = await res.text().catch(() => "");
             console.error(`[CUT ${cutNumber}] check-video 클라이언트 에러 ${res.status}:`, errText.slice(0, 300));
-            updateClip(cutNumber, { status: "failed", error: `폴링 오류 (${res.status}) — 요청이 잘못되었습니다` });
+            const classified = classifyVideoError(new Error(errText || `HTTP ${res.status}`), res.status);
+            updateClip(cutNumber, { status: "failed", error: classified.message });
             return;
           }
           // 5xx: 서버 transient 에러 → response body에서 실제 원인 추출 후 최대 3회 재시도
@@ -462,9 +458,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           } catch { /* body 읽기 실패는 무시 */ }
           console.warn(`[CUT ${cutNumber}] check-video 서버 에러 ${res.status}${serverErrDetail} (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            const classified = classifyVideoError(new Error(serverErrDetail || `HTTP ${res.status}`), res.status);
             updateClip(cutNumber, {
               status: "failed",
-              error: `서버 오류 (${res.status})${serverErrDetail || " — 잠시 후 다시 시도하세요"}`,
+              error: classified.message,
             });
             return;
           }
@@ -482,7 +479,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           consecutiveErrors++;
           console.warn(`[CUT ${cutNumber}] 응답 JSON 파싱 실패 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, parseErr);
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            updateClip(cutNumber, { status: "failed", error: "서버 응답 파싱 실패" });
+            const classified = classifyVideoError(new Error("JSON parse failed"));
+            updateClip(cutNumber, { status: "failed", error: classified.message });
             return;
           }
           continue;
@@ -891,7 +889,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
       // 최대 시도 횟수 초과
       console.error(`[CUT ${cutNumber}] 최대 폴링 횟수(${POLL_MAX_ATTEMPTS}) 초과`);
-      updateClip(cutNumber, { status: "failed", error: `영상 생성 타임아웃 (${Math.round(POLL_MAX_ATTEMPTS * 5 / 60)}분 초과)` });
+      const classified = classifyVideoError(new Error(`영상 생성 시간 초과 (${Math.round(POLL_MAX_ATTEMPTS * 5 / 60)}분 초과)`));
+      updateClip(cutNumber, { status: "failed", error: classified.message });
     } finally {
       // 폴링 완료 시 반드시 activePolls에서 제거
       activePolls.current.delete(cutNumber);
@@ -1561,31 +1560,23 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           status: "failed",
           error: isSafetyError
             ? `안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
-            : errMsg,
+            : classifyVideoError(new Error(errMsg), res.status).message,
         });
         return;
       }
 
-      const data = await res.json() as {
-        operationName?: string;
-        taskId?: string;
-        engine?: "veo" | "kling";
-        modeUsed?: "generate" | "extend";
-        sourceVideo?: string;
-        warning?: string;
-        durationMeta?: {
-          requestedSecondsPerScene?: number;
-          normalizedSecondsPerScene?: number;
-          sentSecondsPerScene?: number;
-          warnings?: string[];
-        };
-        _diag?: {
-          authMethod?: string;
-          urlVersion?: string;
-          urlHasProject?: boolean;
-          veoMode?: string;
-          sceneExtensionAttempted?: boolean;
-        };
+      const raw = await res.json() as Record<string, unknown>;
+      const data = {
+        operationName: raw.operationName as string | undefined,
+        taskId: raw.taskId as string | undefined,
+        engine: (raw.engine as "kling") || "kling",
+        modeUsed: (raw.modeUsed as "generate" | "extend") || "generate",
+        modelUsed: (raw.modelUsed as string) || "",
+        sourceVideo: raw.sourceVideo as string | undefined,
+        warning: raw.warning as string | undefined,
+        status: (raw.status as string) || "RUNNING",
+        durationMeta: raw.durationMeta as VideoSubmitResult["durationMeta"],
+        _diag: raw._diag as Record<string, unknown> | undefined,
       };
 
       updateClip(cutNumber, {
@@ -1595,30 +1586,28 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         sourceVideo: data.sourceVideo,
       });
 
-      // ── 3-way snapshot: provenance에 서버 응답 메타 기록 ──
+      // ── 3-way snapshot: provenance에 서버 응답 메타 기록 (core helper) ──
       {
+        const providerMeta = extractProviderMeta(data as VideoSubmitResult);
         const snap = shotSnapshotsRef.current.get(cutNumber);
         if (snap) {
           snap.provenance = {
             ...snap.provenance,
             cutNumber,
-            modelUsed: (data as Record<string, unknown>).modelUsed as string | undefined,
-            modeUsed: data.modeUsed,
+            modelUsed: providerMeta.modelUsed,
+            modeUsed: providerMeta.modeUsed,
           };
         }
       }
 
-      // ── Duration meta 추적 ──
+      // ── Duration meta 추적 (core helper 사용) ──
       if (data.durationMeta) {
-        const dm = data.durationMeta;
-        setLastDurationMeta({
-          requestedSecondsPerScene: dm.requestedSecondsPerScene,
-          normalizedSecondsPerScene: dm.normalizedSecondsPerScene ?? DURATION_FALLBACK,
-          sentSecondsPerScene: dm.sentSecondsPerScene,
-          source: dm.requestedSecondsPerScene !== undefined ? "slider" : "fallback",
-          warnings: dm.warnings ?? [],
-        });
-        if (dm.warnings && dm.warnings.length > 0) {
+        const dm = buildDurationMeta(
+          data.durationMeta.requestedSecondsPerScene,
+          data.durationMeta,
+        );
+        setLastDurationMeta(dm);
+        if (dm.warnings.length > 0) {
           console.warn(`[CUT ${cutNumber}] duration 보정:`, dm.warnings);
         }
       }
@@ -1658,9 +1647,13 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         variantsToPreserve,
       );
     } catch (err) {
+      const classified = classifyVideoError(
+        err,
+        (err as { statusCode?: number })?.statusCode,
+      );
       updateClip(cutNumber, {
         status: "failed",
-        error: err instanceof Error ? err.message : "요청 실패",
+        error: classified.message,
       });
     }
   }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt]);
