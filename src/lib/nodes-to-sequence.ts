@@ -11,7 +11,7 @@
  */
 
 import type { PromptOutput, Cut } from "@/types";
-import type { CanvasState, CanvasNode, CanvasEdge, PreservedCutData, PreservedOutputMeta } from "./node-types";
+import type { CanvasState, CanvasNode, PreservedCutData, PreservedOutputMeta } from "./node-types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types

@@ -60,7 +60,7 @@ export default function PromptGenerator() {
     setActiveTab("prompt");
   }, []);
 
-  const handleCanvasMerge = useCallback((output: PromptOutput, mergedCutNumbers: number[]) => {
+  const handleCanvasMerge = useCallback((output: PromptOutput, _mergedCutNumbers: number[]) => {
     setResult(output);
     setStatus("success");
     setError(null);

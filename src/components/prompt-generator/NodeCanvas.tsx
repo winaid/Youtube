@@ -517,7 +517,7 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     const merged = res.mergedCutNumbers;
     const unmatched = res.unmatchedChainNodeIds.length;
     let text: string;
-    let type: "success" | "error" = "success";
+    const type: "success" | "error" = "success";
 
     if (unmatched > 0) {
       // partial success
