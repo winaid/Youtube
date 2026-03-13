@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { ShotSnapshots, CutProvenance, FieldDiff } from "@/types";
+import type { ShotSnapshots, CutProvenance, FieldDiff, ShotNarrationState } from "@/types";
 import { compareShot, humanFieldName, formatValue } from "@/lib/shot-comparison";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 interface ShotComparisonPanelProps {
   snapshots: ShotSnapshots;
+  /** narration dirty-state */
+  narrationState?: ShotNarrationState;
 }
 
 // ── Provenance 상단 표시 ────────────────────────────────────────────────────
@@ -132,7 +134,7 @@ function DiffRow({ diff }: { diff: FieldDiff }) {
 
 // ── 메인 패널 ───────────────────────────────────────────────────────────────
 
-export default function ShotComparisonPanel({ snapshots }: ShotComparisonPanelProps) {
+export default function ShotComparisonPanel({ snapshots, narrationState }: ShotComparisonPanelProps) {
   const [changedOnly, setChangedOnly] = useState(true);
 
   const comparison = useMemo(
@@ -153,6 +155,49 @@ export default function ShotComparisonPanel({ snapshots }: ShotComparisonPanelPr
     <div className="space-y-2">
       {/* Provenance */}
       <ProvenanceBanner p={snapshots.provenance} />
+
+      {/* Narration comparison */}
+      {narrationState && (
+        <div className="rounded-md border px-3 py-2 text-xs space-y-1.5"
+          style={{ background: narrationState.narrationDirty ? "#fef3c7" : "#f0fdf4" }}>
+          <div className="font-medium text-[10px] text-muted-foreground">나레이션 상태</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-[9px] text-muted-foreground mb-0.5">현재 텍스트</div>
+              <div className="text-[10px] break-words" style={{ color: narrationState.narrationDirty ? "#b45309" : "#166534" }}>
+                {narrationState.currentText || "(비어 있음)"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] text-muted-foreground mb-0.5">생성된 오디오 기준 텍스트</div>
+              <div className="text-[10px] break-words" style={{ color: "#6b7280" }}>
+                {narrationState.lastGeneratedText || "(미생성)"}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            <Badge variant="outline" className="text-[9px]" style={{
+              borderColor: narrationState.narrationDirty ? "#f59e0b" : "#22c55e",
+              color: narrationState.narrationDirty ? "#b45309" : "#16a34a",
+            }}>
+              {narrationState.narrationDirty ? "dirty — 재생성 필요" : "동기화됨"}
+            </Badge>
+            <Badge variant="outline" className="text-[9px]">
+              source: {narrationState.mode}
+            </Badge>
+            <Badge variant="outline" className="text-[9px]" style={{
+              borderColor: narrationState.lastGeneratedAudioUrl ? "#22c55e" : "#ef4444",
+            }}>
+              audio: {narrationState.lastGeneratedAudioUrl ? "있음" : "없음"}
+            </Badge>
+            {narrationState.lastGeneratedSyncStatus && (
+              <Badge variant="outline" className="text-[9px]">
+                sync: {narrationState.lastGeneratedSyncStatus}
+              </Badge>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="flex items-center justify-between">

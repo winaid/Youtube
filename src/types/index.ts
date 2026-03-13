@@ -539,6 +539,36 @@ export interface DurationMeta {
 /** shot별 나레이션 모드 */
 export type NarrationMode = "auto" | "manual" | "mute";
 
+/** shot 단위 나레이션 dirty-state 추적 */
+export interface ShotNarrationState {
+  /** 현재 나레이션 모드 */
+  mode: NarrationMode;
+  /** 현재 편집 중인 나레이션 텍스트 */
+  currentText: string;
+  /** 마지막으로 오디오 생성에 사용된 텍스트 */
+  lastGeneratedText: string;
+  /** 현재 편집 상태와 생성된 오디오가 불일치하는지 */
+  narrationDirty: boolean;
+  /** 마지막 생성된 오디오 URL */
+  lastGeneratedAudioUrl: string;
+  /** 마지막 생성 시 sync 상태 */
+  lastGeneratedSyncStatus: "exact" | "trimmed" | "padded" | "";
+  /** 마지막 생성 시점 (ms timestamp) */
+  lastGeneratedAt: number;
+  /** 마지막 생성 시 사용된 모드 */
+  lastGeneratedMode: NarrationMode;
+}
+
+/** 시퀀스 단위 나레이션 dirty-state 요약 */
+export interface SequenceNarrationState {
+  /** dirty 상태인 shot 수 */
+  dirtyShotCount: number;
+  /** 모든 shot이 오디오와 동기화되어 있는지 */
+  allShotsInSync: boolean;
+  /** 마지막 전체 생성 시 스냅샷 ID */
+  lastGeneratedSnapshotId: string;
+}
+
 /** shot별 오디오 생성 상태 */
 export type ShotAudioStatus = "idle" | "generating" | "completed" | "failed" | "muted";
 

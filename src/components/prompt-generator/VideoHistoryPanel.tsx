@@ -5,6 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+/** shot별 나레이션 복원 데이터 (localStorage 직렬화 가능) */
+export interface HistoryCutNarration {
+  narrationMode?: "auto" | "manual" | "mute";
+  narrationText?: string;
+  narrationAudioUri?: string;
+  narrationSyncStatus?: string;
+  narrationGeneratedAt?: number;
+}
+
 export interface VideoHistoryEntry {
   id: string;
   timestamp: number;
@@ -15,6 +24,8 @@ export interface VideoHistoryEntry {
     videoUri: string;
     seed?: string;
     durationSec: number;
+    /** 나레이션 복원 데이터 (v2+) */
+    narration?: HistoryCutNarration;
   }[];
 }
 

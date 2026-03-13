@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,8 @@ interface CutCardProps {
   onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
   onEnglishRefine?: (cutNumber: number) => Promise<void>;
   shotSnapshots?: ShotSnapshots;
+  /** narration dirty-state for this cut */
+  narrationState?: ShotNarrationState;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -311,6 +313,7 @@ export default function CutCard({
   onFeedbackRefine, onEnglishRefine,
   userVeoMode: _userVeoMode,
   shotSnapshots,
+  narrationState,
 }: CutCardProps) {
   const isEven = cut.cutNumber % 2 === 0;
   const [feedbackText, setFeedbackText] = useState("");
@@ -591,7 +594,7 @@ export default function CutCard({
                 3-way 비교 (Original / AutoFixed / Final)
               </AccordionTrigger>
               <AccordionContent className="pt-2">
-                <ShotComparisonPanel snapshots={shotSnapshots} />
+                <ShotComparisonPanel snapshots={shotSnapshots} narrationState={narrationState} />
               </AccordionContent>
             </AccordionItem>
           )}

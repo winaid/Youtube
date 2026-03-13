@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VideoClip, AudioMeta } from "@/types";
+import { VideoClip, AudioMeta, ShotNarrationState, SequenceNarrationState } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,10 @@ interface TimelineEditorProps {
   onTrimChange: (cutNumber: number, trimStart: number, trimEnd: number) => void;
   audioMeta?: AudioMeta | null;
   narrationStatus?: "idle" | "generating" | "completed" | "failed";
+  /** shot별 narration dirty-state */
+  shotNarrationStates?: Map<number, ShotNarrationState>;
+  /** 시퀀스 단위 narration dirty-state */
+  sequenceNarrationState?: SequenceNarrationState;
 }
 
 function TrimSlider({
@@ -107,6 +111,8 @@ export default function TimelineEditor({
   onTrimChange,
   audioMeta,
   narrationStatus,
+  shotNarrationStates,
+  sequenceNarrationState,
 }: TimelineEditorProps) {
   const completedClips = clips.filter((c) => c.status === "completed" && c.videoUri);
 
@@ -423,6 +429,17 @@ export default function TimelineEditor({
                 커버리지 {Math.round(audioMeta.audioCoverage.coverage * 100)}%
               </Badge>
             )}
+            {/* Sequence-level narration dirty badges */}
+            {sequenceNarrationState && sequenceNarrationState.dirtyShotCount > 0 && (
+              <Badge className="text-[10px] text-white" style={{ background: "#f59e0b" }}>
+                {sequenceNarrationState.dirtyShotCount}개 샷 재생성 필요
+              </Badge>
+            )}
+            {sequenceNarrationState && sequenceNarrationState.allShotsInSync && (
+              <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#22c55e", color: "#16a34a" }}>
+                전체 동기화됨
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -525,6 +542,11 @@ export default function TimelineEditor({
                 {audioMeta.warnings.length}개 경고
               </span>
             )}
+            {sequenceNarrationState && sequenceNarrationState.dirtyShotCount > 0 && (
+              <span className="block mt-0.5 text-[10px]" style={{ color: "#f59e0b" }}>
+                {sequenceNarrationState.dirtyShotCount}개 샷의 나레이션이 편집되어 다운로드된 오디오와 불일치합니다.
+              </span>
+            )}
           </div>
         )}
 
@@ -576,14 +598,23 @@ export default function TimelineEditor({
                   </div>
                   {clip.narrationAudioUri && (() => {
                     const track = audioMeta?.audioTracks?.find(t => t.cutNumber === clip.cutNumber);
-                    const syncColor = track?.syncStatus === "trimmed" ? "#f59e0b"
+                    const shotNState = shotNarrationStates?.get(clip.cutNumber);
+                    const isDirty = shotNState?.narrationDirty;
+                    const syncColor = isDirty ? "#f59e0b"
+                      : track?.syncStatus === "trimmed" ? "#f59e0b"
                       : track?.syncStatus === "padded" ? "#3b82f6" : "#16a34a";
                     return (
                       <p className="text-[8px] truncate mt-0.5" style={{ color: syncColor }}>
-                        audio{track?.syncStatus && track.syncStatus !== "exact" ? ` (${track.syncStatus})` : ""}
+                        {isDirty ? "audio stale" : `audio${track?.syncStatus && track.syncStatus !== "exact" ? ` (${track.syncStatus})` : ""}`}
                       </p>
                     );
                   })()}
+                  {/* Shot-level dirty badge (no audio yet) */}
+                  {!clip.narrationAudioUri && shotNarrationStates?.get(clip.cutNumber)?.narrationDirty && (
+                    <p className="text-[8px] truncate mt-0.5" style={{ color: "#f59e0b" }}>
+                      narration dirty
+                    </p>
+                  )}
                   {clip.narrationStatus === "failed" && (
                     <p className="text-[8px] truncate mt-0.5" style={{ color: "#ef4444" }}>
                       audio failed

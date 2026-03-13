@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { EditableShot } from "@/lib/shot-editing";
-import type { ShotRegenerateStatus, NarrationMode } from "@/types";
+import type { ShotRegenerateStatus, NarrationMode, ShotNarrationState } from "@/types";
 import { FRAMING_OPTIONS, ANGLE_OPTIONS } from "@/lib/shot-editing";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -27,6 +27,12 @@ interface ShotInspectorProps {
   onSetDuration: (newDuration: number) => void;
   onRegenerate: (shotId: string) => void;
   onClose: () => void;
+  /** shot narration dirty-state */
+  narrationState?: ShotNarrationState;
+  /** 이 shot의 나레이션만 재생성 */
+  onRegenerateNarration?: (cutNumber: number) => void;
+  /** cutNumber (narration regenerate 용) */
+  cutNumber?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -51,6 +57,9 @@ export default function ShotInspector({
   onSetDuration,
   onRegenerate,
   onClose,
+  narrationState,
+  onRegenerateNarration,
+  cutNumber,
 }: ShotInspectorProps) {
   const duration = shot.endSec - shot.startSec;
   const isGenerating = shotStatus === "generating";
@@ -219,7 +228,19 @@ export default function ShotInspector({
 
         {/* Narration section */}
         <fieldset className="space-y-2 border rounded-md p-2">
-          <legend className="text-[10px] font-medium text-muted-foreground px-1">나레이션</legend>
+          <legend className="text-[10px] font-medium text-muted-foreground px-1">
+            나레이션
+            {narrationState?.narrationDirty && (
+              <Badge className="ml-1 text-[8px] px-1 py-0 text-white" style={{ background: "#f59e0b" }}>
+                편집됨
+              </Badge>
+            )}
+            {narrationState && !narrationState.narrationDirty && narrationState.lastGeneratedAt > 0 && (
+              <Badge variant="outline" className="ml-1 text-[8px] px-1 py-0" style={{ borderColor: "#22c55e", color: "#16a34a" }}>
+                동기화됨
+              </Badge>
+            )}
+          </legend>
 
           {/* Mode selector */}
           <div className="flex items-center gap-2">
@@ -238,6 +259,19 @@ export default function ShotInspector({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Dirty state warning */}
+          {narrationState?.narrationDirty && (
+            <div className="px-2 py-1.5 rounded text-[10px]" style={{ background: "#f59e0b10", border: "1px solid #f59e0b30", color: "#b37700" }}>
+              편집됨 — 현재 텍스트/모드가 생성된 오디오와 다릅니다. 재생성이 필요합니다.
+              {narrationState.lastGeneratedText && narrationState.currentText !== narrationState.lastGeneratedText && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-[9px]">이전 생성 텍스트 보기</summary>
+                  <p className="mt-0.5 text-[9px] opacity-70 line-through">{narrationState.lastGeneratedText}</p>
+                </details>
+              )}
+            </div>
+          )}
 
           {/* Mute indicator */}
           {shot.narrationMode === "mute" && (
@@ -274,6 +308,34 @@ export default function ShotInspector({
               <NarrationSyncEstimate text={shot.narrationText} durationSec={duration} />
             )}
           </div>
+
+          {/* Regenerate narration button */}
+          {onRegenerateNarration && cutNumber !== undefined && shot.narrationMode !== "mute" && (
+            <Button
+              size="sm"
+              className="h-6 text-[10px] w-full text-white"
+              style={{ background: narrationState?.narrationDirty ? "#f59e0b" : "#3b82f6" }}
+              onClick={() => onRegenerateNarration(cutNumber)}
+              disabled={isGenerating}
+            >
+              {narrationState?.narrationDirty ? "이 샷 나레이션 다시 생성 (편집됨)" : "이 샷 나레이션 다시 생성"}
+            </Button>
+          )}
+
+          {/* Last generated info */}
+          {narrationState && narrationState.lastGeneratedAt > 0 && (
+            <div className="text-[9px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
+              <span>마지막 생성: {new Date(narrationState.lastGeneratedAt).toLocaleTimeString("ko-KR")}</span>
+              {narrationState.lastGeneratedSyncStatus && (
+                <Badge variant="outline" className="text-[8px]" style={{
+                  borderColor: narrationState.lastGeneratedSyncStatus === "trimmed" ? "#f59e0b"
+                    : narrationState.lastGeneratedSyncStatus === "padded" ? "#3b82f6" : "#22c55e",
+                }}>
+                  {narrationState.lastGeneratedSyncStatus}
+                </Badge>
+              )}
+            </div>
+          )}
         </fieldset>
       </CardContent>
     </Card>

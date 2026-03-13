@@ -117,12 +117,21 @@ export default function ResultPanel({
       .map((cut) => {
         const clip = videoGen.clips.find((c) => c.cutNumber === cut.cutNumber);
         if (!clip?.videoUri || clip.status !== "completed") return null;
+        const narrationState = videoGen.shotNarrationStates.get(cut.cutNumber);
+        const seq = clip.structuredSequence;
         return {
           cutNumber: cut.cutNumber,
           sceneDescription: cut.sceneDescription,
           videoUri: clip.videoUri,
           seed: clip.seed,
           durationSec: cut.durationSec,
+          narration: {
+            narrationMode: seq?.narrationMode || narrationState?.mode,
+            narrationText: seq?.narrationText || narrationState?.currentText,
+            narrationAudioUri: clip.narrationAudioUri,
+            narrationSyncStatus: narrationState?.lastGeneratedSyncStatus,
+            narrationGeneratedAt: narrationState?.lastGeneratedAt,
+          },
         };
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
@@ -133,7 +142,7 @@ export default function ResultPanel({
         cuts: completedCuts,
       });
     }
-  }, [result, videoGen.completedCount, videoGen.clips]);
+  }, [result, videoGen.completedCount, videoGen.clips, videoGen.shotNarrationStates]);
 
   // Enhancement 2: Feedback-based prompt refinement
   const handleFeedbackRefine = useCallback(async (cutNumber: number, feedback: string) => {
@@ -723,6 +732,7 @@ export default function ResultPanel({
                   onUpdate={handleCutUpdate}
                   userVeoMode={videoGen.config.mode}
                   shotSnapshots={videoGen.shotSnapshots.get(cut.cutNumber)}
+                  narrationState={videoGen.shotNarrationStates.get(cut.cutNumber)}
                   storyboardImage={storyboardImages[cut.cutNumber]}
                   storyboardCandidates={storyboardCandidates[cut.cutNumber]}
                   storyboardLoading={storyboardLoading[cut.cutNumber]}
@@ -985,6 +995,9 @@ export default function ResultPanel({
                   onAcceptVariant={(shotId, variantId) => {
                     videoGen.acceptShotVariant(shotId, variantId);
                   }}
+                  shotNarrationState={videoGen.shotNarrationStates.get(clip.cutNumber)}
+                  onMarkNarrationDirty={videoGen.markNarrationDirty}
+                  onRegenerateShotNarration={videoGen.regenerateShotNarration}
                 />
               ))
           )}
@@ -999,6 +1012,8 @@ export default function ResultPanel({
           onTrimChange={videoGen.setTrim}
           audioMeta={videoGen.audioMeta}
           narrationStatus={videoGen.narrationStatus}
+          shotNarrationStates={videoGen.shotNarrationStates}
+          sequenceNarrationState={videoGen.sequenceNarrationState}
         />
       )}
 

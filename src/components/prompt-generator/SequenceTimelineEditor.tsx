@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import ShotTimeline from "./ShotTimeline";
 import ShotInspector from "./ShotInspector";
 import ShotVariantPanel from "./ShotVariantPanel";
-import type { StructuredSequenceDocument, ShotRegenerateStatus } from "@/types";
+import type { StructuredSequenceDocument, ShotRegenerateStatus, ShotNarrationState } from "@/types";
 import {
   extractEditable,
   applyEditsToDocument,
@@ -43,6 +43,12 @@ interface SequenceTimelineEditorProps {
   variantState?: ShotVariantState;
   /** variant 채택 콜백 */
   onAcceptVariant?: (shotId: string, variantId: string) => void;
+  /** shot narration dirty-state (cutNumber 기반) */
+  shotNarrationState?: ShotNarrationState;
+  /** narration 편집 시 dirty 마킹 콜백 */
+  onMarkNarrationDirty?: (cutNumber: number, field: "text" | "mode", value: string) => void;
+  /** 이 shot의 나레이션 재생성 */
+  onRegenerateShotNarration?: (cutNumber: number) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -55,6 +61,9 @@ export default function SequenceTimelineEditor({
   onRegenerateShot,
   variantState: externalVariantState,
   onAcceptVariant,
+  shotNarrationState,
+  onMarkNarrationDirty,
+  onRegenerateShotNarration,
 }: SequenceTimelineEditorProps) {
   // ── State: original vs editable ──────────────────────────────
   const [editable, setEditable] = useState<EditableSequence>(() =>
@@ -150,8 +159,14 @@ export default function SequenceTimelineEditor({
     (path: string, value: string) => {
       if (!selectedShotId) return;
       apply(updateShotField(editable, selectedShotId, path, value));
+      // narration 필드 변경 시 dirty 마킹
+      if (path === "narrationText" && onMarkNarrationDirty) {
+        onMarkNarrationDirty(editable.cutNumber, "text", value);
+      } else if (path === "narrationMode" && onMarkNarrationDirty) {
+        onMarkNarrationDirty(editable.cutNumber, "mode", value);
+      }
     },
-    [editable, selectedShotId, apply],
+    [editable, selectedShotId, apply, onMarkNarrationDirty],
   );
 
   const handleSetDuration = useCallback(
@@ -268,6 +283,9 @@ export default function SequenceTimelineEditor({
           onSetDuration={handleSetDuration}
           onRegenerate={handleRegenerate}
           onClose={() => setSelectedShotId(null)}
+          narrationState={shotNarrationState}
+          onRegenerateNarration={onRegenerateShotNarration}
+          cutNumber={editable.cutNumber}
         />
       )}
 

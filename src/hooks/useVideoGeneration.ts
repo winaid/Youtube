@@ -35,6 +35,8 @@ import {
   type NarrationTrack,
   type AudioMeta,
   type AudioCoverageMeta,
+  type ShotNarrationState,
+  type SequenceNarrationState,
 } from "@/types";
 import {
   createInitialVariantState,
@@ -198,6 +200,74 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   // ── Narration Audio Pipeline 상태 ──
   const [audioMeta, setAudioMeta] = useState<AudioMeta | null>(null);
   const [narrationStatus, setNarrationStatus] = useState<"idle" | "generating" | "completed" | "failed">("idle");
+
+  // ── Narration dirty-state 추적 ──
+  const [shotNarrationStates, setShotNarrationStates] = useState<Map<number, ShotNarrationState>>(() => new Map<number, ShotNarrationState>());
+  const [sequenceNarrationState, setSequenceNarrationState] = useState<SequenceNarrationState>({
+    dirtyShotCount: 0,
+    allShotsInSync: true,
+    lastGeneratedSnapshotId: "",
+  });
+
+  /** shot의 narration dirty-state를 재계산 */
+  const recomputeSequenceNarrationState = useCallback((states: Map<number, ShotNarrationState>) => {
+    let dirtyShotCount = 0;
+    states.forEach((s) => { if (s.narrationDirty) dirtyShotCount++; });
+    setSequenceNarrationState(prev => ({
+      ...prev,
+      dirtyShotCount,
+      allShotsInSync: dirtyShotCount === 0 && states.size > 0,
+    }));
+  }, []);
+
+  /** shot narration 편집 시 dirty 마킹 */
+  const markNarrationDirty = useCallback((cutNumber: number, field: "text" | "mode", newValue: string) => {
+    setShotNarrationStates(prev => {
+      const next = new Map(prev);
+      const defaultState: ShotNarrationState = {
+        mode: "auto",
+        currentText: "",
+        lastGeneratedText: "",
+        narrationDirty: false,
+        lastGeneratedAudioUrl: "",
+        lastGeneratedSyncStatus: "",
+        lastGeneratedAt: 0,
+        lastGeneratedMode: "auto",
+      };
+      const fromMap = next.get(cutNumber);
+      const existing: ShotNarrationState = fromMap !== undefined ? fromMap : defaultState;
+      const updated: ShotNarrationState = { ...existing };
+      if (field === "text") {
+        updated.currentText = newValue;
+        updated.narrationDirty = newValue !== updated.lastGeneratedText || updated.mode !== updated.lastGeneratedMode;
+      } else if (field === "mode") {
+        updated.mode = newValue as "auto" | "manual" | "mute";
+        updated.narrationDirty = updated.mode !== updated.lastGeneratedMode || updated.currentText !== updated.lastGeneratedText;
+      }
+      next.set(cutNumber, updated);
+      recomputeSequenceNarrationState(next);
+      return next;
+    });
+  }, [recomputeSequenceNarrationState]);
+
+  /** shot narration 상태를 history/restore용으로 초기화 */
+  const initShotNarrationState = useCallback((cutNumber: number, mode: "auto" | "manual" | "mute", text: string, audioUrl?: string, syncStatus?: string, generatedAt?: number) => {
+    setShotNarrationStates(prev => {
+      const next = new Map(prev);
+      next.set(cutNumber, {
+        mode,
+        currentText: text,
+        lastGeneratedText: audioUrl ? text : "",
+        narrationDirty: false,
+        lastGeneratedAudioUrl: audioUrl || "",
+        lastGeneratedSyncStatus: (syncStatus || "") as "exact" | "trimmed" | "padded" | "",
+        lastGeneratedAt: generatedAt || 0,
+        lastGeneratedMode: mode,
+      });
+      recomputeSequenceNarrationState(next);
+      return next;
+    });
+  }, [recomputeSequenceNarrationState]);
 
   // cuts 변경 시 clips 초기화 + 시퀀스 플랜 동기화
   useEffect(() => {
@@ -2019,6 +2089,31 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       setAudioMeta(meta);
       setNarrationStatus("completed");
 
+      // ── 전체 생성 성공: 모든 shot의 dirty-state 해제 ──
+      setShotNarrationStates(prev => {
+        const next = new Map(prev);
+        for (const track of tracks) {
+          const existing = next.get(track.cutNumber);
+          if (existing) {
+            next.set(track.cutNumber, {
+              ...existing,
+              lastGeneratedText: existing.currentText,
+              lastGeneratedMode: existing.mode,
+              lastGeneratedAudioUrl: track.audioUri,
+              lastGeneratedSyncStatus: track.syncStatus || "",
+              lastGeneratedAt: track.generatedAt || Date.now(),
+              narrationDirty: false,
+            });
+          }
+        }
+        recomputeSequenceNarrationState(next);
+        return next;
+      });
+      setSequenceNarrationState(prev => ({
+        ...prev,
+        lastGeneratedSnapshotId: `snap-${Date.now()}`,
+      }));
+
       console.log("[NARRATION] 생성 완료", {
         trackCount: tracks.length,
         totalShots: shots.length,
@@ -2042,7 +2137,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         updateClip(clip.cutNumber, { narrationStatus: "failed" });
       }
     }
-  }, [state.clips, cuts, state.config.durationSeconds, updateClip]);
+  }, [state.clips, cuts, state.config.durationSeconds, updateClip, recomputeSequenceNarrationState]);
 
   /**
    * 단일 shot 나레이션 재생성
@@ -2096,13 +2191,31 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           narrationAudioUri: track.audioUri,
           narrationStatus: "completed",
         });
+        // ── dirty-state 해제: 생성 성공 ──
+        setShotNarrationStates(prev => {
+          const next = new Map(prev);
+          const existing = next.get(cutNumber);
+          if (existing) {
+            next.set(cutNumber, {
+              ...existing,
+              lastGeneratedText: existing.currentText,
+              lastGeneratedMode: existing.mode,
+              lastGeneratedAudioUrl: track.audioUri,
+              lastGeneratedSyncStatus: (track as { syncStatus?: string }).syncStatus as "exact" | "trimmed" | "padded" || "",
+              lastGeneratedAt: Date.now(),
+              narrationDirty: false,
+            });
+          }
+          recomputeSequenceNarrationState(next);
+          return next;
+        });
       } else {
         updateClip(cutNumber, { narrationStatus: "failed" });
       }
     } catch {
       updateClip(cutNumber, { narrationStatus: "failed" });
     }
-  }, [state.clips, cuts, state.config.durationSeconds, updateClip]);
+  }, [state.clips, cuts, state.config.durationSeconds, updateClip, recomputeSequenceNarrationState]);
 
   // ===== 전체 완료 감지 → 자동 리뷰 + 알림 =====
   const prevCompletedRef = useRef(0);
@@ -2442,5 +2555,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     regenerateShotNarration,
     narrationStatus,
     audioMeta,
+    // Narration dirty-state tracking
+    shotNarrationStates,
+    sequenceNarrationState,
+    markNarrationDirty,
+    initShotNarrationState,
   };
 }
