@@ -232,6 +232,42 @@ export const NODE_REGISTRY: NodeDefinition[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════
+// Metadata Preservation Types (for import/export roundtrip)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Import 시 GenerateVideo 노드 data에 저장되는 원본 Cut 메타데이터.
+ * 캔버스 UI에서 편집할 수 없는 필드를 보존하여 export 시 복원한다.
+ */
+export interface PreservedCutData {
+  cameraDirection: string;
+  moodLighting: string;
+  imagePrompt: string;
+  endImagePrompt: string;
+  extendPrompt: string;
+  transitionHint: string;
+  characterConsistency: string;
+  charactersInScene: string[];
+  multiShot?: unknown[];
+  shotCategory?: string;
+  characterRole?: string;
+  videoPromptJson?: unknown;
+  extendPromptJson?: unknown;
+}
+
+/**
+ * Import 시 TextInput 노드 data에 저장되는 PromptOutput-level 메타데이터.
+ * characterSeeds, continuityRules 등 output-level 정보를 보존한다.
+ */
+export interface PreservedOutputMeta {
+  characterSeeds: unknown[];
+  continuityRules: string[];
+  globalStylePrompt: string;
+  directorPersonaPrompt: string;
+  conceptSummary: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Pure State Functions
 // ═══════════════════════════════════════════════════════════════════
 

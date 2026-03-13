@@ -9,6 +9,8 @@ import type { PromptOutput, Cut } from "@/types";
 import {
   type CanvasState,
   type CanvasNode,
+  type PreservedCutData,
+  type PreservedOutputMeta,
   createInitialCanvasState,
   createNode,
   addNode,
@@ -37,6 +39,40 @@ const COL_VIDEO = 320;
 const COL_VIEWER = 660;
 const ROW_HEIGHT = 260;
 const ROW_START = 60;
+
+// ═══════════════════════════════════════════════════════════════════
+// Metadata preservation helpers
+// ═══════════════════════════════════════════════════════════════════
+
+/** Cut에서 캔버스에서 편집할 수 없는 필드를 추출하여 보존용 객체로 반환 */
+function extractPreservedCutData(cut: Cut): PreservedCutData {
+  return {
+    cameraDirection: cut.cameraDirection || "",
+    moodLighting: cut.moodLighting || "",
+    imagePrompt: cut.imagePrompt || "",
+    endImagePrompt: cut.endImagePrompt || "",
+    extendPrompt: cut.extendPrompt || "",
+    transitionHint: cut.transitionHint || "",
+    characterConsistency: cut.characterConsistency || "",
+    charactersInScene: cut.charactersInScene || [],
+    ...(cut.multiShot ? { multiShot: cut.multiShot } : {}),
+    ...(cut.shotCategory ? { shotCategory: cut.shotCategory } : {}),
+    ...(cut.characterRole ? { characterRole: cut.characterRole } : {}),
+    ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
+    ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
+  };
+}
+
+/** PromptOutput에서 output-level 메타를 추출하여 보존용 객체로 반환 */
+function extractPreservedOutputMeta(output: PromptOutput): PreservedOutputMeta {
+  return {
+    characterSeeds: output.characterSeeds || [],
+    continuityRules: output.continuityRules || [],
+    globalStylePrompt: output.globalStylePrompt || "",
+    directorPersonaPrompt: output.directorPersonaPrompt || "",
+    conceptSummary: output.conceptSummary || "",
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Core conversion
@@ -77,6 +113,9 @@ export function promptOutputToCanvasState(output: PromptOutput): CanvasState {
   const cuts = output.cuts || [];
   if (cuts.length === 0) return state;
 
+  // Output-level 메타 보존 (첫 번째 TextInput에 저장)
+  const outputMeta = extractPreservedOutputMeta(output);
+
   for (let i = 0; i < cuts.length; i++) {
     const cut = cuts[i];
     const rowY = ROW_START + i * ROW_HEIGHT;
@@ -88,12 +127,17 @@ export function promptOutputToCanvasState(output: PromptOutput): CanvasState {
     const textNodeWithData: CanvasNode = {
       ...textNode,
       label: `Cut ${cut.cutNumber} Prompt`,
-      data: { ...textNode.data, text: promptText },
+      data: {
+        ...textNode.data,
+        text: promptText,
+        // 첫 번째 cut의 TextInput에만 output-level 메타 저장
+        ...(i === 0 ? { _preservedOutputMeta: outputMeta } : {}),
+      },
       provenance: buildImportProvenance(meta, cut.cutNumber),
     };
     state = addNode(state, textNodeWithData);
 
-    // 2. Generate Video 노드
+    // 2. Generate Video 노드 — 원본 Cut 메타데이터 보존
     const vidDef = findDef("generate-video");
     const vidNode = createNode(vidDef, COL_VIDEO, rowY);
     const vidNodeWithData: CanvasNode = {
@@ -105,6 +149,7 @@ export function promptOutputToCanvasState(output: PromptOutput): CanvasState {
         durationSec: cut.durationSec || 6,
         aspectRatio: "16:9",
         sceneDescription: cut.sceneDescription || "",
+        _preservedCut: extractPreservedCutData(cut),
       },
       provenance: buildImportProvenance(meta, cut.cutNumber),
     };
@@ -180,6 +225,7 @@ export function cutToNodes(cut: Cut, rowIndex: number, meta?: Partial<ImportMeta
       durationSec: cut.durationSec || 6,
       aspectRatio: "16:9",
       sceneDescription: cut.sceneDescription || "",
+      _preservedCut: extractPreservedCutData(cut),
     },
     provenance: buildImportProvenance(importMeta, cut.cutNumber),
   };

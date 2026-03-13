@@ -8,7 +8,7 @@
  */
 
 import type { PromptOutput, Cut } from "@/types";
-import type { CanvasState, CanvasNode, CanvasEdge } from "./node-types";
+import type { CanvasState, CanvasNode, CanvasEdge, PreservedCutData, PreservedOutputMeta } from "./node-types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -151,20 +151,49 @@ function chainToCut(chain: ExportChain, cutNumber: number): Cut {
   const prompt = (data.prompt as string) || (chain.textNode?.data?.text as string) || "";
   const sceneDescription = (data.sceneDescription as string) || "";
 
-  return {
+  // 보존된 원본 Cut 메타데이터 복원 (있으면 사용, 없으면 빈 값)
+  const preserved = (data._preservedCut as PreservedCutData) || null;
+
+  const cut: Cut = {
     cutNumber,
+    // 편집 가능 필드: 캔버스에서 수정된 값 우선
     durationSec: (data.durationSec as number) || 6,
     sceneDescription: sceneDescription || prompt,
-    cameraDirection: "",
-    moodLighting: "",
-    imagePrompt: "",
-    endImagePrompt: "",
     videoPrompt: prompt,
-    extendPrompt: "",
-    transitionHint: "",
-    characterConsistency: "",
-    charactersInScene: [],
+    // 보존 필드: 원본 값 복원, 없으면 빈 값 fallback
+    cameraDirection: preserved?.cameraDirection ?? "",
+    moodLighting: preserved?.moodLighting ?? "",
+    imagePrompt: preserved?.imagePrompt ?? "",
+    endImagePrompt: preserved?.endImagePrompt ?? "",
+    extendPrompt: preserved?.extendPrompt ?? "",
+    transitionHint: preserved?.transitionHint ?? "",
+    characterConsistency: preserved?.characterConsistency ?? "",
+    charactersInScene: preserved?.charactersInScene ?? [],
   };
+
+  // Optional fields — 보존된 값이 있을 때만 포함
+  if (preserved?.multiShot) cut.multiShot = preserved.multiShot as Cut["multiShot"];
+  if (preserved?.shotCategory) cut.shotCategory = preserved.shotCategory;
+  if (preserved?.characterRole) cut.characterRole = preserved.characterRole;
+  if (preserved?.videoPromptJson) cut.videoPromptJson = preserved.videoPromptJson as Cut["videoPromptJson"];
+  if (preserved?.extendPromptJson) cut.extendPromptJson = preserved.extendPromptJson as Cut["extendPromptJson"];
+
+  return cut;
+}
+
+/** 체인에서 보존된 output-level 메타데이터를 찾는다 (TextInput._preservedOutputMeta) */
+function findPreservedOutputMeta(chain: ExportChain): PreservedOutputMeta | null {
+  const meta = chain.textNode?.data?._preservedOutputMeta as PreservedOutputMeta | undefined;
+  return meta || null;
+}
+
+/** 여러 체인에서 보존된 output-level 메타를 찾는다 (첫 번째 것 사용) */
+function findPreservedOutputMetaFromChains(chains: ExportChain[]): PreservedOutputMeta | null {
+  for (const chain of chains) {
+    const meta = findPreservedOutputMeta(chain);
+    if (meta) return meta;
+  }
+  return null;
 }
 
 /**
@@ -173,17 +202,18 @@ function chainToCut(chain: ExportChain, cutNumber: number): Cut {
 export function exportChainToPromptOutput(chain: ExportChain): ExportResult {
   const cut = chainToCut(chain, 1);
   const projectTitle = getProjectTitle(chain);
+  const preservedMeta = findPreservedOutputMeta(chain);
 
   return {
     success: true,
     output: {
       projectTitle,
-      conceptSummary: `Node canvas export — ${chain.videoNode.label}`,
+      conceptSummary: preservedMeta?.conceptSummary || `Node canvas export — ${chain.videoNode.label}`,
       totalCuts: 1,
-      globalStylePrompt: "",
-      directorPersonaPrompt: "",
-      characterSeeds: [],
-      continuityRules: [],
+      globalStylePrompt: preservedMeta?.globalStylePrompt ?? "",
+      directorPersonaPrompt: preservedMeta?.directorPersonaPrompt ?? "",
+      characterSeeds: (preservedMeta?.characterSeeds ?? []) as PromptOutput["characterSeeds"],
+      continuityRules: preservedMeta?.continuityRules ?? [],
       cuts: [cut],
     },
     chains: [chain],
@@ -202,17 +232,18 @@ export function exportAllChainsToPromptOutput(state: CanvasState): ExportResult 
 
   const cuts = chains.map((chain, i) => chainToCut(chain, i + 1));
   const projectTitle = getProjectTitle(chains[0]);
+  const preservedMeta = findPreservedOutputMetaFromChains(chains);
 
   return {
     success: true,
     output: {
       projectTitle,
-      conceptSummary: `Node canvas export — ${chains.length} cuts`,
+      conceptSummary: preservedMeta?.conceptSummary || `Node canvas export — ${chains.length} cuts`,
       totalCuts: cuts.length,
-      globalStylePrompt: "",
-      directorPersonaPrompt: "",
-      characterSeeds: [],
-      continuityRules: [],
+      globalStylePrompt: preservedMeta?.globalStylePrompt ?? "",
+      directorPersonaPrompt: preservedMeta?.directorPersonaPrompt ?? "",
+      characterSeeds: (preservedMeta?.characterSeeds ?? []) as PromptOutput["characterSeeds"],
+      continuityRules: preservedMeta?.continuityRules ?? [],
       cuts,
     },
     chains,
