@@ -23,6 +23,7 @@ import {
   mergeAllChainsToOutput,
   type ExportChain,
   type MergeError,
+  type MergeErrorCode,
 } from "@/lib/nodes-to-sequence";
 import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
 import {
@@ -572,7 +573,7 @@ describe("merge export — partial update of existing result", () => {
     const result = mergeSelectedChainsToOutput(chains, baseOutput);
     expect(result.success).toBe(false);
     if (result.success) return;
-    expect(result.reason).toContain("찾지 못했습니다");
+    expect(result.reason).toContain("병합할 수 없습니다");
   });
 
   it("should report unmatched chains while still merging matched ones", () => {
@@ -976,5 +977,156 @@ describe("merge — output-level metadata and cut order invariance", () => {
       expect(c.cutNumber).toBe(originalCuts[i].cutNumber);
       expect(c.videoPrompt).toBe(originalCuts[i].videoPrompt);
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. MergeError code 필드 구조화 검증
+// ═══════════════════════════════════════════════════════════════════
+
+describe("merge error — code field structured verification", () => {
+  function makeBaseOutput(cutCount: number): PromptOutput {
+    return {
+      projectTitle: "Code Test",
+      conceptSummary: "",
+      totalCuts: cutCount,
+      globalStylePrompt: "",
+      directorPersonaPrompt: "",
+      characterSeeds: [],
+      continuityRules: [],
+      cuts: Array.from({ length: cutCount }, (_, i) => makeCut(i + 1)),
+    };
+  }
+
+  it("empty chains → code EMPTY_CHAINS", () => {
+    const result = mergeSelectedChainsToOutput([], makeBaseOutput(1));
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("EMPTY_CHAINS");
+  });
+
+  it("empty base cuts → code EMPTY_BASE", () => {
+    const emptyBase: PromptOutput = {
+      projectTitle: "", conceptSummary: "", totalCuts: 0,
+      globalStylePrompt: "", directorPersonaPrompt: "",
+      characterSeeds: [], continuityRules: [], cuts: [],
+    };
+    const state = buildManualChain("test");
+    const chains = findAllChains(state);
+    const result = mergeSelectedChainsToOutput(chains, emptyBase);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("EMPTY_BASE");
+  });
+
+  it("duplicate target cutNumber → code DUPLICATE_TARGET_CUT", () => {
+    const base = makeBaseOutput(2);
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const dup: ExportChain = {
+      ...chains[0],
+      videoNode: {
+        ...chains[0].videoNode,
+        provenance: {
+          createdAt: Date.now(),
+          importMeta: { source: "structured-sequence-import", importedAt: Date.now(), cutNumber: 1 },
+        },
+      },
+    };
+
+    const result = mergeSelectedChainsToOutput([chains[0], dup], base);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("DUPLICATE_TARGET_CUT");
+    expect(result.conflictedCutNumbers).toEqual([1]);
+  });
+
+  it("no provenance chains → code NO_MATCHED_CHAINS + 수동 chain 안내 문구", () => {
+    const base = makeBaseOutput(2);
+    const manual = buildManualChain("manual");
+    const chains = findAllChains(manual);
+
+    const result = mergeSelectedChainsToOutput(chains, base);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("NO_MATCHED_CHAINS");
+    expect(result.reason).toContain("provenance");
+    expect(result.reason).toContain("캔버스에서 새로 만든");
+  });
+
+  it("provenance cutNumber가 base에 없음 → code NO_MATCHED_CHAINS + cutNumber 언급", () => {
+    const base = makeBaseOutput(2); // cut 1, 2
+    const canvas = promptOutputToCanvasState(makeBaseOutput(5));
+    const chains = findAllChains(canvas);
+
+    // chain[4] = cutNumber 5 → base에 없음
+    const result = mergeSelectedChainsToOutput([chains[4]], base);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("NO_MATCHED_CHAINS");
+    expect(result.reason).toContain("cutNumber");
+  });
+
+  it("mergeSelectedNodeToOutput no chain → code NO_CHAIN_FOUND", () => {
+    const base = makeBaseOutput(1);
+    const state = createInitialCanvasState();
+    const result = mergeSelectedNodeToOutput(state, "nonexistent-id", base);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("NO_CHAIN_FOUND");
+  });
+
+  it("mergeAllChainsToOutput no video nodes → code NO_VIDEO_NODES", () => {
+    const base = makeBaseOutput(1);
+    const state = createInitialCanvasState();
+    const result = mergeAllChainsToOutput(state, base);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("NO_VIDEO_NODES");
+  });
+
+  it("partial success: code 필드는 성공에 없고, mergedCutNumbers + unmatchedChainNodeIds 공존", () => {
+    const base = makeBaseOutput(3);
+    const canvas = promptOutputToCanvasState(base);
+    const importedChains = findAllChains(canvas);
+
+    const manualState = buildManualChain("unmatched");
+    const manualChains = findAllChains(manualState);
+
+    // imported chain[0] (matched) + manual chain (unmatched)
+    const result = mergeSelectedChainsToOutput([importedChains[0], manualChains[0]], base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.mergedCutNumbers).toEqual([1]);
+    expect(result.unmatchedChainNodeIds).toHaveLength(1);
+    // success에는 code 필드 없음
+    expect("code" in result).toBe(false);
+  });
+
+  it("full success: 모든 chain 병합, unmatchedChainNodeIds 빈 배열", () => {
+    const base = makeBaseOutput(3);
+    const canvas = promptOutputToCanvasState(base);
+    const chains = findAllChains(canvas);
+
+    const result = mergeSelectedChainsToOutput(chains, base);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.mergedCutNumbers).toEqual([1, 2, 3]);
+    expect(result.unmatchedChainNodeIds).toEqual([]);
+  });
+
+  it("replace export 기존 동작은 code 필드와 무관하게 유지", () => {
+    const base = makeBaseOutput(3);
+    const canvas = promptOutputToCanvasState(base);
+
+    const result = exportAllChainsToPromptOutput(canvas);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.cuts.length).toBe(3);
+    // ExportResult에는 code 필드 없음
+    expect("code" in result).toBe(false);
   });
 });

@@ -54,9 +54,20 @@ export interface MergeResult {
   meta: ExportMeta;
 }
 
+/** merge 에러 코드 */
+export type MergeErrorCode =
+  | "EMPTY_CHAINS"
+  | "EMPTY_BASE"
+  | "DUPLICATE_TARGET_CUT"
+  | "NO_MATCHED_CHAINS"
+  | "NO_CHAIN_FOUND"
+  | "NO_VIDEO_NODES";
+
 export interface MergeError {
   success: false;
   reason: string;
+  /** 구조화된 에러 코드 — UI 분기용 */
+  code: MergeErrorCode;
   /** 같은 cutNumber를 가리키는 chain이 2개 이상일 때 충돌 정보 */
   conflictedCutNumbers?: number[];
   /** 충돌에 관여한 chain nodeId 목록 */
@@ -321,11 +332,11 @@ export function mergeSelectedChainsToOutput(
   baseOutput: PromptOutput,
 ): MergeResult | MergeError {
   if (chains.length === 0) {
-    return { success: false, reason: "병합할 체인이 없습니다" };
+    return { success: false, code: "EMPTY_CHAINS", reason: "병합할 체인이 없습니다" };
   }
 
   if (!baseOutput.cuts || baseOutput.cuts.length === 0) {
-    return { success: false, reason: "기존 결과에 cut이 없어 병합할 수 없습니다" };
+    return { success: false, code: "EMPTY_BASE", reason: "기존 결과에 cut이 없어 병합할 수 없습니다" };
   }
 
   // ── duplicate target cutNumber 충돌 감지 ──
@@ -350,6 +361,7 @@ export function mergeSelectedChainsToOutput(
   if (conflictedCutNumbers.length > 0) {
     return {
       success: false,
+      code: "DUPLICATE_TARGET_CUT",
       reason: `Cut ${conflictedCutNumbers.join(", ")}번에 ${conflictedChainNodeIds.length}개 체인이 동시에 대응합니다. 같은 cut을 가리키는 중복 체인을 제거하세요.`,
       conflictedCutNumbers,
       conflictedChainNodeIds,
@@ -382,9 +394,14 @@ export function mergeSelectedChainsToOutput(
 
   // 전부 unmatched이면 실패
   if (mergedCutNumbers.length === 0) {
+    // provenance 자체가 없는 chain만 있는지, 아니면 cutNumber가 baseOutput에 없는지 구분
+    const hasAnyProvenance = chains.some(c => getProvenanceCutNumber(c) != null);
     return {
       success: false,
-      reason: `선택된 ${chains.length}개 체인 중 기존 결과와 대응되는 cut을 찾지 못했습니다. provenance가 없는 체인은 병합할 수 없습니다.`,
+      code: hasAnyProvenance ? "NO_MATCHED_CHAINS" : "NO_MATCHED_CHAINS",
+      reason: hasAnyProvenance
+        ? `선택된 ${chains.length}개 체인의 cutNumber가 기존 결과에 존재하지 않아 병합할 수 없습니다.`
+        : `캔버스에서 새로 만든 체인은 기존 cut 대응 정보(provenance)가 없어 병합할 수 없습니다. 기존 프롬프트를 캔버스로 가져온 후 편집하세요.`,
     };
   }
 
@@ -420,6 +437,7 @@ export function mergeSelectedNodeToOutput(
   if (!chain) {
     return {
       success: false,
+      code: "NO_CHAIN_FOUND",
       reason: "선택된 노드에서 GenerateVideo 체인을 찾을 수 없습니다.",
     };
   }
@@ -435,7 +453,7 @@ export function mergeAllChainsToOutput(
 ): MergeResult | MergeError {
   const chains = findAllChains(state);
   if (chains.length === 0) {
-    return { success: false, reason: "캔버스에 GenerateVideo 노드가 없습니다" };
+    return { success: false, code: "NO_VIDEO_NODES", reason: "캔버스에 GenerateVideo 노드가 없습니다" };
   }
   return mergeSelectedChainsToOutput(chains, baseOutput);
 }

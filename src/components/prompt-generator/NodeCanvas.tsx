@@ -35,6 +35,8 @@ import {
   canExportFromNode,
   mergeSelectedNodeToOutput,
   mergeAllChainsToOutput,
+  type MergeResult,
+  type MergeError,
 } from "@/lib/nodes-to-sequence";
 import type { PromptOutput } from "@/types";
 import NodePalette from "./NodePalette";
@@ -502,39 +504,47 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
   }, [onExportToEditor, state]);
 
   // ── Merge export (부분 병합) ──
+
+  /** merge 실패 메시지 포맷 */
+  const showMergeError = useCallback((err: MergeError) => {
+    const timeout = err.code === "DUPLICATE_TARGET_CUT" ? 5000 : 3000;
+    setExportMessage({ text: err.reason, type: "error" });
+    setTimeout(() => setExportMessage(null), timeout);
+  }, []);
+
+  /** merge 성공 메시지 포맷 (partial / full 구분) */
+  const showMergeSuccess = useCallback((res: MergeResult) => {
+    const merged = res.mergedCutNumbers;
+    const unmatched = res.unmatchedChainNodeIds.length;
+    let text: string;
+    let type: "success" | "error" = "success";
+
+    if (unmatched > 0) {
+      // partial success
+      text = `Cut ${merged.join(",")} 병합 완료 — ${unmatched}개 체인 제외 (대응 cut 없음)`;
+    } else {
+      // full success
+      text = `Cut ${merged.join(",")} 병합 완료 (${merged.length}개)`;
+    }
+    setExportMessage({ text, type });
+    setTimeout(() => setExportMessage(null), 3000);
+  }, []);
+
   const handleMergeSelected = useCallback(() => {
     if (!onMergeToEditor || !importableOutput || !state.selectedNodeId) return;
     const result = mergeSelectedNodeToOutput(state, state.selectedNodeId, importableOutput);
-    if (!result.success) {
-      const isConflict = "conflictedCutNumbers" in result && result.conflictedCutNumbers;
-      setExportMessage({ text: result.reason, type: "error" });
-      setTimeout(() => setExportMessage(null), isConflict ? 5000 : 3000);
-      return;
-    }
+    if (!result.success) { showMergeError(result); return; }
     onMergeToEditor(result.output, result.mergedCutNumbers);
-    const warnText = result.unmatchedChainNodeIds.length > 0
-      ? ` (${result.unmatchedChainNodeIds.length}개 미매칭)`
-      : "";
-    setExportMessage({ text: `Cut ${result.mergedCutNumbers.join(",")} 병합 완료${warnText}`, type: "success" });
-    setTimeout(() => setExportMessage(null), 3000);
-  }, [onMergeToEditor, importableOutput, state]);
+    showMergeSuccess(result);
+  }, [onMergeToEditor, importableOutput, state, showMergeError, showMergeSuccess]);
 
   const handleMergeAll = useCallback(() => {
     if (!onMergeToEditor || !importableOutput) return;
     const result = mergeAllChainsToOutput(state, importableOutput);
-    if (!result.success) {
-      const isConflict = "conflictedCutNumbers" in result && result.conflictedCutNumbers;
-      setExportMessage({ text: result.reason, type: "error" });
-      setTimeout(() => setExportMessage(null), isConflict ? 5000 : 3000);
-      return;
-    }
+    if (!result.success) { showMergeError(result); return; }
     onMergeToEditor(result.output, result.mergedCutNumbers);
-    const warnText = result.unmatchedChainNodeIds.length > 0
-      ? ` (${result.unmatchedChainNodeIds.length}개 미매칭)`
-      : "";
-    setExportMessage({ text: `Cut ${result.mergedCutNumbers.join(",")} 병합 완료${warnText}`, type: "success" });
-    setTimeout(() => setExportMessage(null), 3000);
-  }, [onMergeToEditor, importableOutput, state]);
+    showMergeSuccess(result);
+  }, [onMergeToEditor, importableOutput, state, showMergeError, showMergeSuccess]);
 
   // ── Viewport controls ──
   const handleZoomIn = useCallback(() => {
