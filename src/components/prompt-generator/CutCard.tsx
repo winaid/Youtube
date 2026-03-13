@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
 import ShotComparisonPanel from "./ShotComparisonPanel";
+import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -372,26 +373,11 @@ export default function CutCard({
               </Badge>
             )}
             {/* 구조 보조 메타 뱃지 — 값이 있을 때만 표시 */}
-            {cut.structureType && (
-              <Badge
-                variant="outline"
-                className="text-[9px] py-0 px-1.5"
-                style={{ borderColor: "#9ca3af", color: "#6b7280" }}
-                title="구조 단위 분류 (보조 메타)"
-              >
-                {cut.structureType.toUpperCase()}
-              </Badge>
-            )}
-            {cut.durationClass && (
-              <Badge
-                variant="outline"
-                className="text-[9px] py-0 px-1.5"
-                style={{ borderColor: "#d1d5db", color: "#9ca3af" }}
-                title="duration 기반 길이 분류 (보조 메타)"
-              >
-                {cut.durationClass}
-              </Badge>
-            )}
+            <StructureMetaBadges
+              structureType={cut.structureType}
+              durationClass={cut.durationClass}
+              compact
+            />
           </div>
           <Badge variant="outline" className="text-xs" style={{ borderColor: isEven ? "#fff787" : "#787fff80" }}>
             {cut.transitionHint}

@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import type { EditableShot, EditableSequence, SequenceDensityWarning } from "@/lib/shot-editing";
 import type { ShotRegenerateStatus } from "@/types";
 
@@ -272,6 +273,12 @@ export default function ShotTimeline({
                   {variantCount}v
                 </Badge>
               )}
+
+              <StructureMetaBadges
+                structureType={shot.structureType}
+                durationClass={shot.durationClass}
+                compact
+              />
 
               <Badge variant="outline" className="ml-auto text-[10px] shrink-0">
                 {shot.startSec}s–{shot.endSec}s

@@ -12,7 +12,7 @@
  *  - node graph 연결 (shotId 중심)
  */
 
-import type { StructuredSequenceDocument, TemporalBeat, NarrationMode } from "@/types";
+import type { StructuredSequenceDocument, TemporalBeat, NarrationMode, StructureType, DurationClass } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -32,6 +32,10 @@ export interface EditableShot {
   // ── Audio / Narration ──
   narrationText?: string;
   narrationMode?: NarrationMode;
+  // ── 구조 보조 메타 ──
+  structureType?: StructureType;
+  durationClass?: DurationClass;
+  groupId?: string;
 }
 
 export interface EditableSequence {
@@ -235,6 +239,10 @@ export function mergeShotWithPrevious(seq: EditableSequence, shotId: string): Ed
     environment: prev.environment === curr.environment ? prev.environment : `${prev.environment} → ${curr.environment}`,
     moodLighting: prev.moodLighting,
     focus: `${prev.focus} → ${curr.focus}`,
+    // 구조 보조 메타 — 앞 shot 값 유지
+    ...(prev.structureType ? { structureType: prev.structureType } : {}),
+    ...(prev.durationClass ? { durationClass: prev.durationClass } : {}),
+    ...(prev.groupId ? { groupId: prev.groupId } : {}),
   };
 
   const newShots = [...seq.shots];

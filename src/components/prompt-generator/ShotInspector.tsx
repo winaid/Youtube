@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import {
   Select,
   SelectContent,
@@ -147,6 +148,18 @@ export default function ShotInspector({
             <span className="text-[10px] text-muted-foreground">s</span>
           </div>
         </div>
+
+        {/* 구조 보조 메타 — 값이 있을 때만 표시 */}
+        {(shot.structureType || shot.durationClass) && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground">구조:</span>
+            <StructureMetaBadges
+              structureType={shot.structureType}
+              durationClass={shot.durationClass}
+              compact
+            />
+          </div>
+        )}
 
         {/* Camera section */}
         <fieldset className="space-y-2 border rounded-md p-2">

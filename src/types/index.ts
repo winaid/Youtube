@@ -409,6 +409,10 @@ export interface StructuredSequenceDocument {
     focus: string;
     narrationText?: string;
     narrationMode?: NarrationMode;
+    // 구조 보조 메타 — cut/scene/sequence 분류
+    structureType?: StructureType;
+    durationClass?: DurationClass;
+    groupId?: string;
   }>;
 
   // ── Legacy / Existing Fields ───────────────────────────

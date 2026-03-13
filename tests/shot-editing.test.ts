@@ -542,3 +542,124 @@ describe("Option lists", () => {
     expect(ANGLE_OPTIONS.length).toBeGreaterThanOrEqual(5);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. 구조 보조 메타 전파/보존
+// ═══════════════════════════════════════════════════════════════════
+
+describe("구조 보조 메타 전파/보존", () => {
+  function makeDocWithStructureMeta(): StructuredSequenceDocument {
+    const doc = makeDoc();
+    doc.shots = doc.shots.map((s, i) => ({
+      ...s,
+      structureType: "cut" as const,
+      durationClass: i === 0 ? "cut-like" as const : "scene-like" as const,
+      ...(i === 2 ? { groupId: "g1" } : {}),
+    }));
+    return doc;
+  }
+
+  it("extractEditable 후 구조 메타가 유지된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+
+    expect(editable.shots[0].structureType).toBe("cut");
+    expect(editable.shots[0].durationClass).toBe("cut-like");
+    expect(editable.shots[0].groupId).toBeUndefined();
+
+    expect(editable.shots[1].structureType).toBe("cut");
+    expect(editable.shots[1].durationClass).toBe("scene-like");
+
+    expect(editable.shots[2].groupId).toBe("g1");
+  });
+
+  it("applyEditsToDocument 후 구조 메타가 document에 반영된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+
+    // shot 수정 (구조 메타는 건드리지 않음)
+    editable.shots[0].action = "runs away";
+
+    const result = applyEditsToDocument(doc, editable);
+    expect(result.shots[0].structureType).toBe("cut");
+    expect(result.shots[0].durationClass).toBe("cut-like");
+    expect(result.shots[0].action).toBe("runs away");
+
+    expect(result.shots[2].groupId).toBe("g1");
+  });
+
+  it("extractEditable → applyEditsToDocument roundtrip에서 구조 메타가 보존된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+    const result = applyEditsToDocument(doc, editable);
+
+    for (let i = 0; i < doc.shots.length; i++) {
+      expect(result.shots[i].structureType).toBe(doc.shots[i].structureType);
+      expect(result.shots[i].durationClass).toBe(doc.shots[i].durationClass);
+      expect(result.shots[i].groupId).toBe(doc.shots[i].groupId);
+    }
+  });
+
+  it("splitShot 후 분할된 shot들의 구조 메타는 원본에서 복사된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+    const result = splitShot(editable, "shot-A");
+
+    // splitShot은 원본 shot을 spread하므로 구조 메타가 복사됨
+    expect(result.shots[0].structureType).toBe("cut");
+    expect(result.shots[0].durationClass).toBe("cut-like");
+    expect(result.shots[1].structureType).toBe("cut");
+    expect(result.shots[1].durationClass).toBe("cut-like");
+  });
+
+  it("moveShotUp/Down 후 구조 메타가 유지된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+    const result = moveShotDown(editable, "shot-A");
+
+    // shot-A가 index 1로, shot-B가 index 0으로
+    const movedShot = result.shots.find(s => s.shotId === "shot-A");
+    expect(movedShot?.structureType).toBe("cut");
+    expect(movedShot?.durationClass).toBe("cut-like");
+  });
+
+  it("구조 메타 없는 shot에서도 extractEditable이 정상 동작한다", () => {
+    const doc = makeDoc(); // 구조 메타 없음
+    const editable = extractEditable(doc);
+
+    expect(editable.shots[0].structureType).toBeUndefined();
+    expect(editable.shots[0].durationClass).toBeUndefined();
+    expect(editable.shots[0].groupId).toBeUndefined();
+  });
+
+  it("updateShotField 후 구조 메타가 유지된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+    const result = updateShotField(editable, "shot-A", "subject", "man");
+
+    const updated = result.shots.find(s => s.shotId === "shot-A");
+    expect(updated?.subject).toBe("man");
+    expect(updated?.structureType).toBe("cut");
+    expect(updated?.durationClass).toBe("cut-like");
+  });
+
+  it("setShotDuration 후 구조 메타가 유지된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+    const result = setShotDuration(editable, "shot-A", 6);
+
+    const updated = result.shots.find(s => s.shotId === "shot-A");
+    expect(updated?.structureType).toBe("cut");
+    expect(updated?.durationClass).toBe("cut-like");
+  });
+
+  it("mergeShotWithNext 후 구조 메타가 앞 shot의 것으로 유지된다", () => {
+    const doc = makeDocWithStructureMeta();
+    const editable = extractEditable(doc);
+    const result = mergeShotWithNext(editable, "shot-A");
+
+    // shot-A + shot-B 병합
+    expect(result.shots[0].structureType).toBe("cut");
+    expect(result.shots[0].durationClass).toBe("cut-like"); // shot-A의 값
+  });
+});
