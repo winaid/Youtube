@@ -28,6 +28,8 @@ import {
   ZOOM_STEP,
 } from "@/lib/node-types";
 import { executeNode, type VideoOutputMeta } from "@/lib/node-execution";
+import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
+import type { PromptOutput } from "@/types";
 import NodePalette from "./NodePalette";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -37,6 +39,8 @@ import NodePalette from "./NodePalette";
 interface NodeCanvasProps {
   /** 비디오 출력을 타임라인으로 보내는 콜백 */
   onSendToTimeline?: (videoUrl: string, meta: VideoOutputMeta) => void;
+  /** 외부에서 import할 PromptOutput (설정 시 import 버튼 활성화) */
+  importableOutput?: PromptOutput | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -350,7 +354,7 @@ function NodeSettings({ node }: { node: CanvasNode }) {
 // Main Component
 // ═══════════════════════════════════════════════════════════════════
 
-export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
+export default function NodeCanvas({ onSendToTimeline, importableOutput }: NodeCanvasProps) {
   // ── 초기 상태: localStorage에서 복원 ──
   const [state, setState] = useState<CanvasState>(() => {
     if (typeof window === "undefined") return createInitialCanvasState();
@@ -435,6 +439,22 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
     setViewport(createInitialViewport());
     clearCanvasStorage();
   }, [state.nodes.length]);
+
+  // ── Import structured sequence ──
+  const handleImportSequence = useCallback(() => {
+    if (!importableOutput) return;
+    if (state.nodes.length > 0 && !window.confirm("현재 캔버스를 프롬프트 결과로 대체하시겠습니까?")) return;
+    const imported = promptOutputToCanvasState(importableOutput);
+    setState(imported);
+    // fit-to-screen
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      setViewport(fitViewport(imported.nodes, rect.width, rect.height));
+    } else {
+      setViewport(createInitialViewport());
+    }
+    saveCanvasState(imported, viewport);
+  }, [importableOutput, state.nodes.length, viewport]);
 
   // ── Viewport controls ──
   const handleZoomIn = useCallback(() => {
@@ -620,6 +640,20 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
         <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5" onClick={handleResetView} title="Reset View">1:1</Button>
         <div className="h-4 w-px bg-gray-200" />
         <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5" onClick={handleResetCanvas} title="새 캔버스">초기화</Button>
+        {importableOutput && importableOutput.cuts?.length > 0 && (
+          <>
+            <div className="h-4 w-px bg-gray-200" />
+            <Button
+              size="sm"
+              className="h-7 text-[10px] px-2 text-white"
+              style={{ background: "#8b5cf6" }}
+              onClick={handleImportSequence}
+              title="프롬프트 결과를 캔버스로 가져오기"
+            >
+              프롬프트 가져오기 ({importableOutput.cuts.length}컷)
+            </Button>
+          </>
+        )}
         <span className="text-[10px] text-muted-foreground ml-1">
           {state.nodes.length}개 노드 · {state.edges.length}개 연결
         </span>

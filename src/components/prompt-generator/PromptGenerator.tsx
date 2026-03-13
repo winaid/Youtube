@@ -161,6 +161,7 @@ export default function PromptGenerator() {
             onSendToTimeline={(videoUrl, meta) => {
               setCanvasOutputs(prev => [...prev, { videoUrl, meta }]);
             }}
+            importableOutput={result}
           />
         </div>
       ) : activeTab === "story" ? (
