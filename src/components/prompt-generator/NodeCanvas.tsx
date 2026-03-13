@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -8,7 +8,9 @@ import {
   type CanvasNode,
   type CanvasEdge,
   type NodeDefinition,
+  type ViewportState,
   createInitialCanvasState,
+  createInitialViewport,
   createNode,
   addNode,
   removeNode,
@@ -18,6 +20,12 @@ import {
   addEdge,
   getInputAssets,
   NODE_REGISTRY,
+  clampZoom,
+  fitViewport,
+  saveCanvasState,
+  loadCanvasState,
+  clearCanvasStorage,
+  ZOOM_STEP,
 } from "@/lib/node-types";
 import { executeNode, type VideoOutputMeta } from "@/lib/node-execution";
 import NodePalette from "./NodePalette";
@@ -343,29 +351,59 @@ function NodeSettings({ node }: { node: CanvasNode }) {
 // ═══════════════════════════════════════════════════════════════════
 
 export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
-  const [state, setState] = useState<CanvasState>(createInitialCanvasState);
+  // ── 초기 상태: localStorage에서 복원 ──
+  const [state, setState] = useState<CanvasState>(() => {
+    if (typeof window === "undefined") return createInitialCanvasState();
+    return loadCanvasState().canvas;
+  });
+  const [viewport, setViewport] = useState<ViewportState>(() => {
+    if (typeof window === "undefined") return createInitialViewport();
+    return loadCanvasState().viewport;
+  });
   const [showPalette, setShowPalette] = useState(false);
   const [dragState, setDragState] = useState<{
     nodeId: string;
-    offsetX: number;
-    offsetY: number;
+    startX: number;
+    startY: number;
+    nodeStartX: number;
+    nodeStartY: number;
+  } | null>(null);
+  const [panDrag, setPanDrag] = useState<{
+    startX: number;
+    startY: number;
+    startPanX: number;
+    startPanY: number;
   } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedNode = useMemo(
     () => state.nodes.find(n => n.id === state.selectedNodeId) ?? null,
     [state.nodes, state.selectedNodeId],
   );
 
+  // ── Auto-save (debounce 500ms) ──
+  useEffect(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveCanvasState(state, viewport);
+    }, 500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [state, viewport]);
+
   // ── Node actions ──
 
   const handleAddNode = useCallback((def: NodeDefinition) => {
-    const x = 100 + Math.random() * 300;
-    const y = 100 + Math.random() * 200;
+    // 뷰포트 중심에 노드 배치
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const cx = rect ? (rect.width / 2 / viewport.zoom - viewport.panX) : 100 + Math.random() * 300;
+    const cy = rect ? (rect.height / 2 / viewport.zoom - viewport.panY) : 100 + Math.random() * 200;
+    const x = cx - def.defaultWidth / 2 + (Math.random() - 0.5) * 40;
+    const y = cy - def.defaultHeight / 2 + (Math.random() - 0.5) * 40;
     const node = createNode(def, x, y);
     setState(prev => addNode(prev, node));
     setShowPalette(false);
-  }, []);
+  }, [viewport]);
 
   const handleDeleteSelected = useCallback(() => {
     if (!state.selectedNodeId) return;
@@ -390,6 +428,53 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
     setState(prev => updateNodeData(prev, prev.selectedNodeId!, { [key]: value }));
   }, [state.selectedNodeId]);
 
+  // ── 새 캔버스 / 초기화 ──
+  const handleResetCanvas = useCallback(() => {
+    if (state.nodes.length > 0 && !window.confirm("캔버스를 초기화하시겠습니까? 모든 노드와 연결이 삭제됩니다.")) return;
+    setState(createInitialCanvasState());
+    setViewport(createInitialViewport());
+    clearCanvasStorage();
+  }, [state.nodes.length]);
+
+  // ── Viewport controls ──
+  const handleZoomIn = useCallback(() => {
+    setViewport(v => ({ ...v, zoom: clampZoom(v.zoom + ZOOM_STEP) }));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setViewport(v => ({ ...v, zoom: clampZoom(v.zoom - ZOOM_STEP) }));
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    setViewport(createInitialViewport());
+  }, []);
+
+  const handleFitToScreen = useCallback(() => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setViewport(fitViewport(state.nodes, rect.width, rect.height));
+  }, [state.nodes]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    // 마우스 위치 기준 줌
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    setViewport(v => {
+      const oldZoom = v.zoom;
+      const newZoom = clampZoom(oldZoom - e.deltaY * 0.001);
+      // 마우스 위치를 기준으로 줌
+      const scale = newZoom / oldZoom;
+      const panX = mouseX / newZoom - (mouseX / oldZoom - v.panX) ;
+      const panY = mouseY / newZoom - (mouseY / oldZoom - v.panY);
+      return { zoom: newZoom, panX: panX, panY: panY };
+    });
+  }, []);
+
   // ── Drag handlers ──
 
   const handleNodeMouseDown = useCallback((nodeId: string, e: React.MouseEvent) => {
@@ -399,40 +484,64 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
     setState(prev => selectNode(prev, nodeId));
     setDragState({
       nodeId,
-      offsetX: e.clientX - node.x,
-      offsetY: e.clientY - node.y,
+      startX: e.clientX,
+      startY: e.clientY,
+      nodeStartX: node.x,
+      nodeStartY: node.y,
     });
   }, [state.nodes]);
 
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    // 빈 캔버스 클릭 시 pan 시작
+    const target = e.target as HTMLElement;
+    const isCanvas = target === canvasRef.current || target.dataset.canvasBackground === "true";
+    if (isCanvas && e.button === 0) {
+      setPanDrag({
+        startX: e.clientX,
+        startY: e.clientY,
+        startPanX: viewport.panX,
+        startPanY: viewport.panY,
+      });
+    }
+  }, [viewport.panX, viewport.panY]);
+
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     if (dragState) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const x = e.clientX - dragState.offsetX;
-      const y = e.clientY - dragState.offsetY;
-      setState(prev => moveNode(prev, dragState.nodeId, Math.max(0, x), Math.max(0, y)));
+      const dx = (e.clientX - dragState.startX) / viewport.zoom;
+      const dy = (e.clientY - dragState.startY) / viewport.zoom;
+      setState(prev => moveNode(prev, dragState.nodeId, dragState.nodeStartX + dx, dragState.nodeStartY + dy));
+    }
+    if (panDrag) {
+      const dx = (e.clientX - panDrag.startX) / viewport.zoom;
+      const dy = (e.clientY - panDrag.startY) / viewport.zoom;
+      setViewport(v => ({ ...v, panX: panDrag.startPanX + dx, panY: panDrag.startPanY + dy }));
     }
     if (state.pendingEdge) {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
+      const mouseX = (e.clientX - rect.left) / viewport.zoom - viewport.panX;
+      const mouseY = (e.clientY - rect.top) / viewport.zoom - viewport.panY;
       setState(prev => ({
         ...prev,
         pendingEdge: prev.pendingEdge
-          ? { ...prev.pendingEdge, mouseX: e.clientX - rect.left, mouseY: e.clientY - rect.top }
+          ? { ...prev.pendingEdge, mouseX, mouseY }
           : undefined,
       }));
     }
-  }, [dragState, state.pendingEdge]);
+  }, [dragState, panDrag, state.pendingEdge, viewport]);
 
   const handleCanvasMouseUp = useCallback(() => {
     setDragState(null);
+    setPanDrag(null);
     if (state.pendingEdge) {
       setState(prev => ({ ...prev, pendingEdge: undefined }));
     }
   }, [state.pendingEdge]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === canvasRef.current || (e.target as HTMLElement).tagName === "svg") {
+    const target = e.target as HTMLElement;
+    const isCanvas = target === canvasRef.current || target.dataset.canvasBackground === "true" || target.tagName === "svg";
+    if (isCanvas) {
       setState(prev => selectNode(prev, null));
     }
   }, []);
@@ -440,8 +549,6 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
   // ── Port connection handlers ──
 
   const handlePortMouseDown = useCallback((nodeId: string, portId: string) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
     setState(prev => ({
       ...prev,
       pendingEdge: { sourceNodeId: nodeId, sourcePortId: portId, mouseX: 0, mouseY: 0 },
@@ -505,6 +612,14 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
             </Button>
           </>
         )}
+        <div className="h-4 w-px bg-gray-200" />
+        <Button size="sm" variant="ghost" className="h-7 w-7 text-xs p-0" onClick={handleZoomOut} title="Zoom Out">-</Button>
+        <span className="text-[10px] text-muted-foreground min-w-[36px] text-center">{Math.round(viewport.zoom * 100)}%</span>
+        <Button size="sm" variant="ghost" className="h-7 w-7 text-xs p-0" onClick={handleZoomIn} title="Zoom In">+</Button>
+        <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5" onClick={handleFitToScreen} title="Fit to Screen">Fit</Button>
+        <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5" onClick={handleResetView} title="Reset View">1:1</Button>
+        <div className="h-4 w-px bg-gray-200" />
+        <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5" onClick={handleResetCanvas} title="새 캔버스">초기화</Button>
         <span className="text-[10px] text-muted-foreground ml-1">
           {state.nodes.length}개 노드 · {state.edges.length}개 연결
         </span>
@@ -513,37 +628,61 @@ export default function NodeCanvas({ onSendToTimeline }: NodeCanvasProps) {
       {/* Canvas Area */}
       <div
         ref={canvasRef}
-        className="w-full h-full overflow-auto relative rounded-xl border-2"
+        className="w-full h-full overflow-hidden relative rounded-xl border-2"
         style={{
-          background: "radial-gradient(circle, #f8fafc 1px, transparent 1px)",
-          backgroundSize: "20px 20px",
           borderColor: "#787fff30",
-          cursor: dragState ? "grabbing" : "default",
+          cursor: panDrag ? "grabbing" : dragState ? "grabbing" : "default",
         }}
+        onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onClick={handleCanvasClick}
+        onWheel={handleWheel}
         onKeyDown={handleKeyDown}
         tabIndex={0}
       >
-        {/* Edge lines */}
-        <EdgeLines edges={state.edges} nodes={state.nodes} pendingEdge={state.pendingEdge} />
+        {/* Background grid (fixed, not transformed) */}
+        <div
+          data-canvas-background="true"
+          className="absolute inset-0"
+          style={{
+            background: "radial-gradient(circle, #f8fafc 1px, transparent 1px)",
+            backgroundSize: `${20 * viewport.zoom}px ${20 * viewport.zoom}px`,
+            backgroundPosition: `${viewport.panX * viewport.zoom}px ${viewport.panY * viewport.zoom}px`,
+          }}
+        />
 
-        {/* Nodes */}
-        {state.nodes.map(node => (
-          <CanvasNodeBox
-            key={node.id}
-            node={node}
-            isSelected={node.id === state.selectedNodeId}
-            onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
-            onPortMouseDown={(portId) => handlePortMouseDown(node.id, portId)}
-            onPortMouseUp={(portId) => handlePortMouseUp(node.id, portId)}
-          />
-        ))}
+        {/* Transformed content layer */}
+        <div
+          style={{
+            transform: `scale(${viewport.zoom}) translate(${viewport.panX}px, ${viewport.panY}px)`,
+            transformOrigin: "0 0",
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "10000px",
+            height: "10000px",
+          }}
+        >
+          {/* Edge lines */}
+          <EdgeLines edges={state.edges} nodes={state.nodes} pendingEdge={state.pendingEdge} />
+
+          {/* Nodes */}
+          {state.nodes.map(node => (
+            <CanvasNodeBox
+              key={node.id}
+              node={node}
+              isSelected={node.id === state.selectedNodeId}
+              onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
+              onPortMouseDown={(portId) => handlePortMouseDown(node.id, portId)}
+              onPortMouseUp={(portId) => handlePortMouseUp(node.id, portId)}
+            />
+          ))}
+        </div>
 
         {/* Empty state */}
         {state.nodes.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center z-10">
             <div className="text-center space-y-2">
               <p className="text-sm text-muted-foreground">노드 캔버스가 비어 있습니다</p>
               <Button

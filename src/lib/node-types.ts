@@ -352,6 +352,111 @@ export function removeEdge(state: CanvasState, edgeId: string): CanvasState {
   return { ...state, edges: state.edges.filter(e => e.id !== edgeId) };
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Viewport State
+// ═══════════════════════════════════════════════════════════════════
+
+export interface ViewportState {
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
+export function createInitialViewport(): ViewportState {
+  return { zoom: 1, panX: 0, panY: 0 };
+}
+
+export const ZOOM_MIN = 0.1;
+export const ZOOM_MAX = 3;
+export const ZOOM_STEP = 0.1;
+
+export function clampZoom(zoom: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+}
+
+/** 모든 노드를 포함하는 bounding box 계산 후 fit 뷰포트 반환 */
+export function fitViewport(nodes: CanvasNode[], containerWidth: number, containerHeight: number): ViewportState {
+  if (nodes.length === 0) return createInitialViewport();
+
+  const PADDING = 60;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.width);
+    maxY = Math.max(maxY, n.y + n.height);
+  }
+
+  const contentW = maxX - minX + PADDING * 2;
+  const contentH = maxY - minY + PADDING * 2;
+  const zoom = clampZoom(Math.min(containerWidth / contentW, containerHeight / contentH));
+  const panX = -(minX - PADDING) + (containerWidth / zoom - contentW) / 2;
+  const panY = -(minY - PADDING) + (containerHeight / zoom - contentH) / 2;
+
+  return { zoom, panX, panY };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Persistence (localStorage)
+// ═══════════════════════════════════════════════════════════════════
+
+const STORAGE_KEY_CANVAS = "node-canvas-state";
+const STORAGE_KEY_VIEWPORT = "node-canvas-viewport";
+
+/** CanvasState를 localStorage에 저장 (pendingEdge 제외) */
+export function saveCanvasState(state: CanvasState, viewport: ViewportState): void {
+  try {
+    const { pendingEdge: _pe, ...rest } = state;
+    localStorage.setItem(STORAGE_KEY_CANVAS, JSON.stringify(rest));
+    localStorage.setItem(STORAGE_KEY_VIEWPORT, JSON.stringify(viewport));
+  } catch {
+    // quota 초과 등 무시
+  }
+}
+
+/** localStorage에서 CanvasState 복원. 실패 시 초기 상태 */
+export function loadCanvasState(): { canvas: CanvasState; viewport: ViewportState } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CANVAS);
+    if (!raw) return { canvas: createInitialCanvasState(), viewport: createInitialViewport() };
+
+    const parsed = JSON.parse(raw);
+    // 최소 검증: nodes와 edges가 배열인지
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+      throw new Error("Invalid canvas data");
+    }
+
+    const canvas: CanvasState = {
+      nodes: parsed.nodes,
+      edges: parsed.edges,
+      selectedNodeId: parsed.selectedNodeId ?? null,
+    };
+
+    let viewport = createInitialViewport();
+    try {
+      const vpRaw = localStorage.getItem(STORAGE_KEY_VIEWPORT);
+      if (vpRaw) {
+        const vp = JSON.parse(vpRaw);
+        if (typeof vp.zoom === "number" && typeof vp.panX === "number" && typeof vp.panY === "number") {
+          viewport = { zoom: clampZoom(vp.zoom), panX: vp.panX, panY: vp.panY };
+        }
+      }
+    } catch {
+      // viewport 파싱 실패 무시
+    }
+
+    return { canvas, viewport };
+  } catch {
+    return { canvas: createInitialCanvasState(), viewport: createInitialViewport() };
+  }
+}
+
+/** localStorage에서 캔버스 데이터 삭제 */
+export function clearCanvasStorage(): void {
+  localStorage.removeItem(STORAGE_KEY_CANVAS);
+  localStorage.removeItem(STORAGE_KEY_VIEWPORT);
+}
+
 /** 특정 노드의 input에 연결된 source 노드들의 output asset 조회 */
 export function getInputAssets(state: CanvasState, nodeId: string): { portId: string; asset?: string; mimeType?: "image" | "video" }[] {
   const node = state.nodes.find(n => n.id === nodeId);
