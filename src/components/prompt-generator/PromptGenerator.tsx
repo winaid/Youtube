@@ -12,12 +12,15 @@ import StoryChat from "./StoryChat";
 import PromptHistoryPanel from "./PromptHistoryPanel";
 import VideoHistoryPanel from "./VideoHistoryPanel";
 import MyVideosPanel from "./MyVideosPanel";
+import NodeCanvas from "./NodeCanvas";
+import type { VideoOutputMeta } from "@/lib/node-execution";
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "history" | "videos">("prompt");
+  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "canvas" | "history" | "videos">("prompt");
+  const [canvasOutputs, setCanvasOutputs] = useState<Array<{ videoUrl: string; meta: VideoOutputMeta }>>([]);
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
   const [secondsPerScene, setSecondsPerScene] = useState<number>(DURATION_FALLBACK);
@@ -91,6 +94,17 @@ export default function PromptGenerator() {
           시나리오 AI 생성
         </button>
         <button
+          onClick={() => setActiveTab("canvas")}
+          className="px-4 py-2 rounded-full text-sm font-medium transition-all"
+          style={
+            activeTab === "canvas"
+              ? { background: "linear-gradient(135deg, #8b5cf6, #3b82f6)", color: "white", boxShadow: "0 2px 8px #8b5cf640" }
+              : { background: "#8b5cf615", color: "#8b5cf6" }
+          }
+        >
+          노드 캔버스
+        </button>
+        <button
           onClick={() => setActiveTab("history")}
           className="px-4 py-2 rounded-full text-sm font-medium transition-all"
           style={
@@ -129,6 +143,25 @@ export default function PromptGenerator() {
           <div className="min-w-0">
             <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} secondsPerScene={secondsPerScene} onSecondsPerSceneChange={setSecondsPerScene} />
           </div>
+        </div>
+      ) : activeTab === "canvas" ? (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: "#222" }}>노드 캔버스</h2>
+            <p className="text-xs mt-0.5" style={{ color: "#999" }}>
+              Generate Image → Generate Video → Viewer 노드를 연결하여 워크플로우를 구성하세요.
+              {canvasOutputs.length > 0 && (
+                <span className="ml-1" style={{ color: "#22c55e" }}>
+                  · {canvasOutputs.length}개 비디오가 타임라인에 추가됨
+                </span>
+              )}
+            </p>
+          </div>
+          <NodeCanvas
+            onSendToTimeline={(videoUrl, meta) => {
+              setCanvasOutputs(prev => [...prev, { videoUrl, meta }]);
+            }}
+          />
         </div>
       ) : activeTab === "story" ? (
         <StoryChat onUseAsScenario={handleUseAsScenario} />
