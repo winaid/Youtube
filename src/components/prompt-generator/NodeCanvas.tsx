@@ -29,7 +29,13 @@ import {
 } from "@/lib/node-types";
 import { executeNode, type VideoOutputMeta } from "@/lib/node-execution";
 import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
-import { exportFromSelectedNode, exportAllChainsToPromptOutput, canExportFromNode } from "@/lib/nodes-to-sequence";
+import {
+  exportFromSelectedNode,
+  exportAllChainsToPromptOutput,
+  canExportFromNode,
+  mergeSelectedNodeToOutput,
+  mergeAllChainsToOutput,
+} from "@/lib/nodes-to-sequence";
 import type { PromptOutput } from "@/types";
 import NodePalette from "./NodePalette";
 
@@ -42,8 +48,10 @@ interface NodeCanvasProps {
   onSendToTimeline?: (videoUrl: string, meta: VideoOutputMeta) => void;
   /** 외부에서 import할 PromptOutput (설정 시 import 버튼 활성화) */
   importableOutput?: PromptOutput | null;
-  /** 캔버스에서 편집기로 export할 때 호출 */
+  /** 캔버스에서 편집기로 export할 때 호출 (전체 대체) */
   onExportToEditor?: (output: PromptOutput) => void;
+  /** 캔버스에서 편집기로 부분 병합할 때 호출 */
+  onMergeToEditor?: (output: PromptOutput, mergedCutNumbers: number[]) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -357,7 +365,7 @@ function NodeSettings({ node }: { node: CanvasNode }) {
 // Main Component
 // ═══════════════════════════════════════════════════════════════════
 
-export default function NodeCanvas({ onSendToTimeline, importableOutput, onExportToEditor }: NodeCanvasProps) {
+export default function NodeCanvas({ onSendToTimeline, importableOutput, onExportToEditor, onMergeToEditor }: NodeCanvasProps) {
   // ── 초기 상태: localStorage에서 복원 ──
   const [state, setState] = useState<CanvasState>(() => {
     if (typeof window === "undefined") return createInitialCanvasState();
@@ -492,6 +500,39 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     setExportMessage({ text: `${result.output.totalCuts}컷 전체를 편집기로 보냈습니다`, type: "success" });
     setTimeout(() => setExportMessage(null), 3000);
   }, [onExportToEditor, state]);
+
+  // ── Merge export (부분 병합) ──
+  const handleMergeSelected = useCallback(() => {
+    if (!onMergeToEditor || !importableOutput || !state.selectedNodeId) return;
+    const result = mergeSelectedNodeToOutput(state, state.selectedNodeId, importableOutput);
+    if (!result.success) {
+      setExportMessage({ text: result.reason, type: "error" });
+      setTimeout(() => setExportMessage(null), 3000);
+      return;
+    }
+    onMergeToEditor(result.output, result.mergedCutNumbers);
+    const warnText = result.unmatchedChainNodeIds.length > 0
+      ? ` (${result.unmatchedChainNodeIds.length}개 미매칭)`
+      : "";
+    setExportMessage({ text: `Cut ${result.mergedCutNumbers.join(",")} 병합 완료${warnText}`, type: "success" });
+    setTimeout(() => setExportMessage(null), 3000);
+  }, [onMergeToEditor, importableOutput, state]);
+
+  const handleMergeAll = useCallback(() => {
+    if (!onMergeToEditor || !importableOutput) return;
+    const result = mergeAllChainsToOutput(state, importableOutput);
+    if (!result.success) {
+      setExportMessage({ text: result.reason, type: "error" });
+      setTimeout(() => setExportMessage(null), 3000);
+      return;
+    }
+    onMergeToEditor(result.output, result.mergedCutNumbers);
+    const warnText = result.unmatchedChainNodeIds.length > 0
+      ? ` (${result.unmatchedChainNodeIds.length}개 미매칭)`
+      : "";
+    setExportMessage({ text: `Cut ${result.mergedCutNumbers.join(",")} 병합 완료${warnText}`, type: "success" });
+    setTimeout(() => setExportMessage(null), 3000);
+  }, [onMergeToEditor, importableOutput, state]);
 
   // ── Viewport controls ──
   const handleZoomIn = useCallback(() => {
@@ -713,6 +754,31 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
               title="전체 체인을 편집기로 보내기"
             >
               전체 보내기
+            </Button>
+          </>
+        )}
+        {onMergeToEditor && importableOutput && state.nodes.some(n => n.type === "generate-video") && (
+          <>
+            <div className="h-4 w-px bg-gray-200" />
+            {state.selectedNodeId && selectedCanExport && (
+              <Button
+                size="sm"
+                className="h-7 text-[10px] px-2 text-white"
+                style={{ background: "#f59e0b" }}
+                onClick={handleMergeSelected}
+                title="선택된 체인만 기존 결과에 병합"
+              >
+                선택 병합
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] px-2 border-amber-300 text-amber-700"
+              onClick={handleMergeAll}
+              title="편집된 체인만 기존 결과에 부분 병합"
+            >
+              전체 병합
             </Button>
           </>
         )}

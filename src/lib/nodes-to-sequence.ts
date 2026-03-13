@@ -4,7 +4,10 @@
  * 선택된 노드에서 TextInput → GenerateVideo → Viewer 체인을 역추적/순추적하여
  * Cut 객체로 변환 후 PromptOutput을 생성한다.
  *
- * 1차 scope: 단일 체인 또는 전체 GenerateVideo 노드 기준 export.
+ * Export 모드:
+ * - 전체 대체: exportAllChainsToPromptOutput — 기존 result 완전 교체
+ * - 선택 export: exportFromSelectedNode — 단일 체인만 export
+ * - 병합 export: mergeSelectedChainsToOutput — 선택 chain만 기존 result에 부분 반영
  */
 
 import type { PromptOutput, Cut } from "@/types";
@@ -36,6 +39,22 @@ export interface ExportResult {
 }
 
 export interface ExportError {
+  success: false;
+  reason: string;
+}
+
+/** 병합 결과 — 어떤 cut이 교체되었는지 추적 */
+export interface MergeResult {
+  success: true;
+  output: PromptOutput;
+  /** 교체된 cutNumber 목록 */
+  mergedCutNumbers: number[];
+  /** 대응 cut을 찾지 못한 chain nodeId 목록 */
+  unmatchedChainNodeIds: string[];
+  meta: ExportMeta;
+}
+
+export interface MergeError {
   success: false;
   reason: string;
 }
@@ -270,4 +289,121 @@ export function exportFromSelectedNode(state: CanvasState, nodeId: string): Expo
 function getProjectTitle(chain: ExportChain): string {
   const prov = chain.videoNode.provenance as { importMeta?: { projectTitle?: string } } | undefined;
   return prov?.importMeta?.projectTitle || "Canvas Export";
+}
+
+/** chain의 provenance에서 원본 cutNumber를 추출한다 */
+function getProvenanceCutNumber(chain: ExportChain): number | null {
+  const prov = chain.videoNode.provenance as {
+    importMeta?: { cutNumber?: number };
+  } | undefined;
+  return prov?.importMeta?.cutNumber ?? null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Merge export — 선택 chain만 기존 result에 부분 반영
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 선택된 chain(들)을 기존 PromptOutput의 대응 cut에 병합한다.
+ *
+ * 대응 cut 결정 전략:
+ * 1. provenance.importMeta.cutNumber가 있으면 그 cutNumber로 매칭
+ * 2. provenance가 없으면 → unmatchedChainNodeIds에 포함
+ *
+ * 기존 순서, 다른 cut, output-level metadata는 모두 유지.
+ */
+export function mergeSelectedChainsToOutput(
+  chains: ExportChain[],
+  baseOutput: PromptOutput,
+): MergeResult | MergeError {
+  if (chains.length === 0) {
+    return { success: false, reason: "병합할 체인이 없습니다" };
+  }
+
+  if (!baseOutput.cuts || baseOutput.cuts.length === 0) {
+    return { success: false, reason: "기존 결과에 cut이 없어 병합할 수 없습니다" };
+  }
+
+  // cutNumber로 기존 cut을 인덱싱
+  const baseCutMap = new Map<number, number>(); // cutNumber → array index
+  baseOutput.cuts.forEach((cut, idx) => {
+    baseCutMap.set(cut.cutNumber, idx);
+  });
+
+  const mergedCuts = [...baseOutput.cuts];
+  const mergedCutNumbers: number[] = [];
+  const unmatchedChainNodeIds: string[] = [];
+
+  for (const chain of chains) {
+    const targetCutNumber = getProvenanceCutNumber(chain);
+
+    if (targetCutNumber == null || !baseCutMap.has(targetCutNumber)) {
+      unmatchedChainNodeIds.push(chain.videoNode.id);
+      continue;
+    }
+
+    const idx = baseCutMap.get(targetCutNumber)!;
+    const newCut = chainToCut(chain, targetCutNumber);
+    mergedCuts[idx] = newCut;
+    mergedCutNumbers.push(targetCutNumber);
+  }
+
+  // 전부 unmatched이면 실패
+  if (mergedCutNumbers.length === 0) {
+    return {
+      success: false,
+      reason: `선택된 ${chains.length}개 체인 중 기존 결과와 대응되는 cut을 찾지 못했습니다. provenance가 없는 체인은 병합할 수 없습니다.`,
+    };
+  }
+
+  const output: PromptOutput = {
+    ...baseOutput,
+    cuts: mergedCuts,
+    totalCuts: mergedCuts.length,
+  };
+
+  return {
+    success: true,
+    output,
+    mergedCutNumbers,
+    unmatchedChainNodeIds,
+    meta: {
+      source: "node-canvas-export",
+      exportedAt: Date.now(),
+      originatingNodeId: chains[0].videoNode.id,
+      importedFromSequence: chains[0].meta.importedFromSequence,
+    },
+  };
+}
+
+/**
+ * 선택된 노드의 chain을 기존 result에 병합한다 (단일 chain merge).
+ */
+export function mergeSelectedNodeToOutput(
+  state: CanvasState,
+  nodeId: string,
+  baseOutput: PromptOutput,
+): MergeResult | MergeError {
+  const chain = findChainFromNode(state, nodeId);
+  if (!chain) {
+    return {
+      success: false,
+      reason: "선택된 노드에서 GenerateVideo 체인을 찾을 수 없습니다.",
+    };
+  }
+  return mergeSelectedChainsToOutput([chain], baseOutput);
+}
+
+/**
+ * 전체 캔버스 chain을 기존 result에 병합한다 (전체 merge).
+ */
+export function mergeAllChainsToOutput(
+  state: CanvasState,
+  baseOutput: PromptOutput,
+): MergeResult | MergeError {
+  const chains = findAllChains(state);
+  if (chains.length === 0) {
+    return { success: false, reason: "캔버스에 GenerateVideo 노드가 없습니다" };
+  }
+  return mergeSelectedChainsToOutput(chains, baseOutput);
 }

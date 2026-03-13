@@ -60,6 +60,13 @@ export default function PromptGenerator() {
     setActiveTab("prompt");
   }, []);
 
+  const handleCanvasMerge = useCallback((output: PromptOutput, mergedCutNumbers: number[]) => {
+    setResult(output);
+    setStatus("success");
+    setError(null);
+    setActiveTab("prompt");
+  }, []);
+
   const handleUseAsScenario = useCallback((scenarioText: string) => {
     setPrefillScenario(scenarioText);
     setActiveTab("prompt");
@@ -170,6 +177,7 @@ export default function PromptGenerator() {
             }}
             importableOutput={result}
             onExportToEditor={handleCanvasExport}
+            onMergeToEditor={handleCanvasMerge}
           />
         </div>
       ) : activeTab === "story" ? (

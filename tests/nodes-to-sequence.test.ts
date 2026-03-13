@@ -18,6 +18,9 @@ import {
   exportFromSelectedNode,
   exportChainToPromptOutput,
   exportAllChainsToPromptOutput,
+  mergeSelectedChainsToOutput,
+  mergeSelectedNodeToOutput,
+  mergeAllChainsToOutput,
 } from "@/lib/nodes-to-sequence";
 import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
 import {
@@ -480,5 +483,168 @@ describe("no conflict with existing editor flow", () => {
     if (!result.success) return;
 
     expect(result.output.projectTitle).toBe("My Film Project");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Merge export — 선택 chain만 기존 result에 부분 반영
+// ═══════════════════════════════════════════════════════════════════
+
+describe("merge export — partial update of existing result", () => {
+  function makeBaseOutput(cutCount: number): PromptOutput {
+    return {
+      projectTitle: "Test Film",
+      conceptSummary: "A test film",
+      totalCuts: cutCount,
+      globalStylePrompt: "cinematic",
+      directorPersonaPrompt: "director",
+      characterSeeds: [],
+      continuityRules: ["rule1"],
+      cuts: Array.from({ length: cutCount }, (_, i) => makeCut(i + 1, {
+        videoPrompt: `Original prompt ${i + 1}`,
+        sceneDescription: `Original scene ${i + 1}`,
+        cameraDirection: "original-cam",
+        moodLighting: "original-mood",
+      })),
+    };
+  }
+
+  it("should merge selected chain into matching cut by provenance cutNumber", () => {
+    // Import 3-cut output to canvas, modify cut 2, then merge
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+
+    // Find chain for cut 2 (y-sorted, index 1)
+    const chains = findAllChains(canvasState);
+    expect(chains.length).toBe(3);
+
+    // Verify provenance cutNumber is set
+    const chain2 = chains[1];
+    const prov = chain2.videoNode.provenance as { importMeta?: { cutNumber?: number } };
+    expect(prov?.importMeta?.cutNumber).toBe(2);
+
+    // Merge only chain 2 — should only replace cut 2
+    const result = mergeSelectedChainsToOutput([chain2], baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.mergedCutNumbers).toEqual([2]);
+    expect(result.unmatchedChainNodeIds).toHaveLength(0);
+
+    // Cut 1 and 3 should be unchanged
+    expect(result.output.cuts[0].videoPrompt).toBe("Original prompt 1");
+    expect(result.output.cuts[0].cameraDirection).toBe("original-cam");
+    expect(result.output.cuts[2].videoPrompt).toBe("Original prompt 3");
+
+    // Cut 2 should be updated from canvas chain
+    expect(result.output.cuts[1].cutNumber).toBe(2);
+  });
+
+  it("should preserve metadata of non-merged cuts", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const chains = findAllChains(canvasState);
+
+    const result = mergeSelectedChainsToOutput([chains[0]], baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // Output-level metadata preserved
+    expect(result.output.projectTitle).toBe("Test Film");
+    expect(result.output.globalStylePrompt).toBe("cinematic");
+    expect(result.output.directorPersonaPrompt).toBe("director");
+    expect(result.output.continuityRules).toEqual(["rule1"]);
+    expect(result.output.totalCuts).toBe(3);
+
+    // Non-merged cuts untouched
+    expect(result.output.cuts[1].videoPrompt).toBe("Original prompt 2");
+    expect(result.output.cuts[2].videoPrompt).toBe("Original prompt 3");
+  });
+
+  it("should fail when chain has no provenance cutNumber", () => {
+    const baseOutput = makeBaseOutput(2);
+    // Build manual chain without provenance
+    const state = buildManualChain("new scene");
+    const chains = findAllChains(state);
+
+    const result = mergeSelectedChainsToOutput(chains, baseOutput);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.reason).toContain("찾지 못했습니다");
+  });
+
+  it("should report unmatched chains while still merging matched ones", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const importedChains = findAllChains(canvasState);
+
+    // Build one manual chain without provenance
+    const manualState = buildManualChain("unmatched");
+    const manualChains = findAllChains(manualState);
+
+    // Mix: one matched (imported cut 1) + one unmatched (manual)
+    const mixed = [importedChains[0], manualChains[0]];
+    const result = mergeSelectedChainsToOutput(mixed, baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.mergedCutNumbers).toEqual([1]);
+    expect(result.unmatchedChainNodeIds).toHaveLength(1);
+    expect(result.unmatchedChainNodeIds[0]).toBe(manualChains[0].videoNode.id);
+  });
+
+  it("should fail when no chains provided", () => {
+    const result = mergeSelectedChainsToOutput([], makeBaseOutput(1));
+    expect(result.success).toBe(false);
+  });
+
+  it("should fail when base output has no cuts", () => {
+    const emptyOutput: PromptOutput = {
+      projectTitle: "Empty",
+      conceptSummary: "",
+      totalCuts: 0,
+      globalStylePrompt: "",
+      directorPersonaPrompt: "",
+      characterSeeds: [],
+      continuityRules: [],
+      cuts: [],
+    };
+    const state = buildManualChain("test");
+    const chains = findAllChains(state);
+    const result = mergeSelectedChainsToOutput(chains, emptyOutput);
+    expect(result.success).toBe(false);
+  });
+
+  it("mergeSelectedNodeToOutput merges chain from selected node", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+    const vidNode = canvasState.nodes.find(n => n.type === "generate-video")!;
+
+    const result = mergeSelectedNodeToOutput(canvasState, vidNode.id, baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.mergedCutNumbers.length).toBe(1);
+  });
+
+  it("mergeAllChainsToOutput merges all chains", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+
+    const result = mergeAllChainsToOutput(canvasState, baseOutput);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.mergedCutNumbers).toEqual([1, 2, 3]);
+    expect(result.unmatchedChainNodeIds).toHaveLength(0);
+  });
+
+  it("full replace export still works unchanged", () => {
+    const baseOutput = makeBaseOutput(3);
+    const canvasState = promptOutputToCanvasState(baseOutput);
+
+    const result = exportAllChainsToPromptOutput(canvasState);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.output.cuts.length).toBe(3);
+    expect(result.output.totalCuts).toBe(3);
   });
 });
