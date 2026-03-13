@@ -973,6 +973,37 @@ export default function ResultPanel({
       {/* 시퀀스 편집 섹션 */}
       {activeSection === "sequence" && (
         <div className="space-y-4">
+          {/* 시퀀스 배치 재생성 버튼 */}
+          {videoGen.sequenceNarrationState.dirtyShotCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs" style={{ background: "#fef3c7", border: "1px solid #f59e0b30" }}>
+              <span style={{ color: "#b45309" }}>
+                {videoGen.sequenceNarrationState.dirtyShotCount}개 샷의 나레이션이 수정되었습니다.
+              </span>
+              <Button
+                size="sm"
+                className="h-6 text-[10px] text-white ml-auto"
+                style={{ background: "#f59e0b" }}
+                disabled={videoGen.batchNarrationState.isRunning}
+                onClick={videoGen.regenerateAllDirtyNarrations}
+              >
+                {videoGen.batchNarrationState.isRunning
+                  ? `처리 중... (${videoGen.batchNarrationState.completed + videoGen.batchNarrationState.failed}/${videoGen.batchNarrationState.total})`
+                  : "모두 다시 생성"
+                }
+              </Button>
+            </div>
+          )}
+          {/* 배치 완료 요약 */}
+          {!videoGen.batchNarrationState.isRunning && videoGen.batchNarrationState.total > 0 && videoGen.sequenceNarrationState.dirtyShotCount === 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs" style={{ background: "#f0fdf4", border: "1px solid #22c55e30" }}>
+              <span style={{ color: "#16a34a" }}>배치 재생성 완료</span>
+              {videoGen.batchNarrationState.failed > 0 && (
+                <span style={{ color: "#ef4444" }}>
+                  (실패: C{videoGen.batchNarrationState.failedCutNumbers.join(", C")})
+                </span>
+              )}
+            </div>
+          )}
           {videoGen.clips.filter((c) => c.structuredSequence).length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground rounded-lg border-2 border-dashed">
               structuredSequence가 있는 클립이 없습니다.<br />
@@ -998,6 +1029,7 @@ export default function ResultPanel({
                   shotNarrationState={videoGen.shotNarrationStates.get(clip.cutNumber)}
                   onMarkNarrationDirty={videoGen.markNarrationDirty}
                   onRegenerateShotNarration={videoGen.regenerateShotNarration}
+                  batchActiveCutNumber={videoGen.batchNarrationState.isRunning ? videoGen.batchNarrationState.activeCutNumber : undefined}
                 />
               ))
           )}
@@ -1014,6 +1046,8 @@ export default function ResultPanel({
           narrationStatus={videoGen.narrationStatus}
           shotNarrationStates={videoGen.shotNarrationStates}
           sequenceNarrationState={videoGen.sequenceNarrationState}
+          batchNarrationState={videoGen.batchNarrationState}
+          onRegenerateAllDirtyNarrations={videoGen.regenerateAllDirtyNarrations}
         />
       )}
 

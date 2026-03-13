@@ -49,6 +49,8 @@ interface SequenceTimelineEditorProps {
   onMarkNarrationDirty?: (cutNumber: number, field: "text" | "mode", value: string) => void;
   /** 이 shot의 나레이션 재생성 */
   onRegenerateShotNarration?: (cutNumber: number) => void;
+  /** 배치 처리 중인 cutNumber */
+  batchActiveCutNumber?: number | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -64,6 +66,7 @@ export default function SequenceTimelineEditor({
   shotNarrationState,
   onMarkNarrationDirty,
   onRegenerateShotNarration,
+  batchActiveCutNumber,
 }: SequenceTimelineEditorProps) {
   // ── State: original vs editable ──────────────────────────────
   const [editable, setEditable] = useState<EditableSequence>(() =>
@@ -286,6 +289,7 @@ export default function SequenceTimelineEditor({
           narrationState={shotNarrationState}
           onRegenerateNarration={onRegenerateShotNarration}
           cutNumber={editable.cutNumber}
+          batchActiveCutNumber={batchActiveCutNumber}
         />
       )}
 

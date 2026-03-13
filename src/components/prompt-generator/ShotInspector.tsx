@@ -33,6 +33,8 @@ interface ShotInspectorProps {
   onRegenerateNarration?: (cutNumber: number) => void;
   /** cutNumber (narration regenerate 용) */
   cutNumber?: number;
+  /** 현재 배치 처리 중인 cutNumber (null이면 배치 미실행) */
+  batchActiveCutNumber?: number | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -60,6 +62,7 @@ export default function ShotInspector({
   narrationState,
   onRegenerateNarration,
   cutNumber,
+  batchActiveCutNumber,
 }: ShotInspectorProps) {
   const duration = shot.endSec - shot.startSec;
   const isGenerating = shotStatus === "generating";
@@ -309,6 +312,13 @@ export default function ShotInspector({
             )}
           </div>
 
+          {/* Batch processing indicator */}
+          {batchActiveCutNumber !== undefined && batchActiveCutNumber !== null && batchActiveCutNumber === cutNumber && (
+            <div className="flex items-center gap-1.5 text-[10px] animate-pulse" style={{ color: "#8b5cf6" }}>
+              <span>배치 재생성 처리 중...</span>
+            </div>
+          )}
+
           {/* Regenerate narration button */}
           {onRegenerateNarration && cutNumber !== undefined && shot.narrationMode !== "mute" && (
             <Button
@@ -316,9 +326,11 @@ export default function ShotInspector({
               className="h-6 text-[10px] w-full text-white"
               style={{ background: narrationState?.narrationDirty ? "#f59e0b" : "#3b82f6" }}
               onClick={() => onRegenerateNarration(cutNumber)}
-              disabled={isGenerating}
+              disabled={isGenerating || (batchActiveCutNumber !== undefined && batchActiveCutNumber !== null)}
             >
-              {narrationState?.narrationDirty ? "이 샷 나레이션 다시 생성 (편집됨)" : "이 샷 나레이션 다시 생성"}
+              {batchActiveCutNumber !== undefined && batchActiveCutNumber !== null
+                ? "배치 처리 중 — 개별 재생성 불가"
+                : narrationState?.narrationDirty ? "이 샷 나레이션 다시 생성 (편집됨)" : "이 샷 나레이션 다시 생성"}
             </Button>
           )}
 

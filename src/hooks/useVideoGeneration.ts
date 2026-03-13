@@ -37,6 +37,7 @@ import {
   type AudioCoverageMeta,
   type ShotNarrationState,
   type SequenceNarrationState,
+  type BatchNarrationRegenerationState,
 } from "@/types";
 import {
   createInitialVariantState,
@@ -207,6 +208,15 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     dirtyShotCount: 0,
     allShotsInSync: true,
     lastGeneratedSnapshotId: "",
+  });
+  const [batchNarrationState, setBatchNarrationState] = useState<BatchNarrationRegenerationState>({
+    isRunning: false,
+    total: 0,
+    completed: 0,
+    failed: 0,
+    activeCutNumber: null,
+    failedCutNumbers: [],
+    warnings: [],
   });
 
   /** shot의 narration dirty-state를 재계산 */
@@ -2217,6 +2227,161 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     }
   }, [state.clips, cuts, state.config.durationSeconds, updateClip, recomputeSequenceNarrationState]);
 
+  /**
+   * 배치: dirty 상태인 모든 shot의 나레이션을 순차 재생성
+   */
+  const regenerateAllDirtyNarrations = useCallback(async () => {
+    // dirty shot 목록 추출
+    const dirtyCutNumbers: number[] = [];
+    shotNarrationStates.forEach((s, cutNumber) => {
+      if (s.narrationDirty && s.mode !== "mute") dirtyCutNumbers.push(cutNumber);
+    });
+
+    if (dirtyCutNumbers.length === 0) return;
+
+    // 배치 시작 상태
+    setBatchNarrationState({
+      isRunning: true,
+      total: dirtyCutNumbers.length,
+      completed: 0,
+      failed: 0,
+      activeCutNumber: null,
+      failedCutNumbers: [],
+      warnings: [],
+    });
+
+    let completed = 0;
+    let failed = 0;
+    const failedCutNumbers: number[] = [];
+    const warnings: string[] = [];
+
+    // 순차 처리 (과도한 동시 요청 방지)
+    for (const cutNumber of dirtyCutNumbers) {
+      setBatchNarrationState(prev => ({ ...prev, activeCutNumber: cutNumber }));
+
+      const clip = state.clips.find(c => c.cutNumber === cutNumber && c.status === "completed");
+      if (!clip) {
+        failed++;
+        failedCutNumbers.push(cutNumber);
+        warnings.push(`C${cutNumber}: 완료된 클립 없음`);
+        setBatchNarrationState(prev => ({
+          ...prev,
+          failed,
+          failedCutNumbers: [...failedCutNumbers],
+          warnings: [...warnings],
+        }));
+        continue;
+      }
+
+      const cut = cuts.find(c => c.cutNumber === cutNumber);
+      const seq = clip.structuredSequence;
+      const narrationMode = seq?.narrationMode || "auto";
+
+      const narrationText = narrationMode === "manual"
+        ? (seq?.narrationText || "")
+        : (seq?.narrationText || cut?.sceneDescription || "");
+
+      if (!narrationText.trim()) {
+        failed++;
+        failedCutNumbers.push(cutNumber);
+        warnings.push(`C${cutNumber}: 나레이션 텍스트 없음`);
+        setBatchNarrationState(prev => ({
+          ...prev,
+          failed,
+          failedCutNumbers: [...failedCutNumbers],
+          warnings: [...warnings],
+        }));
+        continue;
+      }
+
+      const duration = seq?.durationSec || clip.durationSec || safeDuration(state.config.durationSeconds);
+
+      updateClip(cutNumber, { narrationStatus: "generating" });
+
+      try {
+        const sessionId = clip.operationName?.split("/").pop() || `session-${Date.now()}`;
+        const res = await fetch("/api/generate-narration", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            shots: [{
+              cutNumber,
+              shotId: seq?.shotId || `shot_${cutNumber}`,
+              narrationText,
+              durationSec: duration,
+              startSec: 0,
+              endSec: duration,
+            }],
+            voiceName: "ko-KR-Wavenet-A",
+            speakingRate: 1.0,
+          }),
+        });
+
+        const data = await res.json() as {
+          audioIncluded: boolean;
+          audioTracks?: Array<{ cutNumber: number; audioUri: string; syncStatus: string }>;
+        };
+
+        const track = data.audioTracks?.[0];
+        if (track) {
+          updateClip(cutNumber, {
+            narrationAudioUri: track.audioUri,
+            narrationStatus: "completed",
+          });
+          // dirty-state 해제
+          setShotNarrationStates(prev => {
+            const next = new Map(prev);
+            const existing = next.get(cutNumber);
+            if (existing) {
+              next.set(cutNumber, {
+                ...existing,
+                lastGeneratedText: existing.currentText,
+                lastGeneratedMode: existing.mode,
+                lastGeneratedAudioUrl: track.audioUri,
+                lastGeneratedSyncStatus: (track as { syncStatus?: string }).syncStatus as "exact" | "trimmed" | "padded" || "",
+                lastGeneratedAt: Date.now(),
+                narrationDirty: false,
+              });
+            }
+            recomputeSequenceNarrationState(next);
+            return next;
+          });
+          completed++;
+        } else {
+          updateClip(cutNumber, { narrationStatus: "failed" });
+          failed++;
+          failedCutNumbers.push(cutNumber);
+          warnings.push(`C${cutNumber}: 오디오 트랙 없음`);
+        }
+      } catch (err) {
+        updateClip(cutNumber, { narrationStatus: "failed" });
+        failed++;
+        failedCutNumbers.push(cutNumber);
+        warnings.push(`C${cutNumber}: ${err instanceof Error ? err.message : "생성 실패"}`);
+      }
+
+      setBatchNarrationState(prev => ({
+        ...prev,
+        completed: completed + failed,
+        failed,
+        failedCutNumbers: [...failedCutNumbers],
+        warnings: [...warnings],
+      }));
+    }
+
+    // 배치 완료
+    setBatchNarrationState({
+      isRunning: false,
+      total: dirtyCutNumbers.length,
+      completed,
+      failed,
+      activeCutNumber: null,
+      failedCutNumbers,
+      warnings,
+    });
+  }, [shotNarrationStates, state.clips, cuts, state.config.durationSeconds, updateClip, recomputeSequenceNarrationState]);
+
   // ===== 전체 완료 감지 → 자동 리뷰 + 알림 =====
   const prevCompletedRef = useRef(0);
   useEffect(() => {
@@ -2560,5 +2725,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     sequenceNarrationState,
     markNarrationDirty,
     initShotNarrationState,
+    // Batch narration regeneration
+    batchNarrationState,
+    regenerateAllDirtyNarrations,
   };
 }

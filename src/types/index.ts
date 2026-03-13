@@ -569,6 +569,24 @@ export interface SequenceNarrationState {
   lastGeneratedSnapshotId: string;
 }
 
+/** 배치 나레이션 재생성 진행 상태 */
+export interface BatchNarrationRegenerationState {
+  /** 배치 실행 중 여부 */
+  isRunning: boolean;
+  /** 대상 총 shot 수 */
+  total: number;
+  /** 완료된 shot 수 */
+  completed: number;
+  /** 실패한 shot 수 */
+  failed: number;
+  /** 현재 처리 중인 cutNumber */
+  activeCutNumber: number | null;
+  /** 실패한 shot의 cutNumber 목록 */
+  failedCutNumbers: number[];
+  /** 경고 메시지 */
+  warnings: string[];
+}
+
 /** shot별 오디오 생성 상태 */
 export type ShotAudioStatus = "idle" | "generating" | "completed" | "failed" | "muted";
 

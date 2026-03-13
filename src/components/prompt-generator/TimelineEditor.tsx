@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VideoClip, AudioMeta, ShotNarrationState, SequenceNarrationState } from "@/types";
+import { VideoClip, AudioMeta, ShotNarrationState, SequenceNarrationState, BatchNarrationRegenerationState } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,10 @@ interface TimelineEditorProps {
   shotNarrationStates?: Map<number, ShotNarrationState>;
   /** 시퀀스 단위 narration dirty-state */
   sequenceNarrationState?: SequenceNarrationState;
+  /** 배치 나레이션 재생성 상태 */
+  batchNarrationState?: BatchNarrationRegenerationState;
+  /** 배치 나레이션 재생성 콜백 */
+  onRegenerateAllDirtyNarrations?: () => void;
 }
 
 function TrimSlider({
@@ -113,6 +117,8 @@ export default function TimelineEditor({
   narrationStatus,
   shotNarrationStates,
   sequenceNarrationState,
+  batchNarrationState,
+  onRegenerateAllDirtyNarrations,
 }: TimelineEditorProps) {
   const completedClips = clips.filter((c) => c.status === "completed" && c.videoUri);
 
@@ -441,7 +447,55 @@ export default function TimelineEditor({
               </Badge>
             )}
           </div>
+          {/* 배치 나레이션 재생성 버튼 */}
+          {onRegenerateAllDirtyNarrations && sequenceNarrationState && sequenceNarrationState.dirtyShotCount > 0 && !batchNarrationState?.isRunning && (
+            <Button
+              size="sm"
+              className="h-6 text-[10px] text-white"
+              style={{ background: "#f59e0b" }}
+              onClick={onRegenerateAllDirtyNarrations}
+            >
+              변경된 나레이션 모두 다시 생성 ({sequenceNarrationState.dirtyShotCount}개)
+            </Button>
+          )}
         </div>
+        {/* 배치 진행/완료 상태 */}
+        {batchNarrationState && (batchNarrationState.isRunning || batchNarrationState.total > 0) && (
+          <div className="mt-1.5">
+            {batchNarrationState.isRunning && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span className="animate-pulse" style={{ color: "#f59e0b" }}>배치 재생성 중...</span>
+                  <span className="text-muted-foreground">
+                    {batchNarrationState.completed + batchNarrationState.failed}/{batchNarrationState.total}
+                    {batchNarrationState.activeCutNumber !== null && ` (C${batchNarrationState.activeCutNumber} 처리 중)`}
+                  </span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ background: "#e5e5e5" }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${((batchNarrationState.completed + batchNarrationState.failed) / batchNarrationState.total) * 100}%`,
+                      background: batchNarrationState.failed > 0 ? "linear-gradient(90deg, #22c55e, #f59e0b)" : "#22c55e",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {!batchNarrationState.isRunning && batchNarrationState.total > 0 && (
+              <div className="flex items-center gap-2 text-[10px]">
+                <Badge variant="outline" className="text-[9px]" style={{ borderColor: "#22c55e", color: "#16a34a" }}>
+                  성공 {batchNarrationState.completed - batchNarrationState.failed}
+                </Badge>
+                {batchNarrationState.failed > 0 && (
+                  <Badge variant="outline" className="text-[9px]" style={{ borderColor: "#ef4444", color: "#ef4444" }}>
+                    실패 {batchNarrationState.failed} (C{batchNarrationState.failedCutNumbers.join(", C")})
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-4 pt-4">
@@ -613,6 +667,11 @@ export default function TimelineEditor({
                   {!clip.narrationAudioUri && shotNarrationStates?.get(clip.cutNumber)?.narrationDirty && (
                     <p className="text-[8px] truncate mt-0.5" style={{ color: "#f59e0b" }}>
                       narration dirty
+                    </p>
+                  )}
+                  {batchNarrationState?.isRunning && batchNarrationState.activeCutNumber === clip.cutNumber && (
+                    <p className="text-[8px] truncate mt-0.5 animate-pulse" style={{ color: "#8b5cf6" }}>
+                      배치 처리 중...
                     </p>
                   )}
                   {clip.narrationStatus === "failed" && (
