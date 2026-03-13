@@ -394,6 +394,8 @@ export interface StructuredSequenceDocument {
     environment: string;
     moodLighting: string;
     focus: string;
+    narrationText?: string;
+    narrationMode?: NarrationMode;
   }>;
 
   // ── Legacy / Existing Fields ───────────────────────────
