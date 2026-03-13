@@ -52,6 +52,28 @@ function ProvenanceBanner({ p }: { p?: CutProvenance }) {
             autofix: {p.autoFixCount}
           </Badge>
         )}
+        {p.narrationMode && (
+          <Badge variant="outline" className="text-[10px]" style={{
+            borderColor: p.narrationMode === "mute" ? "#888" : p.narrationMode === "manual" ? "#8b5cf6" : "#22c55e",
+          }}>
+            narration: {p.narrationMode}
+          </Badge>
+        )}
+        {p.narrationSyncStatus && (
+          <Badge variant="outline" className="text-[10px]" style={{
+            borderColor: p.narrationSyncStatus === "trimmed" ? "#f59e0b"
+              : p.narrationSyncStatus === "padded" ? "#3b82f6" : "#22c55e",
+          }}>
+            sync: {p.narrationSyncStatus}
+          </Badge>
+        )}
+        {p.narrationAudioAvailable !== undefined && (
+          <Badge variant="outline" className="text-[10px]" style={{
+            borderColor: p.narrationAudioAvailable ? "#22c55e" : "#ef4444",
+          }}>
+            audio: {p.narrationAudioAvailable ? "있음" : "없음"}
+          </Badge>
+        )}
       </div>
       {p.reason && <div className="text-muted-foreground">reason: {p.reason}</div>}
       {p.warnings && p.warnings.length > 0 && (

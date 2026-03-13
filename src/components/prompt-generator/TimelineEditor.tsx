@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VideoClip } from "@/types";
+import { VideoClip, AudioMeta } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,8 @@ interface TimelineEditorProps {
   clips: VideoClip[];
   onReorder: (fromIndex: number, toIndex: number) => void;
   onTrimChange: (cutNumber: number, trimStart: number, trimEnd: number) => void;
+  audioMeta?: AudioMeta | null;
+  narrationStatus?: "idle" | "generating" | "completed" | "failed";
 }
 
 function TrimSlider({
@@ -103,6 +105,8 @@ export default function TimelineEditor({
   clips,
   onReorder,
   onTrimChange,
+  audioMeta,
+  narrationStatus,
 }: TimelineEditorProps) {
   const completedClips = clips.filter((c) => c.status === "completed" && c.videoUri);
 
@@ -403,6 +407,22 @@ export default function TimelineEditor({
             <Badge variant="outline" style={{ borderColor: "#787fff" }}>
               {completedClips.length}개 클립 | {totalDuration.toFixed(1)}초
             </Badge>
+            {/* Audio meta badges */}
+            {narrationStatus === "generating" && (
+              <Badge className="text-[10px] text-white" style={{ background: "#f59e0b" }}>
+                나레이션 생성 중...
+              </Badge>
+            )}
+            {audioMeta?.audioIncluded && (
+              <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#22c55e", color: "#16a34a" }}>
+                오디오 {audioMeta.deliveryMode === "separate" ? "(별도 파일)" : audioMeta.deliveryMode}
+              </Badge>
+            )}
+            {audioMeta?.audioCoverage && (
+              <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#3b82f6", color: "#3b82f6" }}>
+                커버리지 {Math.round(audioMeta.audioCoverage.coverage * 100)}%
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -496,6 +516,18 @@ export default function TimelineEditor({
           </Button>
         </div>
 
+        {/* Audio delivery notice */}
+        {audioMeta?.deliveryMode === "separate" && audioMeta.audioIncluded && (
+          <div className="px-3 py-1.5 rounded text-[11px]" style={{ background: "#3b82f608", border: "1px solid #3b82f620", color: "#3b82f6" }}>
+            오디오는 별도 파일로 제공됩니다. 다운로드 시 MP4 + MP3가 함께 내려갑니다.
+            {audioMeta.warnings?.length > 0 && (
+              <span className="block mt-0.5 text-[10px]" style={{ color: "#f59e0b" }}>
+                {audioMeta.warnings.length}개 경고
+              </span>
+            )}
+          </div>
+        )}
+
         {/* 타임라인 트랙 */}
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground">
@@ -542,9 +574,19 @@ export default function TimelineEditor({
                       {clipDuration.toFixed(1)}s
                     </span>
                   </div>
-                  {clip.narrationAudioUri && (
-                    <p className="text-[8px] truncate mt-0.5" style={{ color: "#16a34a" }}>
-                      audio
+                  {clip.narrationAudioUri && (() => {
+                    const track = audioMeta?.audioTracks?.find(t => t.cutNumber === clip.cutNumber);
+                    const syncColor = track?.syncStatus === "trimmed" ? "#f59e0b"
+                      : track?.syncStatus === "padded" ? "#3b82f6" : "#16a34a";
+                    return (
+                      <p className="text-[8px] truncate mt-0.5" style={{ color: syncColor }}>
+                        audio{track?.syncStatus && track.syncStatus !== "exact" ? ` (${track.syncStatus})` : ""}
+                      </p>
+                    );
+                  })()}
+                  {clip.narrationStatus === "failed" && (
+                    <p className="text-[8px] truncate mt-0.5" style={{ color: "#ef4444" }}>
+                      audio failed
                     </p>
                   )}
                   {clip.seed && (

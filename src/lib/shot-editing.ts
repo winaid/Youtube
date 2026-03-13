@@ -12,7 +12,7 @@
  *  - node graph 연결 (shotId 중심)
  */
 
-import type { StructuredSequenceDocument, TemporalBeat } from "@/types";
+import type { StructuredSequenceDocument, TemporalBeat, NarrationMode } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -29,6 +29,9 @@ export interface EditableShot {
   environment: string;
   moodLighting: string;
   focus: string;
+  // ── Audio / Narration ──
+  narrationText?: string;
+  narrationMode?: NarrationMode;
 }
 
 export interface EditableSequence {
@@ -80,7 +83,12 @@ export function extractEditable(doc: StructuredSequenceDocument): EditableSequen
   let shots: EditableShot[] = [];
 
   if (doc.shots && doc.shots.length > 0) {
-    shots = doc.shots.map(s => ({ ...s }));
+    shots = doc.shots.map(s => ({
+      ...s,
+      // narration 필드 전파: sequence-level → shot-level (shots에는 없으므로 sequence에서 복사)
+      narrationText: s.narrationText ?? doc.narrationText,
+      narrationMode: s.narrationMode ?? doc.narrationMode ?? "auto",
+    }));
   } else if (doc.shotPlan) {
     // shotPlan만 있고 shots[]가 없는 경우 — 단일 shot으로 변환
     const sp = doc.shotPlan;
@@ -98,6 +106,8 @@ export function extractEditable(doc: StructuredSequenceDocument): EditableSequen
       environment: sp.environment || "",
       moodLighting: sp.moodLighting || "",
       focus: "main action",
+      narrationText: doc.narrationText,
+      narrationMode: doc.narrationMode ?? "auto",
     }];
   }
 
@@ -126,6 +136,16 @@ export function applyEditsToDocument(
 
   updated.shots = editable.shots.map(s => ({ ...s }));
   updated.durationSec = editable.durationSec;
+
+  // narration: 단일 shot인 경우 sequence-level 필드에도 반영
+  if (editable.shots.length === 1) {
+    updated.narrationText = editable.shots[0].narrationText;
+    updated.narrationMode = editable.shots[0].narrationMode;
+  } else if (editable.shots.length > 0) {
+    // 다중 shot: 첫 shot의 narration을 sequence-level에 반영 (대표값)
+    updated.narrationText = editable.shots[0].narrationText;
+    updated.narrationMode = editable.shots[0].narrationMode;
+  }
   updated.placeIdentityAnchors = [...editable.placeIdentityAnchors];
   updated.situationEvidence = [...editable.situationEvidence];
   updated.naturalMotion = [...editable.naturalMotion];
@@ -365,6 +385,8 @@ export function updateShotField(
   else if (path === "environment") shot.environment = value;
   else if (path === "moodLighting") shot.moodLighting = value;
   else if (path === "focus") shot.focus = value;
+  else if (path === "narrationText") shot.narrationText = value;
+  else if (path === "narrationMode") shot.narrationMode = value as NarrationMode;
 
   newShots[idx] = shot;
   return { ...seq, shots: newShots };

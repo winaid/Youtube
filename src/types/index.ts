@@ -423,6 +423,8 @@ export interface StructuredSequenceDocument {
   // ── Audio / Narration (v3) ────────────────────────────
   /** shot별 나레이션 텍스트 (TTS 소스) — generate-cuts에서 sceneDescription 기반 생성 */
   narrationText?: string;
+  /** 나레이션 모드: auto=sceneDescription fallback, manual=직접입력, mute=무음 */
+  narrationMode?: NarrationMode;
 }
 
 // ===== Asset 상태 분리 =====
@@ -533,6 +535,27 @@ export interface DurationMeta {
 }
 
 // ===== Audio / Narration =====
+
+/** shot별 나레이션 모드 */
+export type NarrationMode = "auto" | "manual" | "mute";
+
+/** shot별 오디오 생성 상태 */
+export type ShotAudioStatus = "idle" | "generating" | "completed" | "failed" | "muted";
+
+/** 오디오 커버리지 메타 (전체 시퀀스 기준) */
+export interface AudioCoverageMeta {
+  /** 총 shot 수 */
+  totalShots: number;
+  /** 오디오 생성 성공 수 */
+  successfulShots: number;
+  /** 오디오 생성 실패 수 */
+  failedShots: number;
+  /** mute 처리된 수 */
+  mutedShots: number;
+  /** 커버리지 비율 (0-1) */
+  coverage: number;
+}
+
 export interface NarrationTrack {
   /** 컷 번호 */
   cutNumber: number;
@@ -557,6 +580,10 @@ export interface AudioMeta {
   narrationUsed: boolean;
   /** mux 방식: "muxed" = video+audio 합성, "separate" = 별도 에셋, "none" = 실패 */
   deliveryMode: "muxed" | "separate" | "none";
+  /** 오디오 커버리지 메타 */
+  audioCoverage?: AudioCoverageMeta;
+  /** duration 산정 방식 */
+  durationSource: "estimated" | "decoded";
   /** 오디오 생성 경고 */
   warnings: string[];
 }
@@ -768,6 +795,14 @@ export interface CutProvenance {
   sanitizeFixes?: string[];
   /** conflict resolution 로그 */
   conflictResolutions?: string[];
+  /** narration mode used for this shot */
+  narrationMode?: NarrationMode;
+  /** narration text source: "manual" | "sceneDescription" | "narrationText" */
+  narrationSource?: string;
+  /** narration sync status */
+  narrationSyncStatus?: "exact" | "trimmed" | "padded";
+  /** narration audio available */
+  narrationAudioAvailable?: boolean;
 }
 
 /** 3-way snapshot 세트 (per cut) */

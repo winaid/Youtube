@@ -34,6 +34,7 @@ import {
   type DurationMeta,
   type NarrationTrack,
   type AudioMeta,
+  type AudioCoverageMeta,
 } from "@/types";
 import {
   createInitialVariantState,
@@ -1906,8 +1907,15 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const cut = cuts.find(c => c.cutNumber === clip.cutNumber);
       const seq = clip.structuredSequence;
 
-      // narrationText source: structuredSequence.narrationText > cut.sceneDescription
-      const narrationText = seq?.narrationText || cut?.sceneDescription || "";
+      // narrationMode: mute → skip, manual → use narrationText, auto → fallback to sceneDescription
+      const narrationMode = seq?.narrationMode || "auto";
+      if (narrationMode === "mute") {
+        cumulativeSec += (seq?.durationSec || clip.durationSec || safeDuration(state.config.durationSeconds));
+        continue;
+      }
+      const narrationText = narrationMode === "manual"
+        ? (seq?.narrationText || "")
+        : (seq?.narrationText || cut?.sceneDescription || "");
       const duration = seq?.durationSec || clip.durationSec || safeDuration(state.config.durationSeconds);
 
       if (narrationText.trim()) {
@@ -1931,6 +1939,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         audioTracks: [],
         narrationUsed: false,
         deliveryMode: "none",
+        durationSource: "estimated",
         warnings: ["No narration text available for any shot"],
       });
       return;
@@ -1983,11 +1992,27 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         });
       }
 
+      // 커버리지 계산
+      const completedClipCount = completedClips.length;
+      const mutedCount = completedClips.filter(c => {
+        const seq = c.structuredSequence;
+        return seq?.narrationMode === "mute";
+      }).length;
+      const audioCoverage: AudioCoverageMeta = {
+        totalShots: completedClipCount,
+        successfulShots: tracks.length,
+        failedShots: (data.errors?.length ?? 0),
+        mutedShots: mutedCount,
+        coverage: completedClipCount > 0 ? tracks.length / (completedClipCount - mutedCount || 1) : 0,
+      };
+
       const meta: AudioMeta = {
         audioIncluded: data.audioIncluded,
         audioTracks: tracks,
         narrationUsed: data.narrationUsed,
         deliveryMode: data.deliveryMode,
+        audioCoverage,
+        durationSource: "estimated",
         warnings: data.warnings || [],
       };
 
@@ -2008,6 +2033,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         audioTracks: [],
         narrationUsed: false,
         deliveryMode: "none",
+        durationSource: "estimated",
         warnings: [`Narration generation failed: ${err instanceof Error ? err.message : String(err)}`],
       });
 
@@ -2015,6 +2041,66 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       for (const clip of completedClips) {
         updateClip(clip.cutNumber, { narrationStatus: "failed" });
       }
+    }
+  }, [state.clips, cuts, state.config.durationSeconds, updateClip]);
+
+  /**
+   * 단일 shot 나레이션 재생성
+   */
+  const regenerateShotNarration = useCallback(async (cutNumber: number) => {
+    const clip = state.clips.find(c => c.cutNumber === cutNumber && c.status === "completed");
+    if (!clip) return;
+
+    const cut = cuts.find(c => c.cutNumber === cutNumber);
+    const seq = clip.structuredSequence;
+    const narrationMode = seq?.narrationMode || "auto";
+    if (narrationMode === "mute") return;
+
+    const narrationText = narrationMode === "manual"
+      ? (seq?.narrationText || "")
+      : (seq?.narrationText || cut?.sceneDescription || "");
+    if (!narrationText.trim()) return;
+
+    const duration = seq?.durationSec || clip.durationSec || safeDuration(state.config.durationSeconds);
+
+    updateClip(cutNumber, { narrationStatus: "generating" });
+
+    try {
+      const sessionId = clip.operationName?.split("/").pop() || `session-${Date.now()}`;
+      const res = await fetch("/api/generate-narration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          shots: [{
+            cutNumber,
+            shotId: seq?.shotId || `shot_${cutNumber}`,
+            narrationText,
+            durationSec: duration,
+            startSec: 0,
+            endSec: duration,
+          }],
+          voiceName: "ko-KR-Wavenet-A",
+          speakingRate: 1.0,
+        }),
+      });
+
+      const data = await res.json() as {
+        audioIncluded: boolean;
+        audioTracks?: Array<{ cutNumber: number; audioUri: string; syncStatus: string }>;
+      };
+
+      const track = data.audioTracks?.[0];
+      if (track) {
+        updateClip(cutNumber, {
+          narrationAudioUri: track.audioUri,
+          narrationStatus: "completed",
+        });
+      } else {
+        updateClip(cutNumber, { narrationStatus: "failed" });
+      }
+    } catch {
+      updateClip(cutNumber, { narrationStatus: "failed" });
     }
   }, [state.clips, cuts, state.config.durationSeconds, updateClip]);
 
@@ -2353,6 +2439,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     lastDurationMeta,
     // Narration audio pipeline
     generateNarration,
+    regenerateShotNarration,
     narrationStatus,
     audioMeta,
   };

@@ -997,6 +997,8 @@ export default function ResultPanel({
           clips={videoGen.clips}
           onReorder={videoGen.reorderClips}
           onTrimChange={videoGen.setTrim}
+          audioMeta={videoGen.audioMeta}
+          narrationStatus={videoGen.narrationStatus}
         />
       )}
 

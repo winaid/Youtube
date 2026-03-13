@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { EditableShot } from "@/lib/shot-editing";
-import type { ShotRegenerateStatus } from "@/types";
+import type { ShotRegenerateStatus, NarrationMode } from "@/types";
 import { FRAMING_OPTIONS, ANGLE_OPTIONS } from "@/lib/shot-editing";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -216,8 +216,96 @@ export default function ShotInspector({
             onChange={(v) => onUpdateField("focus", v)}
           />
         </div>
+
+        {/* Narration section */}
+        <fieldset className="space-y-2 border rounded-md p-2">
+          <legend className="text-[10px] font-medium text-muted-foreground px-1">나레이션</legend>
+
+          {/* Mode selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-muted-foreground w-14 shrink-0">모드</label>
+            <Select
+              value={shot.narrationMode || "auto"}
+              onValueChange={(v) => onUpdateField("narrationMode", v)}
+            >
+              <SelectTrigger className="h-7 text-xs flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto" className="text-xs">auto (자동)</SelectItem>
+                <SelectItem value="manual" className="text-xs">manual (직접 입력)</SelectItem>
+                <SelectItem value="mute" className="text-xs">mute (음소거)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Mute indicator */}
+          {shot.narrationMode === "mute" && (
+            <div className="px-2 py-1 rounded text-[10px]" style={{ background: "#78787810", color: "#888" }}>
+              이 샷은 나레이션 없이 재생됩니다.
+            </div>
+          )}
+
+          {/* Narration text */}
+          {shot.narrationMode !== "mute" && (
+            <div className="space-y-1">
+              <textarea
+                value={shot.narrationText || ""}
+                onChange={(e) => onUpdateField("narrationText", e.target.value)}
+                placeholder={shot.narrationMode === "manual" ? "나레이션 텍스트를 직접 입력하세요" : "비어 있으면 sceneDescription이 사용됩니다"}
+                className="w-full text-xs border rounded px-2 py-1.5 bg-background resize-none"
+                rows={3}
+              />
+              {/* Auto mode fallback indicator */}
+              {(!shot.narrationMode || shot.narrationMode === "auto") && !shot.narrationText && (
+                <p className="text-[9px] text-muted-foreground" style={{ color: "#f59e0b" }}>
+                  sceneDescription fallback 사용 예정
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Duration & sync estimate */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge variant="outline" className="text-[9px]">
+              샷 길이: {duration.toFixed(1)}s
+            </Badge>
+            {shot.narrationMode !== "mute" && shot.narrationText && (
+              <NarrationSyncEstimate text={shot.narrationText} durationSec={duration} />
+            )}
+          </div>
+        </fieldset>
       </CardContent>
     </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Narration sync estimate badge
+// ═══════════════════════════════════════════════════════════════════
+
+function NarrationSyncEstimate({ text, durationSec }: { text: string; durationSec: number }) {
+  // 한국어 ~4글자/초 기준 예상
+  const estimatedSec = text.length / 4;
+  const tolerance = 0.5;
+
+  let label: string;
+  let color: string;
+  if (estimatedSec > durationSec + tolerance) {
+    label = `예상 ${estimatedSec.toFixed(1)}s — trimmed 가능`;
+    color = "#f59e0b";
+  } else if (estimatedSec < durationSec - tolerance) {
+    label = `예상 ${estimatedSec.toFixed(1)}s — padded`;
+    color = "#3b82f6";
+  } else {
+    label = `예상 ${estimatedSec.toFixed(1)}s — OK`;
+    color = "#22c55e";
+  }
+
+  return (
+    <Badge variant="outline" className="text-[9px]" style={{ borderColor: color, color }}>
+      {label}
+    </Badge>
   );
 }
 
