@@ -505,6 +505,36 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     setShowPalette(false);
   }, [viewport]);
 
+  /** History 탭에서 prompt → TextInput + GenerateVideo 체인을 한 번에 생성 */
+  const handleInsertPromptChain = useCallback((text: string) => {
+    const textInputDef = NODE_REGISTRY.find(d => d.type === "text-input");
+    const genVideoDef = NODE_REGISTRY.find(d => d.type === "generate-video");
+    if (!textInputDef || !genVideoDef || !text.trim()) return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const cx = rect ? (rect.width / 2 / viewport.zoom - viewport.panX) : 200;
+    const cy = rect ? (rect.height / 2 / viewport.zoom - viewport.panY) : 200;
+
+    // TextInput 왼쪽, GenerateVideo 오른쪽 (간격 80px)
+    const gap = 80;
+    const textX = cx - textInputDef.defaultWidth - gap / 2;
+    const textY = cy - textInputDef.defaultHeight / 2;
+    const vidX = cx + gap / 2;
+    const vidY = cy - genVideoDef.defaultHeight / 2;
+
+    const textNode = createNode(textInputDef, textX, textY);
+    const vidNode = createNode(genVideoDef, vidX, vidY);
+
+    setState(prev => {
+      let next = addNode(prev, { ...textNode, data: { ...textNode.data, text } });
+      next = addNode(next, vidNode);
+      // TextInput output(text) → GenerateVideo input[0](prompt) 자동 연결
+      next = addEdge(next, textNode.id, textNode.outputs[0].id, vidNode.id, vidNode.inputs[0].id);
+      return next;
+    });
+    setShowPalette(false);
+  }, [viewport]);
+
   const handleDeleteSelected = useCallback(() => {
     if (!state.selectedNodeId) return;
     setState(prev => removeNode(prev, prev.selectedNodeId!));
@@ -1069,6 +1099,7 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
           canvasNodes={state.nodes}
           onInsertAsset={handleInsertAsset}
           onInsertPrompt={handleInsertPrompt}
+          onInsertPromptChain={handleInsertPromptChain}
         />
       )}
 

@@ -27,6 +27,8 @@ export interface NodePaletteProps {
   onInsertAsset?: (asset: string, mimeType: "image" | "video") => void;
   /** prompt 텍스트를 TextInput 노드로 캔버스에 삽입 */
   onInsertPrompt?: (text: string) => void;
+  /** prompt 텍스트로 TextInput + GenerateVideo 체인을 캔버스에 삽입 */
+  onInsertPromptChain?: (text: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -53,7 +55,7 @@ const CATEGORIES: { key: NodeCategory; label: string; color: string }[] = [
 // Component
 // ═══════════════════════════════════════════════════════════════════
 
-export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertAsset, onInsertPrompt }: NodePaletteProps) {
+export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertAsset, onInsertPrompt, onInsertPromptChain }: NodePaletteProps) {
   const [activeTab, setActiveTab] = useState<PaletteTab>("addNode");
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<NodeCategory>("all");
@@ -269,11 +271,9 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
                 Prompts
               </p>
               {promptItems.map(item => (
-                <button
+                <div
                   key={item.id}
-                  onClick={() => onInsertPrompt?.(item.fullText)}
-                  disabled={!onInsertPrompt}
-                  className="w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-all hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-all hover:bg-gray-50"
                   data-testid="prompt-history-item"
                 >
                   <div
@@ -297,8 +297,29 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
                     <p className="text-[9px] text-muted-foreground mt-0.5">
                       {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
+                    {/* Quick Actions */}
+                    <div className="flex gap-1 mt-1">
+                      <button
+                        onClick={() => onInsertPrompt?.(item.fullText)}
+                        disabled={!onInsertPrompt}
+                        className="px-2 py-0.5 rounded text-[9px] font-medium transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: "#f3f4f6", color: "#374151" }}
+                        data-testid="prompt-insert-text"
+                      >
+                        텍스트 삽입
+                      </button>
+                      <button
+                        onClick={() => onInsertPromptChain?.(item.fullText)}
+                        disabled={!onInsertPromptChain}
+                        className="px-2 py-0.5 rounded text-[9px] font-medium transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: "#22c55e20", color: "#16a34a" }}
+                        data-testid="prompt-insert-chain"
+                      >
+                        영상 체인
+                      </button>
+                    </div>
                   </div>
-                </button>
+                </div>
               ))}
             </>
           )}

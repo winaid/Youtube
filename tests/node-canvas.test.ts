@@ -435,3 +435,74 @@ describe("node canvas", () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Prompt chain insertion (TextInput + GenerateVideo + edge)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("prompt chain insertion", () => {
+  it("should create TextInput + GenerateVideo nodes with edge connecting them", () => {
+    const textDef = findDef("text-input");
+    const vidDef = findDef("generate-video");
+    const promptText = "A cat playing piano";
+
+    const textNode = createNode(textDef, 100, 100);
+    const vidNode = createNode(vidDef, 400, 100);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, { ...textNode, data: { ...textNode.data, text: promptText } });
+    state = addNode(state, vidNode);
+    state = addEdge(state, textNode.id, textNode.outputs[0].id, vidNode.id, vidNode.inputs[0].id);
+
+    // 2개 노드 생성 확인
+    expect(state.nodes).toHaveLength(2);
+    const tn = state.nodes.find(n => n.type === "text-input")!;
+    const vn = state.nodes.find(n => n.type === "generate-video")!;
+    expect(tn).toBeDefined();
+    expect(vn).toBeDefined();
+
+    // TextInput에 prompt 설정 확인
+    expect(tn.data.text).toBe(promptText);
+
+    // edge 연결 확인
+    expect(state.edges).toHaveLength(1);
+    const edge = state.edges[0];
+    expect(edge.sourceNodeId).toBe(tn.id);
+    expect(edge.targetNodeId).toBe(vn.id);
+    expect(edge.sourcePortId).toBe(tn.outputs[0].id); // text output
+    expect(edge.targetPortId).toBe(vn.inputs[0].id);  // prompt input
+  });
+
+  it("should allow text to flow from TextInput to GenerateVideo via edge", () => {
+    const textDef = findDef("text-input");
+    const vidDef = findDef("generate-video");
+
+    const textNode = createNode(textDef, 0, 0);
+    const vidNode = createNode(vidDef, 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, { ...textNode, data: { ...textNode.data, text: "ocean sunset" } });
+    state = addNode(state, vidNode);
+    state = addEdge(state, textNode.id, textNode.outputs[0].id, vidNode.id, vidNode.inputs[0].id);
+
+    // TextInput의 output을 "success"로 설정 (executeTextInput이 하는 일)
+    state = updateNodeStatus(state, textNode.id, "success", "ocean sunset");
+
+    // GenerateVideo의 input으로 text가 전달되는지 확인
+    const inputs = getInputAssets(state, vidNode.id);
+    const promptInput = inputs.find(i => i.portId === vidNode.inputs[0].id);
+    expect(promptInput?.asset).toBe("ocean sunset");
+  });
+
+  it("TextInput output port and GenerateVideo prompt input port should be compatible", () => {
+    const textDef = findDef("text-input");
+    const vidDef = findDef("generate-video");
+    const textNode = createNode(textDef, 0, 0);
+    const vidNode = createNode(vidDef, 300, 0);
+
+    const sourcePort = textNode.outputs[0]; // type: "text", isInput: false
+    const targetPort = vidNode.inputs[0];   // type: "text", isInput: true
+
+    expect(arePortsCompatible(sourcePort, targetPort)).toBe(true);
+  });
+});
