@@ -244,6 +244,24 @@ export async function generatePrompt(
   });
   const cutDuration = autoResult.duration;
   const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / cutDuration));
+
+  // ── 진단 로그: generatePrompt duration 결정 경로 ──
+  console.info("[generatePrompt] duration 결정 경로", {
+    inputDuration: input.duration,
+    inputCutDuration: input.cutDuration,
+    inputCutCount: input.cutCount,
+    effectiveDuration,
+    autoResultBasis: autoResult.basis,
+    resolvedCutDuration: cutDuration,
+    resolvedCutCount: cutCount,
+    apiPayload: {
+      totalDurationSeconds: effectiveDuration,
+      cutCount,
+      cutDuration,
+    },
+    expectedTotal: `${cutCount} × ${cutDuration} = ${cutCount * cutDuration}초`,
+  });
+
   const storyWords = input.storyText.slice(0, 30);
 
   // 1. 감독 페르소나 먼저 생성 (장면 생성에 필요)

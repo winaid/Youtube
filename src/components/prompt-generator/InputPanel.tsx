@@ -548,9 +548,36 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     // effectiveTotalSec: 명시 duration > 0이면 그대로, auto이면 스토리 길이 기반 project total 추정.
     // 주의: 이 값은 project total duration이다. current segment cap(15초)과 혼동하지 말 것.
     const totalSec = typeof duration === "number" ? duration : 0;
+    const storyEstimate = estimateProjectDuration(storyText);
     const effectiveTotalSec = totalSec > 0
       ? totalSec
-      : estimateProjectDuration(storyText).estimatedTotalSec;
+      : storyEstimate.estimatedTotalSec;
+
+    // ── 진단 로그: submit 경로 duration 값 추적 ──
+    const payloadCutCount = cutCount === "auto"
+      ? (aiCutRecommendation?.recommendedCuts ?? undefined)
+      : cutCount;
+    const payloadCutDuration = cutDuration === 0
+      ? (aiCutRecommendation?.recommendedDuration ?? undefined)
+      : cutDuration;
+    console.info("[InputPanel:handleSubmit] duration 진단", {
+      durationState: duration,
+      totalSec,
+      effectiveTotalSec,
+      storyEstimate: {
+        estimatedTotalSec: storyEstimate.estimatedTotalSec,
+        basis: storyEstimate.basis,
+        metrics: storyEstimate.metrics,
+      },
+      cutDurationSlider: cutDuration,
+      cutCountState: cutCount,
+      aiCutRecommendation,
+      payloadDuration: duration,
+      payloadCutDuration,
+      payloadCutCount,
+      payloadPreferredRange: null as CutCountRange | null, // set below
+    });
+
     let resolvedRange: CutCountRange | undefined;
     if (editingDensity === "custom") {
       resolvedRange = customCutRange;
@@ -561,7 +588,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       resolvedRange = recommendCutCountRange(effectiveTotalSec);
     }
 
-    onGenerate({
+    const finalPayload = {
       storyText: finalStory,
       directorPersona,
       region,
@@ -579,7 +606,22 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         ? selectedDir
         : undefined,
       generationPersona,
+    };
+
+    // ── 진단 로그: 최종 payload 요약 ──
+    console.info("[InputPanel:handleSubmit] 최종 payload", {
+      duration: finalPayload.duration,
+      cutCount: finalPayload.cutCount,
+      cutDuration: finalPayload.cutDuration,
+      preferredCutCountRange: finalPayload.preferredCutCountRange,
+      effectiveTotalSec,
+      storyTextLength: storyText.length,
+      warning: duration === "auto" && !finalPayload.cutCount && !finalPayload.cutDuration
+        ? "⚠ auto 모드에서 cutCount·cutDuration 모두 undefined — mock-generator fallback 경로 진입"
+        : undefined,
     });
+
+    onGenerate(finalPayload);
   };
 
   const handleRegionChange = (value: Region) => {
