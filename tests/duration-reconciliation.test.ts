@@ -5,6 +5,7 @@ import {
   durationDescription,
   reconcileDuration,
   safeDuration,
+  computeAutoDuration,
   DURATION_MIN,
   DURATION_MAX,
   DURATION_FALLBACK,
@@ -384,5 +385,122 @@ describe("generate-video duration meta", () => {
     expect(response.durationMeta).toBeDefined();
     expect(response.durationMeta.sentSecondsPerScene).toBe(5);
     expect(response.durationMeta.warnings).toHaveLength(0);
+  });
+});
+
+// ── computeAutoDuration ──────────────────────────────────────────────────────
+
+describe("computeAutoDuration", () => {
+  it("explicit cutDuration → basis=explicit, 그 값 사용", () => {
+    const r = computeAutoDuration({ cutDuration: 6 });
+    expect(r.duration).toBe(6);
+    expect(r.basis).toBe("explicit");
+  });
+
+  it("explicit cutDuration 클램핑 적용 (1 → 3)", () => {
+    const r = computeAutoDuration({ cutDuration: 1 });
+    expect(r.duration).toBe(DURATION_MIN);
+    expect(r.basis).toBe("explicit");
+  });
+
+  it("explicit cutDuration 클램핑 적용 (20 → 15)", () => {
+    const r = computeAutoDuration({ cutDuration: 20 });
+    expect(r.duration).toBe(DURATION_MAX);
+    expect(r.basis).toBe("explicit");
+  });
+
+  it("auto + recommendedDuration → basis=recommended", () => {
+    const r = computeAutoDuration({ cutDuration: 0, recommendedDuration: 5 });
+    expect(r.duration).toBe(5);
+    expect(r.basis).toBe("recommended");
+  });
+
+  it("auto + recommendedDuration → explicit이 우선", () => {
+    const r = computeAutoDuration({ cutDuration: 10, recommendedDuration: 5 });
+    expect(r.duration).toBe(10);
+    expect(r.basis).toBe("explicit");
+  });
+
+  it("auto + totalDuration/cutCount 기반 계산", () => {
+    const r = computeAutoDuration({ cutDuration: 0, totalDurationSeconds: 60, cutCount: 10 });
+    expect(r.duration).toBe(6);
+    expect(r.basis).toBe("computed");
+  });
+
+  it("auto + sceneType=environment → 5초", () => {
+    const r = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
+    expect(r.duration).toBe(5);
+    expect(r.basis).toBe("scene_default");
+  });
+
+  it("auto + sceneType=character-driven → 6초", () => {
+    const r = computeAutoDuration({ cutDuration: 0, sceneType: "character-driven" });
+    expect(r.duration).toBe(6);
+    expect(r.basis).toBe("scene_default");
+  });
+
+  it("auto + sceneType=transition-atmosphere → 4초", () => {
+    const r = computeAutoDuration({ cutDuration: 0, sceneType: "transition-atmosphere" });
+    expect(r.duration).toBe(4);
+    expect(r.basis).toBe("scene_default");
+  });
+
+  it("아무 정보도 없을 때만 emergency fallback", () => {
+    const r = computeAutoDuration({});
+    expect(r.duration).toBe(DURATION_FALLBACK);
+    expect(r.basis).toBe("emergency_fallback");
+  });
+
+  it("cutDuration=0 + 아무 추가 정보 없음 → emergency fallback", () => {
+    const r = computeAutoDuration({ cutDuration: 0 });
+    expect(r.duration).toBe(DURATION_FALLBACK);
+    expect(r.basis).toBe("emergency_fallback");
+  });
+
+  it("우선순위: explicit > recommended > computed > scene_default > fallback", () => {
+    // 모든 정보 있을 때 explicit 우선
+    const r1 = computeAutoDuration({
+      cutDuration: 4, recommendedDuration: 6, totalDurationSeconds: 90, cutCount: 10, sceneType: "environment",
+    });
+    expect(r1.basis).toBe("explicit");
+    expect(r1.duration).toBe(4);
+
+    // explicit 없으면 recommended
+    const r2 = computeAutoDuration({
+      cutDuration: 0, recommendedDuration: 6, totalDurationSeconds: 90, cutCount: 10, sceneType: "environment",
+    });
+    expect(r2.basis).toBe("recommended");
+    expect(r2.duration).toBe(6);
+
+    // recommended도 없으면 computed
+    const r3 = computeAutoDuration({
+      cutDuration: 0, totalDurationSeconds: 90, cutCount: 10, sceneType: "environment",
+    });
+    expect(r3.basis).toBe("computed");
+    expect(r3.duration).toBe(9); // 90/10
+
+    // computed도 불가면 scene_default
+    const r4 = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
+    expect(r4.basis).toBe("scene_default");
+    expect(r4.duration).toBe(5);
+  });
+
+  it("environment/physics-sensitive scene은 8초보다 짧게 유도", () => {
+    const env = computeAutoDuration({ sceneType: "environment" });
+    expect(env.duration).toBeLessThan(8);
+    const obj = computeAutoDuration({ sceneType: "object-detail" });
+    expect(obj.duration).toBeLessThan(8);
+    const trans = computeAutoDuration({ sceneType: "transition-atmosphere" });
+    expect(trans.duration).toBeLessThan(8);
+  });
+
+  it("8초 fallback은 정말 아무 정보도 없을 때만", () => {
+    // 어떤 sceneType이라도 있으면 8이 아닌 값
+    const types = ["environment", "transition-atmosphere", "object-detail", "portrait", "map_visualization"];
+    for (const t of types) {
+      const r = computeAutoDuration({ sceneType: t });
+      expect(r.duration).not.toBe(DURATION_FALLBACK);
+      expect(r.basis).not.toBe("emergency_fallback");
+    }
   });
 });

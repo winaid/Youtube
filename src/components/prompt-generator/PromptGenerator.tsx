@@ -23,7 +23,7 @@ export default function PromptGenerator() {
   const [canvasOutputs, setCanvasOutputs] = useState<Array<{ videoUrl: string; meta: VideoOutputMeta }>>([]);
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
-  const [secondsPerScene, setSecondsPerScene] = useState<number>(DURATION_FALLBACK);
+  const [secondsPerScene, setSecondsPerScene] = useState<number>(0); // 0 = 자동
 
   const handleGenerate = async (input: PromptInput) => {
     setStatus("loading");

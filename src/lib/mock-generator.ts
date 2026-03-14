@@ -3,6 +3,7 @@ import { directors } from "@/data/directors";
 import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts } from "@/lib/sequence-density";
+import { computeAutoDuration } from "@/lib/duration-reconciliation";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -154,7 +155,7 @@ function generateFallbackCuts(
   input: PromptInput,
   director: DirectorPersona,
   cutCount: number,
-  cutDuration = 8
+  cutDuration = 6
 ): { characterSeeds: CharacterSeed[]; cuts: Cut[] } {
   const storyWords = input.storyText.slice(0, 30);
   const directorStyle = director.style;
@@ -228,7 +229,12 @@ export async function generatePrompt(
       ? Math.min(120, Math.max(60, Math.round(input.storyText.length / 2)))
       : input.duration;
 
-  const cutDuration = input.cutDuration && input.cutDuration > 0 ? input.cutDuration : 8;
+  const autoResult = computeAutoDuration({
+    cutDuration: input.cutDuration,
+    totalDurationSeconds: effectiveDuration,
+    cutCount: input.cutCount ?? undefined,
+  });
+  const cutDuration = autoResult.duration;
   const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / cutDuration));
   const storyWords = input.storyText.slice(0, 30);
 

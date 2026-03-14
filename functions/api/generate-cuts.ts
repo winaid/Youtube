@@ -14,6 +14,7 @@ import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
 import { densifyCuts } from "./_sequence-density";
+import { computeServerAutoDuration } from "./_duration-constants";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1089,12 +1090,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       characterPersonas,
     } = await context.request.json() as Record<string, string | number | object>;
 
-    // cutDuration=0/undefined/null → 자동(8초 기본). 1~15 → 명시값. Kling: 3~15 클램핑.
+    // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
     const rawSecPerCut = Number(cutDuration) || 0;
-    const secPerCut = rawSecPerCut > 0 ? Math.min(15, Math.max(3, rawSecPerCut)) : 8;
-    const targetCuts = Math.min(Number(cutCount) || secPerCut, 15);
+    const rawCutCount = Number(cutCount) || 0;
+    const autoResult = computeServerAutoDuration(
+      rawSecPerCut > 0 ? rawSecPerCut : undefined,
+      undefined, // totalDurationSeconds는 generate-cuts에서 직접 사용하지 않음
+      rawCutCount > 0 ? rawCutCount : undefined,
+    );
+    const secPerCut = autoResult.duration;
+    const targetCuts = Math.min(rawCutCount > 0 ? rawCutCount : secPerCut, 15);
 
-    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts });
+    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts, basis: autoResult.basis });
 
     if (!storyText || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });

@@ -24,3 +24,38 @@ export function safeDuration(v: number | undefined | null): number {
   if (!n || n <= 0 || !Number.isFinite(n)) return DURATION_FALLBACK;
   return Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(n)));
 }
+
+/**
+ * auto duration 계산 — 서버 사이드.
+ * cutDuration이 0/undefined면 totalDuration/cutCount 기반 계산.
+ * 둘 다 없으면 sceneType 기반 기본값, 최후에 DURATION_FALLBACK.
+ */
+export function computeServerAutoDuration(
+  cutDuration: number | undefined,
+  totalDurationSeconds?: number,
+  cutCount?: number,
+  sceneType?: string,
+): { duration: number; basis: string } {
+  if (cutDuration && cutDuration > 0) {
+    return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(cutDuration))), basis: "explicit" };
+  }
+
+  if (totalDurationSeconds && totalDurationSeconds > 0 && cutCount && cutCount > 0) {
+    const computed = Math.round(totalDurationSeconds / cutCount);
+    return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, computed)), basis: "computed" };
+  }
+
+  if (sceneType) {
+    const defaults: Record<string, number> = {
+      "environment": 5, "transition-atmosphere": 4, "object-detail": 4,
+      "portrait": 5, "map_visualization": 5, "map-graphic": 5, "product": 5,
+      "person": 6, "character-driven": 6, "crowd": 6, "battle": 6,
+      "cinematic_sequence": 6, "cinematic-sequence": 6,
+    };
+    if (defaults[sceneType]) {
+      return { duration: defaults[sceneType], basis: "scene_default" };
+    }
+  }
+
+  return { duration: DURATION_FALLBACK, basis: "emergency_fallback" };
+}

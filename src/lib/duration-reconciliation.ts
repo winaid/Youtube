@@ -52,11 +52,91 @@ export const DURATION_PRESETS = [4, 6, 8, 10, 15] as const;
  * duration 값을 안전하게 해석. 0/undefined/null/NaN → DURATION_FALLBACK.
  * 양수면 DURATION_MIN~DURATION_MAX 클램핑.
  * 모든 downstream 함수에서 `|| 8` 대신 이 함수를 사용.
+ *
+ * 주의: 이 함수는 "auto 의미를 해석한 후" 호출해야 한다.
+ * auto 상태에서 값을 결정하려면 먼저 computeAutoDuration()을 사용.
  */
 export function safeDuration(v: number | undefined | null): number {
   const n = Number(v);
   if (!n || n <= 0 || !Number.isFinite(n)) return DURATION_FALLBACK;
   return Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(n)));
+}
+
+/**
+ * auto duration 해석 — 명시값이 없을 때 사용할 duration 결정.
+ *
+ * 우선순위:
+ *   1. explicit (cutDuration > 0) → 그대로
+ *   2. recommendedDuration (AI 추천) → 그 값
+ *   3. totalDuration / cutCount 기반 계산
+ *   4. sceneType 기반 기본값
+ *   5. DURATION_FALLBACK (emergency)
+ *
+ * @returns 결정된 duration + 어떤 basis로 결정했는지
+ */
+export interface AutoDurationInput {
+  /** 사용자 명시 장면당 초. 0/undefined → auto */
+  cutDuration?: number;
+  /** AI 추천 장면당 초. analyze-cuts 결과 */
+  recommendedDuration?: number;
+  /** 전체 영상 목표 길이(초) */
+  totalDurationSeconds?: number;
+  /** 장면 수 */
+  cutCount?: number;
+  /** 장면 유형 (environment, character-driven 등) */
+  sceneType?: string;
+}
+
+export interface AutoDurationResult {
+  duration: number;
+  basis: "explicit" | "recommended" | "computed" | "scene_default" | "emergency_fallback";
+}
+
+export function computeAutoDuration(input: AutoDurationInput): AutoDurationResult {
+  const { cutDuration, recommendedDuration, totalDurationSeconds, cutCount, sceneType } = input;
+
+  // 1. explicit
+  if (cutDuration && cutDuration > 0) {
+    return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(cutDuration))), basis: "explicit" };
+  }
+
+  // 2. AI recommendation
+  if (recommendedDuration && recommendedDuration > 0) {
+    return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(recommendedDuration))), basis: "recommended" };
+  }
+
+  // 3. totalDuration / cutCount 기반 계산
+  if (totalDurationSeconds && totalDurationSeconds > 0 && cutCount && cutCount > 0) {
+    const computed = Math.round(totalDurationSeconds / cutCount);
+    const clamped = Math.min(DURATION_MAX, Math.max(DURATION_MIN, computed));
+    return { duration: clamped, basis: "computed" };
+  }
+
+  // 4. sceneType 기반 기본값
+  if (sceneType) {
+    const sceneDefaults: Record<string, number> = {
+      "environment": 5,
+      "transition-atmosphere": 4,
+      "object-detail": 4,
+      "portrait": 5,
+      "map_visualization": 5,
+      "map-graphic": 5,
+      "product": 5,
+      "person": 6,
+      "character-driven": 6,
+      "crowd": 6,
+      "battle": 6,
+      "cinematic_sequence": 6,
+      "cinematic-sequence": 6,
+    };
+    const sceneDur = sceneDefaults[sceneType];
+    if (sceneDur) {
+      return { duration: sceneDur, basis: "scene_default" };
+    }
+  }
+
+  // 5. emergency fallback
+  return { duration: DURATION_FALLBACK, basis: "emergency_fallback" };
 }
 
 /**

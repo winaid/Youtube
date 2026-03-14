@@ -526,8 +526,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       animationMode,
       duration,
       aspectRatio,
-      cutCount: cutCount === "auto" ? undefined : cutCount,
-      cutDuration: cutDuration === 0 ? undefined : cutDuration,
+      cutCount: cutCount === "auto"
+        ? (aiCutRecommendation?.recommendedCuts ?? undefined)
+        : cutCount,
+      cutDuration: cutDuration === 0
+        ? (aiCutRecommendation?.recommendedDuration ?? undefined)
+        : cutDuration,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
         : undefined,
