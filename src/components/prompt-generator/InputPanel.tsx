@@ -4,7 +4,9 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques,
   GenerationPersona, DEFAULT_GENERATION_PERSONA, StyleFamily,
+  EditingDensityPreset, CutCountRange,
 } from "@/types";
+import { recommendCutCountRange, densityPresetToRange } from "@/lib/sequence-density";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
@@ -254,6 +256,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const cutDuration = secondsPerScene;
   const setCutDuration = onSecondsPerSceneChange;
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
+  const [editingDensity, setEditingDensity] = useState<EditingDensityPreset>("auto");
+  const [customCutRange, setCustomCutRange] = useState<CutCountRange>({ min: 3, max: 5 });
   const [aiCutRecommendation, setAiCutRecommendation] = useState<{
     recommendedCuts: number;
     recommendedDuration: number;
@@ -519,6 +523,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       finalStory = `[감독 스타일 블렌딩: ${selectedDir.nameKo} ${blendRatio}% + ${blendDir.nameKo} ${100 - blendRatio}%]\n\n${storyText}`;
     }
 
+    // ── preferredCutCountRange 계산 ──
+    const totalSec = typeof duration === "number" ? duration : 0;
+    let resolvedRange: CutCountRange | undefined;
+    if (editingDensity === "custom") {
+      resolvedRange = customCutRange;
+    } else if (editingDensity !== "auto" && totalSec > 0) {
+      resolvedRange = densityPresetToRange(editingDensity, totalSec);
+    } else if (editingDensity === "auto" && totalSec > 0) {
+      resolvedRange = recommendCutCountRange(totalSec);
+    }
+
     onGenerate({
       storyText: finalStory,
       directorPersona,
@@ -532,6 +547,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       cutDuration: cutDuration === 0
         ? (aiCutRecommendation?.recommendedDuration ?? undefined)
         : cutDuration,
+      preferredCutCountRange: resolvedRange,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
         : undefined,
@@ -1367,6 +1383,74 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 })()}
               </p>
             )}
+          </div>
+
+          <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
+
+          {/* 편집 밀도 (컷 수 범위) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>편집 밀도</Label>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{ background: "#f0f0ff", color: "#787fff" }}>
+                {editingDensity === "auto" ? "자동" : editingDensity === "sparse" ? "느린 편집" : editingDensity === "normal" ? "기본" : editingDensity === "dense" ? "빠른 편집" : `${customCutRange.min}~${customCutRange.max}컷`}
+              </span>
+            </div>
+            <div className="flex gap-1">
+              {([
+                { key: "auto" as EditingDensityPreset, label: "자동" },
+                { key: "sparse" as EditingDensityPreset, label: "느린" },
+                { key: "normal" as EditingDensityPreset, label: "기본" },
+                { key: "dense" as EditingDensityPreset, label: "빠른" },
+                { key: "custom" as EditingDensityPreset, label: "직접" },
+              ]).map(({ key, label }) => (
+                <button
+                  key={key}
+                  className="flex-1 h-6 rounded text-[10px] font-medium transition-all"
+                  style={editingDensity === key
+                    ? { background: "#787fff", color: "white" }
+                    : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
+                  }
+                  onClick={() => setEditingDensity(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {editingDensity === "custom" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={15}
+                  value={customCutRange.min}
+                  onChange={(e) => setCustomCutRange(prev => ({ ...prev, min: Math.max(1, Math.min(Number(e.target.value), prev.max)) }))}
+                  className="h-7 w-14 rounded-md border bg-white px-2 text-xs text-center"
+                  style={{ borderColor: "#e2e8f0" }}
+                />
+                <span className="text-[10px] text-muted-foreground">~</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={15}
+                  value={customCutRange.max}
+                  onChange={(e) => setCustomCutRange(prev => ({ ...prev, max: Math.max(prev.min, Math.min(Number(e.target.value), 15)) }))}
+                  className="h-7 w-14 rounded-md border bg-white px-2 text-xs text-center"
+                  style={{ borderColor: "#e2e8f0" }}
+                />
+                <span className="text-[10px] text-muted-foreground">컷</span>
+              </div>
+            )}
+            <p className="text-[9px] text-muted-foreground">
+              {editingDensity === "auto"
+                ? "영상 길이에 따라 최적 컷 수를 자동 결정"
+                : editingDensity === "custom"
+                  ? `${customCutRange.min}~${customCutRange.max}컷 범위 내에서 감독 스타일에 맞게 결정`
+                  : (() => {
+                      const totalSec = typeof duration === "number" ? duration : 15;
+                      const range = densityPresetToRange(editingDensity, totalSec);
+                      return `${range.min}~${range.max}컷 범위 (${totalSec}초 기준)`;
+                    })()}
+            </p>
           </div>
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />

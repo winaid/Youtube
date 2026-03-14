@@ -27,6 +27,156 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════
+// Duration → Recommended Cut Count Range Presets
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 총 길이(초) 기준 권장 컷 수 범위.
+ * 사용자가 "자동" 선택 시 기본 추천값으로 사용.
+ */
+const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
+  { maxSec: 5,  min: 1, max: 2 },
+  { maxSec: 8,  min: 2, max: 3 },
+  { maxSec: 12, min: 3, max: 4 },
+  { maxSec: 15, min: 3, max: 5 },
+  { maxSec: Infinity, min: 4, max: 6 },
+];
+
+/**
+ * 총 길이(초) → 권장 컷 수 범위 반환.
+ * UI "자동" 밀도 기본값 및 서버 fallback에 사용.
+ */
+export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
+  if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
+  for (const preset of RANGE_PRESETS) {
+    if (totalDurationSec <= preset.maxSec) return { min: preset.min, max: preset.max };
+  }
+  return { min: 4, max: 6 };
+}
+
+/**
+ * EditingDensityPreset → 컷 수 범위 변환.
+ * sparse=느린편집, normal=기본, dense=빠른편집.
+ * custom은 사용자가 직접 min/max를 지정하므로 여기서 처리하지 않음.
+ */
+export function densityPresetToRange(
+  preset: "sparse" | "normal" | "dense",
+  totalDurationSec: number,
+): { min: number; max: number } {
+  const base = recommendCutCountRange(totalDurationSec);
+  switch (preset) {
+    case "sparse":
+      return { min: Math.max(1, base.min - 1), max: base.min };
+    case "dense":
+      return { min: base.max, max: base.max + 2 };
+    case "normal":
+    default:
+      return base;
+  }
+}
+
+/**
+ * persona bias 방향 결정 — 범위 내에서 어디를 선호하는지.
+ */
+export function personaCutCountBias(
+  ep: { motionBias: string; preferredCutPace: [number, number]; insertBias: string },
+): "lower" | "upper" | "neutral" {
+  // frenetic/dynamic + short pace → upper (더 많은 컷)
+  if (ep.motionBias === "frenetic" || (ep.motionBias === "dynamic" && ep.preferredCutPace[1] <= 4)) {
+    return "upper";
+  }
+  // static/minimal + long pace → lower (더 적은 컷)
+  if (ep.motionBias === "static" || (ep.motionBias === "minimal" && ep.preferredCutPace[0] >= 5)) {
+    return "lower";
+  }
+  return "neutral";
+}
+
+/**
+ * 최종 컷 수 결정 — 모든 입력 소스를 종합하여 하나의 컷 수를 반환.
+ *
+ * 우선순위:
+ *   1. exactCutCount (사용자 명시) → 그대로
+ *   2. preferredRange + persona bias → 범위 내에서 persona가 bias 적용
+ *   3. density minimum (hard floor) → range.min이 density보다 낮으면 density가 승리
+ *   4. fallback → recommendCutCountRange 기반
+ */
+export function resolveCutCount(opts: {
+  exactCutCount?: number;
+  preferredRange?: { min: number; max: number };
+  totalDurationSec: number;
+  personaBias?: "lower" | "upper" | "neutral";
+}): {
+  cutCount: number;
+  source: "exact_cutCount" | "preferred_range" | "density_policy" | "fallback";
+  densityMinimum: number;
+  notes: string[];
+} {
+  const { exactCutCount, preferredRange, totalDurationSec, personaBias } = opts;
+  const densityMin = recommendMinimumCutCount(totalDurationSec);
+  const notes: string[] = [];
+
+  // 1. exact cutCount — 최우선
+  if (exactCutCount && exactCutCount > 0) {
+    if (exactCutCount < densityMin) {
+      notes.push(`exact cutCount(${exactCutCount}) < density minimum(${densityMin}), using density minimum`);
+      return { cutCount: densityMin, source: "exact_cutCount", densityMinimum: densityMin, notes };
+    }
+    return { cutCount: Math.min(exactCutCount, 15), source: "exact_cutCount", densityMinimum: densityMin, notes };
+  }
+
+  // 2. preferred range
+  if (preferredRange) {
+    // density minimum이 range.min보다 크면 range 하한을 올림
+    const effectiveMin = Math.max(preferredRange.min, densityMin);
+    const effectiveMax = Math.max(preferredRange.max, effectiveMin);
+
+    if (effectiveMin > preferredRange.min) {
+      notes.push(`range min(${preferredRange.min}) < density minimum(${densityMin}), raised to ${effectiveMin}`);
+    }
+
+    // persona bias로 범위 내 선택
+    let selected: number;
+    if (personaBias === "upper") {
+      selected = effectiveMax;
+      notes.push("persona bias: upper → max of range");
+    } else if (personaBias === "lower") {
+      selected = effectiveMin;
+      notes.push("persona bias: lower → min of range");
+    } else {
+      selected = Math.round((effectiveMin + effectiveMax) / 2);
+      notes.push("persona bias: neutral → midpoint of range");
+    }
+
+    return {
+      cutCount: Math.min(selected, 15),
+      source: "preferred_range",
+      densityMinimum: densityMin,
+      notes,
+    };
+  }
+
+  // 3. density policy fallback
+  const fallbackRange = recommendCutCountRange(totalDurationSec);
+  let fallbackCount: number;
+  if (personaBias === "upper") {
+    fallbackCount = fallbackRange.max;
+  } else if (personaBias === "lower") {
+    fallbackCount = fallbackRange.min;
+  } else {
+    fallbackCount = Math.round((fallbackRange.min + fallbackRange.max) / 2);
+  }
+  fallbackCount = Math.max(fallbackCount, densityMin);
+
+  return {
+    cutCount: Math.min(fallbackCount, 15),
+    source: "fallback",
+    densityMinimum: densityMin,
+    notes: ["no exact cutCount or preferred range provided, using density policy"],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════════
 

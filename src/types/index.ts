@@ -42,10 +42,40 @@ export interface PromptInput {
   aspectRatio: AspectRatio;
   cutCount?: number; // 사용자 지정 장면 수 (없으면 자동 계산)
   cutDuration?: number; // 장면당 초 (4|6|8 → Veo+Kling, 10|15 → Kling 전용)
+  /** 선호 컷 수 범위 — exact cutCount보다 낮은 우선순위. density minimum이 hard floor. */
+  preferredCutCountRange?: CutCountRange;
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
   // 페르소나 시스템
   generationPersona?: GenerationPersona;      // 영상 생성 규칙 세트
   characterPersonas?: CharacterPersonaInput[]; // 캐릭터별 행동/감정 규칙
+}
+
+// ===== 컷 수 범위 =====
+
+/** 사용자가 지정하는 편집 밀도 범위 (예: { min: 3, max: 5 }) */
+export interface CutCountRange {
+  min: number;
+  max: number;
+}
+
+/** 편집 밀도 프리셋 ID */
+export type EditingDensityPreset = "auto" | "sparse" | "normal" | "dense" | "custom";
+
+/** 컷 수 결정 근거 메타데이터 — 서버 응답에 포함 */
+export interface CutCountDecisionBasis {
+  /** 최종 결정된 컷 수 */
+  finalCutCount: number;
+  /** 결정 근거 */
+  source: "exact_cutCount" | "preferred_range" | "density_policy" | "persona_bias" | "fallback";
+  /** 사용자가 제공한 원본 값 */
+  requestedExact?: number;
+  requestedRange?: CutCountRange;
+  /** density minimum (hard floor) */
+  densityMinimum: number;
+  /** persona bias 방향 (범위 내에서의 선호) */
+  personaBias?: "lower" | "upper" | "neutral";
+  /** 경고/설명 */
+  notes: string[];
 }
 
 // ===== 페르소나 시스템 =====

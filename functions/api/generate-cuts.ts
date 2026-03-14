@@ -17,7 +17,7 @@ import { densifyCuts } from "./_sequence-density";
 import { computeServerAutoDuration } from "./_duration-constants";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate, buildCompactEditorialSummary } from "./_editorial-persona";
 import type { EditorialPersona } from "./_editorial-persona";
-import { recommendMinimumCutCount } from "./_sequence-density";
+import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias } from "./_sequence-density";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -32,6 +32,16 @@ interface GenerateCutsResponse {
   sequenceValidation?: unknown;
   /** 실제 사용된 장면당 초 (클라이언트 동기화용) */
   secPerCut?: number;
+  /** 컷 수 결정 근거 메타데이터 */
+  cutCountDecisionBasis?: {
+    finalCutCount: number;
+    source: string;
+    requestedExact?: number;
+    requestedRange?: { min: number; max: number };
+    densityMinimum: number;
+    personaBias?: string;
+    notes: string[];
+  };
 }
 
 type Env = GeminiEnv;
@@ -1123,6 +1133,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       region,
       cutCount,
       cutDuration,
+      preferredCutCountRange,
       generationPersona,
       characterPersonas,
     } = await context.request.json() as Record<string, string | number | object>;
@@ -1130,6 +1141,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
     const rawSecPerCut = Number(cutDuration) || 0;
     const rawCutCount = Number(cutCount) || 0;
+
+    // ── preferredCutCountRange 파싱 ──
+    const parsedRange = preferredCutCountRange && typeof preferredCutCountRange === "object"
+      && "min" in (preferredCutCountRange as Record<string, unknown>)
+      && "max" in (preferredCutCountRange as Record<string, unknown>)
+      ? { min: Number((preferredCutCountRange as Record<string, number>).min), max: Number((preferredCutCountRange as Record<string, number>).max) }
+      : undefined;
 
     // ── editorial persona 추출 ──
     const editorial = extractEditorialPersona(
@@ -1149,13 +1167,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
     const secPerCut = autoResult.duration;
 
-    // ── targetCuts: density 기반 계산 (secPerCut를 cutCount로 쓰던 버그 수정) ──
-    // 명시적 cutCount가 있으면 사용, 없으면 secPerCut 기반 밀도 추정
-    const targetCuts = rawCutCount > 0
-      ? Math.min(rawCutCount, 15)
-      : Math.min(Math.max(recommendMinimumCutCount(secPerCut * 3), 3), 15);
+    // ── targetCuts: resolveCutCount로 통합 결정 ──
+    // 우선순위: exact cutCount > preferredRange + persona bias > density policy > fallback
+    const pBias = personaCutCountBias(editorial);
+    const cutDecision = resolveCutCount({
+      exactCutCount: rawCutCount > 0 ? rawCutCount : undefined,
+      preferredRange: parsedRange,
+      totalDurationSec: secPerCut * (rawCutCount > 0 ? rawCutCount : 3),
+      personaBias: pBias,
+    });
+    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), 15);
 
-    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts, basis: autoResult.basis, editorial: editorial.preferredCutPace });
+    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts, basis: autoResult.basis, editorial: editorial.preferredCutPace, cutDecision });
 
     if (!storyText || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });
@@ -1721,6 +1744,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sequencePlan,
       sequenceValidation,
       secPerCut,
+      cutCountDecisionBasis: {
+        finalCutCount: targetCuts,
+        source: cutDecision.source,
+        requestedExact: rawCutCount > 0 ? rawCutCount : undefined,
+        requestedRange: parsedRange,
+        densityMinimum: cutDecision.densityMinimum,
+        personaBias: pBias,
+        notes: cutDecision.notes,
+      },
     });
 
   } catch (error) {

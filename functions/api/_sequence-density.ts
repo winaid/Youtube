@@ -21,6 +21,124 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: Infinity, minCuts: 5 },
 ];
 
+// ═══════════════════════════════════════════════════════════════════
+// Duration → Recommended Cut Count Range Presets
+// ═══════════════════════════════════════════════════════════════════
+
+const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
+  { maxSec: 5,  min: 1, max: 2 },
+  { maxSec: 8,  min: 2, max: 3 },
+  { maxSec: 12, min: 3, max: 4 },
+  { maxSec: 15, min: 3, max: 5 },
+  { maxSec: Infinity, min: 4, max: 6 },
+];
+
+export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
+  if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
+  for (const preset of RANGE_PRESETS) {
+    if (totalDurationSec <= preset.maxSec) return { min: preset.min, max: preset.max };
+  }
+  return { min: 4, max: 6 };
+}
+
+export function densityPresetToRange(
+  preset: "sparse" | "normal" | "dense",
+  totalDurationSec: number,
+): { min: number; max: number } {
+  const base = recommendCutCountRange(totalDurationSec);
+  switch (preset) {
+    case "sparse":
+      return { min: Math.max(1, base.min - 1), max: base.min };
+    case "dense":
+      return { min: base.max, max: base.max + 2 };
+    case "normal":
+    default:
+      return base;
+  }
+}
+
+export function personaCutCountBias(
+  ep: { motionBias: string; preferredCutPace: [number, number]; insertBias: string },
+): "lower" | "upper" | "neutral" {
+  if (ep.motionBias === "frenetic" || (ep.motionBias === "dynamic" && ep.preferredCutPace[1] <= 4)) {
+    return "upper";
+  }
+  if (ep.motionBias === "static" || (ep.motionBias === "minimal" && ep.preferredCutPace[0] >= 5)) {
+    return "lower";
+  }
+  return "neutral";
+}
+
+export function resolveCutCount(opts: {
+  exactCutCount?: number;
+  preferredRange?: { min: number; max: number };
+  totalDurationSec: number;
+  personaBias?: "lower" | "upper" | "neutral";
+}): {
+  cutCount: number;
+  source: "exact_cutCount" | "preferred_range" | "density_policy" | "fallback";
+  densityMinimum: number;
+  notes: string[];
+} {
+  const { exactCutCount, preferredRange, totalDurationSec, personaBias } = opts;
+  const densityMin = recommendMinimumCutCount(totalDurationSec);
+  const notes: string[] = [];
+
+  if (exactCutCount && exactCutCount > 0) {
+    if (exactCutCount < densityMin) {
+      notes.push(`exact cutCount(${exactCutCount}) < density minimum(${densityMin}), using density minimum`);
+      return { cutCount: densityMin, source: "exact_cutCount", densityMinimum: densityMin, notes };
+    }
+    return { cutCount: Math.min(exactCutCount, 15), source: "exact_cutCount", densityMinimum: densityMin, notes };
+  }
+
+  if (preferredRange) {
+    const effectiveMin = Math.max(preferredRange.min, densityMin);
+    const effectiveMax = Math.max(preferredRange.max, effectiveMin);
+
+    if (effectiveMin > preferredRange.min) {
+      notes.push(`range min(${preferredRange.min}) < density minimum(${densityMin}), raised to ${effectiveMin}`);
+    }
+
+    let selected: number;
+    if (personaBias === "upper") {
+      selected = effectiveMax;
+      notes.push("persona bias: upper → max of range");
+    } else if (personaBias === "lower") {
+      selected = effectiveMin;
+      notes.push("persona bias: lower → min of range");
+    } else {
+      selected = Math.round((effectiveMin + effectiveMax) / 2);
+      notes.push("persona bias: neutral → midpoint of range");
+    }
+
+    return {
+      cutCount: Math.min(selected, 15),
+      source: "preferred_range",
+      densityMinimum: densityMin,
+      notes,
+    };
+  }
+
+  const fallbackRange = recommendCutCountRange(totalDurationSec);
+  let fallbackCount: number;
+  if (personaBias === "upper") {
+    fallbackCount = fallbackRange.max;
+  } else if (personaBias === "lower") {
+    fallbackCount = fallbackRange.min;
+  } else {
+    fallbackCount = Math.round((fallbackRange.min + fallbackRange.max) / 2);
+  }
+  fallbackCount = Math.max(fallbackCount, densityMin);
+
+  return {
+    cutCount: Math.min(fallbackCount, 15),
+    source: "fallback",
+    densityMinimum: densityMin,
+    notes: ["no exact cutCount or preferred range provided, using density policy"],
+  };
+}
+
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
   for (const rule of DENSITY_POLICY) {
