@@ -1,11 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Cut, CharacterSeed, VideoClip } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { computeMontageExportState, downloadAllClips } from "@/lib/montage-export";
+import {
+  computeMontageExportState,
+  downloadAllClips,
+  detectStitchCapability,
+  evaluateStitchReadiness,
+  executeClientStitch,
+  type StitchCapability,
+} from "@/lib/montage-export";
+import type { StitchProgress, StitchJob } from "@/lib/client-stitch";
 
 interface VideoGenerationPanelProps {
   cuts: Cut[];
@@ -73,8 +81,28 @@ export default function VideoGenerationPanel({
 }: VideoGenerationPanelProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadResult, setDownloadResult] = useState<{ downloaded: number; failed: number } | null>(null);
+  const [stitchCapability, setStitchCapability] = useState<StitchCapability>("not_available");
+  const [stitchUnavailableReason, setStitchUnavailableReason] = useState("");
+  const [stitchProgress, setStitchProgress] = useState<StitchProgress | null>(null);
+  const [stitchResult, setStitchResult] = useState<StitchJob | null>(null);
+  const [isStitching, setIsStitching] = useState(false);
 
   const montageState = computeMontageExportState(cuts, clips);
+  // 동적으로 감지된 capability를 덮어쓰기
+  const enrichedState = {
+    ...montageState,
+    stitchCapability,
+    stitchUnavailableReason: stitchUnavailableReason || montageState.stitchUnavailableReason,
+  };
+  const stitchReadiness = evaluateStitchReadiness(enrichedState);
+
+  // FFmpeg.wasm 가용 여부 감지 (마운트 시 1회)
+  useEffect(() => {
+    detectStitchCapability().then(({ capability, unavailableReason }) => {
+      setStitchCapability(capability);
+      setStitchUnavailableReason(unavailableReason);
+    });
+  }, []);
 
   const handleDownloadAll = async () => {
     setIsDownloading(true);
@@ -86,6 +114,23 @@ export default function VideoGenerationPanel({
       setIsDownloading(false);
     }
   };
+
+  const handleStitch = useCallback(async () => {
+    if (!stitchReadiness.canStitch || isStitching) return;
+    setIsStitching(true);
+    setStitchResult(null);
+    setStitchProgress({ phase: "idle", percent: 0, message: "준비 중..." });
+    try {
+      const job = await executeClientStitch(
+        enrichedState,
+        projectTitle,
+        (progress) => setStitchProgress(progress),
+      );
+      setStitchResult(job);
+    } finally {
+      setIsStitching(false);
+    }
+  }, [stitchReadiness.canStitch, isStitching, enrichedState, projectTitle]);
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#22c55e40" }}>
@@ -639,16 +684,33 @@ export default function VideoGenerationPanel({
               <span className="text-sm font-medium" style={{ color: "#333" }}>
                 몽타주 내보내기
               </span>
-              <Badge
-                variant="outline"
-                className="text-[10px]"
-                style={{
-                  borderColor: montageState.allClipsReady ? "#22c55e" : "#d97706",
-                  color: montageState.allClipsReady ? "#16a34a" : "#d97706",
-                }}
-              >
-                {montageState.completedCount}/{montageState.totalCount} clip 완료
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                {/* stitch 엔진 상태 배지 */}
+                <Badge
+                  variant="outline"
+                  className="text-[9px]"
+                  style={{
+                    borderColor: stitchCapability === "client_wasm" ? "#22c55e" : "#aaa",
+                    color: stitchCapability === "client_wasm" ? "#16a34a" : "#888",
+                  }}
+                >
+                  {stitchCapability === "client_wasm"
+                    ? "FFmpeg.wasm 사용 가능"
+                    : stitchCapability === "server_ffmpeg"
+                    ? "서버 FFmpeg"
+                    : "합치기 불가"}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="text-[10px]"
+                  style={{
+                    borderColor: montageState.allClipsReady ? "#22c55e" : "#d97706",
+                    color: montageState.allClipsReady ? "#16a34a" : "#d97706",
+                  }}
+                >
+                  {montageState.completedCount}/{montageState.totalCount} clip 완료
+                </Badge>
+              </div>
             </div>
 
             {/* 진행 바 */}
@@ -679,26 +741,101 @@ export default function VideoGenerationPanel({
               </p>
             )}
 
-            {/* stitch 미구현 안내 */}
-            <div
-              className="rounded-md p-2.5 text-[11px]"
-              style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}
-            >
-              <span className="font-medium">최종 편집본 없음</span> — {montageState.stitchUnavailableReason}
-            </div>
+            {/* ── 최종 편집본 영역 ── */}
+            {stitchCapability === "not_available" ? (
+              /* stitch 불가 — 명시 안내 */
+              <div
+                className="rounded-md p-2.5 text-[11px]"
+                style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}
+              >
+                <span className="font-medium">최종 편집본 없음</span> —{" "}
+                {enrichedState.stitchUnavailableReason}
+              </div>
+            ) : (
+              /* stitch 가능 (client_wasm) — stitch 버튼 + 상태 */
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="text-white text-xs"
+                    disabled={!stitchReadiness.canStitch || isStitching}
+                    onClick={handleStitch}
+                    style={{
+                      background: stitchReadiness.canStitch && !isStitching
+                        ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                        : "#ccc",
+                    }}
+                  >
+                    {isStitching
+                      ? "합치는 중..."
+                      : `최종 몽타주 MP4 생성 (${montageState.completedCount}개 clip)`}
+                  </Button>
+                  {/* stitch 불가 사유 (clip 미완료 등) */}
+                  {!stitchReadiness.canStitch && stitchReadiness.reason && (
+                    <span className="text-[10px]" style={{ color: "#d97706" }}>
+                      {stitchReadiness.reason}
+                    </span>
+                  )}
+                </div>
 
-            {/* 전체 다운로드 버튼 */}
-            <div className="flex items-center gap-2">
+                {/* stitch 진행 상태 */}
+                {stitchProgress && isStitching && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e5e5e5" }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${stitchProgress.percent}%`,
+                          background: "linear-gradient(90deg, #22c55e, #16a34a)",
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {stitchProgress.message}
+                    </p>
+                  </div>
+                )}
+
+                {/* stitch 결과 */}
+                {stitchResult && stitchResult.phase === "done" && (
+                  <div
+                    className="rounded-md p-2.5 text-[11px]"
+                    style={{ background: "#dcfce7", border: "1px solid #86efac", color: "#166534" }}
+                  >
+                    <span className="font-medium">최종 몽타주 생성 완료</span> — {stitchResult.progress.message}
+                    {stitchResult.outputUrl && (
+                      <a
+                        href={stitchResult.outputUrl}
+                        download={`${projectTitle || "montage"}_montage.mp4`}
+                        className="ml-2 underline"
+                        style={{ color: "#15803d" }}
+                      >
+                        다시 다운로드
+                      </a>
+                    )}
+                  </div>
+                )}
+                {stitchResult && stitchResult.phase === "error" && (
+                  <div
+                    className="rounded-md p-2.5 text-[11px]"
+                    style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b" }}
+                  >
+                    <span className="font-medium">합치기 실패</span> — {stitchResult.errorMessage}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 개별 clip 다운로드 (항상 노출 — stitch 가능 여부와 무관) */}
+            <div className="flex items-center gap-2 pt-1" style={{ borderTop: "1px solid #e5e5e5" }}>
               <Button
                 size="sm"
-                className="text-white text-xs"
+                variant="outline"
+                className="text-xs"
                 disabled={montageState.completedCount === 0 || isDownloading}
                 onClick={handleDownloadAll}
-                style={{
-                  background: montageState.completedCount > 0 ? "#787fff" : "#ccc",
-                }}
               >
-                {isDownloading ? "다운로드 중..." : `완료된 clip 전체 다운로드 (${montageState.completedCount}개)`}
+                {isDownloading ? "다운로드 중..." : `개별 clip 다운로드 (${montageState.completedCount}개)`}
               </Button>
               {downloadResult && (
                 <span className="text-[11px] text-muted-foreground">

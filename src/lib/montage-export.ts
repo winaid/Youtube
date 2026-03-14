@@ -1,18 +1,20 @@
 /**
  * montage-export.ts — 멀티컷 몽타주 export 유틸
  *
- * 현재 상태:
- *   - 서버사이드 ffmpeg stitch는 미구현 (Cloudflare Workers 환경 제약)
- *   - 클라이언트사이드 WebCodecs/FFmpeg.wasm stitch도 미구현
- *   - 이 모듈은 clip URL 수집 + 순서 검증 + 개별 다운로드 + stitch 준비 상태 판단을 담당
- *
  * 설계 원칙:
  *   - structuredSequence cutNumber 순서 = stitch 순서의 source of truth
  *   - Kling 1회 요청 = 1개 독립 컷 clip
- *   - stitch 구현이 없는 상태를 숨기지 않고 명시적으로 노출
+ *   - stitch = 완료된 독립 clip들을 cutNumber 순서로 concat하는 후처리 단계
+ *   - stitch 구현 상태를 동적 감지하여 UI에 정확히 반영
+ *
+ * 구현 경로:
+ *   - server_ffmpeg: Cloudflare Workers 환경 제약으로 미구현
+ *   - client_wasm: FFmpeg.wasm 기반 — @ffmpeg/ffmpeg 패키지 + COOP/COEP 헤더 필요
+ *   - not_available: 위 둘 다 불가능한 경우 → 개별 clip 다운로드 fallback
  */
 
 import type { VideoClip, Cut } from "@/types";
+import type { StitchJob, StitchProgress } from "@/lib/client-stitch";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -42,8 +44,18 @@ export interface MontageExportState {
   totalDurationSec: number;
   /** stitch 구현 가용 상태 */
   stitchCapability: StitchCapability;
-  /** stitch가 불가능한 이유 (사용자 안내용) */
+  /** stitch가 불가능한 이유 (사용자 안내용, capability=not_available일 때) */
   stitchUnavailableReason: string;
+}
+
+/** stitch 실행 가능 여부 판정 결과 */
+export interface StitchReadiness {
+  /** stitch 실행 가능한지 */
+  canStitch: boolean;
+  /** 불가 사유 (canStitch=false일 때) */
+  reason: string;
+  /** stitch 엔진 */
+  capability: StitchCapability;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -53,6 +65,9 @@ export interface MontageExportState {
 /**
  * cuts와 clips 상태를 기반으로 montage export 상태를 계산.
  * structuredSequence의 cutNumber 순서를 그대로 stitch 순서의 source of truth로 사용.
+ *
+ * stitchCapability는 동기적으로 "not_available" 기본값.
+ * 런타임 감지는 detectStitchCapability()를 별도 호출.
  */
 export function computeMontageExportState(
   cuts: Cut[],
@@ -103,8 +118,81 @@ export function computeMontageExportState(
 }
 
 /**
+ * 런타임에서 stitch 가용 능력을 비동기로 감지.
+ * FFmpeg.wasm 패키지 설치 + SharedArrayBuffer + WASM 지원 여부를 확인.
+ *
+ * 결과를 MontageExportState에 반영하려면:
+ *   const cap = await detectStitchCapability();
+ *   state.stitchCapability = cap.capability;
+ */
+export async function detectStitchCapability(): Promise<{
+  capability: StitchCapability;
+  unavailableReason: string;
+}> {
+  // 서버 환경이면 바로 불가
+  if (typeof window === "undefined") {
+    return {
+      capability: "not_available",
+      unavailableReason: "서버 환경에서는 영상 합치기를 사용할 수 없습니다.",
+    };
+  }
+
+  try {
+    const { detectFFmpegAvailability, getFFmpegUnavailableMessage } =
+      await import("@/lib/ffmpeg-wasm-loader");
+    const result = await detectFFmpegAvailability();
+
+    if (result.available) {
+      return { capability: "client_wasm", unavailableReason: "" };
+    }
+
+    return {
+      capability: "not_available",
+      unavailableReason: getFFmpegUnavailableMessage(result.reason),
+    };
+  } catch {
+    return {
+      capability: "not_available",
+      unavailableReason:
+        "영상 합치기 환경 감지에 실패했습니다. 개별 clip을 다운로드한 후 외부 편집 도구로 합쳐주세요.",
+    };
+  }
+}
+
+/**
+ * stitch 실행 가능 여부를 종합 판정.
+ * capability + allClipsReady를 모두 확인.
+ */
+export function evaluateStitchReadiness(
+  state: MontageExportState,
+): StitchReadiness {
+  if (state.stitchCapability === "not_available") {
+    return {
+      canStitch: false,
+      reason: state.stitchUnavailableReason,
+      capability: "not_available",
+    };
+  }
+
+  if (!state.allClipsReady) {
+    const missing = state.missingCutNumbers.map((n) => `#${n}`).join(", ");
+    return {
+      canStitch: false,
+      reason: `미완료 장면이 있습니다: ${missing}. 모든 clip이 완료되어야 합칠 수 있습니다.`,
+      capability: state.stitchCapability,
+    };
+  }
+
+  return {
+    canStitch: true,
+    reason: "",
+    capability: state.stitchCapability,
+  };
+}
+
+/**
  * 완료된 clip URL들을 cutNumber 순서대로 반환.
- * stitch 구현 시 이 순서로 concat하면 됨.
+ * stitch concat 순서의 source of truth.
  */
 export function getOrderedClipUrls(
   cuts: Cut[],
@@ -118,7 +206,7 @@ export function getOrderedClipUrls(
 
 /**
  * 모든 완료된 clip을 순서대로 개별 다운로드.
- * stitch 미구현 상태에서의 최선의 UX.
+ * stitch 불가능 상태에서의 fallback UX.
  */
 export async function downloadAllClips(
   cuts: Cut[],
@@ -155,4 +243,42 @@ export async function downloadAllClips(
   }
 
   return { downloaded, failed };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Stitch Execution (client_wasm 경로)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * client_wasm stitch 실행.
+ * computeMontageExportState()의 orderedClips를 그대로 전달.
+ * cutNumber 순서 = concat 순서.
+ *
+ * @returns StitchJob 최종 상태 (phase=done|error)
+ */
+export async function executeClientStitch(
+  state: MontageExportState,
+  projectTitle?: string,
+  onProgress?: (progress: StitchProgress) => void,
+): Promise<StitchJob> {
+  const readiness = evaluateStitchReadiness(state);
+  if (!readiness.canStitch) {
+    // StitchJob을 에러 상태로 반환 (import 없이 인라인 생성)
+    return {
+      jobId: `stitch-error-${Date.now()}`,
+      phase: "error",
+      inputClipCount: state.completedCount,
+      totalDurationSec: state.totalDurationSec,
+      progress: { phase: "error", percent: 0, message: readiness.reason },
+      outputUrl: null,
+      outputSizeBytes: null,
+      errorMessage: readiness.reason,
+      startedAt: Date.now(),
+      finishedAt: Date.now(),
+    };
+  }
+
+  // dynamic import로 실제 stitch 파이프라인 로딩
+  const { executeStitch } = await import("@/lib/client-stitch");
+  return executeStitch(state.orderedClips, projectTitle, onProgress);
 }

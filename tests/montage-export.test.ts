@@ -11,6 +11,8 @@ import { describe, it, expect } from "vitest";
 import {
   computeMontageExportState,
   getOrderedClipUrls,
+  evaluateStitchReadiness,
+  detectStitchCapability,
 } from "@/lib/montage-export";
 import type { Cut, VideoClip } from "@/types";
 
@@ -168,5 +170,48 @@ describe("stitch 부재 명시", () => {
 
     expect(state.allClipsReady).toBe(true);
     expect(state.stitchCapability).toBe("not_available");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// evaluateStitchReadiness
+// ═══════════════════════════════════════════════════════════════════
+
+describe("evaluateStitchReadiness", () => {
+  it("not_available → canStitch=false", () => {
+    const state = computeMontageExportState([makeCut(1)], [makeClip(1)]);
+    expect(evaluateStitchReadiness(state).canStitch).toBe(false);
+  });
+
+  it("client_wasm + allReady → canStitch=true", () => {
+    const state = {
+      ...computeMontageExportState([makeCut(1)], [makeClip(1)]),
+      stitchCapability: "client_wasm" as const,
+      stitchUnavailableReason: "",
+    };
+    expect(evaluateStitchReadiness(state).canStitch).toBe(true);
+  });
+
+  it("client_wasm + missing → canStitch=false, reason에 누락 번호 포함", () => {
+    const state = {
+      ...computeMontageExportState([makeCut(1), makeCut(2)], [makeClip(1)]),
+      stitchCapability: "client_wasm" as const,
+      stitchUnavailableReason: "",
+    };
+    const result = evaluateStitchReadiness(state);
+    expect(result.canStitch).toBe(false);
+    expect(result.reason).toContain("#2");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// detectStitchCapability (Node 환경)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("detectStitchCapability", () => {
+  it("Node 환경에서 not_available 반환", async () => {
+    const result = await detectStitchCapability();
+    expect(result.capability).toBe("not_available");
+    expect(result.unavailableReason).toBeTruthy();
   });
 });
