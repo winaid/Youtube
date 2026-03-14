@@ -945,11 +945,29 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     parts.push(movement);
   }
 
+  // Location establishing — 장소 정체성 즉시 인식 (Veo와 동일)
+  if (json.locationCue) {
+    parts.push(json.locationCue);
+  }
+
+  // Situation evidence — 상황 시각적 증거
+  if (json.situationCue) {
+    parts.push(json.situationCue);
+  }
+
   // Character (있을 때만) + scene action
   if (json.characterRef) {
     parts.push(json.characterRef);
   }
-  parts.push(json.subjectAction);
+
+  // Emotional anchor
+  if (json.emotionalAnchor) {
+    parts.push(json.emotionalAnchor);
+  }
+
+  if (json.subjectAction) {
+    parts.push(json.subjectAction);
+  }
 
   if (json.bodySignal) {
     parts.push(json.bodySignal);
@@ -958,6 +976,11 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
   // Mood/lighting
   if (json.moodLighting) {
     parts.push(json.moodLighting);
+  }
+
+  // Temporal beats — 시간 진행 구조
+  if (json.timingBeat) {
+    parts.push(json.timingBeat);
   }
 
   // Style (Kling은 no text/watermark 등 필수)

@@ -110,6 +110,23 @@ function serializeSequenceToPrompt(
     dutch: "dutch angle", overhead: "overhead", POV: "POV",
   };
 
+  // Camera — cameraPlan이 있으면 우선 사용, 없으면 shotPlan.camera fallback
+  const cam = seq.cameraPlan || shot.camera;
+  const camFraming = "baseFraming" in cam ? (cam as typeof seq.cameraPlan).baseFraming : shot.camera.framing;
+  const framing = framingMap[camFraming] || camFraming;
+  const camAngle = "angle" in cam ? cam.angle : shot.camera.angle;
+  const angle = angleMap[camAngle] || camAngle;
+  const camMotion = "motion" in cam ? cam.motion : shot.camera.motion;
+  const motion = camMotion && camMotion !== "static"
+    ? `, ${camMotion}` : "";
+  parts.push(`${framing}, ${angle}${motion}`);
+
+  // cameraPlan에 motionMotivation이 있으면 연속 카메라 의미 보존
+  const camMotivation = seq.cameraPlan?.motionMotivation || shot.camera.motionMotivation;
+  if (camMotivation) {
+    parts.push(`continuous camera move — ${camMotivation}`);
+  }
+
   // Subject
   if (shot.subject.primary) {
     const line = shot.subject.blocking
@@ -118,35 +135,91 @@ function serializeSequenceToPrompt(
     parts.push(line);
   }
 
-  // Camera
-  const framing = framingMap[shot.camera.framing] || shot.camera.framing;
-  const angle = angleMap[shot.camera.angle] || shot.camera.angle;
-  const motion = shot.camera.motion && shot.camera.motion !== "static"
-    ? `, ${shot.camera.motion}` : "";
-  parts.push(`${framing}, ${angle}${motion}`);
+  // placeIdentityAnchors — 장소 정체성 (shotPlan.locationCue보다 우선)
+  if (seq.placeIdentityAnchors && seq.placeIdentityAnchors.length > 0) {
+    parts.push(seq.placeIdentityAnchors.join(", "));
+  } else if (shot.locationCue) {
+    parts.push(shot.locationCue);
+  }
 
-  // Cues
-  if (shot.locationCue) parts.push(shot.locationCue);
-  if (shot.situationCue) parts.push(shot.situationCue);
+  // situationEvidence — 상황 증거 (shotPlan.situationCue보다 우선)
+  if (seq.situationEvidence && seq.situationEvidence.length > 0) {
+    parts.push(seq.situationEvidence.join(", "));
+  } else if (shot.situationCue) {
+    parts.push(shot.situationCue);
+  }
+
   if (shot.subject.characterRef) parts.push(shot.subject.characterRef);
   if (shot.emotionalAnchor) parts.push(shot.emotionalAnchor);
   if (shot.action) parts.push(shot.action);
+
+  // naturalMotion — 환경 자연 모션 (바람, 물, 빛 변화 등)
+  if (seq.naturalMotion && seq.naturalMotion.length > 0) {
+    parts.push(seq.naturalMotion.join(", "));
+  }
+
   if (shot.moodLighting) parts.push(shot.moodLighting);
-  if (shot.timingBeat) parts.push(shot.timingBeat);
+
+  // temporalBeats — 시간 진행 구조 (shotPlan.timingBeat보다 우선)
+  if (seq.temporalBeats && seq.temporalBeats.length > 0) {
+    const beatStr = seq.temporalBeats
+      .map(b => `${b.startSec}s-${b.endSec}s: ${b.focus}`)
+      .join(". ");
+    parts.push(beatStr);
+  } else if (shot.timingBeat) {
+    parts.push(shot.timingBeat);
+  }
+
   if (shot.transitionFromPrev) parts.push(`Previous shot ends with ${shot.transitionFromPrev}`);
   if (shot.visualMedium) parts.push(shot.visualMedium);
 
-  // Audio hint: only when sound is expected to be ON.
-  // When sound="off" (physics or user toggle), audio hint is omitted from prompt
-  // to avoid conflicting with the Kling sound parameter.
-  // The actual sound on/off control is via the Kling `sound` API param (set in onRequestPost).
+  // physicsRules — 환경 물리 제약 반영
+  if (seq.physicsRules) {
+    const pr = seq.physicsRules;
+    const physParts: string[] = [];
+
+    // 대기 없는 환경 (진공)
+    if (!pr.hasAtmosphere) {
+      physParts.push("vacuum environment — no atmospheric effects");
+    }
+
+    // 바람 없는 환경
+    if (!pr.hasWind) {
+      physParts.push("no wind");
+    }
+
+    // 중력
+    if (pr.gravity === "low") {
+      physParts.push("low gravity — slow arcing trajectories, objects settle gradually");
+    } else if (pr.gravity === "zero") {
+      physParts.push("zero gravity — objects float freely");
+    }
+
+    // 깃발 등 특수 물체 모션 소스
+    if (pr.flagMotionSource) {
+      physParts.push(pr.flagMotionSource);
+    }
+
+    // 하늘/광원 제약
+    if (pr.skyConstraint) physParts.push(pr.skyConstraint);
+    if (pr.lightConstraint) physParts.push(pr.lightConstraint);
+
+    // 금지 표현
+    if (pr.bannedExpressions && pr.bannedExpressions.length > 0) {
+      physParts.push(`avoid: ${pr.bannedExpressions.join(", ")}`);
+    }
+
+    if (physParts.length > 0) {
+      parts.push(physParts.join(". "));
+    }
+  }
+
+  // Audio hint
   const isNoAtmosphere = seq.physicsRules && !seq.physicsRules.hasAtmosphere;
   if (isNoAtmosphere) {
-    // no-atmosphere: hint vacuum silence for model context (sound param will be "off")
     parts.push("Vacuum silence — no audible environment");
   }
-  // Normal atmosphere + sound ON: let Kling generate diegetic audio natively (no hint needed)
-  // Normal atmosphere + sound OFF: omit audio hint entirely (user chose silent)
+
   parts.push("No text overlay, no watermark");
 
   let prompt = parts.filter(Boolean).join(". ");
@@ -167,6 +240,14 @@ function serializeSequenceToPrompt(
     shotCategory: shot.shotCategory,
     styleSuffix: seq.videoPromptJson?.styleSuffix,
     provider,
+    physicsRules: seq.physicsRules ? {
+      hasWind: seq.physicsRules.hasWind,
+      hasAtmosphere: seq.physicsRules.hasAtmosphere,
+      gravity: seq.physicsRules.gravity,
+      environmentType: seq.physicsRules.environmentType,
+      bannedExpressions: seq.physicsRules.bannedExpressions,
+    } : undefined,
+    sceneType: seq.sceneType,
   });
   prompt = sanitizeResult.prompt;
   uniqueNeg = sanitizeResult.negatives;

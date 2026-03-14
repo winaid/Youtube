@@ -333,6 +333,26 @@ export interface SanitizePipelineInput {
   shotCategory?: string;
   /** Style suffix (positive side) */
   styleSuffix?: string;
+  /** 물리 환경 제약 (structuredSequence.physicsRules) */
+  physicsRules?: PhysicsRulesContext;
+  /** 씬 타입 (structuredSequence.sceneType) — shotCategory보다 우선 */
+  sceneType?: string;
+}
+
+/** 물리 환경 제약 — sanitizer에서 사용하는 최소 subset */
+export interface PhysicsRulesContext {
+  hasWind: boolean;
+  hasAtmosphere: boolean;
+  gravity: string;
+  environmentType: string;
+  bannedExpressions?: string[];
+}
+
+export interface SanitizeIssue {
+  rule: string;
+  severity: "error" | "warning";
+  message: string;
+  autoFixed?: boolean;
 }
 
 export interface SanitizePipelineResult {
@@ -340,6 +360,8 @@ export interface SanitizePipelineResult {
   negatives: string[];
   framing: string;
   log: string[];
+  /** 감지된 이슈 목록 */
+  issues: SanitizeIssue[];
   /** 파이프라인 통과 여부 (false면 아직 문제 있음) */
   clean: boolean;
 }
@@ -356,6 +378,7 @@ export interface SanitizePipelineResult {
  */
 export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipelineResult {
   const log: string[] = [];
+  const issues: SanitizeIssue[] = [];
   let { prompt, negatives, framing } = input;
 
   // 1. Scene-type vocabulary filtering
@@ -429,6 +452,18 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
     }
   }
 
+  // 7. Physics-aware sanitization
+  const physicsResult = detectPhysicsIssues(prompt, input.physicsRules, input.sceneType || input.shotCategory);
+  issues.push(...physicsResult.issues);
+  if (physicsResult.fixedPrompt !== prompt) {
+    prompt = physicsResult.fixedPrompt;
+    log.push(`[physics] Auto-fixed ${physicsResult.issues.filter(i => i.autoFixed).length} physics conflicts`);
+  }
+
+  // 8. Scene-aware structural issues
+  const structIssues = detectStructuralIssues(prompt, input.sceneType || input.shotCategory);
+  issues.push(...structIssues);
+
   // 최종 정리
   prompt = prompt
     .replace(/\.\s*\./g, ".")
@@ -441,8 +476,195 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
     negatives,
     framing,
     log,
-    clean: log.length === 0,
+    issues,
+    clean: log.length === 0 && issues.filter(i => i.severity === "error").length === 0,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Physics-Aware Sanitization
+// ═══════════════════════════════════════════════════════════════════
+
+/** 환경 물리 제약에 기반한 프롬프트 충돌 감지 및 auto-fix */
+export function detectPhysicsIssues(
+  prompt: string,
+  physicsRules?: PhysicsRulesContext,
+  sceneTypeOrCategory?: string,
+): { issues: SanitizeIssue[]; fixedPrompt: string } {
+  const issues: SanitizeIssue[] = [];
+  let fixed = prompt;
+
+  if (!physicsRules) return { issues, fixedPrompt: fixed };
+
+  const lower = fixed.toLowerCase();
+
+  // ── No-wind environment: flutter/wave/blow 충돌 감지 ──
+  if (!physicsRules.hasWind) {
+    const windMotionPatterns = [
+      { pattern: /\bflutter(?:ing|s)?\s+in\s+(?:the\s+)?wind\b/gi, fix: "hanging motionless" },
+      { pattern: /\bblow(?:ing|s|n)?\s+in\s+(?:the\s+)?(?:wind|breeze)\b/gi, fix: "hanging still" },
+      { pattern: /\bwave(?:s|ing)?\s+in\s+(?:the\s+)?(?:wind|breeze)\b/gi, fix: "rigid and still" },
+      { pattern: /\bwind[\s-]?blown\b/gi, fix: "motionless" },
+      { pattern: /\bbreeze[\s-]?(?:blown|swept|ruffled)\b/gi, fix: "still" },
+      { pattern: /\brippl(?:ing|es?)\s+(?:in\s+)?(?:the\s+)?(?:wind|breeze|air)\b/gi, fix: "motionless" },
+    ];
+
+    for (const { pattern, fix } of windMotionPatterns) {
+      if (pattern.test(fixed)) {
+        fixed = fixed.replace(pattern, fix);
+        issues.push({
+          rule: "physics_flag_wind_conflict",
+          severity: "error",
+          message: `Wind-dependent motion in no-wind environment (${physicsRules.environmentType}): replaced with "${fix}"`,
+          autoFixed: true,
+        });
+      }
+    }
+  }
+
+  // ── No-atmosphere environment: atmospheric effects 충돌 ──
+  if (!physicsRules.hasAtmosphere) {
+    const atmoPatterns = [
+      { pattern: /\batmospheric\s+(?:haze|fog|mist|flutter)\b/gi, fix: "stark vacuum clarity" },
+      { pattern: /\b(?:haze|fog|mist)\s+(?:drifts?|fills?|settles?|rolls?)\b/gi, fix: "clear void" },
+      { pattern: /\bair\s+(?:shimmers?|ripples?|distort)\b/gi, fix: "vacuum stillness" },
+    ];
+
+    for (const { pattern, fix } of atmoPatterns) {
+      if (pattern.test(fixed)) {
+        fixed = fixed.replace(pattern, fix);
+        issues.push({
+          rule: "physics_motion_environment_conflict",
+          severity: "error",
+          message: `Atmospheric effect in vacuum environment: replaced with "${fix}"`,
+          autoFixed: true,
+        });
+      }
+    }
+  }
+
+  // ── Low/zero gravity: falling/dropping 충돌 ──
+  if (physicsRules.gravity === "low" || physicsRules.gravity === "zero") {
+    const gravityPatterns = [
+      { pattern: /\b(?:falls?|falling)\s+(?:quickly|rapidly|fast|heavily)\b/gi, fix: physicsRules.gravity === "zero" ? "drifts slowly" : "settles gradually" },
+      { pattern: /\bcrash(?:es|ing)?\s+(?:to|into)\s+(?:the\s+)?(?:ground|floor|surface)\b/gi, fix: "drifts toward the surface" },
+    ];
+
+    for (const { pattern, fix } of gravityPatterns) {
+      if (pattern.test(fixed)) {
+        fixed = fixed.replace(pattern, fix);
+        issues.push({
+          rule: "physics_motion_environment_conflict",
+          severity: "warning",
+          message: `Rapid falling in ${physicsRules.gravity}-gravity environment: replaced with "${fix}"`,
+          autoFixed: true,
+        });
+      }
+    }
+  }
+
+  // ── bannedExpressions from physicsRules ──
+  if (physicsRules.bannedExpressions) {
+    for (const banned of physicsRules.bannedExpressions) {
+      const banRe = new RegExp(`\\b${banned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+      if (banRe.test(fixed)) {
+        fixed = fixed.replace(banRe, "");
+        issues.push({
+          rule: "physics_motion_environment_conflict",
+          severity: "error",
+          message: `Banned expression "${banned}" removed (physics constraint: ${physicsRules.environmentType})`,
+          autoFixed: true,
+        });
+      }
+    }
+  }
+
+  return { issues, fixedPrompt: fixed };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Structural Issue Detection
+// ═══════════════════════════════════════════════════════════════════
+
+/** 장면 구조 문제 감지 — auto-fix는 하지 않고 issue로만 보고 */
+export function detectStructuralIssues(
+  prompt: string,
+  sceneTypeOrCategory?: string,
+): SanitizeIssue[] {
+  const issues: SanitizeIssue[] = [];
+  const lower = prompt.toLowerCase();
+
+  // ── Discrete shot type sequence in single generation ──
+  // "Wide shot → Medium shot → Close-up" 같은 나열 감지
+  const discreteShotTypes = [
+    /\bwide\b/i, /\bmedium\b/i, /\bclose[\s-]?up\b/i,
+    /\bWS\b/, /\bMS\b/, /\bCU\b/, /\bLS\b/, /\bECU\b/,
+  ];
+  const matchedFramings = discreteShotTypes.filter(p => p.test(prompt));
+  if (matchedFramings.length >= 3) {
+    issues.push({
+      rule: "discrete_shot_sequence_in_single_generation",
+      severity: "warning",
+      message: `${matchedFramings.length} different shot types detected in single prompt — may cause incoherent generation`,
+    });
+  }
+
+  // ── Missing continuous camera bridge ──
+  // "cut to" 사용 시 연속 카메라 브릿지 부족
+  if (/\bcut\s+to\b/i.test(prompt) && !/\bcontinuous\b/i.test(prompt) && !/\bwithout\s+(?:a\s+)?cut/i.test(prompt)) {
+    issues.push({
+      rule: "missing_continuous_camera_bridge",
+      severity: "warning",
+      message: "Explicit 'cut to' in prompt — consider continuous camera movement for single-generation video",
+    });
+  }
+
+  // ── Environment scene specific ──
+  const resolvedType = resolveSceneType(sceneTypeOrCategory);
+  if (resolvedType === "environment") {
+    // Missing location identity anchor
+    const locationPatterns = /\b(desk|chair|stove|clinic|office|restaurant|street|car|bed|lobby|warehouse|factory|bench|fountain|monument|statue|bridge|tower|dock|pier|lighthouse|temple|ruins|crater|flag|pole|landing\s+site)\b/i;
+    if (!locationPatterns.test(prompt)) {
+      issues.push({
+        rule: "missing_location_identity_anchor",
+        severity: "warning",
+        message: "Environment scene lacks specific location-identity objects — add recognizable anchors",
+      });
+    }
+
+    // Missing natural motion for environment
+    const motionPatterns = /\b(sway|drift|ripple|flutter|rustle|shimmer|flow|wave|settle|spin|dust|particle|cloud\s+move|light\s+shift)\b/i;
+    if (!motionPatterns.test(prompt)) {
+      issues.push({
+        rule: "missing_natural_motion_for_environment",
+        severity: "warning",
+        message: "Environment scene has no natural motion cues — add wind/water/light/particle motion",
+      });
+    }
+  }
+
+  // ── Insufficient temporal beats ──
+  const beatMatches = prompt.match(/\d+s[-–]\d+s/g) || [];
+  if (beatMatches.length === 0 && !/\bfirst\b.*\bthen\b/i.test(prompt) && prompt.split(/\s+/).length > 40) {
+    issues.push({
+      rule: "insufficient_temporal_beats",
+      severity: "warning",
+      message: "Long prompt with no temporal structure (no time beats or first/then progression)",
+    });
+  }
+
+  // ── Abstract symbolism over specific visuals ──
+  const abstractPatterns = /\b(symboliz(?:ing|es?)|represent(?:ing|s)|evok(?:ing|es?)|metaphor(?:ically)?|allegory|embod(?:ying|ies?))\b/gi;
+  const abstractMatches = prompt.match(abstractPatterns) || [];
+  if (abstractMatches.length >= 2) {
+    issues.push({
+      rule: "abstract_symbolism_over_specific_visuals",
+      severity: "warning",
+      message: `${abstractMatches.length} abstract/symbolic phrases detected — ensure physical/visual descriptions dominate`,
+    });
+  }
+
+  return issues;
 }
 
 // ═══════════════════════════════════════════════════════════════════

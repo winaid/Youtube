@@ -155,10 +155,19 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     const movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
     parts.push(movement);
   }
+  // Location establishing — 장소 정체성 즉시 인식
+  if (json.locationCue) parts.push(json.locationCue);
+  // Situation evidence — 상황 시각적 증거
+  if (json.situationCue) parts.push(json.situationCue);
+  // Character
   if (json.characterRef) parts.push(json.characterRef);
+  // Emotional anchor
+  if (json.emotionalAnchor) parts.push(json.emotionalAnchor);
   if (json.subjectAction) parts.push(json.subjectAction);
   if (json.bodySignal) parts.push(json.bodySignal);
   if (json.moodLighting) parts.push(json.moodLighting);
+  // Temporal beats
+  if (json.timingBeat) parts.push(json.timingBeat);
   const cleanSuffix = json.styleSuffix
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();

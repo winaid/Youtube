@@ -172,6 +172,22 @@ const FRAMING_CATEGORIES = {
 // Main Pipeline
 // ═══════════════════════════════════════════════════════════════════
 
+/** 물리 환경 제약 — sanitizer에서 사용하는 최소 subset */
+export interface PhysicsRulesContext {
+  hasWind: boolean;
+  hasAtmosphere: boolean;
+  gravity: string;
+  environmentType: string;
+  bannedExpressions?: string[];
+}
+
+export interface SanitizeIssue {
+  rule: string;
+  severity: "error" | "warning";
+  message: string;
+  autoFixed?: boolean;
+}
+
 export interface ServerSanitizeInput {
   prompt: string;
   negatives: string[];
@@ -179,6 +195,8 @@ export interface ServerSanitizeInput {
   shotCategory?: string;
   styleSuffix?: string;
   provider: "veo" | "kling";
+  physicsRules?: PhysicsRulesContext;
+  sceneType?: string;
 }
 
 export interface ServerSanitizeResult {
@@ -186,13 +204,15 @@ export interface ServerSanitizeResult {
   negatives: string[];
   framing: string;
   log: string[];
+  issues: SanitizeIssue[];
   valid: boolean;
 }
 
 export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSanitizeResult {
   const log: string[] = [];
+  const issues: SanitizeIssue[] = [];
   let { prompt, negatives, framing } = input;
-  const sceneType = resolveSceneType(input.shotCategory);
+  const sceneType = resolveSceneType(input.sceneType) || resolveSceneType(input.shotCategory);
 
   // ── Step 1: Scene-type vocabulary filtering ────────────────────
   if (sceneType) {
@@ -370,6 +390,110 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     }
   }
 
+  // ── Step 5d: Physics-aware sanitization ──────────────────────
+  if (input.physicsRules) {
+    const pr = input.physicsRules;
+
+    // No-wind: flutter/wave/blow 충돌 auto-fix
+    if (!pr.hasWind) {
+      const windFixes: Array<{ pattern: RegExp; fix: string }> = [
+        { pattern: /\bflutter(?:ing|s)?\s+in\s+(?:the\s+)?wind\b/gi, fix: "hanging motionless" },
+        { pattern: /\bblow(?:ing|s|n)?\s+in\s+(?:the\s+)?(?:wind|breeze)\b/gi, fix: "hanging still" },
+        { pattern: /\bwave(?:s|ing)?\s+in\s+(?:the\s+)?(?:wind|breeze)\b/gi, fix: "rigid and still" },
+        { pattern: /\bwind[\s-]?blown\b/gi, fix: "motionless" },
+        { pattern: /\bbreeze[\s-]?(?:blown|swept|ruffled)\b/gi, fix: "still" },
+        { pattern: /\brippl(?:ing|es?)\s+(?:in\s+)?(?:the\s+)?(?:wind|breeze|air)\b/gi, fix: "motionless" },
+      ];
+      for (const { pattern, fix } of windFixes) {
+        if (pattern.test(prompt)) {
+          prompt = prompt.replace(pattern, fix);
+          issues.push({ rule: "physics_flag_wind_conflict", severity: "error", message: `Wind-dependent motion in no-wind env: replaced with "${fix}"`, autoFixed: true });
+          log.push(`[physics] Wind motion → "${fix}"`);
+        }
+      }
+    }
+
+    // No-atmosphere: atmospheric effects 충돌
+    if (!pr.hasAtmosphere) {
+      const atmoFixes: Array<{ pattern: RegExp; fix: string }> = [
+        { pattern: /\batmospheric\s+(?:haze|fog|mist|flutter)\b/gi, fix: "stark vacuum clarity" },
+        { pattern: /\b(?:haze|fog|mist)\s+(?:drifts?|fills?|settles?|rolls?)\b/gi, fix: "clear void" },
+        { pattern: /\bair\s+(?:shimmers?|ripples?|distort)\b/gi, fix: "vacuum stillness" },
+      ];
+      for (const { pattern, fix } of atmoFixes) {
+        if (pattern.test(prompt)) {
+          prompt = prompt.replace(pattern, fix);
+          issues.push({ rule: "physics_motion_environment_conflict", severity: "error", message: `Atmospheric effect in vacuum: replaced with "${fix}"`, autoFixed: true });
+          log.push(`[physics] Atmospheric effect → "${fix}"`);
+        }
+      }
+    }
+
+    // Low/zero gravity: rapid falling
+    if (pr.gravity === "low" || pr.gravity === "zero") {
+      const gravFixes: Array<{ pattern: RegExp; fix: string }> = [
+        { pattern: /\b(?:falls?|falling)\s+(?:quickly|rapidly|fast|heavily)\b/gi, fix: pr.gravity === "zero" ? "drifts slowly" : "settles gradually" },
+        { pattern: /\bcrash(?:es|ing)?\s+(?:to|into)\s+(?:the\s+)?(?:ground|floor|surface)\b/gi, fix: "drifts toward the surface" },
+      ];
+      for (const { pattern, fix } of gravFixes) {
+        if (pattern.test(prompt)) {
+          prompt = prompt.replace(pattern, fix);
+          issues.push({ rule: "physics_motion_environment_conflict", severity: "warning", message: `Rapid motion in ${pr.gravity}-gravity: → "${fix}"`, autoFixed: true });
+          log.push(`[physics] Gravity conflict → "${fix}"`);
+        }
+      }
+    }
+
+    // bannedExpressions
+    if (pr.bannedExpressions) {
+      for (const banned of pr.bannedExpressions) {
+        const banRe = new RegExp(`\\b${escapeRegex(banned)}\\b`, "gi");
+        if (banRe.test(prompt)) {
+          prompt = prompt.replace(banRe, "");
+          issues.push({ rule: "physics_motion_environment_conflict", severity: "error", message: `Banned "${banned}" removed (${pr.environmentType})`, autoFixed: true });
+          log.push(`[physics] Removed banned: "${banned}"`);
+        }
+      }
+    }
+  }
+
+  // ── Step 5e: Structural issue detection ──────────────────────
+  // Discrete shot type sequence in single generation
+  const discreteShotTypes = [/\bwide\b/i, /\bmedium\b/i, /\bclose[\s-]?up\b/i, /\bWS\b/, /\bMS\b/, /\bCU\b/, /\bLS\b/, /\bECU\b/];
+  const matchedFramings = discreteShotTypes.filter(p => p.test(prompt));
+  if (matchedFramings.length >= 3) {
+    issues.push({ rule: "discrete_shot_sequence_in_single_generation", severity: "warning", message: `${matchedFramings.length} shot types in single prompt` });
+  }
+
+  // Missing continuous camera bridge
+  if (/\bcut\s+to\b/i.test(prompt) && !/\bcontinuous\b/i.test(prompt) && !/\bwithout\s+(?:a\s+)?cut/i.test(prompt)) {
+    issues.push({ rule: "missing_continuous_camera_bridge", severity: "warning", message: "Explicit 'cut to' in prompt" });
+  }
+
+  // Environment-specific
+  if (sceneType === "environment") {
+    const locPatterns = /\b(desk|chair|stove|clinic|office|restaurant|street|car|bed|lobby|warehouse|factory|bench|fountain|monument|statue|bridge|tower|dock|pier|lighthouse|temple|ruins|crater|flag|pole|landing\s+site)\b/i;
+    if (!locPatterns.test(prompt)) {
+      issues.push({ rule: "missing_location_identity_anchor", severity: "warning", message: "Environment scene lacks location-identity objects" });
+    }
+    const motPatterns = /\b(sway|drift|ripple|flutter|rustle|shimmer|flow|wave|settle|spin|dust|particle|cloud\s+move|light\s+shift)\b/i;
+    if (!motPatterns.test(prompt)) {
+      issues.push({ rule: "missing_natural_motion_for_environment", severity: "warning", message: "Environment scene has no natural motion cues" });
+    }
+  }
+
+  // Insufficient temporal beats
+  const beatMatches = prompt.match(/\d+s[-–]\d+s/g) || [];
+  if (beatMatches.length === 0 && !/\bfirst\b.*\bthen\b/i.test(prompt) && prompt.split(/\s+/).length > 40) {
+    issues.push({ rule: "insufficient_temporal_beats", severity: "warning", message: "Long prompt with no temporal structure" });
+  }
+
+  // Abstract symbolism over specific visuals
+  const abstractMatches = prompt.match(/\b(symboliz(?:ing|es?)|represent(?:ing|s)|evok(?:ing|es?)|metaphor(?:ically)?|allegory|embod(?:ying|ies?))\b/gi) || [];
+  if (abstractMatches.length >= 2) {
+    issues.push({ rule: "abstract_symbolism_over_specific_visuals", severity: "warning", message: `${abstractMatches.length} abstract/symbolic phrases detected` });
+  }
+
   // ── Step 6: Final validation ───────────────────────────────────
   let valid = true;
 
@@ -399,6 +523,11 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     }
   }
 
+  // Physics errors count toward validity
+  if (issues.some(i => i.severity === "error" && !i.autoFixed)) {
+    valid = false;
+  }
+
   // Cleanup
   prompt = prompt
     .replace(/\.\s*\./g, ".")
@@ -406,7 +535,7 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     .replace(/\s{2,}/g, " ")
     .trim();
 
-  return { prompt, negatives, framing, log, valid };
+  return { prompt, negatives, framing, log, issues, valid };
 }
 
 function escapeRegex(str: string): string {
