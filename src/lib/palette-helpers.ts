@@ -33,6 +33,15 @@ export interface PromptItem {
   fullText: string;
   createdAt: number;
   directorPersona?: string;
+  /** 체인 생성 시 GenerateVideo에 반영할 메타 */
+  chainMeta?: PromptChainMeta;
+}
+
+/** 체인 생성용 최소 메타 — GenerateVideo defaultData 위에 덮어쓸 값들 */
+export interface PromptChainMeta {
+  aspectRatio?: "9:16" | "16:9";
+  durationSec?: number;
+  animationMode?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -52,6 +61,30 @@ export function collectCanvasAssets(nodes: CanvasNode[]): AssetItem[] {
     }));
 }
 
+/** PromptHistoryEntry.input에서 GenerateVideo용 체인 메타를 안전하게 추출 */
+export function extractChainMeta(input: PromptHistoryEntry["input"]): PromptChainMeta | undefined {
+  if (!input) return undefined;
+  const meta: PromptChainMeta = {};
+
+  // aspectRatio: "9:16" | "16:9" 만 허용
+  if (input.aspectRatio === "9:16" || input.aspectRatio === "16:9") {
+    meta.aspectRatio = input.aspectRatio;
+  }
+
+  // cutDuration: 장면당 초 (4|6|8|10|15) → durationSec
+  if (typeof input.cutDuration === "number" && input.cutDuration > 0) {
+    meta.durationSec = input.cutDuration;
+  }
+
+  // animationMode: 비어있지 않은 문자열
+  if (typeof input.animationMode === "string" && input.animationMode.trim()) {
+    meta.animationMode = input.animationMode;
+  }
+
+  // 실제 값이 하나도 없으면 undefined 반환
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
+
 /** PromptHistoryEntry에서 유효한 storyText를 가진 항목을 PromptItem으로 변환 */
 export function collectPromptItems(entries: PromptHistoryEntry[]): PromptItem[] {
   return entries
@@ -64,6 +97,7 @@ export function collectPromptItems(entries: PromptHistoryEntry[]): PromptItem[] 
       fullText: e.input.storyText,
       createdAt: e.createdAt,
       directorPersona: e.input.directorPersona || undefined,
+      chainMeta: extractChainMeta(e.input),
     }));
 }
 

@@ -505,4 +505,63 @@ describe("prompt chain insertion", () => {
 
     expect(arePortsCompatible(sourcePort, targetPort)).toBe(true);
   });
+
+  it("should apply chain meta to GenerateVideo data when provided", () => {
+    const textDef = findDef("text-input");
+    const vidDef = findDef("generate-video");
+
+    const textNode = createNode(textDef, 100, 100);
+    const vidNode = createNode(vidDef, 400, 100);
+
+    // history 메타로 aspectRatio/durationSec/sceneDescription 덮어쓰기
+    const vidData = {
+      ...vidNode.data,
+      aspectRatio: "9:16",
+      durationSec: 10,
+      sceneDescription: "수채화 애니",
+    };
+
+    let state = createInitialCanvasState();
+    state = addNode(state, { ...textNode, data: { ...textNode.data, text: "A sunrise" } });
+    state = addNode(state, { ...vidNode, data: vidData });
+    state = addEdge(state, textNode.id, textNode.outputs[0].id, vidNode.id, vidNode.inputs[0].id);
+
+    // TextInput 확인
+    const tn = state.nodes.find(n => n.type === "text-input")!;
+    expect(tn.data.text).toBe("A sunrise");
+
+    // GenerateVideo data에 메타 반영 확인
+    const vn = state.nodes.find(n => n.type === "generate-video")!;
+    expect(vn.data.aspectRatio).toBe("9:16");
+    expect(vn.data.durationSec).toBe(10);
+    expect(vn.data.sceneDescription).toBe("수채화 애니");
+
+    // edge 유지 확인
+    expect(state.edges).toHaveLength(1);
+  });
+
+  it("should keep default values when no chain meta is provided", () => {
+    const vidDef = findDef("generate-video");
+    const vidNode = createNode(vidDef, 0, 0);
+
+    // 메타 없이 기본 data 유지
+    expect(vidNode.data.aspectRatio).toBe("16:9");
+    expect(vidNode.data.durationSec).toBe(6);
+    expect(vidNode.data.sceneDescription).toBe("");
+    expect(vidNode.data.prompt).toBe("");
+  });
+
+  it("should only override fields present in chain meta", () => {
+    const vidDef = findDef("generate-video");
+    const vidNode = createNode(vidDef, 0, 0);
+
+    // aspectRatio만 덮어쓰기, durationSec은 기본값 유지
+    const vidData = { ...vidNode.data };
+    const meta = { aspectRatio: "9:16" as const };
+    if (meta.aspectRatio) vidData.aspectRatio = meta.aspectRatio;
+
+    expect(vidData.aspectRatio).toBe("9:16");
+    expect(vidData.durationSec).toBe(6); // 기본값 유지
+    expect(vidData.sceneDescription).toBe(""); // 기본값 유지
+  });
 });

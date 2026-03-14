@@ -15,9 +15,11 @@ import {
   collectCanvasAssets,
   collectVideoAssets,
   collectPromptItems,
+  extractChainMeta,
   type PaletteTab,
   type AssetItem,
   type PromptItem,
+  type PromptChainMeta,
 } from "@/lib/palette-helpers";
 import {
   createNode,
@@ -301,5 +303,116 @@ describe("collectPromptItems", () => {
 
     const items = collectPromptItems(entries);
     expect(items[0].fullText).toBe(specialText);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. extractChainMeta
+// ═══════════════════════════════════════════════════════════════════
+
+describe("extractChainMeta", () => {
+  it("should extract aspectRatio when valid", () => {
+    const meta = extractChainMeta({
+      storyText: "test",
+      directorPersona: "",
+      region: "한국" as never,
+      animationMode: "" as never,
+      duration: 60 as never,
+      aspectRatio: "9:16" as never,
+    } as never);
+
+    expect(meta).toBeDefined();
+    expect(meta!.aspectRatio).toBe("9:16");
+  });
+
+  it("should extract cutDuration as durationSec", () => {
+    const meta = extractChainMeta({
+      storyText: "test",
+      directorPersona: "",
+      region: "한국" as never,
+      animationMode: "" as never,
+      duration: 60 as never,
+      aspectRatio: "16:9" as never,
+      cutDuration: 8,
+    } as never);
+
+    expect(meta).toBeDefined();
+    expect(meta!.durationSec).toBe(8);
+  });
+
+  it("should extract animationMode when non-empty", () => {
+    const meta = extractChainMeta({
+      storyText: "test",
+      directorPersona: "",
+      region: "한국" as never,
+      animationMode: "실사" as never,
+      duration: 60 as never,
+      aspectRatio: "16:9" as never,
+    } as never);
+
+    expect(meta).toBeDefined();
+    expect(meta!.animationMode).toBe("실사");
+  });
+
+  it("should return undefined when no usable fields exist", () => {
+    const meta = extractChainMeta({
+      storyText: "test",
+      directorPersona: "",
+      region: "한국" as never,
+      animationMode: "" as never,
+      duration: 60 as never,
+      aspectRatio: "16:9" as never,
+    } as never);
+
+    // aspectRatio "16:9" is valid → meta should exist
+    expect(meta).toBeDefined();
+    expect(meta!.aspectRatio).toBe("16:9");
+  });
+
+  it("should return undefined for null input", () => {
+    const meta = extractChainMeta(null as never);
+    expect(meta).toBeUndefined();
+  });
+
+  it("should extract all fields together", () => {
+    const meta = extractChainMeta({
+      storyText: "story",
+      directorPersona: "spielberg",
+      region: "미국" as never,
+      animationMode: "수채화 애니" as never,
+      duration: 120 as never,
+      aspectRatio: "9:16" as never,
+      cutDuration: 10,
+    } as never);
+
+    expect(meta).toBeDefined();
+    expect(meta!.aspectRatio).toBe("9:16");
+    expect(meta!.durationSec).toBe(10);
+    expect(meta!.animationMode).toBe("수채화 애니");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. collectPromptItems with chainMeta
+// ═══════════════════════════════════════════════════════════════════
+
+describe("collectPromptItems chainMeta integration", () => {
+  it("should include chainMeta when input has usable fields", () => {
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: "test story" }),
+    ];
+    // Default makePromptEntry has aspectRatio "16:9"
+    const items = collectPromptItems(entries);
+    expect(items[0].chainMeta).toBeDefined();
+    expect(items[0].chainMeta!.aspectRatio).toBe("16:9");
+  });
+
+  it("should preserve fullText separately from chainMeta", () => {
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: "my story text" }),
+    ];
+    const items = collectPromptItems(entries);
+    expect(items[0].fullText).toBe("my story text");
+    expect(items[0].chainMeta).toBeDefined();
   });
 });

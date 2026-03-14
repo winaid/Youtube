@@ -506,7 +506,7 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
   }, [viewport]);
 
   /** History 탭에서 prompt → TextInput + GenerateVideo 체인을 한 번에 생성 */
-  const handleInsertPromptChain = useCallback((text: string) => {
+  const handleInsertPromptChain = useCallback((text: string, meta?: { aspectRatio?: string; durationSec?: number; animationMode?: string }) => {
     const textInputDef = NODE_REGISTRY.find(d => d.type === "text-input");
     const genVideoDef = NODE_REGISTRY.find(d => d.type === "generate-video");
     if (!textInputDef || !genVideoDef || !text.trim()) return;
@@ -525,9 +525,15 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     const textNode = createNode(textInputDef, textX, textY);
     const vidNode = createNode(genVideoDef, vidX, vidY);
 
+    // GenerateVideo data: 기본값 유지 + history 메타가 있으면 덮어쓰기
+    const vidData = { ...vidNode.data };
+    if (meta?.aspectRatio) vidData.aspectRatio = meta.aspectRatio;
+    if (meta?.durationSec) vidData.durationSec = meta.durationSec;
+    if (meta?.animationMode) vidData.sceneDescription = meta.animationMode;
+
     setState(prev => {
       let next = addNode(prev, { ...textNode, data: { ...textNode.data, text } });
-      next = addNode(next, vidNode);
+      next = addNode(next, { ...vidNode, data: vidData });
       // TextInput output(text) → GenerateVideo input[0](prompt) 자동 연결
       next = addEdge(next, textNode.id, textNode.outputs[0].id, vidNode.id, vidNode.inputs[0].id);
       return next;

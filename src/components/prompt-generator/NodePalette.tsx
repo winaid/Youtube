@@ -13,9 +13,10 @@ import {
   type PaletteTab,
   type AssetItem,
   type PromptItem,
+  type PromptChainMeta,
 } from "@/lib/palette-helpers";
 
-export type { PaletteTab, AssetItem, PromptItem };
+export type { PaletteTab, AssetItem, PromptItem, PromptChainMeta };
 export { collectCanvasAssets, collectVideoAssets, collectPromptItems };
 
 export interface NodePaletteProps {
@@ -27,8 +28,8 @@ export interface NodePaletteProps {
   onInsertAsset?: (asset: string, mimeType: "image" | "video") => void;
   /** prompt 텍스트를 TextInput 노드로 캔버스에 삽입 */
   onInsertPrompt?: (text: string) => void;
-  /** prompt 텍스트로 TextInput + GenerateVideo 체인을 캔버스에 삽입 */
-  onInsertPromptChain?: (text: string) => void;
+  /** prompt 텍스트 + 메타로 TextInput + GenerateVideo 체인을 캔버스에 삽입 */
+  onInsertPromptChain?: (text: string, meta?: PromptChainMeta) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -293,6 +294,16 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
                           {item.directorPersona}
                         </span>
                       )}
+                      {item.chainMeta?.animationMode && (
+                        <span className="text-[9px] text-muted-foreground truncate">
+                          {item.chainMeta.animationMode}
+                        </span>
+                      )}
+                      {item.chainMeta?.aspectRatio && (
+                        <span className="text-[9px] text-muted-foreground">
+                          {item.chainMeta.aspectRatio}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[9px] text-muted-foreground mt-0.5">
                       {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
@@ -309,7 +320,7 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
                         텍스트 삽입
                       </button>
                       <button
-                        onClick={() => onInsertPromptChain?.(item.fullText)}
+                        onClick={() => onInsertPromptChain?.(item.fullText, item.chainMeta)}
                         disabled={!onInsertPromptChain}
                         className="px-2 py-0.5 rounded text-[9px] font-medium transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{ background: "#22c55e20", color: "#16a34a" }}
