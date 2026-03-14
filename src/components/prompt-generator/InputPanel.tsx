@@ -10,7 +10,7 @@ import { recommendCutCountRange, densityPresetToRange } from "@/lib/sequence-den
 import { directors, workToDirectorMap } from "@/data/directors";
 import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
-import { estimateProjectDuration } from "@/lib/story-duration-estimator";
+import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -1587,11 +1587,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           }
 
           if (allAuto && storyText.trim().length >= 20) {
-            const est = estimateProjectDuration(storyText);
+            const plan = estimateAutoEditPlan(storyText);
             return (
-              <p className="text-[10px] px-3 py-1.5 rounded-lg" style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>
-                전체 자동: 스토리 기반 약 {est.estimatedTotalSec}초 추정 ({est.basis})
-              </p>
+              <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                <p className="font-semibold" style={{ color: "#15803d" }}>
+                  전체 자동: {plan.cutCount}장면 × {plan.cutDuration}초 = 약 {plan.cutCount * plan.cutDuration}초
+                </p>
+                <p style={{ color: "#166534" }}>
+                  프로젝트 추정 총 {plan.totalSec}초 · 스토리 기반 최적 편집 리듬 자동 적용
+                </p>
+              </div>
             );
           }
 

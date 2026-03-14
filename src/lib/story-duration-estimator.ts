@@ -130,3 +130,63 @@ export function estimateProjectDuration(storyText: string): StoryDurationEstimat
     },
   };
 }
+
+// ── 최적 편집 파라미터 자동 추정 ────────────────────────────────────────────
+
+export interface AutoEditPlan {
+  /** 추정 프로젝트 총 길이 (초) */
+  totalSec: number;
+  /** 추정 최적 장면당 초 */
+  cutDuration: number;
+  /** 추정 최적 장면 수 */
+  cutCount: number;
+  /** 추정 근거 */
+  planBasis: string;
+}
+
+/**
+ * 스토리 텍스트로부터 최적의 편집 파라미터를 자동 추정한다.
+ *
+ * 규칙:
+ *   - 문장 수 ≤ 5  → 짧은 콘텐츠: 4~5초/컷, 4~6컷
+ *   - 문장 수 ≤ 15 → 중간 콘텐츠: 5~6초/컷, 8~12컷
+ *   - 문장 수 > 15  → 긴 콘텐츠: 4~5초/컷, 12~15컷 (segment 분할 대상)
+ *   - 컷 수 × 장면당 초 ≈ totalSec 유지
+ *   - cutDuration: 3~8초 범위 (멀티컷 편집 최적 영역)
+ */
+export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
+  const est = estimateProjectDuration(storyText);
+  const totalSec = est.estimatedTotalSec;
+  const sentenceCount = est.metrics.sentenceCount;
+
+  let cutDuration: number;
+
+  if (totalSec <= 40) {
+    // 짧은 콘텐츠: 4초 기본
+    cutDuration = 4;
+  } else if (totalSec <= 90) {
+    // 중간: 5초 기본
+    cutDuration = 5;
+  } else if (totalSec <= 180) {
+    // 중장편: 문장 밀도에 따라 4~6초
+    cutDuration = sentenceCount > 20 ? 4 : 5;
+  } else {
+    // 장편: 5초 (장면 수가 자연히 늘어남)
+    cutDuration = 5;
+  }
+
+  // cutCount = totalSec / cutDuration, 4~15 범위
+  const rawCutCount = Math.round(totalSec / cutDuration);
+  const cutCount = Math.min(15, Math.max(4, rawCutCount));
+
+  // cutDuration 재조정: cutCount × cutDuration ≈ totalSec
+  const adjustedDuration = Math.round(totalSec / cutCount);
+  cutDuration = Math.min(8, Math.max(3, adjustedDuration));
+
+  return {
+    totalSec,
+    cutDuration,
+    cutCount,
+    planBasis: `story_auto (${est.basis}, ${sentenceCount}문장, ${totalSec}초 → ${cutCount}컷×${cutDuration}초)`,
+  };
+}

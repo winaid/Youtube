@@ -4,7 +4,7 @@ import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts, KLING_SEGMENT_CAP } from "@/lib/sequence-density";
 import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconciliation";
-import { estimateProjectDuration } from "@/lib/story-duration-estimator";
+import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -232,35 +232,52 @@ export async function generatePrompt(
 
   // project total duration 추정: 명시값이면 그대로, auto이면 스토리 기반 추정
   // 주의: 이 값은 project total이다. current segment cap(15초)과 혼동하지 말 것.
-  const effectiveDuration =
-    input.duration === "auto"
-      ? estimateProjectDuration(input.storyText).estimatedTotalSec
-      : input.duration;
+  const isFullAuto = input.duration === "auto" && !input.cutDuration && !input.cutCount;
 
-  const autoResult = computeAutoDuration({
-    cutDuration: input.cutDuration,
-    totalDurationSeconds: effectiveDuration,
-    cutCount: input.cutCount ?? undefined,
-  });
-  const cutDuration = autoResult.duration;
-  const cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / cutDuration));
+  let effectiveDuration: number;
+  let cutDuration: number;
+  let cutCount: number;
 
-  // ── 진단 로그: generatePrompt duration 결정 경로 ──
-  console.info("[generatePrompt] duration 결정 경로", {
-    inputDuration: input.duration,
-    inputCutDuration: input.cutDuration,
-    inputCutCount: input.cutCount,
-    effectiveDuration,
-    autoResultBasis: autoResult.basis,
-    resolvedCutDuration: cutDuration,
-    resolvedCutCount: cutCount,
-    apiPayload: {
-      totalDurationSeconds: effectiveDuration,
-      cutCount,
+  if (isFullAuto) {
+    // ── 전체 자동: 스토리 기반 최적 편집 파라미터 일괄 추정 ──
+    const plan = estimateAutoEditPlan(input.storyText);
+    effectiveDuration = plan.totalSec;
+    cutDuration = plan.cutDuration;
+    cutCount = plan.cutCount;
+
+    console.info("[generatePrompt] 전체 자동 모드", {
+      planBasis: plan.planBasis,
+      effectiveDuration,
       cutDuration,
-    },
-    expectedTotal: `${cutCount} × ${cutDuration} = ${cutCount * cutDuration}초`,
-  });
+      cutCount,
+      expectedTotal: `${cutCount} × ${cutDuration} = ${cutCount * cutDuration}초`,
+    });
+  } else {
+    // ── 일부 명시/혼합 모드 ──
+    effectiveDuration =
+      input.duration === "auto"
+        ? estimateProjectDuration(input.storyText).estimatedTotalSec
+        : input.duration;
+
+    const autoResult = computeAutoDuration({
+      cutDuration: input.cutDuration,
+      totalDurationSeconds: effectiveDuration,
+      cutCount: input.cutCount ?? undefined,
+    });
+    cutDuration = autoResult.duration;
+    cutCount = input.cutCount ?? Math.max(4, Math.round(effectiveDuration / cutDuration));
+
+    console.info("[generatePrompt] 혼합/명시 모드", {
+      inputDuration: input.duration,
+      inputCutDuration: input.cutDuration,
+      inputCutCount: input.cutCount,
+      effectiveDuration,
+      autoResultBasis: autoResult.basis,
+      resolvedCutDuration: cutDuration,
+      resolvedCutCount: cutCount,
+      expectedTotal: `${cutCount} × ${cutDuration} = ${cutCount * cutDuration}초`,
+    });
+  }
 
   const storyWords = input.storyText.slice(0, 30);
 
@@ -302,7 +319,7 @@ export async function generatePrompt(
   const durationSummary = buildDurationSummary({
     cuts,
     requestedSecondsPerScene: isAutoMode ? 0 : input.cutDuration,
-    durationBasis: autoResult.basis,
+    durationBasis: isFullAuto ? "story_auto" : "mixed",
   });
 
   return {
