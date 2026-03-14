@@ -2,6 +2,7 @@ import { PromptInput, PromptOutput, Cut, DirectorPersona, CharacterSeed } from "
 import { directors } from "@/data/directors";
 import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
+import { densifyCuts } from "@/lib/sequence-density";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -242,8 +243,8 @@ export async function generatePrompt(
     : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
   const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, sequencePlan, sequenceValidation } = cutsResult;
 
-  // 구조 보조 메타 자동 부여 — 기존 값이 있으면 유지
-  const cuts = classifyCuts(rawCuts);
+  // density 보정 후 구조 보조 메타 자동 부여
+  const cuts = classifyCuts(densifyCuts(rawCuts));
 
   const catalogStyle = getStyleById(input.animationMode);
   const veoStyle = catalogStyle

@@ -13,6 +13,7 @@ import { GeminiEnv, streamingGenerate, GEMINI_MODEL_FLASH } from "./_gemini-keys
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
+import { densifyCuts } from "./_sequence-density";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -452,6 +453,14 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 - sceneBeat3: 영어 ≤12 words — ${secPerCut >= 8 ? "5s~8s" : "3s~" + secPerCut + "s"}: EMOTION — 감정/갈등이 집약되는 순간 (emotionalAnchor가 등장)
 - endHook: 영어 ≤10 words — 관객이 다음 씬을 기대하게 만드는 시각적 고리
 
+## ⚠️ 컷 밀도 규칙 (single-cut 방지)
+- 총 길이 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 cuts를 작성하라
+- 12초 초과인데 1컷으로 뭉개면 실패. 최소 3컷으로 분할하라
+- 9~12초면 최소 3컷, 5~9초면 최소 2컷으로 나눌 것
+- 같은 장면을 길게 이어쓰지 말고, shot/camera/beat가 다른 편집 단위로 나눌 것
+- ❌ 나쁜 예: 15초를 1개 outline으로 작성
+- ✅ 좋은 예: 15초를 4~5초짜리 3~4개 outline으로 분할
+
 JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
 
@@ -504,6 +513,7 @@ ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/�
 
 characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
 outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w),sceneBeat1(≤10w),sceneBeat2(≤10w),sceneBeat3(≤10w),endHook(≤8w)}]
+⚠️ 12초 초과면 1컷 금지, 최소 3컷 분할. 9~12초면 최소 3컷.
 
 JSON만: {"characterSeeds":[...],"outlines":[...]}`;
 
@@ -1052,7 +1062,7 @@ function buildUltraCompactStep1Prompt(
   secPerCut: number,
 ): string {
   const storySnippet = storyText.slice(0, 400);
-  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/컷 × ${cutCount}컷.
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/컷 × ${cutCount}컷. 12초초과→최소3컷,9~12초→최소3컷,반드시${cutCount}개outlines작성.
 시나리오: ${storySnippet}
 
 {"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
@@ -1340,7 +1350,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             source: "deterministic-fallback",
             warnings: step1Warnings,
             characterSeeds: defaultSeeds,
-            cuts: classifyCuts(deterministicCuts),
+            cuts: classifyCuts(densifyCuts(deterministicCuts)),
             sequencePlan,
             sequenceValidation,
             secPerCut,
@@ -1383,7 +1393,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           source: "deterministic-fallback",
           warnings: step1Warnings,
           characterSeeds: defaultSeeds,
-          cuts: classifyCuts(deterministicCuts),
+          cuts: classifyCuts(densifyCuts(deterministicCuts)),
           sequencePlan,
           sequenceValidation,
           secPerCut,
@@ -1647,7 +1657,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       source: "gemini" as const,
       warnings: step1Warnings,
       characterSeeds,
-      cuts: classifyCuts(cuts),
+      cuts: classifyCuts(densifyCuts(cuts)),
       sequencePlan,
       sequenceValidation,
       secPerCut,

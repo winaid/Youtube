@@ -373,6 +373,51 @@ describe("MULTI_SHOT_SCENE_TYPES", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 import { classifyCuts } from "../functions/api/_structure-classification";
+import { densifyCuts } from "../functions/api/_sequence-density";
+
+// ═══════════════════════════════════════════════════════════════════
+// 8.5. Server-side densifyCuts — deterministic fallback density enforcement
+// ═══════════════════════════════════════════════════════════════════
+
+describe("server-side densifyCuts — deterministic fallback density", () => {
+  it("should split 15s single deterministic cut into 3+ cuts", () => {
+    const deterministicCuts = [{ cutNumber: 1, durationSec: 15, shotType: "WS" }];
+    const result = densifyCuts(deterministicCuts);
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    const total = result.reduce((s, c) => s + c.durationSec, 0);
+    expect(total).toBe(15);
+  });
+
+  it("should not over-split deterministic fallback with 5 cuts at 8s each", () => {
+    const deterministicCuts = Array.from({ length: 5 }, (_, i) => ({
+      cutNumber: i + 1,
+      durationSec: 8,
+      shotType: "WS",
+    }));
+    const result = densifyCuts(deterministicCuts);
+    // 5 cuts at 8s = 40s total, already > minCuts(4), should not split
+    expect(result.length).toBe(5);
+  });
+
+  it("should densify then classify with correct pipeline", () => {
+    const deterministicCuts = [{ cutNumber: 1, durationSec: 12 }];
+    const densified = densifyCuts(deterministicCuts);
+    const classified = classifyCuts(densified);
+    expect(classified.length).toBeGreaterThanOrEqual(3);
+    for (const c of classified) {
+      expect(c.structureType).toBe("cut");
+      expect(c.durationClass).toBeDefined();
+    }
+  });
+
+  it("should preserve shotType after density split", () => {
+    const deterministicCuts = [{ cutNumber: 1, durationSec: 10, shotType: "MS" }];
+    const result = densifyCuts(deterministicCuts);
+    for (const c of result) {
+      expect(c.shotType).toBe("MS");
+    }
+  });
+});
 
 describe("server-side classifyCuts — structureType/durationClass 보장", () => {
   it("should add structureType='cut' to individual cuts", () => {
