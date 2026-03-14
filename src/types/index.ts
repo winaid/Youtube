@@ -5,11 +5,11 @@ export type AnimationMode = string;
 export type StyleFamily = "all" | "live_action" | "animation_2d" | "animation_3d" | "painting" | "stop_motion" | "retro_game" | "experimental";
 export type Duration = 60 | 90 | 120 | "auto";
 export type AspectRatio = "9:16" | "16:9";
+/** 영상 해상도 (Kling 기준) */
 export type VeoResolution = "720p" | "1080p" | "4k";
 // 0 = 자동 (UI 전용, API에는 null/undefined로 변환)
 // 1~15 = 명시값 (초 단위)
-// 4 | 6 | 8 → Veo + Kling 모두 가능
-// 10 | 15   → Kling 전용 (Veo 미지원)
+// 3~15초 — Kling API 지원 범위
 export type VeoClipDuration = number;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
@@ -41,7 +41,7 @@ export interface PromptInput {
   duration: Duration;
   aspectRatio: AspectRatio;
   cutCount?: number; // 사용자 지정 장면 수 (없으면 자동 계산)
-  cutDuration?: number; // 장면당 초 (4|6|8 → Veo+Kling, 10|15 → Kling 전용)
+  cutDuration?: number; // 장면당 초 (3~15초 — Kling API 지원 범위)
   /** 선호 컷 수 범위 — exact cutCount보다 낮은 우선순위. density minimum이 hard floor. */
   preferredCutCountRange?: CutCountRange;
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
@@ -374,9 +374,9 @@ export interface StoryAIPersona {
 }
 
 // ===== 영상 생성 엔진 & 모드 =====
-/** Video generation engine. Kling = primary generation, veo = legacy (disabled). */
+/** Video generation engine. Kling = primary generation engine. */
 export type VideoEngine = "kling" | "auto";
-/** @deprecated Veo engine removed. Use "kling" or "auto". */
+/** @deprecated legacy alias. Use VideoEngine. */
 export type VideoEngineLegacy = "veo" | "kling" | "auto";
 export type VideoMode   = "generate" | "extend";
 
@@ -562,9 +562,9 @@ export type AssetStatus =
   | "SCENE_EXTENSION_READY"
   | "VISIBLE_IN_LIBRARY";
 
-// ===== Veo 3.1 영상 생성 설정 =====
+// ===== Kling 영상 생성 설정 =====
 export interface VeoGenerationConfig {
-  engine: VideoEngine | "veo"; // 사용할 엔진 (kling | auto, veo = legacy disabled)
+  engine: VideoEngine | "veo"; // 사용할 엔진 (kling | auto)
   videoMode: VideoMode;        // generate: 독립 생성 | extend: 이전 영상 이어서
   mode: "fast";
   durationSeconds: VeoClipDuration;
@@ -825,7 +825,7 @@ export interface VideoClip {
   status: VideoGenStatus;
   operationName?: string;
   videoUri?: string;
-  rawVideoUri?: string; // Veo 원본 URI (Scene Extension용)
+  rawVideoUri?: string; // 원본 URI (Scene Extension용)
   canonicalVideoUri?: string; // 업로드 후 안정적 URI (gs:// 또는 https://) — Scene Extension 최우선
   lastFrameBase64?: string; // 완료 직후 캡처한 마지막 프레임 (다음 컷 continuity용)
   seed?: string;
@@ -864,7 +864,7 @@ export interface VideoClip {
     isMapScene: boolean;
   };
   // 멀티 프로바이더
-  engineUsed?: "veo" | "kling";      // 실제 사용된 엔진
+  engineUsed?: "veo" | "kling";      // 실제 사용된 엔진 (veo = legacy, kling = primary)
   modeUsed?: VideoMode;              // 실제 사용된 모드
   sourceVideo?: string;              // extend 모드의 소스 영상 URI / task_id
   // ── 업로드 상태 추적 ──

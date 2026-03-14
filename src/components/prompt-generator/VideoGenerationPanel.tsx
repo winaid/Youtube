@@ -137,7 +137,7 @@ export default function VideoGenerationPanel({
       <CardHeader className="pb-3" style={{ background: "linear-gradient(135deg, #22c55e15, #787fff10)" }}>
         <div className="flex items-center justify-between">
           <CardTitle className="text-base" style={{ color: "#16a34a" }}>
-            Veo 3.1 영상 생성
+            Kling 영상 생성
           </CardTitle>
           <Badge variant="outline" className="text-xs" style={{ borderColor: "#22c55e" }}>
             {completedCount}/{totalCount} 완료
@@ -236,7 +236,7 @@ export default function VideoGenerationPanel({
                           className="text-[10px] text-white"
                           style={{ background: clip.engineUsed === "kling" ? "#e85d04" : "#787fff" }}
                         >
-                          {clip.engineUsed === "kling" ? "Kling" : "Veo"}
+                          {clip.engineUsed === "kling" ? "Kling" : clip.engineUsed || "Kling"}
                         </Badge>
                       ) : (
                         <Badge className="text-[10px] text-white" style={{ background: "#aaa" }}>
@@ -375,7 +375,7 @@ export default function VideoGenerationPanel({
                             cameraMovement: "카메라 움직임",
                             temporalStructure: "시간 구조",
                             lightingMood: "조명/무드",
-                            veoCompatibility: "Veo 호환성",
+                            veoCompatibility: "영상 호환성",
                             spatialComposition: "공간 구성",
                             atmosphericDetail: "대기/분위기",
                             subjectClarity: "피사체 명확성",
