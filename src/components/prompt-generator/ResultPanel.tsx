@@ -94,7 +94,11 @@ export default function ResultPanel({
     }
   }, [animationMode, videoGen]);
 
-  // 프롬프트 생성 시 cutDuration → videoGen config + 부모에 자동 동기화
+  // 프롬프트 생성 시 cutDuration → videoGen config에만 동기화
+  // 주의: 부모(InputPanel) 슬라이더는 역동기화하지 않는다.
+  // 이유: auto(0) 상태에서 결과의 durationSec을 슬라이더에 쓰면
+  //       다음 생성에서 auto가 아닌 명시값으로 submit되어
+  //       "사용자는 auto인데 실제는 수동" 불일치가 발생한다.
   useEffect(() => {
     if (!result || result.cuts.length === 0) return;
     const dur = result.cuts[0].durationSec;
@@ -102,8 +106,8 @@ export default function ResultPanel({
       const clampedDur = Math.min(15, Math.max(3, dur));
       const engine = clampedDur >= 10 ? "kling" : videoGen.config.engine;
       videoGen.updateConfig({ durationSeconds: clampedDur, engine });
-      // 부모에도 통지 → InputPanel 슬라이더와 동기화
-      onSecondsPerSceneChange?.(clampedDur);
+      // ⚠ 부모 슬라이더 역동기화 제거 — auto 상태 보존
+      // onSecondsPerSceneChange?.(clampedDur);  // REMOVED: breaks auto mode
     }
   // result가 새로 생성될 때만 실행
   // eslint-disable-next-line react-hooks/exhaustive-deps
