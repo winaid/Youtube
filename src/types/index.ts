@@ -635,13 +635,16 @@ export const DEFAULT_VIDEO_CONFIG: VideoGenerationConfig = {
   cinematography: { lighting: [], composition: [], lens: [], cameraMove: [], countryStyle: [], colorGrade: [] },
 };
 
-/** @deprecated Use VideoResolution */
+// ── Backward-compat aliases (deprecated) ──────────────────────────────────────
+// 외부 소비자·플러그인 호환용. 내부 코드는 새 이름만 사용할 것.
+// TODO: 다음 메이저 버전에서 아래 4개 alias 전부 삭제 예정.
+/** @deprecated VideoResolution 사용. 다음 메이저 버전에서 삭제 예정. */
 export type VeoResolution = VideoResolution;
-/** @deprecated Use ClipDuration */
+/** @deprecated ClipDuration 사용. 다음 메이저 버전에서 삭제 예정. */
 export type VeoClipDuration = ClipDuration;
-/** @deprecated Use VideoGenerationConfig */
+/** @deprecated VideoGenerationConfig 사용. 다음 메이저 버전에서 삭제 예정. */
 export type VeoGenerationConfig = VideoGenerationConfig;
-/** @deprecated Use DEFAULT_VIDEO_CONFIG */
+/** @deprecated DEFAULT_VIDEO_CONFIG 사용. 다음 메이저 버전에서 삭제 예정. */
 export const DEFAULT_VEO_CONFIG = DEFAULT_VIDEO_CONFIG;
 
 // ===== Duration 추적 메타 =====
