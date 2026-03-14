@@ -898,19 +898,32 @@ ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade
 예: empty reception desk, dusty floor reflection, worn dental chair silhouette, flickering fluorescent tube, half-open blinds, faded wall paint, cracked tile floor, condensation on window, peeling wallpaper strip, rusted pipe along wall
 메타 정보(REVEALED/WITHHELD)를 늘리지 말고 실제 화면 디테일을 늘려라.
 
-## MULTI-SHOT 규칙 (시퀀스 블록의 각 비트를 서브샷으로 구현 — Kling과 Veo 공통)
-각 씬 = 짧은 시퀀스(sequence block). "multiShot" 배열 = location→situation→emotion 순서의 서브샷이다.
-- 모든 duration(초 단위 정수) 합산 = ${secPerCut} (반드시 정확히 일치)
-- 서브샷 1 = BEAT1 LOCATION: 장소 정체성 즉시 인식 (장소 고유 오브젝트 2+) — shot size: WS/LS (≤80 words)
-- 서브샷 2 = BEAT2 SITUATION: 상황의 시각적 증거 (빈/붐빔/위기 등을 오브젝트로) — shot size: MS/MCU (≤80 words)
-- 서브샷 3 (${secPerCut} >= 9 시 권장) = BEAT3 EMOTION: 감정/갈등 앵커 (인물의 구체적 신체 행동) — shot size: CU/ECU (≤80 words)
-- ⚠️ 핵심: 서브샷마다 반드시 다른 shot size + 앵글 사용 (WS→MS→CU 등 씬 내 progression)
-- ⚠️ 시퀀스 끝(서브샷 3 이후) 시청자가 WHERE + WHAT + WHO/EMOTION 3가지를 즉시 이해해야 함
-- duration 분배: 균등 또는 핵심 비트에 가중치 (정수만, 합산 ${secPerCut})
-- BANNED: 서브샷 전체에 동일 구도/앵글 반복, 감정 형용사 사용, "standing motionless"
+## MULTI-SHOT 규칙 (secPerCut 기반 조건부 — 독립 컷 우선)
+${secPerCut <= 3
+    ? `### multiShot 비활성 (secPerCut=${secPerCut}초 ≤ 3초)
+- ${secPerCut}초는 하나의 독립 컷이다. multiShot 배열을 생성하지 마라.
+- 하나의 연속된 카메라 무빙과 하나의 핵심 비트로 구성.
+- "multiShot" 필드는 출력하지 말 것.`
+    : secPerCut <= 5
+    ? `### multiShot 제한 (secPerCut=${secPerCut}초, 최대 2개)
+- ${secPerCut}초에서는 multiShot을 최대 2개까지만 허용한다.
+- 가능하면 multiShot 없이 단일 연속 shot으로 구성하라.
+- 꼭 필요한 경우에만 2개의 서브샷 (location→emotion)으로 구성.
+- duration 합산 = ${secPerCut} (정수만).`
+    : `### multiShot 허용 (secPerCut=${secPerCut}초, 최대 3개)
+- ${secPerCut}초에서는 2~3개 서브샷을 허용한다.
+- 서브샷 1 = BEAT1 LOCATION: 장소 정체성 즉시 인식 — shot size: WS/LS (≤80 words)
+- 서브샷 2 = BEAT2 SITUATION: 상황의 시각적 증거 — shot size: MS/MCU (≤80 words)
+- 서브샷 3 (선택) = BEAT3 EMOTION: 감정/갈등 앵커 — shot size: CU/ECU (≤80 words)
+- duration 합산 = ${secPerCut} (정수만).
+- 서브샷마다 반드시 다른 shot size + 앵글 사용.`}
 
 JSON 배열로만 출력 (마크다운 없이):
-[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":2,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":3,"prompt":"...","duration":"${secPerCut - 2 * Math.ceil(secPerCut / 3)}"}]}]`;
+${secPerCut <= 3
+    ? `[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."}]`
+    : secPerCut <= 5
+    ? `[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 2)}"},{"index":2,"prompt":"...","duration":"${secPerCut - Math.ceil(secPerCut / 2)}"}]}]`
+    : `[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":2,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":3,"prompt":"...","duration":"${secPerCut - 2 * Math.ceil(secPerCut / 3)}"}]}]`}`;
 
   // 배치 크기에 비례한 토큰 예산: 컷당 ≈1200 tokens, 최소 8192, 최대 16384
   const estimatedDetailTokens = batchOutlines.length * 1200 + 500;

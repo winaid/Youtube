@@ -139,17 +139,24 @@ export async function klingGenerate(
   if (req.quality) body.quality = req.quality;
   if (req.image)      body.image      = req.image;
   if (req.image_tail) body.image_tail = req.image_tail;
-  // Multi-shot: 1장면 안에 여러 카메라 구도/앵글 지정
-  if (req.multiShot && req.multiShot.length > 0) {
+  // Multi-shot: secPerCut 기반 clamp — 짧은 컷에서는 비활성화
+  // 규칙: duration<=3 → 금지, duration<=5 → 최대 2개, duration>5 → 최대 3개
+  const effectiveDuration = (body.duration as number) ?? 5;
+  const multiShotMaxCount = effectiveDuration <= 3 ? 0 : effectiveDuration <= 5 ? 2 : 3;
+  if (req.multiShot && req.multiShot.length > 0 && multiShotMaxCount > 0) {
+    const clampedShots = req.multiShot.slice(0, multiShotMaxCount);
     body.model_params = {
       multi_shot: true,
       shot_type: "customize",
-      multi_prompt: req.multiShot.map((s) => ({
+      multi_prompt: clampedShots.map((s) => ({
         index: s.index,
         prompt: s.prompt,
         duration: String(s.duration),
       })),
     };
+    if (req.multiShot.length > multiShotMaxCount) {
+      console.warn(`[_kling-api] multiShot clamped: ${req.multiShot.length} → ${multiShotMaxCount} (duration=${effectiveDuration}s)`);
+    }
   }
 
   const res = await fetch(`${klingBase(env)}/v1/videos/generations`, {

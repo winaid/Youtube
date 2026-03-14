@@ -1322,9 +1322,14 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,
-        ...(engine === "kling" && cut.multiShot && cut.multiShot.length > 0
-          ? { multiShot: cut.multiShot }
-          : {}),
+        // multiShot: secPerCut 기반 clamp — 짧은 독립 컷에서는 비활성화
+        ...((() => {
+          if (engine !== "kling" || !cut.multiShot || cut.multiShot.length === 0) return {};
+          const dur = cfg.durationSeconds ?? cut.durationSec ?? 5;
+          if (dur <= 3) return {}; // 3초 이하: multiShot 금지
+          const maxShots = dur <= 5 ? 2 : 3;
+          return { multiShot: cut.multiShot.slice(0, maxShots) };
+        })()),
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
         extraFields: {
