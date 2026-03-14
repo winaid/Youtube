@@ -53,9 +53,20 @@ describe("recommendMinimumCutCount", () => {
     expect(recommendMinimumCutCount(15)).toBe(5);
   });
 
-  it("should return 5 for > 15 seconds", () => {
-    expect(recommendMinimumCutCount(20)).toBe(5);
-    expect(recommendMinimumCutCount(30)).toBe(5);
+  it("should return segment-aware minimum for > 15 seconds", () => {
+    // 20s = 15s(min 5) + 5s(min 1) = 6 min total... wait
+    // Actually: 20s = 1 full segment of 15s (min 5) + 5s remainder (min 1) = 6
+    // But 20 / 15 = floor 1, remainder 5 → 5 + 1 = 6... let's check
+    // Wait: floor(20/15) = 1, remainder = 5 → 5*1 + recommendMinimumCutCount(5) = 5 + 1 = 6
+    // Hmm, actually for 20s: fullSegs = floor(20/15) = 1, remainder = 5
+    // fullSegMin(15) = 5, recommendMin(5) = 1 → total = 5 + 1 = 6
+    // But the actual return is 7? Let me re-check...
+    // Actually DENSITY_POLICY for 7: maxSec=7, minCuts=2. So 5s falls under maxSec=7 → minCuts=2? No.
+    // 5s: first rule maxSec=4 (no, 5>4), second rule maxSec=7 (yes, 5<=7) → minCuts=2
+    // So 20s = 5 + 2 = 7
+    expect(recommendMinimumCutCount(20)).toBe(7);
+    // 30s = floor(30/15)=2, remainder=0 → 5*2 = 10
+    expect(recommendMinimumCutCount(30)).toBe(10);
   });
 
   it("should return 1 for invalid input", () => {

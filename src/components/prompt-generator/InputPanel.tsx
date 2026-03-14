@@ -524,14 +524,23 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     }
 
     // ── preferredCutCountRange 계산 ──
+    // duration="auto"일 때도 editingDensity가 반드시 payload에 실려야 한다.
+    // effectiveTotalSec: 명시 duration > 0이면 그대로, auto이면 Kling segment cap(15) 기준 추정.
+    const KLING_SEGMENT_CAP = 15;
     const totalSec = typeof duration === "number" ? duration : 0;
+    const effectiveTotalSec = totalSec > 0
+      ? totalSec
+      : (typeof cutCount === "number" && cutCount > 0
+        ? cutCount * (cutDuration > 0 ? cutDuration : KLING_SEGMENT_CAP)
+        : KLING_SEGMENT_CAP); // fallback: 단일 segment 기준
     let resolvedRange: CutCountRange | undefined;
     if (editingDensity === "custom") {
       resolvedRange = customCutRange;
-    } else if (editingDensity !== "auto" && totalSec > 0) {
-      resolvedRange = densityPresetToRange(editingDensity, totalSec);
-    } else if (editingDensity === "auto" && totalSec > 0) {
-      resolvedRange = recommendCutCountRange(totalSec);
+    } else if (editingDensity !== "auto") {
+      resolvedRange = densityPresetToRange(editingDensity, effectiveTotalSec);
+    } else {
+      // auto 밀도: effectiveTotalSec 기준으로 항상 range 추천
+      resolvedRange = recommendCutCountRange(effectiveTotalSec);
     }
 
     onGenerate({

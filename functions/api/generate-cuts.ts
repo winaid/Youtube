@@ -17,7 +17,7 @@ import { densifyCuts } from "./_sequence-density";
 import { computeServerAutoDuration } from "./_duration-constants";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate, buildCompactEditorialSummary } from "./_editorial-persona";
 import type { EditorialPersona } from "./_editorial-persona";
-import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias } from "./_sequence-density";
+import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange } from "./_sequence-density";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1134,6 +1134,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       cutCount,
       cutDuration,
       preferredCutCountRange,
+      totalDurationSeconds: rawTotalDuration,
       generationPersona,
       characterPersonas,
     } = await context.request.json() as Record<string, string | number | object>;
@@ -1141,6 +1142,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
     const rawSecPerCut = Number(cutDuration) || 0;
     const rawCutCount = Number(cutCount) || 0;
+    const totalDurationSec = Number(rawTotalDuration) || 0;
+
+    // ── Kling 15초 segment planning ──
+    const KLING_SEGMENT_CAP = 15;
+    const estimatedSegmentCount = totalDurationSec > 0
+      ? Math.ceil(totalDurationSec / KLING_SEGMENT_CAP)
+      : 0;
 
     // ── preferredCutCountRange 파싱 ──
     const parsedRange = preferredCutCountRange && typeof preferredCutCountRange === "object"
@@ -1158,9 +1166,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         : undefined,
     );
 
+    // ── auto duration: totalDurationSeconds를 실제로 전달 ──
     const autoResult = computeServerAutoDuration(
       rawSecPerCut > 0 ? rawSecPerCut : undefined,
-      undefined, // totalDurationSeconds는 generate-cuts에서 직접 사용하지 않음
+      totalDurationSec > 0 ? totalDurationSec : undefined,
       rawCutCount > 0 ? rawCutCount : undefined,
       undefined, // sceneType — 컷 생성 시점에서는 미정
       editorial.preferredCutPace,
@@ -1168,17 +1177,77 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const secPerCut = autoResult.duration;
 
     // ── targetCuts: resolveCutCount로 통합 결정 ──
-    // 우선순위: exact cutCount > preferredRange + persona bias > density policy > fallback
+    // 실제 totalDurationSec 사용. 없으면 segment cap × 추정 컷 수 기반.
+    // 120초 입력이면 120초 전체를 기준으로 density 계산.
+    const effectiveTotalForDensity = totalDurationSec > 0
+      ? totalDurationSec
+      : (rawCutCount > 0
+        ? rawCutCount * secPerCut
+        : KLING_SEGMENT_CAP); // 최소 단일 segment 기준
     const pBias = personaCutCountBias(editorial);
-    const cutDecision = resolveCutCount({
-      exactCutCount: rawCutCount > 0 ? rawCutCount : undefined,
-      preferredRange: parsedRange,
-      totalDurationSec: secPerCut * (rawCutCount > 0 ? rawCutCount : 3),
-      personaBias: pBias,
-    });
+
+    // segment-aware: 15초 초과면 segment별 density × segment 수로 전체 컷 수 계산
+    const segmentAwareCutDecision = totalDurationSec > KLING_SEGMENT_CAP
+      ? (() => {
+          // segment별 density 계산 (각 segment는 ≤15초)
+          const segCount = Math.ceil(totalDurationSec / KLING_SEGMENT_CAP);
+          const lastSegDur = totalDurationSec - (segCount - 1) * KLING_SEGMENT_CAP;
+          const perSegRange = parsedRange
+            ? parsedRange
+            : recommendCutCountRange(KLING_SEGMENT_CAP);
+          const lastSegRange = parsedRange
+            ? parsedRange
+            : recommendCutCountRange(lastSegDur);
+          // segment별 결정 → 전체 합산
+          const perSegResult = resolveCutCount({
+            exactCutCount: undefined,
+            preferredRange: perSegRange,
+            totalDurationSec: KLING_SEGMENT_CAP,
+            personaBias: pBias,
+          });
+          const lastSegResult = resolveCutCount({
+            exactCutCount: undefined,
+            preferredRange: lastSegRange,
+            totalDurationSec: lastSegDur,
+            personaBias: pBias,
+          });
+          const totalCuts = perSegResult.cutCount * (segCount - 1) + lastSegResult.cutCount;
+          return {
+            cutCount: totalCuts,
+            source: "preferred_range" as const,
+            densityMinimum: perSegResult.densityMinimum * segCount,
+            notes: [
+              `segment-aware: ${segCount} segments × ~${perSegResult.cutCount} cuts/seg = ${totalCuts} total`,
+              ...perSegResult.notes,
+            ],
+          };
+        })()
+      : null;
+
+    const cutDecision = rawCutCount > 0
+      // exact cutCount는 최우선
+      ? resolveCutCount({
+          exactCutCount: rawCutCount,
+          preferredRange: parsedRange,
+          totalDurationSec: effectiveTotalForDensity,
+          personaBias: pBias,
+        })
+      : segmentAwareCutDecision
+        // segment-aware 결정이 있으면 사용
+        ?? resolveCutCount({
+            exactCutCount: undefined,
+            preferredRange: parsedRange,
+            totalDurationSec: effectiveTotalForDensity,
+            personaBias: pBias,
+          });
     const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), 15);
 
-    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts, basis: autoResult.basis, editorial: editorial.preferredCutPace, cutDecision });
+    console.log("[generate-cuts] duration params", {
+      rawCutDuration: cutDuration, secPerCut, targetCuts,
+      totalDurationSec, estimatedSegmentCount,
+      basis: autoResult.basis, editorial: editorial.preferredCutPace,
+      cutDecision, parsedRange,
+    });
 
     if (!storyText || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });
@@ -1752,6 +1821,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         densityMinimum: cutDecision.densityMinimum,
         personaBias: pBias,
         notes: cutDecision.notes,
+      },
+      // ── segment planning + duration decision 메타 ──
+      segmentPlanning: {
+        totalDurationSeconds: totalDurationSec || undefined,
+        segmentDurationCap: KLING_SEGMENT_CAP,
+        estimatedSegmentCount: estimatedSegmentCount || undefined,
+        segmentAware: !!segmentAwareCutDecision,
+      },
+      autoDurationDecisionBasis: {
+        result: secPerCut,
+        basis: autoResult.basis,
+        inputTotalDuration: totalDurationSec || undefined,
+        inputCutDuration: rawSecPerCut || undefined,
+        inputCutCount: rawCutCount || undefined,
       },
     });
 

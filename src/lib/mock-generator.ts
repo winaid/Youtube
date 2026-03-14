@@ -55,6 +55,11 @@ async function fetchGeminiCuts(
         region: input.region,
         cutCount,
         cutDuration,
+        // ── 편집 밀도 범위 + 총 길이 ──
+        preferredCutCountRange: input.preferredCutCountRange ?? null,
+        totalDurationSeconds: input.duration === "auto"
+          ? undefined
+          : (typeof input.duration === "number" ? input.duration : undefined),
         // 페르소나 시스템
         generationPersona: input.generationPersona ?? null,
         characterPersonas: input.characterPersonas ?? [],

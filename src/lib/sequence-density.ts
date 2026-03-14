@@ -31,27 +31,55 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * Kling segment 상한. 한 번에 최대 15초만 생성 가능.
+ */
+export const KLING_SEGMENT_CAP = 15;
+
+/**
  * 총 길이(초) 기준 권장 컷 수 범위.
- * 사용자가 "자동" 선택 시 기본 추천값으로 사용.
+ * 15초 이하: 단일 segment 기준 프리셋.
+ * 15초 초과: segment 단위로 분할 후 합산.
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
   { maxSec: 8,  min: 2, max: 3 },
   { maxSec: 12, min: 3, max: 4 },
   { maxSec: 15, min: 3, max: 5 },
-  { maxSec: Infinity, min: 4, max: 6 },
 ];
 
 /**
+ * 단일 segment(≤15s) 기준 컷 수 범위 반환. 내부 전용.
+ */
+function singleSegmentRange(segDur: number): { min: number; max: number } {
+  if (segDur <= 0) return { min: 1, max: 2 };
+  for (const preset of RANGE_PRESETS) {
+    if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
+  }
+  return { min: 3, max: 5 }; // 15초 = 3~5
+}
+
+/**
  * 총 길이(초) → 권장 컷 수 범위 반환.
- * UI "자동" 밀도 기본값 및 서버 fallback에 사용.
+ * 15초 초과 시 segment 단위로 분할하여 합산.
+ * 예: 120초 = 8 segments → 8 × (3~5) = 24~40
  */
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
   if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
-  for (const preset of RANGE_PRESETS) {
-    if (totalDurationSec <= preset.maxSec) return { min: preset.min, max: preset.max };
+  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+    return singleSegmentRange(totalDurationSec);
   }
-  return { min: 4, max: 6 };
+  // segment-aware: 15초 단위로 분할
+  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
+  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
+  const fullRange = singleSegmentRange(KLING_SEGMENT_CAP);
+  let totalMin = fullRange.min * fullSegments;
+  let totalMax = fullRange.max * fullSegments;
+  if (remainder > 0) {
+    const remRange = singleSegmentRange(remainder);
+    totalMin += remRange.min;
+    totalMax += remRange.max;
+  }
+  return { min: totalMin, max: totalMax };
 }
 
 /**
@@ -182,13 +210,25 @@ export function resolveCutCount(opts: {
 
 /**
  * 총 길이(초) 기준으로 권장 최소 컷 수를 반환한다.
+ * 15초 초과 시 segment 단위로 분할하여 합산.
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  for (const rule of DENSITY_POLICY) {
-    if (totalDurationSec <= rule.maxSec) return rule.minCuts;
+  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+    for (const rule of DENSITY_POLICY) {
+      if (totalDurationSec <= rule.maxSec) return rule.minCuts;
+    }
+    return 5;
   }
-  return 4;
+  // segment-aware
+  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
+  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
+  const fullSegMin = recommendMinimumCutCount(KLING_SEGMENT_CAP); // = 5
+  let total = fullSegMin * fullSegments;
+  if (remainder > 0) {
+    total += recommendMinimumCutCount(remainder);
+  }
+  return total;
 }
 
 /**

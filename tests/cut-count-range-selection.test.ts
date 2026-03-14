@@ -48,8 +48,9 @@ describe("A. recommendCutCountRange", () => {
     expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
   });
 
-  it("5) 20s → { min: 4, max: 6 }", () => {
-    expect(recommendCutCountRange(20)).toEqual({ min: 4, max: 6 });
+  it("5) 20s → segment-aware (15s segment + 5s remainder)", () => {
+    // 15s → {3,5}, 5s → {1,2} → total = {4,7}
+    expect(recommendCutCountRange(20)).toEqual({ min: 4, max: 7 });
   });
 
   it("6) 0 or negative → { min: 1, max: 2 }", () => {

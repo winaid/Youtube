@@ -8,6 +8,11 @@
  */
 
 /**
+ * Kling segment 상한. 한 번에 최대 15초만 생성 가능.
+ */
+export const KLING_SEGMENT_CAP = 15;
+
+/**
  * 멀티컷 몽타주 우선 밀도 정책.
  * 8-12s → 3-4 cuts, 12-15s → 4-5 cuts.
  * 단일 긴 숏보다 짧은 컷 × 여러 개를 기본값으로 설정.
@@ -30,15 +35,32 @@ const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 8,  min: 2, max: 3 },
   { maxSec: 12, min: 3, max: 4 },
   { maxSec: 15, min: 3, max: 5 },
-  { maxSec: Infinity, min: 4, max: 6 },
 ];
+
+function singleSegmentRange(segDur: number): { min: number; max: number } {
+  if (segDur <= 0) return { min: 1, max: 2 };
+  for (const preset of RANGE_PRESETS) {
+    if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
+  }
+  return { min: 3, max: 5 };
+}
 
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
   if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
-  for (const preset of RANGE_PRESETS) {
-    if (totalDurationSec <= preset.maxSec) return { min: preset.min, max: preset.max };
+  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+    return singleSegmentRange(totalDurationSec);
   }
-  return { min: 4, max: 6 };
+  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
+  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
+  const fullRange = singleSegmentRange(KLING_SEGMENT_CAP);
+  let totalMin = fullRange.min * fullSegments;
+  let totalMax = fullRange.max * fullSegments;
+  if (remainder > 0) {
+    const remRange = singleSegmentRange(remainder);
+    totalMin += remRange.min;
+    totalMax += remRange.max;
+  }
+  return { min: totalMin, max: totalMax };
 }
 
 export function densityPresetToRange(
@@ -141,10 +163,21 @@ export function resolveCutCount(opts: {
 
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  for (const rule of DENSITY_POLICY) {
-    if (totalDurationSec <= rule.maxSec) return rule.minCuts;
+  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+    for (const rule of DENSITY_POLICY) {
+      if (totalDurationSec <= rule.maxSec) return rule.minCuts;
+    }
+    return 5;
   }
-  return 4;
+  // segment-aware
+  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
+  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
+  const fullSegMin = recommendMinimumCutCount(KLING_SEGMENT_CAP);
+  let total = fullSegMin * fullSegments;
+  if (remainder > 0) {
+    total += recommendMinimumCutCount(remainder);
+  }
+  return total;
 }
 
 export function needsDensityBoost(
