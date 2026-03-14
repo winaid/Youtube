@@ -33,9 +33,9 @@ export type FFmpegUnavailableReason =
 
 export interface FFmpegInstance {
   exec: (args: string[]) => Promise<number>;
-  writeFile: (name: string, data: Uint8Array) => Promise<void>;
+  writeFile: (name: string, data: Uint8Array) => Promise<boolean>;
   readFile: (name: string) => Promise<Uint8Array>;
-  deleteFile: (name: string) => Promise<void>;
+  deleteFile: (name: string) => Promise<boolean>;
   terminate: () => void;
 }
 
@@ -88,7 +88,6 @@ export async function detectFFmpegAvailability(): Promise<FFmpegAvailability> {
 
   // 패키지 설치 여부 — dynamic import로 확인
   try {
-    // @ts-expect-error — @ffmpeg/ffmpeg는 optional dependency, 설치 전에는 타입 없음
     await import("@ffmpeg/ffmpeg");
     return { available: true };
   } catch {
@@ -121,9 +120,7 @@ export async function loadFFmpeg(): Promise<FFmpegInstance> {
     }
 
     try {
-      // @ts-expect-error — @ffmpeg/ffmpeg는 optional dependency
       const { FFmpeg } = await import("@ffmpeg/ffmpeg");
-      // @ts-expect-error — @ffmpeg/util는 optional dependency
       const { toBlobURL } = await import("@ffmpeg/util");
 
       const ffmpeg = new FFmpeg();
