@@ -1,14 +1,14 @@
-// Veo Prompt Optimization Dictionary
-// Korean camera/style terms → Veo-optimized English phrases
-// Used by refine-prompt and generate-cuts for higher quality Veo output
+// Video Prompt Optimization Dictionary
+// Korean camera/style terms → optimized English phrases for video generation
+// Used by refine-prompt and generate-cuts for higher quality output
 
-export interface VeoTermMapping {
+export interface VideoTermMapping {
   ko: string;
   en: string;
   category: "camera" | "lighting" | "mood" | "transition" | "composition" | "motion";
 }
 
-export const veoTermDictionary: VeoTermMapping[] = [
+export const videoTermDictionary: VideoTermMapping[] = [
   // === Camera Work ===
   { ko: "클로즈업", en: "extreme close-up shot", category: "camera" },
   { ko: "대사 클로즈업", en: "tight close-up on face, dialogue framing", category: "camera" },
@@ -103,13 +103,13 @@ export const veoTermDictionary: VeoTermMapping[] = [
 
 // Quick lookup map for Korean → English
 export const koToEnMap = new Map<string, string>(
-  veoTermDictionary.map((t) => [t.ko, t.en])
+  videoTermDictionary.map((t) => [t.ko, t.en])
 );
 
-// Replace Korean terms in a prompt with Veo-optimized English
+// Replace Korean terms in a prompt with optimized English for video generation
 export function optimizePromptTerms(prompt: string): string {
   let result = prompt;
-  for (const term of veoTermDictionary) {
+  for (const term of videoTermDictionary) {
     if (result.includes(term.ko)) {
       result = result.replaceAll(term.ko, term.en);
     }
@@ -118,6 +118,6 @@ export function optimizePromptTerms(prompt: string): string {
 }
 
 // Get all terms by category
-export function getTermsByCategory(category: VeoTermMapping["category"]): VeoTermMapping[] {
-  return veoTermDictionary.filter((t) => t.category === category);
+export function getTermsByCategory(category: VideoTermMapping["category"]): VideoTermMapping[] {
+  return videoTermDictionary.filter((t) => t.category === category);
 }

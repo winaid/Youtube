@@ -5,7 +5,7 @@
  * 1. 스타일은 "단어"가 아니라 "시스템"으로 다룬다
  * 2. 프로젝트 전체에 하나의 스타일 정체성이 일관되게 적용된다
  * 3. 최종 프롬프트는 [PERSONA] > [STYLE] > [CONSISTENCY] > [CAMERA] > [SCENE] > [REINFORCEMENT] > [NEGATIVE] 우선순위로 조립된다
- * 4. 내부 메타 필드는 내부에만 유지하고, Veo에 보내는 프롬프트는 자연어 중심으로 변환한다
+ * 4. 내부 메타 필드는 내부에만 유지하고, 영상 모델에 보내는 프롬프트는 자연어 중심으로 변환한다
  * 5. 각 스타일은 전용 페르소나 + 렌더링 규칙 + anti-drift 체크리스트를 가진다
  */
 
@@ -482,7 +482,7 @@ export interface PromptAssemblyInput {
 }
 
 export interface AssembledPrompt {
-  /** Veo에 전송할 최종 프롬프트 */
+  /** 영상 모델에 전송할 최종 프롬프트 */
   finalPrompt: string;
 
   /** map scene drift 감지 시 경고 (비용 보호) */
@@ -530,7 +530,7 @@ function naturalizeMetaFields(prompt: string): string {
     .replace(/CAMERA_ANGLE:\s*/gi, "")
     // CAMERA_MOVEMENT/CAMERA_PROGRESSION:XXX → 값만
     .replace(/CAMERA_(MOVEMENT|PROGRESSION):\s*/gi, "")
-    // SUBJECT_BLOCKING:XXX → 제거 (Veo가 사용하지 않는 내부 정보)
+    // SUBJECT_BLOCKING:XXX → 제거 (영상 모델이 사용하지 않는 내부 정보)
     .replace(/SUBJECT_BLOCKING:\s*[^.|]*[.|]?\s*/gi, "")
     // SUBJECT_ACROSS_SCENE:XXX → 값만
     .replace(/SUBJECT_ACROSS_SCENE:\s*/gi, "")
@@ -540,7 +540,7 @@ function naturalizeMetaFields(prompt: string): string {
     .replace(/ACTION_BEAT:\s*/gi, "")
     // BODY_SIGNAL:XXX → 값만
     .replace(/BODY_SIGNAL:\s*/gi, "")
-    // REVEALED:XXX → 제거 (내부 planning, Veo 불필요)
+    // REVEALED:XXX → 제거 (내부 planning, 영상 모델 불필요)
     .replace(/REVEALED:\s*[^.|]*[.|]?\s*/gi, "")
     // WITHHELD:XXX → 제거 (프레임 밖 정보)
     .replace(/WITHHELD:\s*[^.]*\.?\s*/gi, "")

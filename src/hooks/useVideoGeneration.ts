@@ -21,12 +21,12 @@ import {
   VideoClip,
   VideoGenStatus,
   VideoGenerationState,
-  VeoGenerationConfig,
+  VideoGenerationConfig,
   VideoVariant,
   PromptVerification,
   CharacterFaceRef,
   CutFeedback,
-  DEFAULT_VEO_CONFIG,
+  DEFAULT_VIDEO_CONFIG,
   type StructuredSequenceDocument,
   type ShotVariant,
   type ShotSnapshots,
@@ -180,7 +180,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     clips: [],
     isAutoMode: false,
     currentAutoIndex: -1,
-    config: { ...DEFAULT_VEO_CONFIG },
+    config: { ...DEFAULT_VIDEO_CONFIG },
   });
 
   const pollTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
@@ -319,7 +319,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   }, []);
 
   // config 업데이트
-  const updateConfig = useCallback((config: Partial<VeoGenerationConfig>) => {
+  const updateConfig = useCallback((config: Partial<VideoGenerationConfig>) => {
     setState((prev) => ({ ...prev, config: { ...prev.config, ...config } }));
   }, []);
 
@@ -380,7 +380,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   const startPolling = useCallback(async (
     cutNumber: number,
     operationName: string,
-    engine: "veo" | "kling" = "veo",
+    engine: "kling" = "kling",
     taskId?: string,
     isExtend?: boolean,
     variantsToPreserve?: VideoVariant[],
@@ -694,7 +694,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                         cameraMovement: rawScores.composition,
                         actionSequence: rawScores.motionCoherence,
                         lightingMood: rawScores.styleConsistency,
-                        veoCompatibility: rawScores.visualQuality,
+                        videoCompatibility: rawScores.visualQuality,
                       },
                       rawScores,
                       issues: quality.issues || [],
@@ -1205,7 +1205,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           }
         }
       }
-      // Veo는 최대 3장 reference image 지원
+      // 최대 3장 reference image 지원
       const finalRefImages = Array.from(refImageSet).slice(0, 3);
 
       // Scene Extension URI 결정:
@@ -1251,7 +1251,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         if (!prevClip) extensionSkipReason.push("이전 컷 클립 없음");
         else if (prevClip.status !== "completed") extensionSkipReason.push(`이전 컷 상태: ${prevClip.status}`);
         if (!canonicalPrevUri && !rawPrevUri) extensionSkipReason.push("canonicalVideoUri + rawVideoUri 모두 없음 (업로드 실패 + GCS/HTTPS URI 미반환)");
-        else if (!canonicalPrevUri && rawPrevUri === "") extensionSkipReason.push("canonicalVideoUri 없음 + rawVideoUri 빈 문자열 (업로드 실패 + Veo base64 응답)");
+        else if (!canonicalPrevUri && rawPrevUri === "") extensionSkipReason.push("canonicalVideoUri 없음 + rawVideoUri 빈 문자열 (업로드 실패 + base64 응답)");
         else if (!canonicalPrevUri && rawPrevUri?.startsWith("data:")) extensionSkipReason.push("canonicalVideoUri 없음 + rawVideoUri가 data: URI (업로드 실패)");
 
         console.warn(
@@ -1300,7 +1300,6 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       });
 
       // Kling extend: sourceVideo = 이전 클립의 rawVideoUri (Kling video_id)
-      // Veo extend:   previousVideoUri = 이전 클립의 gs:// URI (기존 로직 유지)
       const sourceVideo = (videoMode === "extend" && cutNumber > 1)
         ? (prevClip?.rawVideoUri ?? "")
         : "";
@@ -1534,7 +1533,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           authMethod: d.authMethod,
           urlVersion: d.urlVersion,
           urlHasProject: d.urlHasProject,
-          veoMode: d.veoMode,
+          videoMode: d.videoMode,
           sceneExtensionAttempted: d.sceneExtensionAttempted,
           videoUrlExpected: "✓ Kling returns HTTPS URL directly",
         });

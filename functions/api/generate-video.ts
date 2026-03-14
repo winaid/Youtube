@@ -402,7 +402,7 @@ interface GenerateVideoRequest {
   // ── 공통 ──────────────────────────────────────────────────────────────────
   /** @deprecated legacy fallback. source of truth는 structuredSequence. */
   prompt?: string;
-  engine?: "veo" | "kling" | "auto";   // veo = legacy disabled, auto = kling
+  engine?: "kling" | "auto";   // auto = kling
   videoMode?: "generate" | "extend";
   sourceVideo?: string;
   cutNumber?: number;
@@ -421,7 +421,7 @@ interface GenerateVideoRequest {
   generateAudio?: boolean; // true = sound "on", false = sound "off"
   // ── Custom Element (캐릭터 일관성) ──────────────────────────────────────
   element_list?: Array<{ element_id: string }>;
-  // ── Legacy Veo fields (무시됨) ──────────────────────────────────────────
+  // ── Legacy fields (무시됨) ──────────────────────────────────────────
   mode?: string;
   resolution?: string;
   personGeneration?: string;
@@ -529,20 +529,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── 엔진 선택: Kling 전용 ──────────────────────────────────────────────
-    // Veo 경로 제거 — engine="veo" 요청이 와도 Kling으로 처리
     const hasKling = !!context.env.KLING_API_KEY;
     if (!hasKling) {
       return Response.json(
-        { error: "KLING_API_KEY not configured. Veo engine has been removed — only Kling is supported." },
+        { error: "KLING_API_KEY not configured. Only Kling is supported." },
         { status: 400 },
       );
     }
 
     const engineUsed = "kling" as const;
-
-    if (req.engine === "veo") {
-      console.warn("[generate-video] ⚠️ engine=veo 요청 → Kling으로 강제 전환 (Veo 경로 제거됨)");
-    }
 
     // CUT 1 서버 방어
     const cutNumberRaw = req.cutNumber != null ? Number(req.cutNumber) : null;

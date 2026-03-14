@@ -7,7 +7,7 @@
  * 렌더링 원칙:
  * - 비시각 메타태그(REVEALED/WITHHELD/END_HOOK 등) = 내부 planning 전용, 최종 프롬프트 제외
  * - characterRef 비어있으면 캐릭터 관련 필드 일체 생략
- * - 모든 출력은 Veo/Kling이 실제 렌더링할 수 있는 시각 정보만
+ * - 모든 출력은 Kling이 실제 렌더링할 수 있는 시각 정보만
  */
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -81,69 +81,6 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
   if (isMapTerrain) {
     parts.push("The image remains a physical map surface, not a real landscape and not a CGI render");
   }
-}
-
-// ─── Veo 렌더러 (LEGACY — Veo 생성 경로 제거됨, Gemini QA 참조용으로만 유지) ───
-
-/** @deprecated Veo 생성 경로 제거됨. Kling 전용으로 renderKlingPromptFromJson 사용. */
-export function renderVeoPromptFromJson(json: VideoPromptJson): string {
-  const parts: string[] = [];
-  const hasCharacter = !!json.characterRef;
-
-  // 1. Shot/Camera
-  parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
-  if (json.cameraMovement && json.cameraMovement !== "static") {
-    parts.push(json.cameraMovement);
-  }
-
-  // 2. Location establishing — 장소 즉시 인식
-  if (json.locationCue) parts.push(json.locationCue);
-
-  // 3. Situation evidence — 상황 시각적 증거
-  if (json.situationCue) parts.push(json.situationCue);
-
-  // 4. Character (있을 때만)
-  if (hasCharacter) parts.push(json.characterRef);
-
-  // 5. Emotional anchor + Scene action
-  if (json.emotionalAnchor) parts.push(json.emotionalAnchor);
-  if (json.subjectAction) parts.push(json.subjectAction);
-
-  // 6. Body signal (캐릭터 있을 때만)
-  if (hasCharacter && json.bodySignal) parts.push(json.bodySignal);
-
-  // 7. Lighting
-  if (json.moodLighting) parts.push(json.moodLighting);
-
-  // 8. Temporal beats
-  if (json.timingBeat) parts.push(json.timingBeat);
-
-  // 9. Style suffix
-  parts.push(json.styleSuffix);
-
-  // 10. Cinematic realism medium enforcement — 3D/CGI drift 방지
-  enforceCinematicRealismMedium(parts, json);
-
-  return parts.filter(Boolean).join(". ");
-}
-
-/** @deprecated Veo 생성 경로 제거됨. */
-export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
-  const parts: string[] = [];
-
-  parts.push(`Continuing from ${json.prevSceneEnd.shotType} shot — ${json.prevSceneEnd.subjectAction}`);
-  parts.push(`${json.transition} to`);
-  parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
-  if (json.newShot.cameraMovement && json.newShot.cameraMovement !== "static") {
-    parts.push(json.newShot.cameraMovement);
-  }
-  if (json.characterRef) parts.push(json.characterRef);
-  parts.push(json.newAction);
-  if (json.behavioralShift) parts.push(json.behavioralShift);
-  if (json.timingBeat) parts.push(json.timingBeat);
-  parts.push(json.styleSuffix);
-
-  return parts.filter(Boolean).join(". ");
 }
 
 // ─── Kling 렌더러 ─────────────────────────────────────────────────────────────

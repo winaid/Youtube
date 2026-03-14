@@ -30,7 +30,7 @@ interface CutCardProps {
   storyboardEndLoading?: boolean;
   onGenerateEndImage?: () => void;
   sceneTtsUrl?: string;
-  userVeoMode?: "fast";
+  userVideoMode?: "fast";
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
   onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
@@ -312,7 +312,7 @@ export default function CutCard({
   storyboardEndImage: _storyboardEndImage, storyboardEndLoading: _storyboardEndLoading, onGenerateEndImage: _onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
-  userVeoMode: _userVeoMode,
+  userVideoMode: _userVideoMode,
   shotSnapshots,
   narrationState,
 }: CutCardProps) {
@@ -650,7 +650,7 @@ export default function CutCard({
               )}
               {cut.cutNumber > 1 && (
                 <EditableField
-                  label="Veo Extend Prompt (이전 클립 연장)"
+                  label="Extend Prompt (이전 클립 연장)"
                   value={cut.extendPrompt}
                   color="#6b5ce7"
                   bgColor="#6b5ce710"

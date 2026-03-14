@@ -92,7 +92,7 @@ console.log("\n[TEST 1] provider가 HTTPS URL 반환");
 {
   const results: VideoResult[] = [];
   extractFromSamples([{
-    video: { uri: "https://storage.googleapis.com/veo-output/video.mp4" },
+    video: { uri: "https://storage.googleapis.com/video-output/video.mp4" },
     seed: "12345",
   }], results);
   assert(results.length === 1, "결과 1개 추출");
@@ -109,7 +109,7 @@ console.log("\n[TEST 2] provider가 GCS URL 반환");
 {
   const results: VideoResult[] = [];
   extractFromSamples([{
-    video: { uri: "gs://veo-output-bucket/projects/123/videos/abc.mp4" },
+    video: { uri: "gs://video-output-bucket/projects/123/videos/abc.mp4" },
     seed: "67890",
   }], results);
   assert(results.length === 1, "결과 1개 추출");
@@ -178,7 +178,7 @@ console.log("\n[TEST 4b] 완전히 새로운 필드명 (동적 탐색)");
 // ═══════════════════════════════════════════════════════════════
 console.log("\n[TEST 5] Scene Extension 가능 케이스");
 {
-  const rawVideoUri = "gs://veo-output/cut1.mp4";
+  const rawVideoUri = "gs://video-output/cut1.mp4";
   const isValid = rawVideoUri.startsWith("gs://") || rawVideoUri.startsWith("https://");
   assert(isValid, "GCS URI → Scene Extension 가능");
 

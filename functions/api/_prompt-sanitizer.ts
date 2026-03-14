@@ -238,7 +238,7 @@ export interface ServerSanitizeInput {
   framing: string;
   shotCategory?: string;
   styleSuffix?: string;
-  provider: "veo" | "kling";
+  provider: "kling";
   physicsRules?: PhysicsRulesContext;
   sceneType?: string;
   /** 컷 길이(초) — complexity budget 판단에 사용 */

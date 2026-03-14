@@ -295,7 +295,7 @@ section("3. Provider Prompt 직렬화");
 
 const prevPassed3 = passed;
 
-const serialized = serializeSequencePlan(plan, "veo");
+const serialized = serializeSequencePlan(plan, "kling");
 
 // shot별 프롬프트 생성
 assert(serialized.shotPrompts.length === 3, "3개 shot prompt 생성");
@@ -348,7 +348,7 @@ const prevPassed4 = passed;
 const successResults = plan.shots.map(s => ({
   shotId: s.shotId,
   generated: true,
-  engineUsed: "veo" as const,
+  engineUsed: "kling" as const,
   finalPrompt: serialized.shotPrompts.find(sp => sp.shotId === s.shotId)!.prompt,
   verification: { overallScore: 85, issues: [] as string[] },
 }));
@@ -363,7 +363,7 @@ assert(fidelity.failureDiagnosis.primaryCause !== "authoring", "authoring failur
 const failResults = plan.shots.map((s, i) => ({
   shotId: s.shotId,
   generated: i !== 2, // shot_3 실패
-  engineUsed: "veo" as const,
+  engineUsed: "kling" as const,
   finalPrompt: i !== 2 ? serialized.shotPrompts.find(sp => sp.shotId === s.shotId)!.prompt : "",
   verification: i !== 2 ? { overallScore: 80, issues: [] as string[] } : { overallScore: 0, issues: ["generation failed"] },
 }));

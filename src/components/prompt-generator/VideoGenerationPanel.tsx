@@ -375,7 +375,7 @@ export default function VideoGenerationPanel({
                             cameraMovement: "카메라 움직임",
                             temporalStructure: "시간 구조",
                             lightingMood: "조명/무드",
-                            veoCompatibility: "영상 호환성",
+                            videoCompatibility: "영상 호환성",
                             spatialComposition: "공간 구성",
                             atmosphericDetail: "대기/분위기",
                             subjectClarity: "피사체 명확성",

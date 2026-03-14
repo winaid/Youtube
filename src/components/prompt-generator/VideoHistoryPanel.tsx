@@ -29,12 +29,21 @@ export interface VideoHistoryEntry {
   }[];
 }
 
-const STORAGE_KEY = "veo-video-history";
-const SESSION_KEY = "veo-current-session-id";
+const STORAGE_KEY = "kling-video-history";
+const SESSION_KEY = "kling-current-session-id";
 
 function loadHistory(): VideoHistoryEntry[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    // Migration: read old key, write to new key, delete old
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      const oldRaw = localStorage.getItem("veo-video-history");
+      if (oldRaw) {
+        raw = oldRaw;
+        localStorage.setItem(STORAGE_KEY, raw);
+        localStorage.removeItem("veo-video-history");
+      }
+    }
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -60,8 +69,15 @@ function getSessionId(): string {
   if (!currentSessionId) {
     currentSessionId = sessionStorage.getItem(SESSION_KEY);
     if (!currentSessionId) {
-      currentSessionId = `vh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      sessionStorage.setItem(SESSION_KEY, currentSessionId);
+      // Migration: check old session key
+      currentSessionId = sessionStorage.getItem("veo-current-session-id");
+      if (currentSessionId) {
+        sessionStorage.setItem(SESSION_KEY, currentSessionId);
+        sessionStorage.removeItem("veo-current-session-id");
+      } else {
+        currentSessionId = `vh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        sessionStorage.setItem(SESSION_KEY, currentSessionId);
+      }
     }
   }
   return currentSessionId;
@@ -92,7 +108,7 @@ export function saveToHistory(entry: Omit<VideoHistoryEntry, "id" | "timestamp">
   }
   // 같은 탭 내 VideoHistoryPanel 즉시 갱신
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("veo-history-updated"));
+    window.dispatchEvent(new CustomEvent("kling-history-updated"));
   }
 }
 
@@ -115,7 +131,7 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
 
     // 같은 탭에서 saveToHistory 호출 시 즉시 반영
     const onHistoryUpdated = () => setHistory(loadHistory());
-    window.addEventListener("veo-history-updated", onHistoryUpdated);
+    window.addEventListener("kling-history-updated", onHistoryUpdated);
 
     // 폴백 폴링 (1초 주기)
     const interval = setInterval(() => {
@@ -124,7 +140,7 @@ export default function VideoHistoryPanel({ onLoadHistory }: VideoHistoryPanelPr
 
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("veo-history-updated", onHistoryUpdated);
+      window.removeEventListener("kling-history-updated", onHistoryUpdated);
       clearInterval(interval);
     };
   }, []);

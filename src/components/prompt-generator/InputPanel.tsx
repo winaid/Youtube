@@ -220,12 +220,21 @@ const durations: { value: Duration; label: string }[] = [
   { value: 120, label: "2분" },
 ];
 
-const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
+const CUSTOM_DIRECTORS_KEY = "kling-custom-directors";
 
 function loadCustomDirectors(): DirectorPersona[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(CUSTOM_DIRECTORS_KEY);
+    // Migration: read old key, write to new key, delete old
+    let raw = localStorage.getItem(CUSTOM_DIRECTORS_KEY);
+    if (!raw) {
+      const oldRaw = localStorage.getItem("veo-custom-directors");
+      if (oldRaw) {
+        raw = oldRaw;
+        localStorage.setItem(CUSTOM_DIRECTORS_KEY, raw);
+        localStorage.removeItem("veo-custom-directors");
+      }
+    }
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];

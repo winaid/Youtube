@@ -51,9 +51,9 @@ export interface StyleEntry {
   categoryId: string;
   /** 기존 AnimationMode 호환 — STYLE_PRESETS 룩업 키 (마이그레이션) */
   legacyMode?: string;
-  /** Veo/Kling에 전송하는 긍정 프롬프트 프리셋 */
+  /** 영상 모델에 전송하는 긍정 프롬프트 프리셋 */
   positivePrompt: string;
-  /** Veo/Kling에 전송하는 부정 프롬프트 프리셋 */
+  /** 영상 모델에 전송하는 부정 프롬프트 프리셋 */
   negativePrompt: string;
   /** 추천 감독 이름 목록 (한국어) */
   directors: string[];

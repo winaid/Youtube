@@ -168,7 +168,7 @@ function generateFallbackCuts(
   const directorStyle = director.style;
 
   const catalogStyle = getStyleById(input.animationMode);
-  const veoStyle = catalogStyle
+  const videoStyle = catalogStyle
     ? catalogStyle.positivePrompt.split(". ").slice(0, 2).join(". ")
     : "photorealistic, cinematic film grain, 4K quality";
 
@@ -187,8 +187,8 @@ function generateFallbackCuts(
     sceneDescription: `[장면 ${i + 1}] ${storyWords} 기반 장면 (API 연결 후 AI가 생성합니다)`,
     cameraDirection: "slow push-in toward subject",
     moodLighting: "golden hour warm lighting, soft shadows",
-    imagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} start frame, highly detailed, cinematic quality`,
-    endImagePrompt: `${veoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} end frame, camera moved to final position, highly detailed, cinematic quality`,
+    imagePrompt: `${videoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} start frame, highly detailed, cinematic quality`,
+    endImagePrompt: `${videoStyle}, ${directorStyle}, ${charDesc}, scene ${i + 1} end frame, camera moved to final position, highly detailed, cinematic quality`,
     videoPrompt: (() => {
       // establishing→evidence→anchor 구조 (즉시 인식 가능성)
       const beat = cutDuration === 4
@@ -200,7 +200,7 @@ function generateFallbackCuts(
             : cutDuration === 15
               ? { b1: "0s-4s", b2: "4s-10s", b3: "10s-15s" }
               : { b1: "0s-2s", b2: "2s-5s", b3: "5s-8s" };
-      return `Wide shot, eye-level, slow dolly in. ${beat.b1}: LOCATION — establishing space, identifiable location objects, ${veoStyle}. ${beat.b2}: SITUATION — visual evidence of current state, ${directorStyle} tone. ${beat.b3}: EMOTION — ${charDesc}, concrete physical action revealing feeling. Warm key light from upper left, soft diffused. ${director.name} style, cinematic. No text, no watermark`;
+      return `Wide shot, eye-level, slow dolly in. ${beat.b1}: LOCATION — establishing space, identifiable location objects, ${videoStyle}. ${beat.b2}: SITUATION — visual evidence of current state, ${directorStyle} tone. ${beat.b3}: EMOTION — ${charDesc}, concrete physical action revealing feeling. Warm key light from upper left, soft diffused. ${director.name} style, cinematic. No text, no watermark`;
     })(),
     extendPrompt: i > 0
       ? (() => {
@@ -213,7 +213,7 @@ function generateFallbackCuts(
               : cutDuration === 15
                 ? { b1: "0s-4s", b2: "4s-10s", b3: "10s-15s" }
                 : { b1: "0s-2s", b2: "2s-5s", b3: "5s-8s" };
-        return `Continue from previous scene. ${beat.b1}: LOCATION — new angle on location-defining objects, ${veoStyle}. ${beat.b2}: SITUATION — situation evidence with ${directorStyle} tone. ${beat.b3}: EMOTION — ${charDesc}, emotional anchor through physical action. Same character maintained. No text, no watermark`;
+        return `Continue from previous scene. ${beat.b1}: LOCATION — new angle on location-defining objects, ${videoStyle}. ${beat.b2}: SITUATION — situation evidence with ${directorStyle} tone. ${beat.b3}: EMOTION — ${charDesc}, emotional anchor through physical action. Same character maintained. No text, no watermark`;
       })()
       : "",
     transitionHint: i < cutCount - 1 ? "디졸브 - 다음 장면으로 자연스럽게 전환" : "페이드 아웃 - 마무리",
@@ -260,7 +260,7 @@ export async function generatePrompt(
   const cuts = classifyCuts(densifyCuts(rawCuts));
 
   const catalogStyle = getStyleById(input.animationMode);
-  const veoStyle = catalogStyle
+  const videoStyle = catalogStyle
     ? catalogStyle.positivePrompt.split(". ").slice(0, 2).join(". ")
     : "photorealistic, cinematic film grain, 4K quality";
 
@@ -290,7 +290,7 @@ export async function generatePrompt(
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
     conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 ${durationSummary.headline} 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
     totalCuts: cuts.length,
-    globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
+    globalStylePrompt: `[Global Style] ${videoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
     directorPersonaPrompt: directorPersonaText,
     characterSeeds,
     continuityRules: [

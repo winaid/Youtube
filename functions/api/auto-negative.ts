@@ -2,7 +2,7 @@ import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiError
 
 type Env = GeminiEnv;
 
-// Scene content → smart negative prompts to prevent common Veo artifacts
+// Scene content → smart negative prompts to prevent common video generation artifacts
 const SCENE_PATTERN_NEGATIVES: Record<string, string[]> = {
   // Face/person related
   face: ["distorted face", "asymmetric eyes", "extra fingers", "deformed hands", "uncanny valley", "blurry facial features"],
@@ -141,7 +141,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ negativePrompt, mode: "local" });
     }
 
-    const prompt = `You are a Veo 3.1 video generation expert. Analyze this scene and generate a negative prompt to prevent common artifacts.
+    const prompt = `You are an AI video generation expert. Analyze this scene and generate a negative prompt to prevent common artifacts.
 
 ## Scene:
 - Video Prompt: ${String(videoPrompt).slice(0, 1000)}
@@ -150,7 +150,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
 ## Rules:
 1. Identify potential visual artifacts based on scene content
-2. Focus on Veo-specific issues: face distortion, text corruption, motion artifacts, style inconsistency
+2. Focus on common video generation issues: face distortion, text corruption, motion artifacts, style inconsistency
 3. Include universal negatives: watermark, logo, text overlay
 4. Be specific to the scene content (e.g., if there are people, add face/body negatives)
 5. Keep under 100 words total

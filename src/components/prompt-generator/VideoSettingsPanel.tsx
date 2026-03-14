@@ -2,9 +2,9 @@
 
 import { useState, useRef } from "react";
 import {
-  VeoGenerationConfig,
-  VeoResolution,
-  VeoClipDuration,
+  VideoGenerationConfig,
+  VideoResolution,
+  ClipDuration,
   AspectRatio,
   PersonGeneration,
   VideoEngine,
@@ -17,8 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
 interface VideoSettingsPanelProps {
-  config: VeoGenerationConfig;
-  onConfigChange: (config: VeoGenerationConfig) => void;
+  config: VideoGenerationConfig;
+  onConfigChange: (config: VideoGenerationConfig) => void;
   storyboardImages?: Record<number, string>;
 }
 
@@ -97,7 +97,7 @@ export default function VideoSettingsPanel({
   const firstFrameRef = useRef<HTMLInputElement>(null);
   const lastFrameRef = useRef<HTMLInputElement>(null);
 
-  const update = (partial: Partial<VeoGenerationConfig>) => {
+  const update = (partial: Partial<VideoGenerationConfig>) => {
     onConfigChange({ ...config, ...partial });
   };
 
@@ -144,9 +144,9 @@ export default function VideoSettingsPanel({
           <div className="flex items-center gap-2">
             <Badge
               className="text-[10px] text-white"
-              style={{ background: engineColors[(config.engine === "veo" ? "kling" : config.engine) ?? "kling"] }}
+              style={{ background: engineColors[config.engine ?? "kling"] }}
             >
-              {engineLabels[(config.engine === "veo" ? "kling" : config.engine) ?? "kling"]}
+              {engineLabels[config.engine ?? "kling"]}
             </Badge>
             <Badge
               variant="outline"
@@ -173,7 +173,7 @@ export default function VideoSettingsPanel({
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold">엔진</Label>
             <div className="flex gap-2">
-              {(["veo", "kling", "auto"] as VideoEngine[]).map((eng) => (
+              {(["kling", "auto"] as VideoEngine[]).map((eng) => (
                 <Button
                   key={eng}
                   size="sm"
@@ -235,7 +235,7 @@ export default function VideoSettingsPanel({
               value={config.durationSeconds ?? 6}
               onChange={(e) => {
                 const d = Number(e.target.value);
-                update({ durationSeconds: d as VeoClipDuration, ...(d >= 10 ? { engine: "kling" as const } : {}) });
+                update({ durationSeconds: d as ClipDuration, ...(d >= 10 ? { engine: "kling" as const } : {}) });
               }}
               className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
               style={{ accentColor: "#787fff" }}
@@ -262,7 +262,7 @@ export default function VideoSettingsPanel({
                           ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
                           : {}
                     }
-                    onClick={() => update({ durationSeconds: d as VeoClipDuration })}
+                    onClick={() => update({ durationSeconds: d as ClipDuration })}
                   >
                     {d}
                     {isKlingOnly && !isSelected && (
@@ -288,7 +288,7 @@ export default function VideoSettingsPanel({
           <div className="space-y-1.5">
             <Label className="text-xs">해상도</Label>
             <div className="flex gap-2">
-              {(["720p", "1080p", "4k"] as VeoResolution[]).map((r) => (
+              {(["720p", "1080p", "4k"] as VideoResolution[]).map((r) => (
                 <Button
                   key={r}
                   size="sm"
@@ -599,8 +599,8 @@ export default function VideoSettingsPanel({
             {/* 영어 네이티브 교정 */}
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-xs">Veo 영어 네이티브 교정</Label>
-                <p className="text-[10px] text-muted-foreground">Veo가 잘 이해하는 시네마틱 영어로 자동 변환</p>
+                <Label className="text-xs">영어 네이티브 교정</Label>
+                <p className="text-[10px] text-muted-foreground">영상 모델이 잘 이해하는 시네마틱 영어로 자동 변환</p>
               </div>
               <button
                 className="relative w-10 h-5 rounded-full transition-colors"

@@ -1,4 +1,4 @@
-// Camera Motion Preset Library for Veo 3.1
+// Camera Motion Preset Library for Kling
 // 20 cinematic camera presets users can apply to any CutCard
 
 export interface CameraPreset {
@@ -6,7 +6,7 @@ export interface CameraPreset {
   nameKo: string;
   nameEn: string;
   category: "basic" | "dynamic" | "cinematic" | "creative" | "emotional";
-  cameraDirection: string; // English for Veo
+  cameraDirection: string; // English for video generation
   description: string; // Korean UI description
   bestFor: string; // Korean - when to use
 }

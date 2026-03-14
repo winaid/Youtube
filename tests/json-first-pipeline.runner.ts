@@ -33,7 +33,7 @@ import {
   AssembleFromJSONResult,
 } from "../src/lib/sequence-assembler";
 
-import { Cut, VideoPromptJson, StructuredSequenceDocument, VeoGenerationConfig } from "../src/types";
+import { Cut, VideoPromptJson, StructuredSequenceDocument, VideoGenerationConfig } from "../src/types";
 import { computeAssetStatus, VideoRecord } from "../src/lib/video-history";
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
@@ -107,7 +107,7 @@ function makeTestCuts(count: number = 3): Cut[] {
   return cuts;
 }
 
-function makeTestConfig(): VeoGenerationConfig {
+function makeTestConfig(): VideoGenerationConfig {
   return {
     engine: "kling",
     videoMode: "extend",
@@ -322,7 +322,7 @@ section("8. renderSequenceForProvider 마지막 직렬화");
   const result = assembleFromJSON({ cut: cuts[0], config: cfg });
   const seq = result.structuredSequence;
 
-  // Kling용 직렬화 (Veo 제거됨 — Kling만 사용)
+  // Kling용 직렬화 (Kling만 사용)
   const kling = renderSequenceForProvider(seq, "kling");
   assert(typeof kling.prompt === "string", "Kling prompt은 문자열");
   assert(kling.prompt.length > 50, "Kling prompt 충분한 길이");
@@ -441,7 +441,7 @@ section("12. Server fallback serialization");
   const result = assembleFromJSON({ cut: cuts[0], config: cfg });
   const seq = result.structuredSequence;
 
-  // string-only provider (Veo)에서 서버가 마지막 직렬화 지점
+  // string-only provider에서 서버가 마지막 직렬화 지점
   const rendered = renderSequenceForProvider(seq, "kling");
   assert(typeof rendered.prompt === "string", "서버 직렬화 결과는 string");
   assert(rendered.prompt.length > 50, "직렬화 결과에 실질적 내용 있음");
@@ -581,7 +581,7 @@ section("16. Provider capability: acceptsStructuredPayload 의미");
 
   // acceptsStructuredPayload = false는 "source of truth가 string"을 의미하지 않음
   // "마지막 순간에 serialize 필요"를 의미함
-  assert(!("veo" in PROVIDER_CAPABILITIES), "Veo removed from PROVIDER_CAPABILITIES");
+  assert(!("veo" in PROVIDER_CAPABILITIES), "No veo in PROVIDER_CAPABILITIES");
   assert(PROVIDER_CAPABILITIES.kling.acceptsStructuredPayload === false, "Kling: string-only provider");
 
   // 그래도 source of truth는 structuredSequence
@@ -737,7 +737,7 @@ section("19. Environment: atmosphere enrichment in serialized output");
   const result = assembleFromJSON({ cut, config: cfg });
   const seq = result.structuredSequence;
 
-  // Serialize for Veo
+  // Serialize for Kling
   const rendered = renderSequenceForProvider(seq, "kling");
   const prompt = rendered.prompt.toLowerCase();
 
@@ -985,24 +985,24 @@ section("23. Tiananmen Square: full environment scene E2E");
   assert(!("prompt" in result), "tiananmen: no prompt in assembleFromJSON result");
 
   // ── 8. Provider serialization
-  const veoRendered = renderSequenceForProvider(seq, "kling");
-  const veoPromptLower = veoRendered.prompt.toLowerCase();
-  assert(veoRendered.prompt.length > 80, "tiananmen: Veo prompt has substance");
-  assert(veoPromptLower.includes("tiananmen"), "tiananmen: location in Veo prompt");
-  assert(veoPromptLower.includes("red flag"), "tiananmen: subject detail in Veo prompt");
-  assert(veoPromptLower.includes("sunlight") || veoPromptLower.includes("golden"),
-    "tiananmen: lighting in Veo prompt");
+  const rendered = renderSequenceForProvider(seq, "kling");
+  const renderedPromptLower = rendered.prompt.toLowerCase();
+  assert(rendered.prompt.length > 80, "tiananmen: Kling prompt has substance");
+  assert(renderedPromptLower.includes("tiananmen"), "tiananmen: location in Kling prompt");
+  assert(renderedPromptLower.includes("red flag"), "tiananmen: subject detail in Kling prompt");
+  assert(renderedPromptLower.includes("sunlight") || renderedPromptLower.includes("golden"),
+    "tiananmen: lighting in Kling prompt");
   // Atmosphere enrichment
-  assert(veoPromptLower.includes("haze") || veoPromptLower.includes("shadow") || veoPromptLower.includes("depth"),
+  assert(renderedPromptLower.includes("haze") || renderedPromptLower.includes("shadow") || renderedPromptLower.includes("depth"),
     "tiananmen: atmosphere enrichment in provider payload");
-  // Kling: separate negative field (Veo removed)
-  assert(veoRendered.negativePrompt.length > 0, "tiananmen: Kling separate negative field");
+  // Kling: separate negative field
+  assert(rendered.negativePrompt.length > 0, "tiananmen: Kling separate negative field");
 
   // ── 10. isEnvironmentScene flag
   assert(result.preview?.isEnvironmentScene === true, "tiananmen: isEnvironmentScene flag set");
 
   console.log(`  ✓ Tiananmen E2E: framing=${doc.camera.framing}, angle=${doc.camera.angle}, motion="${doc.camera.motion}"`);
-  console.log(`    Kling: ${veoRendered.prompt.length}ch + neg ${veoRendered.negativePrompt.length}ch`);
+  console.log(`    Kling: ${rendered.prompt.length}ch + neg ${rendered.negativePrompt.length}ch`);
   console.log(`    Beats: ${doc.timing.beats.map(b => `${b.startSec}-${b.endSec}s`).join(", ")}`);
 }
 

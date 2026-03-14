@@ -21,7 +21,7 @@ const DISSOLVE_SECS = DISSOLVE_MS / 1000;
 const MIN_CLIP_FOR_DISSOLVE_SECS = DISSOLVE_SECS * 2.5;
 
 // ── Trim 자동 보정 ─────────────────────────────────────────────────────────────
-// Veo 클립은 첫/끝 프레임에 정지/흔들림이 있는 경우가 많아 자동으로 살짝 잘라냄
+// 영상 클립은 첫/끝 프레임에 정지/흔들림이 있는 경우가 많아 자동으로 살짝 잘라냄
 const HEAD_TRIM_SECS = 0.10; // 클립 시작 0.1s 자동 제거
 const TAIL_TRIM_SECS = 0.15; // 클립 끝 0.15s 자동 제거
 
@@ -377,7 +377,7 @@ export default function TimelineEditor({
   };
 
   const handleExportEdl = () => {
-    let edl = "TITLE: Veo Project\nFCM: NON-DROP FRAME\n\n";
+    let edl = "TITLE: Kling Project\nFCM: NON-DROP FRAME\n\n";
     let timecodeSec = 0;
     completedClips.forEach((clip, i) => {
       const start = clip.trimStart ?? 0;
@@ -391,7 +391,7 @@ export default function TimelineEditor({
     const url  = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `veo-project-${Date.now()}.edl`;
+    a.download = `kling-project-${Date.now()}.edl`;
     a.click();
     URL.revokeObjectURL(url);
   };

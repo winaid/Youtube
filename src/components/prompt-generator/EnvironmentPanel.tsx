@@ -115,7 +115,7 @@ export default function EnvironmentPanel({ cuts, onApplyEnvironment }: Environme
 
           {/* 프리뷰 */}
           <div className="p-2 rounded-lg text-[10px] font-mono" style={{ background: "#0ea5e908", border: "1px solid #0ea5e915" }}>
-            <span className="text-muted-foreground">Veo 프롬프트에 추가될 내용:</span>
+            <span className="text-muted-foreground">영상 프롬프트에 추가될 내용:</span>
             <br />
             {selectedWeather.promptSuffix}, {selectedTime.promptSuffix}
           </div>

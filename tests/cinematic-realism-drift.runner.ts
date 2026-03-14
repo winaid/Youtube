@@ -12,7 +12,7 @@
  */
 
 import { rewritePromptConflicts, assemblePromptV2, collectFailureModeNegatives, buildSceneLock, buildNegativePrompt } from "../src/lib/prompt-architecture";
-import { renderVeoPromptFromJson, renderKlingPromptFromJson, VideoPromptJson } from "../src/lib/video-prompt-json";
+import { renderKlingPromptFromJson, VideoPromptJson } from "../src/lib/video-prompt-json";
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
 
@@ -97,9 +97,9 @@ assert(ncr.rewritten.includes("3D topographic map"), "non-cinematic-realism: 3D 
 
 console.log(`  ✓ ${passed - prevPassed2} 3D/CGI substitution assertions passed`);
 
-// ─── 3. Veo Renderer — medium enforcement ───────────────────────
+// ─── 3. Kling Renderer — medium enforcement ─────────────────────
 
-section("3. Veo/Kling Renderer medium enforcement");
+section("3. Kling Renderer medium enforcement");
 
 const prevPassed3 = passed;
 
@@ -123,16 +123,11 @@ const mapJson: VideoPromptJson = {
   emotionalAnchor: "",
 };
 
-// Veo renderer: 3D topographic map → physical relief map surface
-const veoPrompt = renderVeoPromptFromJson(mapJson);
-assert(!veoPrompt.includes("3D topographic map"), "Veo: 3D topographic map 제거됨");
-assert(veoPrompt.includes("physical"), "Veo: physical 표현 포함");
-assert(veoPrompt.includes("not a real landscape and not a CGI render"), "Veo: medium lock 문장 삽입됨");
-
-// Kling renderer: 동일한 enforcement
+// Kling renderer: 3D topographic map → physical relief map surface
 const klingPrompt = renderKlingPromptFromJson(mapJson);
 assert(!klingPrompt.includes("3D topographic map"), "Kling: 3D topographic map 제거됨");
 assert(klingPrompt.includes("physical"), "Kling: physical 표현 포함");
+assert(klingPrompt.includes("not a real landscape and not a CGI render"), "Kling: medium lock 문장 삽입됨");
 
 // 캐릭터 씬 — medium enforcement 미적용
 const charJson: VideoPromptJson = {
@@ -154,8 +149,8 @@ const charJson: VideoPromptJson = {
   situationCue: "late night",
   emotionalAnchor: "slumps alone",
 };
-const charVeo = renderVeoPromptFromJson(charJson);
-assert(!charVeo.includes("not a real landscape and not a CGI render"), "캐릭터 씬: medium lock 미적용");
+const charKling = renderKlingPromptFromJson(charJson);
+assert(!charKling.includes("not a real landscape and not a CGI render"), "캐릭터 씬: medium lock 미적용");
 
 console.log(`  ✓ ${passed - prevPassed3} renderer enforcement assertions passed`);
 

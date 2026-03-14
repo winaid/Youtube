@@ -75,7 +75,7 @@ export default function CharacterFaceManager({
             return;
           }
 
-          // 512px 정사각형으로 출력 (Veo reference image 최적)
+          // 512px 정사각형으로 출력 (reference image 최적)
           const outSize = 512;
           canvas.width = outSize;
           canvas.height = outSize;

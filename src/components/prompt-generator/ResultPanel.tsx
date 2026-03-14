@@ -295,7 +295,7 @@ export default function ResultPanel({
   const getEffectiveMode = (_cut?: unknown) => "fast" as const;
   const fastCuts = result.cuts;
 
-  const veoJson = {
+  const exportJson = {
     project: result.projectTitle,
     globalStyle: result.globalStylePrompt,
     directorPersona: result.directorPersonaPrompt,
@@ -308,7 +308,7 @@ export default function ResultPanel({
         cut: cut.cutNumber,
         method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND_FROM_PREVIOUS",
         prompt: cut.cutNumber === 1 ? cut.videoPrompt : cut.extendPrompt,
-        veoMode: getEffectiveMode(cut),
+        videoMode: getEffectiveMode(cut),
         charactersInScene: cut.charactersInScene,
       })),
     },
@@ -316,7 +316,7 @@ export default function ResultPanel({
       cut: cut.cutNumber,
       duration: `${cut.durationSec}s`,
       method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND",
-      veoMode: "fast",
+      videoMode: "fast",
       scene: cut.sceneDescription,
       camera: cut.cameraDirection,
       lighting: cut.moodLighting,
@@ -330,17 +330,17 @@ export default function ResultPanel({
   };
 
   const handleCopyJson = async () => {
-    await navigator.clipboard.writeText(JSON.stringify(veoJson, null, 2));
+    await navigator.clipboard.writeText(JSON.stringify(exportJson, null, 2));
     setJsonCopied(true);
     setTimeout(() => setJsonCopied(false), 1500);
   };
 
   const handleDownloadJson = () => {
-    const blob = new Blob([JSON.stringify(veoJson, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(exportJson, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `veo-project-${Date.now()}.json`;
+    a.download = `kling-project-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -362,7 +362,7 @@ export default function ResultPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `veo-project-${Date.now()}.csv`;
+    a.download = `kling-project-${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -750,7 +750,7 @@ export default function ResultPanel({
                   cut={cut}
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
-                  userVeoMode={videoGen.config.mode}
+                  userVideoMode={videoGen.config.mode}
                   shotSnapshots={videoGen.shotSnapshots.get(cut.cutNumber)}
                   narrationState={videoGen.shotNarrationStates.get(cut.cutNumber)}
                   storyboardImage={storyboardImages[cut.cutNumber]}
@@ -878,7 +878,7 @@ export default function ResultPanel({
               </div>
               {showJson && (
                 <pre className="text-xs p-3 rounded-lg overflow-auto max-h-96 font-mono" style={{ background: "#1e1e2e", color: "#cdd6f4" }}>
-                  {JSON.stringify(veoJson, null, 2)}
+                  {JSON.stringify(exportJson, null, 2)}
                 </pre>
               )}
             </CardContent>

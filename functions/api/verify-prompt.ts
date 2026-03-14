@@ -135,7 +135,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
    - DEDUCTION: vague references like "the character", "same person" without redescription
 
 2. **Camera Movement Quality** (0-10):
-   - MUST use Veo-recognized terms: "dolly", "tracking", "crane", "pan", "tilt", "steadicam"
+   - MUST use recognized terms: "dolly", "tracking", "crane", "pan", "tilt", "steadicam"
    - DEDUCTION: abstract camera without specific movement type
 
 3. **Temporal Structure** (0-10): *** MOST CRITICAL ***
@@ -147,7 +147,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
    - MUST name light sources and direction: "warm key light from upper left"
    - DEDUCTION: just "dramatic lighting" without specifics
 
-5. **Veo Compatibility** (0-10):
+5. **Video Compatibility** (0-10):
    - DEDUCTION: requests for readable text, exact object counts, abstract emotions
    - DEDUCTION: prompt over ${range.max} words or under ${range.min} words
 
@@ -160,7 +160,8 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
     "cameraMovement": 0-10,
     "temporalStructure": 0-10,
     "lightingMood": 0-10,
-    "veoCompatibility": 0-10
+    "videoCompatibility": 0-10
+  },
   },
   "issues": ["specific problems"],
   "suggestions": ["concrete improvements"],
@@ -188,7 +189,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
    - MUST have: weather/atmosphere cues (mist, rain, wind in trees)
    - DEDUCTION: generic mood words without visual specifics
 
-5. **Veo Compatibility** (0-10):
+5. **Video Compatibility** (0-10):
    - DEDUCTION: text/signage, exact object counts
    - DEDUCTION: prompt over ${range.max} words or under ${range.min} words
    - BONUS: natural environmental motion (wind, water, light shifts)
@@ -202,7 +203,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
     "cameraMovement": 0-10,
     "temporalStructure": 0-10,
     "atmosphericDetail": 0-10,
-    "veoCompatibility": 0-10
+    "videoCompatibility": 0-10
   },
   "issues": ["specific problems"],
   "suggestions": ["concrete improvements"],
@@ -229,7 +230,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
    - MUST have: lighting that reveals material qualities
    - BONUS: specular highlights, surface texture, depth of field
 
-5. **Veo Compatibility** (0-10):
+5. **Video Compatibility** (0-10):
    - DEDUCTION: readable text on objects, complex mechanical motion
    - DEDUCTION: prompt over ${range.max} words or under ${range.min} words
 
@@ -242,7 +243,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
     "cameraTechnique": 0-10,
     "temporalStructure": 0-10,
     "lightingTexture": 0-10,
-    "veoCompatibility": 0-10
+    "videoCompatibility": 0-10
   },
   "issues": ["specific problems"],
   "suggestions": ["concrete improvements"],
@@ -276,8 +277,8 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
    - BONUS: volumetric atmosphere, time-of-day cues, weather patterns
    - DEDUCTION: flat lighting that hides terrain features
 
-5. **Veo Compatibility** (0-10):
-   - CRITICAL: NO readable text, labels, or captions (Veo cannot render text)
+5. **Video Compatibility** (0-10):
+   - CRITICAL: NO readable text, labels, or captions (the model cannot render text)
    - Use visual alternatives: colored regions, glowing borders, pulsing highlights
    - DEDUCTION: any request for text/labels/numbers on the map
    - DEDUCTION: prompt over ${range.max} words or under ${range.min} words
@@ -291,7 +292,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
     "visualClarity": 0-10,
     "cameraMotion": 0-10,
     "lightingAtmosphere": 0-10,
-    "veoCompatibility": 0-10
+    "videoCompatibility": 0-10
   },
   "issues": ["specific problems"],
   "suggestions": ["concrete improvements — for text alternatives suggest: colored overlays, glowing boundary lines, relief regions, icon markers, pulsing highlight zones"],
@@ -318,7 +319,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
    - MUST have: specific color palette, lighting quality
    - BONUS: particle effects, volumetric light, environmental motion
 
-5. **Veo Compatibility** (0-10):
+5. **Video Compatibility** (0-10):
    - DEDUCTION: text, complex physics simulations
    - DEDUCTION: prompt over ${range.max} words or under ${range.min} words
 
@@ -331,7 +332,7 @@ function buildSceneTypePrompt(sceneType: SceneType, duration: number, wordCount:
     "cameraMotion": 0-10,
     "temporalProgression": 0-10,
     "moodAtmosphere": 0-10,
-    "veoCompatibility": 0-10
+    "videoCompatibility": 0-10
   },
   "issues": ["specific problems"],
   "suggestions": ["concrete improvements"],
@@ -379,31 +380,31 @@ function normalizeSceneTypeScores(
     typed.cameraMovement = get(["cameraMovement", "camera_movement", "camera"]);
     typed.temporalStructure = get(["temporalStructure", "temporal_structure", "actionSequence", "action_sequence", "temporal"]);
     typed.lightingMood = get(["lightingMood", "lighting_mood", "lighting"]);
-    typed.veoCompatibility = get(["veoCompatibility", "veo_compatibility", "compatibility"]);
+    typed.videoCompatibility = get(["videoCompatibility", "video_compatibility", "videoCompatibility", "veo_compatibility", "compatibility"]);
   } else if (sceneType === "environment") {
     typed.spatialComposition = get(["spatialComposition", "spatial_composition"]);
     typed.cameraMovement = get(["cameraMovement", "camera_movement", "camera"]);
     typed.temporalStructure = get(["temporalStructure", "temporal_structure"]);
     typed.atmosphericDetail = get(["atmosphericDetail", "atmospheric_detail"]);
-    typed.veoCompatibility = get(["veoCompatibility", "veo_compatibility", "compatibility"]);
+    typed.videoCompatibility = get(["videoCompatibility", "video_compatibility", "videoCompatibility", "veo_compatibility", "compatibility"]);
   } else if (sceneType === "object-detail") {
     typed.subjectClarity = get(["subjectClarity", "subject_clarity"]);
     typed.cameraTechnique = get(["cameraTechnique", "camera_technique"]);
     typed.temporalStructure = get(["temporalStructure", "temporal_structure"]);
     typed.lightingTexture = get(["lightingTexture", "lighting_texture"]);
-    typed.veoCompatibility = get(["veoCompatibility", "veo_compatibility", "compatibility"]);
+    typed.videoCompatibility = get(["videoCompatibility", "video_compatibility", "videoCompatibility", "veo_compatibility", "compatibility"]);
   } else if (sceneType === "map-graphic") {
     typed.terrainDetail = get(["terrainDetail", "terrain_detail"]);
     typed.visualClarity = get(["visualClarity", "visual_clarity"]);
     typed.cameraMotion = get(["cameraMotion", "camera_motion"]);
     typed.lightingAtmosphere = get(["lightingAtmosphere", "lighting_atmosphere"]);
-    typed.veoCompatibility = get(["veoCompatibility", "veo_compatibility", "compatibility"]);
+    typed.videoCompatibility = get(["videoCompatibility", "video_compatibility", "videoCompatibility", "veo_compatibility", "compatibility"]);
   } else {
     typed.visualConcept = get(["visualConcept", "visual_concept"]);
     typed.cameraMotion = get(["cameraMotion", "camera_motion"]);
     typed.temporalProgression = get(["temporalProgression", "temporal_progression"]);
     typed.moodAtmosphere = get(["moodAtmosphere", "mood_atmosphere"]);
-    typed.veoCompatibility = get(["veoCompatibility", "veo_compatibility", "compatibility"]);
+    typed.videoCompatibility = get(["videoCompatibility", "video_compatibility", "videoCompatibility", "veo_compatibility", "compatibility"]);
   }
 
   // 레거시 호환 점수 매핑 (기존 UI와 호환)
@@ -413,7 +414,7 @@ function normalizeSceneTypeScores(
     cameraMovement: typed.cameraMovement ?? typed.cameraTechnique ?? typed.cameraMotion ?? 0,
     actionSequence: typed.temporalStructure ?? typed.temporalProgression ?? (typedValues[2] ?? 0),
     lightingMood: typed.lightingMood ?? typed.atmosphericDetail ?? typed.lightingTexture ?? typed.lightingAtmosphere ?? typed.moodAtmosphere ?? 0,
-    veoCompatibility: typed.veoCompatibility ?? 0,
+    videoCompatibility: typed.videoCompatibility ?? 0,
   };
 
   return { legacy, typed };
@@ -449,7 +450,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // 씬 타입별 평가 기준 생성
     const sceneTypeCriteria = buildSceneTypePrompt(sceneType, duration, wordCount);
 
-    const systemPrompt = `You are a Veo 3.1 video generation prompt QA expert. Review the following prompt for issues that cause Veo to deviate from user intent.
+    const systemPrompt = `You are an AI video generation prompt QA expert. Review the following prompt for issues that cause the video model to deviate from user intent.
 
 ## Prompt to Review
 - Scene: CUT ${cutNumber || 1}
@@ -471,7 +472,7 @@ ${sceneTypeCriteria}`;
       }),
     });
 
-    const defaultScores = { characterDescription: 5, cameraMovement: 5, actionSequence: 5, lightingMood: 5, veoCompatibility: 5 };
+    const defaultScores = { characterDescription: 5, cameraMovement: 5, actionSequence: 5, lightingMood: 5, videoCompatibility: 5 };
 
     if (!res.ok) {
       const errText = await res.text();
@@ -581,7 +582,7 @@ ${sceneTypeCriteria}`;
       scoringFailure: true,
       overallScore: 50,
       issues: ["채점 처리 중 오류 발생 — 생성은 계속 진행 가능"],
-      scores: { characterDescription: 5, cameraMovement: 5, actionSequence: 5, lightingMood: 5, veoCompatibility: 5 },
+      scores: { characterDescription: 5, cameraMovement: 5, actionSequence: 5, lightingMood: 5, videoCompatibility: 5 },
       suggestions: [],
     });
   }

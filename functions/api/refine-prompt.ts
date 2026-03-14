@@ -18,19 +18,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let systemPrompt: string;
 
     if (mode === "english-native") {
-      systemPrompt = `You are a world-class prompt engineer specializing in Google Veo 3.1 video generation.
-Your job: transform the input into a perfectly structured Veo prompt that the model will follow precisely.
+      systemPrompt = `You are a world-class prompt engineer specializing in AI video generation.
+Your job: transform the input into a perfectly structured video prompt that the model will follow precisely.
 
-## CRITICAL VEO 3.1 KNOWLEDGE (MUST FOLLOW)
+## CRITICAL VIDEO GENERATION KNOWLEDGE (MUST FOLLOW)
 
 ### Temporal Structure — THE MOST IMPORTANT RULE
-Veo generates ${duration}-second clips. You MUST structure the prompt as a clear TIMELINE:
+The model generates ${duration}-second clips. You MUST structure the prompt as a clear TIMELINE:
 - "0s-2s: [opening action]"
 - "2s-5s: [middle development]"
 - "5s-${duration}s: [climax/resolution]"
-This makes Veo follow the exact sequence instead of picking random moments.
+This makes the model follow the exact sequence instead of picking random moments.
 
-### Veo Prompt Architecture (PROVEN TO WORK)
+### Video Prompt Architecture (PROVEN TO WORK)
 Structure EXACTLY in this order:
 1. **SHOT TYPE + CAMERA** (first sentence): "Medium close-up, slow dolly in..."
 2. **SUBJECT ANCHOR** (who/what is the focus): Full character description
@@ -39,22 +39,22 @@ Structure EXACTLY in this order:
 5. **LIGHTING + ATMOSPHERE** (mood): Specific light sources, color temperature
 6. **STYLE TAGS** (last): "cinematic, 35mm film, shallow depth of field"
 
-### What Veo FOLLOWS Well
+### What the Model FOLLOWS Well
 - Specific camera movements: "slow dolly in", "tracking left to right", "crane rising"
 - Concrete physical actions: "raises hand to face", "turns head 45 degrees left"
 - Lighting descriptions: "warm key light from upper left, cool fill from right"
 - Material/texture keywords: "weathered leather", "silk fabric catching light"
 - Emotional micro-expressions: "eyes narrowing slightly", "corners of mouth trembling"
 
-### What Veo IGNORES or BOTCHES
+### What the Model IGNORES or BOTCHES
 - Abstract emotions without physical manifestation ("feeling sad" → use "shoulders slumped, gaze downward")
 - Multiple simultaneous actions (max 2 concurrent actions per time segment)
 - Precise text rendering (NEVER ask for readable text/writing/characters on screen)
 - Exact numbers of objects ("three birds" → "a small flock of birds")
 - Complex multi-person choreography (simplify to 1-2 key figures)
 
-### Negative Prompt Embedding (Veo has NO negative prompt parameter!)
-Since Veo API doesn't accept negativePrompt, EMBED avoidance directly:
+### Negative Prompt Embedding
+EMBED avoidance directly into the prompt:
 ${negativePrompt ? `AVOID: ${String(negativePrompt)}. Weave "no X, no Y" naturally into the prompt.` : 'Add "no text overlay, no watermark" at the end.'}
 
 ## Prompt Length Rules
@@ -184,15 +184,15 @@ ${String(videoPrompt)}
 }`;
     } else {
       // Enhancement 2: Scene feedback regeneration
-      systemPrompt = `You are an AI video prompt improvement specialist for Google Veo 3.1.
+      systemPrompt = `You are an AI video prompt improvement specialist for AI video generation.
 The user has provided feedback about a generated video. Improve the prompts based on this feedback.
 
-## Veo 3.1 Prompt Best Practices
+## Video Prompt Best Practices
 - Structure as temporal timeline: 0s-2s, 2s-5s, 5s-${duration}s
 - Start with camera/shot type
 - Convert abstract descriptions to concrete visual actions
 - NEVER include readable text/writing on screen
-- Embed negative guidance directly ("no X") since Veo has no negativePrompt parameter
+- Embed negative guidance directly ("no X") into the prompt
 
 ## Current Prompts (CUT ${cutNumber || 1}):
 - Video Prompt: ${String(videoPrompt)}
@@ -207,7 +207,7 @@ ${String(feedback || "Make it better")}
 2. Keep character descriptions 100% consistent — do NOT change character appearance
 3. Restructure with temporal beats if not already present
 4. Convert any vague feedback into concrete visual directions
-5. Output must be in English for Veo
+5. Output must be in English
 
 ## Output JSON only (no markdown):
 {

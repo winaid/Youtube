@@ -108,7 +108,7 @@ export function buildFinalProviderPayload(input: BuildFinalPayloadInput): FinalP
 
   // 본문에서 negative에 있는 critical word를 "no X" 가드 없이 사용하고 있으면 제거
   const allNeg = negativePrompt ? negativePrompt.split(", ") : [];
-  // Veo는 negative가 Avoid: 에 embed 되므로 serialized의 debug에서 꺼냄
+  // 영상 모델은 negative가 Avoid: 에 embed 되므로 serialized의 debug에서 꺼냄
   const negWords = provider === "kling" ? allNeg : extractAvoidWords(avoidSection);
   let cleanedBody = promptBody;
 

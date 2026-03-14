@@ -3,8 +3,7 @@
  *
  * 내부 source-of-truth = VideoPromptJson (구조화된 JSON)
  * Provider 어댑터가 최종 단계에서 JSON → string 렌더링:
- *   - renderVeoPromptFromJson()  → Veo 3.1 호환 프롬프트 문자열
- *   - renderKlingPromptFromJson() → Kling/EvoLink 호환 프롬프트 문자열
+ *   - renderKlingPromptFromJson() → Kling 호환 프롬프트 문자열
  */
 
 // ─── VideoPromptJson 타입 ─────────────────────────────────────────────────────
@@ -37,7 +36,7 @@ export interface VideoPromptJson {
   /** 조명/무드 */
   moodLighting: string;
   /** 스타일 접미사 */
-  styleSuffix: string;    // veoStyle + directorStyle + aspect ratio + no text/watermark
+  styleSuffix: string;    // videoStyle + directorStyle + aspect ratio + no text/watermark
   // ── 즉시 인식 가능성 (Instant Readability) 3-pillar ──
   /** 장소 정체성 시각 단서 */
   locationCue?: string;       // e.g. "dental chair and overhead lamp"
@@ -423,7 +422,7 @@ function generateMapGraphicChecklist(
   const hasTextRequest = /\b(text|label|labeled|caption|title|name|letter|word|number|digit|annotation|legend)\b/i.test(renderedPrompt);
   items.push({
     id: "no-text-labels",
-    label: "텍스트/라벨 요청 없음 (Veo 텍스트 불가)",
+    label: "텍스트/라벨 요청 없음 (영상 모델 텍스트 불가)",
     passed: !hasTextRequest,
     detail: hasTextRequest
       ? "지도에 텍스트/라벨 요청 → 대체: colored overlays, glowing boundaries, relief regions, icon markers, highlight zones"
@@ -736,7 +735,7 @@ function checkSituationEvidence(prompt: string): QualityCheckItem {
 
 /**
  * 렌더링된 프롬프트에서 비시각 메타태그를 정리하는 sanitizer
- * renderVeoPromptFromJson 호출 후 최종 정리용
+ * renderKlingPromptFromJson 호출 후 최종 정리용
  */
 export function sanitizeRenderedPrompt(prompt: string): string {
   const s = prompt
@@ -785,10 +784,10 @@ export function sanitizeRenderedPrompt(prompt: string): string {
   return s;
 }
 
-// ─── Veo 렌더러 ───────────────────────────────────────────────────────────────
+// ─── Kling 렌더러 (레거시 별칭 포함) ──────────────────────────────────────────
 
 /**
- * VideoPromptJson → Veo 3.1 호환 프롬프트 문자열
+ * VideoPromptJson → Kling 호환 프롬프트 문자열
  *
  * 설계 원칙 (즉시 인식 가능성 우선):
  * 1. establishing → evidence → anchor 순서로 구성
@@ -829,104 +828,6 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
   }
 }
 
-export function renderVeoPromptFromJson(json: VideoPromptJson): string {
-  const parts: string[] = [];
-  const hasCharacter = !!json.characterRef;
-
-  // 1. Shot/Camera — 씬 시작 기준
-  parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
-  if (json.cameraMovement && json.cameraMovement !== "static") {
-    parts.push(json.cameraMovement);
-  }
-
-  // 2. Location establishing — 장소 정체성이 즉시 인식되는 오브젝트
-  if (json.locationCue) {
-    parts.push(json.locationCue);
-  }
-
-  // 3. Situation evidence — 상황을 보여주는 시각적 증거
-  if (json.situationCue) {
-    parts.push(json.situationCue);
-  }
-
-  // 4. Character (있을 때만)
-  if (hasCharacter) {
-    parts.push(json.characterRef);
-  }
-
-  // 5. Emotional anchor + Scene action — 감정/갈등이 집약되는 행동
-  if (json.emotionalAnchor) {
-    parts.push(json.emotionalAnchor);
-  }
-  if (json.subjectAction) {
-    parts.push(json.subjectAction);
-  }
-
-  // 6. Body signal (캐릭터 있을 때만)
-  if (hasCharacter && json.bodySignal) {
-    parts.push(json.bodySignal);
-  }
-
-  // 7. Lighting — 구체적 광원 정보
-  if (json.moodLighting) {
-    parts.push(json.moodLighting);
-  }
-
-  // 8. Temporal beats — establishing→evidence→anchor 시간 구조
-  if (json.timingBeat) {
-    parts.push(json.timingBeat);
-  }
-
-  // 9. Style suffix (no text/watermark 등)
-  parts.push(json.styleSuffix);
-
-  // 10. Cinematic realism medium enforcement — 3D/CGI drift 방지
-  enforceCinematicRealismMedium(parts, json);
-
-  return parts.filter(Boolean).join(". ");
-}
-
-/**
- * ExtendPromptJson → Veo 3.1 Scene Extension 프롬프트 문자열
- */
-export function renderVeoExtendPromptFromJson(json: ExtendPromptJson): string {
-  const parts: string[] = [];
-
-  // Previous scene context
-  parts.push(`Continuing from ${json.prevSceneEnd.shotType} shot — ${json.prevSceneEnd.subjectAction}`);
-
-  // Transition
-  parts.push(`${json.transition} to`);
-
-  // New scene
-  parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
-  if (json.newShot.cameraMovement && json.newShot.cameraMovement !== "static") {
-    parts.push(json.newShot.cameraMovement);
-  }
-
-  // Character (있을 때만)
-  if (json.characterRef) {
-    parts.push(json.characterRef);
-  }
-
-  // Scene action
-  parts.push(json.newAction);
-
-  if (json.behavioralShift) {
-    parts.push(json.behavioralShift);
-  }
-
-  // Timing
-  if (json.timingBeat) {
-    parts.push(json.timingBeat);
-  }
-
-  // Style suffix
-  parts.push(json.styleSuffix);
-
-  return parts.filter(Boolean).join(". ");
-}
-
 // ─── Kling 렌더러 ─────────────────────────────────────────────────────────────
 
 /**
@@ -945,7 +846,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     parts.push(movement);
   }
 
-  // Location establishing — 장소 정체성 즉시 인식 (Veo와 동일)
+  // Location establishing — 장소 정체성 즉시 인식
   if (json.locationCue) {
     parts.push(json.locationCue);
   }
@@ -984,7 +885,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
   }
 
   // Style (Kling은 no text/watermark 등 필수)
-  // styleSuffix에서 Veo 전용 부분 제거
+  // styleSuffix에서 레거시 부분 제거
   const cleanSuffix = json.styleSuffix
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();

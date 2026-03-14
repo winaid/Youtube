@@ -10,7 +10,6 @@
 import { describe, it, expect } from "vitest";
 import {
   renderKlingPromptFromJson,
-  renderVeoPromptFromJson,
   type VideoPromptJson,
 } from "@/lib/video-prompt-json";
 
@@ -89,7 +88,7 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
     expect(prompt).toContain("warm golden hour light from the west");
   });
 
-  it("should strip Veo audio suffix from Kling styleSuffix", () => {
+  it("should strip audio suffix from Kling styleSuffix", () => {
     const json = makeBaseJson({
       styleSuffix: "cinematic realism, no text overlay, no watermark, with natural diegetic sound and ambient audio",
     });
@@ -113,24 +112,20 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 2. Kling vs Veo parity — both should now include the same fields
+// 2. Kling renderer parity — fields rendered correctly
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Kling/Veo parity — same fields rendered", () => {
-  it("both renderers should include locationCue", () => {
+describe("Kling parity — same fields rendered", () => {
+  it("renderer should include locationCue", () => {
     const json = makeBaseJson({ locationCue: "rustic farmhouse kitchen" });
-    const kling = renderKlingPromptFromJson(json);
-    const veo = renderVeoPromptFromJson(json);
-    expect(kling).toContain("rustic farmhouse kitchen");
-    expect(veo).toContain("rustic farmhouse kitchen");
+    const rendered = renderKlingPromptFromJson(json);
+    expect(rendered).toContain("rustic farmhouse kitchen");
   });
 
-  it("both renderers should include timingBeat", () => {
+  it("renderer should include timingBeat", () => {
     const json = makeBaseJson({ timingBeat: "0s-2s: start. 2s-5s: develop" });
-    const kling = renderKlingPromptFromJson(json);
-    const veo = renderVeoPromptFromJson(json);
-    expect(kling).toContain("0s-2s: start");
-    expect(veo).toContain("0s-2s: start");
+    const rendered = renderKlingPromptFromJson(json);
+    expect(rendered).toContain("0s-2s: start");
   });
 });
 

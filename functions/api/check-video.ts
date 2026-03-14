@@ -12,7 +12,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     // ── 1. Request body 파싱
     let bodyText = "";
-    let engine: "veo" | "kling" = "kling";
+    let engine: "kling" = "kling";
     let taskId = "";
     let isExtend = false;
     let cutNumber: number | null = null;
@@ -21,7 +21,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       bodyText = await context.request.text();
       const parsed = JSON.parse(bodyText) as {
         operationName?: string;
-        engine?: "veo" | "kling";
+        engine?: "kling";
         taskId?: string;
         isExtend?: boolean;
         cutNumber?: number;
@@ -34,20 +34,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     } catch (parseErr) {
       console.error("[check-video] JSON parse failed. body:", bodyText.slice(0, 500), "err:", parseErr);
       return Response.json({ error: "Invalid JSON body", details: String(parseErr) }, { status: 400 });
-    }
-
-    // ── Veo 요청이 오면 에러 반환 (Veo 경로 제거됨) ──────────────
-    if (engine === "veo") {
-      console.warn("[check-video] ⚠️ engine=veo 요청 → Veo 폴링 경로 제거됨");
-      // 기존 Veo operationName으로 왔을 경우, taskId로 Kling 폴링 시도
-      if (!taskId || taskId === operationName) {
-        return Response.json({
-          status: "FAILED",
-          error: "Veo engine has been removed. Only Kling is supported. Please regenerate with Kling.",
-        });
-      }
-      // taskId가 있으면 Kling으로 폴링 시도
-      engine = "kling";
     }
 
     console.log("[check-video] ENTRY", {

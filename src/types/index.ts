@@ -6,11 +6,11 @@ export type StyleFamily = "all" | "live_action" | "animation_2d" | "animation_3d
 export type Duration = 60 | 90 | 120 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 /** 영상 해상도 (Kling 기준) */
-export type VeoResolution = "720p" | "1080p" | "4k";
+export type VideoResolution = "720p" | "1080p" | "4k";
 // 0 = 자동 (UI 전용, API에는 null/undefined로 변환)
 // 1~15 = 명시값 (초 단위)
 // 3~15초 — Kling API 지원 범위
-export type VeoClipDuration = number;
+export type ClipDuration = number;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
 export interface SignatureTechniques {
@@ -376,8 +376,6 @@ export interface StoryAIPersona {
 // ===== 영상 생성 엔진 & 모드 =====
 /** Video generation engine. Kling = primary generation engine. */
 export type VideoEngine = "kling" | "auto";
-/** @deprecated legacy alias. Use VideoEngine. */
-export type VideoEngineLegacy = "veo" | "kling" | "auto";
 export type VideoMode   = "generate" | "extend";
 
 // ===== JSON-first 구조화된 시퀀스 문서 =====
@@ -563,12 +561,12 @@ export type AssetStatus =
   | "VISIBLE_IN_LIBRARY";
 
 // ===== Kling 영상 생성 설정 =====
-export interface VeoGenerationConfig {
-  engine: VideoEngine | "veo"; // 사용할 엔진 (kling | auto)
+export interface VideoGenerationConfig {
+  engine: VideoEngine; // 사용할 엔진 (kling | auto)
   videoMode: VideoMode;        // generate: 독립 생성 | extend: 이전 영상 이어서
   mode: "fast";
-  durationSeconds: VeoClipDuration;
-  resolution: VeoResolution;
+  durationSeconds: ClipDuration;
+  resolution: VideoResolution;
   aspectRatio: AspectRatio;
   generateAudio: boolean;
   negativePrompt: string;
@@ -615,7 +613,7 @@ export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
   colorGrade: [],
 };
 
-export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
+export const DEFAULT_VIDEO_CONFIG: VideoGenerationConfig = {
   engine: "kling",            // ← Kling = primary generation engine
   videoMode: "extend",
   mode: "fast",
@@ -636,6 +634,15 @@ export const DEFAULT_VEO_CONFIG: VeoGenerationConfig = {
   autoEnglishRefine: true,
   cinematography: { lighting: [], composition: [], lens: [], cameraMove: [], countryStyle: [], colorGrade: [] },
 };
+
+/** @deprecated Use VideoResolution */
+export type VeoResolution = VideoResolution;
+/** @deprecated Use ClipDuration */
+export type VeoClipDuration = ClipDuration;
+/** @deprecated Use VideoGenerationConfig */
+export type VeoGenerationConfig = VideoGenerationConfig;
+/** @deprecated Use DEFAULT_VIDEO_CONFIG */
+export const DEFAULT_VEO_CONFIG = DEFAULT_VIDEO_CONFIG;
 
 // ===== Duration 추적 메타 =====
 export interface DurationMeta {
@@ -800,7 +807,7 @@ export interface PromptVerification {
     cameraMovement: number;
     actionSequence: number;
     lightingMood: number;
-    veoCompatibility: number;
+    videoCompatibility: number;
   };
   /** 씬 타입별 세부 점수 (0-10 각) — character 씬과 map 씬의 기준이 다름 */
   sceneTypeScores?: Record<string, number>;
@@ -864,7 +871,7 @@ export interface VideoClip {
     isMapScene: boolean;
   };
   // 멀티 프로바이더
-  engineUsed?: "veo" | "kling";      // 실제 사용된 엔진 (veo = legacy, kling = primary)
+  engineUsed?: "kling";      // 실제 사용된 엔진 (kling = primary)
   modeUsed?: VideoMode;              // 실제 사용된 모드
   sourceVideo?: string;              // extend 모드의 소스 영상 URI / task_id
   // ── 업로드 상태 추적 ──
@@ -907,7 +914,7 @@ export interface VideoGenerationState {
   clips: VideoClip[];
   isAutoMode: boolean;
   currentAutoIndex: number;
-  config: VeoGenerationConfig;
+  config: VideoGenerationConfig;
   review?: VideoReview;
   /** 시퀀스 플랜 (generate-cuts에서 수신, 전체 shot 구조) */
   sequencePlan?: import("@/lib/sequence-plan").SequencePlan;

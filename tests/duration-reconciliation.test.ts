@@ -12,7 +12,7 @@ import {
 } from "@/lib/duration-reconciliation";
 import { buildShotDocument } from "@/lib/sequence-assembler";
 import { buildSequencePlan } from "@/lib/sequence-plan";
-import type { Cut, VeoGenerationConfig } from "@/types";
+import type { Cut, VideoGenerationConfig } from "@/types";
 
 // ── toApiSecondsPerScene ─────────────────────────────────────────────────────
 
@@ -211,7 +211,7 @@ describe("structuredSequence shot duration 동기화", () => {
     styleIntensity: 50,
   } as Cut);
 
-  const makeConfig = (dur: number): VeoGenerationConfig => ({
+  const makeConfig = (dur: number): VideoGenerationConfig => ({
     engine: "kling" as const,
     durationSeconds: dur,
     aspectRatio: "16:9",

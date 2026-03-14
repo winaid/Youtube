@@ -8,7 +8,7 @@
  * 4. Provider별 capability에 따라 직렬화 전략 분기
  */
 
-import type { Cut, VeoGenerationConfig, StructuredSequenceDocument, PhysicsRules, SequenceDensityScore, TemporalBeat } from "@/types";
+import type { Cut, VideoGenerationConfig, StructuredSequenceDocument, PhysicsRules, SequenceDensityScore, TemporalBeat } from "@/types";
 import { collectFailureModeNegatives, getGenreTemplate } from "@/lib/prompt-architecture";
 import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
 import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
@@ -36,7 +36,7 @@ export interface ProviderCapability {
 
 /**
  * 2-API 아키텍처: Kling = 유일한 생성 provider.
- * Veo 항목 제거됨. Gemini는 QA provider (여기서 관리하지 않음).
+ * Kling만 지원. Gemini는 QA provider (여기서 관리하지 않음).
  */
 export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
   kling: {
@@ -139,7 +139,7 @@ export interface SingleShotDocument {
 
 export interface BuildShotDocumentInput {
   cut: Cut;
-  config: VeoGenerationConfig;
+  config: VideoGenerationConfig;
   prevCut?: Cut;
 }
 
@@ -1246,7 +1246,7 @@ export interface AssembleFromJSONResult {
  */
 export function assembleFromJSON(input: {
   cut: Cut;
-  config: VeoGenerationConfig;
+  config: VideoGenerationConfig;
   prevCut?: Cut;
 }): AssembleFromJSONResult {
   const provider = "kling" as const;

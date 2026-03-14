@@ -197,7 +197,7 @@ function buildCharacterPersonaBlock(cps: Array<{
 // ─── 장면 용어 정밀화 규칙 ───────────────────────────────────────────────────
 /**
  * imagePrompt / videoPrompt 생성 시 모호한 일상어를 시각 정밀 용어로 치환하도록 강제.
- * 목적: 영상 모델(Veo/Kling)이 "치과 의자" → 일반 의자, "기계" → 추상 오브젝트로 잘못 해석하는 것을 방지.
+ * 목적: 영상 모델(Kling)이 "치과 의자" → 일반 의자, "기계" → 추상 오브젝트로 잘못 해석하는 것을 방지.
  * 원칙: form(형태) + function(기능) + material(재질) + era(시대)가 드러나는 용어 사용.
  */
 const SCENE_TERM_PRECISION_BLOCK = `
@@ -661,7 +661,7 @@ async function step23DetailBatch(
   env: GeminiEnv,
   allOutlines: CutOutline[],    // 전체 시퀀스 컨텍스트 (anti-repetition용)
   charAppearance: string,
-  veoStyle: string,
+  videoStyle: string,
   regionFlavor: string,
   directorName: string,
   directorStyle: string,
@@ -688,7 +688,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${veoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
+  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
 
   // 전체 시퀀스 컨텍스트 (이전 씬 상태 파악용)
   const sequenceContext = allOutlines
@@ -732,7 +732,7 @@ async function step23DetailBatch(
   }).join("\n\n");
 
   const prompt = `당신은 아래 연출 철학을 완전히 내면화한 촬영 감독입니다.
-스타일: ${veoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
+스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
 ${secPerCut}초/씬 | 화면비: ${aspectRatio}
 
 ## ⚠️ 핵심 원칙: ${secPerCut}초 = "짧은 시퀀스(sequence)"이다 (단일 샷이 아님!)
@@ -889,7 +889,7 @@ moodLighting (≤55 chars English — 반드시 4요소: source + direction + in
   필수: source(광원 종류) + direction(방향/위치) + intensity(강도) + quality(질감)
 
 ## ⚠️ TEXT-FREE 규칙 (간판/텍스트 유도 오브젝트 금지)
-프롬프트에 "no text" / "no readable text"를 포함하는 동시에 텍스트를 연상시키는 오브젝트를 사용하면 Veo에게 상충 신호가 됩니다.
+프롬프트에 "no text" / "no readable text"를 포함하는 동시에 텍스트를 연상시키는 오브젝트를 사용하면 영상 모델에게 상충 신호가 됩니다.
 BANNED objects: sign, faded sign, dusty sign, signboard, placard, billboard, marquee, banner text, lettered, nameplate
 ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade panel, empty storefront overhang, mounted panel, wall bracket, awning
 
@@ -998,7 +998,7 @@ function buildDeterministicCuts(
   directorName: string,
   cutCount: number,
   secPerCut: number,
-  veoStyle: string,
+  videoStyle: string,
   regionFlavor: string,
   animationMode: string,
   editorialPersona?: EditorialPersona,
@@ -1034,7 +1034,7 @@ function buildDeterministicCuts(
         ];
 
   const editorialTag = editorialPersona ? `. ${buildCompactEditorialSummary(editorialPersona)}` : "";
-  const noTextSuffix = `${veoStyle}, directed by ${directorName}, with natural diegetic sound and ambient audio, no text, no watermark, no captions${editorialTag}`;
+  const noTextSuffix = `${videoStyle}, directed by ${directorName}, with natural diegetic sound and ambient audio, no text, no watermark, no captions${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
@@ -1237,7 +1237,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     //     → 스타일 자체는 cel-shaded 기반이지만 overriding color lock을 완화
     //   - "하이브리드": "2D-3D blending"은 해석이 모호 → 실사 배경 + 스타일 캐릭터 명시
     //   - "로토스코핑": 일반 2D 아님 — performance/live-motion 기반임을 유지
-    const veoStyleMap: Record<string, string> = {
+    const videoStyleMap: Record<string, string> = {
       // ── live_action 계열 ──────────────────────────────────────────────────
       // 배경은 환경 묘사에 집중, 인물이 화면 주체
       "실사":          "photorealistic cinematic 4K, subject-focused composition, natural light and shadow, minimal background decoration",
@@ -1264,7 +1264,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // 하이브리드: 이전 "2D-3D blending"은 모호 → 실사 공간 + 스타일 캐릭터로 명확화
       "하이브리드":    "HYBRID COMPOSITE [BACKGROUND=photorealistic cinematic live-action: real physical textures, volumetric depth, naturalistic environment lighting, no animation on background | CHARACTER=stylized illustrated design: visible design lines, graphic artistic stylization, character-designed render]. ANTI-COLLAPSE: NEVER render entire frame as anime/cartoon/flat illustration — background MUST stay photorealistic and cinematic. Stylization applies ONLY to characters, NOT to environment. Mixed-media composite: realistic set + stylized figure against it.",
     };
-    const veoStyle = veoStyleMap[String(animationMode)] ?? "photorealistic cinematic, subject-focused composition";
+    const videoStyle = videoStyleMap[String(animationMode)] ?? "photorealistic cinematic, subject-focused composition";
 
     const regionFlavorMap: Record<string, string> = {
       "한국":   "Korean urban-rural aesthetic",
@@ -1442,7 +1442,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             String(directorName),
             targetCuts,
             secPerCut,
-            veoStyle,
+            videoStyle,
             regionFlavor,
             String(animationMode),
             editorial,
@@ -1487,7 +1487,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           String(directorName),
           targetCuts,
           secPerCut,
-          veoStyle,
+          videoStyle,
           regionFlavor,
           String(animationMode),
           editorial,
@@ -1570,7 +1570,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const detailArgs = [
       outlines,              // allOutlines — 전체 시퀀스 컨텍스트
       mainChar.appearance,
-      veoStyle,
+      videoStyle,
       regionFlavor,
       String(directorName),
       String(directorStyle ?? ""),
@@ -1627,7 +1627,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (det && typeof det.cutNumber === "number") detailMap.set(det.cutNumber, det);
     }
 
-    const noTextSuffix = `${veoStyle}, directed by ${String(directorName)}, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
+    const noTextSuffix = `${videoStyle}, directed by ${String(directorName)}, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);
@@ -1755,7 +1755,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // JSON 기반 프롬프트 (provider별 렌더링용)
         videoPromptJson,
         ...(extendPromptJson ? { extendPromptJson } : {}),
-        // 멀티샷: Kling(10s+)은 model_params로 전달, Veo는 구조화 프롬프트로 적용
+        // 멀티샷: Kling(10s+)은 model_params로 전달
         ...(d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0
           ? { multiShot: d.multiShot }
           : {}),

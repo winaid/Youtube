@@ -673,7 +673,7 @@ console.log("\n[18] Video history status helpers");
   const baseRecord: VideoRecord = {
     id: "vid-test-1",
     operationName: "op-1",
-    engine: "veo",
+    engine: "kling",
     gcsUri: "",
     proxyUri: "",
     prompt: "test",
@@ -1148,8 +1148,8 @@ console.log("\n[33] Final payload pos_neg zero after full pipeline");
   const normalized1 = normalizeSequence(doc1);
   const fp1 = buildFinalProviderPayload({ document: normalized1.doc, provider: "kling" });
   const posNeg1 = fp1.debug.validationIssues.filter(v => v.includes("pos_neg_conflict"));
-  assert(posNeg1.length === 0, `Veo: 0 pos_neg_conflict, got ${posNeg1.length}: ${posNeg1.join("; ")}`);
-  assert(!fp1.blocked, `Veo: not blocked: ${fp1.blockReason || ""}`);
+  assert(posNeg1.length === 0, `Kling: 0 pos_neg_conflict, got ${posNeg1.length}: ${posNeg1.join("; ")}`);
+  assert(!fp1.blocked, `Kling: not blocked: ${fp1.blockReason || ""}`);
 
   // Kling provider
   const doc2 = makeShotDoc({
@@ -1321,7 +1321,7 @@ console.log("\n[38] Scene Extension readiness");
 {
   // proxyUri only → NOT ready for Scene Extension
   const r1 = sceneExtensionReady({
-    id: "vid-1", operationName: "op", engine: "veo",
+    id: "vid-1", operationName: "op", engine: "kling",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
     cutNumber: 1, status: "completed", createdAt: Date.now(),
@@ -1332,7 +1332,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // canonicalVideoUri (https://) → ready
   const r2 = sceneExtensionReady({
-    id: "vid-2", operationName: "op", engine: "veo",
+    id: "vid-2", operationName: "op", engine: "kling",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
@@ -1344,7 +1344,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // canonicalVideoUri (gs://) → ready
   const r3 = sceneExtensionReady({
-    id: "vid-3", operationName: "op", engine: "veo",
+    id: "vid-3", operationName: "op", engine: "kling",
     gcsUri: "gs://bucket/video.mp4", proxyUri: "/api/proxy-video?uri=gs://bucket/video.mp4",
     canonicalVideoUri: "gs://bucket/video.mp4",
     prompt: "", mode: "generate", durationSec: 8,
@@ -1355,7 +1355,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // failed → NOT ready
   const r4 = sceneExtensionReady({
-    id: "vid-4", operationName: "op", engine: "veo",
+    id: "vid-4", operationName: "op", engine: "kling",
     gcsUri: "", proxyUri: "", canonicalVideoUri: "https://example.com/video.mp4",
     prompt: "", mode: "generate", durationSec: 8,
     cutNumber: 1, status: "failed", createdAt: Date.now(),
@@ -1364,7 +1364,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // computeAssetStatus with canonical → VISIBLE_IN_LIBRARY or SCENE_EXTENSION_READY
   const proxyOnlyStatus = computeAssetStatus({
-    id: "vid-5", operationName: "op", engine: "veo",
+    id: "vid-5", operationName: "op", engine: "kling",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
     cutNumber: 1, status: "completed", createdAt: Date.now(),
@@ -1372,7 +1372,7 @@ console.log("\n[38] Scene Extension readiness");
   assert(proxyOnlyStatus === "ASSET_STORED_PUBLIC", `proxyUri only → ASSET_STORED_PUBLIC, got: ${proxyOnlyStatus}`);
 
   const canonicalStatus = computeAssetStatus({
-    id: "vid-6", operationName: "op", engine: "veo",
+    id: "vid-6", operationName: "op", engine: "kling",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
@@ -1866,7 +1866,7 @@ console.log("\n[52] assembleFromJSON dense sequence output");
   };
 
   const cfg = {
-    engine: "veo" as const,
+    engine: "kling" as const,
     durationSeconds: 8,
     aspectRatio: "16:9",
     animationMode: "live-action",
@@ -1962,7 +1962,7 @@ console.log("\n[53] Validation strictness — valid=true harder");
   };
 
   const cfg = {
-    engine: "veo" as const,
+    engine: "kling" as const,
     durationSeconds: 8,
     aspectRatio: "16:9",
     animationMode: "live-action",
@@ -2063,7 +2063,7 @@ console.log("\n[56] Lunar assembleFromJSON zero physics violations");
       locationCue: "Lunar surface, American flag",
     },
   };
-  const cfg = { engine: "veo" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
+  const cfg = { engine: "kling" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
   const result = assembleFromJSON({ cut: lunarCut as any, config: cfg as any });
   const seq = result.structuredSequence;
 
@@ -2251,7 +2251,7 @@ console.log("\n[61] assembleFromJSON produces multi-shot sequence");
       locationCue: "Sahara desert, vast dune field",
     },
   };
-  const cfg = { engine: "veo" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
+  const cfg = { engine: "kling" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
   const result = assembleFromJSON({ cut: envCut as any, config: cfg as any });
   const seq = result.structuredSequence;
 
@@ -2284,12 +2284,12 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [63] 2-API Architecture: No Veo provider
+// [63] 2-API Architecture: Kling-only provider
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[63] 2-API Architecture: No Veo provider");
+  console.log("\n[63] 2-API Architecture: Kling-only provider");
 
-  // PROVIDER_CAPABILITIES should not have veo
+  // PROVIDER_CAPABILITIES should only have kling
   assert(!("veo" in PROVIDER_CAPABILITIES), "No veo in PROVIDER_CAPABILITIES");
   assert("kling" in PROVIDER_CAPABILITIES, "kling in PROVIDER_CAPABILITIES");
   assert(PROVIDER_CAPABILITIES.kling.id === "kling", "kling id");
@@ -2375,10 +2375,10 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [66] Kling-only generate path (no Veo path)
+// [66] Kling-only generate path
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[66] Kling-only generate path (no Veo path)");
+  console.log("\n[66] Kling-only generate path");
 
   // serializeForProvider should default to kling
   const minDoc = {
@@ -2401,13 +2401,12 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [67] Check-video Kling-only (no Veo polling)
+// [67] Check-video Kling-only
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[67] Check-video Kling-only (no Veo polling)");
+  console.log("\n[67] Check-video Kling-only");
 
-  // This is an architecture test: verify Veo-related code is removed
-  // by checking that PROVIDER_CAPABILITIES has no veo entry
+  // Architecture test: verify only kling provider exists
   const providerKeys = Object.keys(PROVIDER_CAPABILITIES);
   assert(providerKeys.length === 1, `Only 1 provider: ${providerKeys.length}`);
   assert(providerKeys[0] === "kling", `Provider is kling: ${providerKeys[0]}`);
@@ -2461,10 +2460,10 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [70] Lunar physics + Kling pipeline (no Veo)
+// [70] Lunar physics + Kling pipeline
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[70] Lunar physics + Kling pipeline (no Veo)");
+  console.log("\n[70] Lunar physics + Kling pipeline");
 
   // Verify physics rules still work in Kling-only architecture
   const lunarRules = detectPhysicsRules("lunar surface, astronaut walking", "moon", "low gravity");
