@@ -2516,15 +2516,15 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       });
       console.log(`[SHOT REGEN] ${shotId} variant ${variantId} completed`, { videoUri: result.videoUri });
     } else {
-      // failed or timeout — 공통 에러 분류 결과 사용
-      const errorMsg = result.status === "timeout"
-        ? "폴링 시간 초과 (6분)"
-        : (result.error || "생성 실패");
+      // failed or timeout — core 에러 분류와 동일 경로
+      const classified = classifyVideoError(
+        new Error(result.error || "영상 생성 실패"),
+      );
       setShotVariantState(prev => {
         let next = setShotStatus(prev, shotId, "failed");
         next = updateShotVariant(next, shotId, variantId, {
           status: "failed",
-          error: errorMsg,
+          error: classified.message,
         });
         return next;
       });

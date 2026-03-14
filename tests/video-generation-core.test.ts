@@ -1274,4 +1274,106 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
     expect(result.pollMeta.totalAttempts).toBe(2);
     expect(result.pollMeta.totalDurationMs).toBeGreaterThanOrEqual(0);
   });
+
+  it("NormalizedVideoResult에 thumbnailUri 필드 없음 (서버 미반환)", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.ai/v.mp4",
+        rawVideoUri: "https://cdn.kling.ai/v.mp4",
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("op-no-thumb", {
+      fixedIntervalMs: 10,
+    });
+
+    expect(result.status).toBe("completed");
+    // 서버가 thumbnail 반환 안 함 → NormalizedVideoResult에 thumbnail 필드 없어야 함
+    expect((result as Record<string, unknown>).thumbnailUri).toBeUndefined();
+    expect((result as Record<string, unknown>).thumbnailUrl).toBeUndefined();
+  });
+
+  it("pollShotVariant uses classifyVideoError for failed/timeout (일반 task와 동일 분류)", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // pollShotVariant 내부에서 classifyVideoError 호출 확인
+    const fnBody = hookSource.match(
+      /const pollShotVariant[\s\S]*?(?=\n  const \w)/
+    )?.[0] ?? "";
+    expect(fnBody).toContain("classifyVideoError(");
+    // 일반 task timeout 분기도 classifyVideoError 사용
+    const mainPollBlock = hookSource.match(
+      /\/\/ timeout[\s\S]{0,200}classifyVideoError/
+    );
+    expect(mainPollBlock).not.toBeNull();
+  });
+
+  it("extraPollBody가 POST body에 포함되어 서버로 전달됨", async () => {
+    vi.useRealTimers();
+    let capturedBody: Record<string, unknown> | null = null;
+    globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.body) {
+        capturedBody = JSON.parse(init.body as string);
+      }
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.ai/v.mp4",
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    await pollVideoTask("task-123", {
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "op-abc", isExtend: false, cutNumber: 3 },
+    });
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.taskId).toBe("task-123");
+    expect(capturedBody!.engine).toBe("kling");
+    expect(capturedBody!.operationName).toBe("op-abc");
+    expect(capturedBody!.isExtend).toBe(false);
+    expect(capturedBody!.cutNumber).toBe(3);
+  });
+
+  it("일반 task와 variant task가 동일 normalize 경로 사용", async () => {
+    vi.useRealTimers();
+    const serverResponse = {
+      status: "COMPLETED",
+      videoUri: "https://cdn.kling.ai/test.mp4",
+      rawVideoUri: "https://cdn.kling.ai/test.mp4",
+      canonicalVideoUri: "https://cdn.kling.ai/test.mp4",
+      seed: "99",
+      variants: [{ videoUri: "https://cdn.kling.ai/test.mp4" }],
+      needsUpload: false,
+    };
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify(serverResponse), { status: 200 });
+    }) as typeof fetch;
+
+    // 일반 task
+    const normalResult = await pollVideoTask("task-normal", {
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "op-1", cutNumber: 1 },
+    });
+
+    // variant task (동일 pollVideoTask 함수, extraPollBody만 다름)
+    const variantResult = await pollVideoTask("task-variant", {
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "op-2" },
+    });
+
+    // 동일 normalize shape
+    expect(normalResult.status).toBe(variantResult.status);
+    expect(normalResult.videoUri).toBe(variantResult.videoUri);
+    expect(normalResult.seed).toBe(variantResult.seed);
+    expect(normalResult.needsUpload).toBe(variantResult.needsUpload);
+    expect(normalResult.engine).toBe(variantResult.engine);
+    // variants 배열도 동일하게 전달
+    expect(normalResult.variants).toEqual(variantResult.variants);
+  });
 });
