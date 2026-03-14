@@ -372,5 +372,66 @@ describe("node canvas", () => {
       expect(sound?.enabled).toBe(false);
       expect(threeDee?.enabled).toBe(false);
     });
+
+    it("should have edit-image node enabled in registry", () => {
+      const editImage = NODE_REGISTRY.find(d => d.type === "edit-image");
+      expect(editImage).toBeDefined();
+      expect(editImage!.enabled).toBe(true);
+      expect(editImage!.category).toBe("image");
+      expect(editImage!.inputs.length).toBe(2); // image + prompt
+      expect(editImage!.outputs.length).toBe(1); // image
+      expect(editImage!.inputs[0].type).toBe("image");
+      expect(editImage!.inputs[1].type).toBe("text");
+      expect(editImage!.outputs[0].type).toBe("image");
+    });
+  });
+
+  // ── Edit Image 노드 기본 동작 ──
+  describe("edit-image node basics", () => {
+    it("should create edit-image node with correct defaults", () => {
+      const node = createNode(findDef("edit-image"), 50, 50);
+      expect(node.type).toBe("edit-image");
+      expect(node.data.editMode).toBe("inpaint");
+      expect(node.data.prompt).toBe("");
+      expect(node.inputs.length).toBe(2);
+      expect(node.outputs.length).toBe(1);
+      expect(node.status).toBe("idle");
+    });
+
+    it("should connect generate-image output to edit-image input", () => {
+      const imgNode = createNode(findDef("generate-image"), 0, 0);
+      const editNode = createNode(findDef("edit-image"), 300, 0);
+
+      let state = createInitialCanvasState();
+      state = addNode(state, imgNode);
+      state = addNode(state, editNode);
+
+      // image output → edit-image image input
+      state = addEdge(state, imgNode.id, imgNode.outputs[0].id, editNode.id, editNode.inputs[0].id);
+      expect(state.edges.length).toBe(1);
+
+      // Set image output
+      state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,ABC", "image");
+      const inputs = getInputAssets(state, editNode.id);
+      expect(inputs[0].asset).toBe("data:image/png;base64,ABC");
+      expect(inputs[0].mimeType).toBe("image");
+    });
+
+    it("should connect edit-image output to viewer", () => {
+      const editNode = createNode(findDef("edit-image"), 0, 0);
+      const viewerNode = createNode(findDef("viewer"), 300, 0);
+
+      let state = createInitialCanvasState();
+      state = addNode(state, editNode);
+      state = addNode(state, viewerNode);
+
+      state = addEdge(state, editNode.id, editNode.outputs[0].id, viewerNode.id, viewerNode.inputs[0].id);
+      expect(state.edges.length).toBe(1);
+
+      state = updateNodeStatus(state, editNode.id, "success", "data:image/png;base64,EDITED", "image");
+      const inputs = getInputAssets(state, viewerNode.id);
+      expect(inputs[0].asset).toBe("data:image/png;base64,EDITED");
+      expect(inputs[0].mimeType).toBe("image");
+    });
   });
 });

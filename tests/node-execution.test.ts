@@ -459,3 +459,135 @@ describe("error cases", () => {
     expect(node.error).toContain("미지원");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Edit Image 노드 실행
+// ═══════════════════════════════════════════════════════════════════
+
+describe("executeEditImage", () => {
+  it("should fail when no input image is connected", async () => {
+    const editNode = createNode(findDef("edit-image"), 0, 0);
+    let state = createInitialCanvasState();
+    state = addNode(state, { ...editNode, data: { ...editNode.data, prompt: "remove background" } });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(editNode.id, state, callbacks);
+
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === editNode.id)!;
+    expect(node.status).toBe("failed");
+    expect(node.error).toContain("입력 이미지");
+  });
+
+  it("should fail when no prompt is provided", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const editNode = createNode(findDef("edit-image"), 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, editNode); // prompt is "" by default
+
+    // Connect image → edit-image
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, editNode.id, editNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,ABC123", "image");
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(editNode.id, state, callbacks);
+
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === editNode.id)!;
+    expect(node.status).toBe("failed");
+    expect(node.error).toContain("프롬프트");
+  });
+
+  it("should call /api/generate-image with referenceImage and editMode", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const editNode = createNode(findDef("edit-image"), 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, { ...editNode, data: { ...editNode.data, prompt: "add sunset sky", editMode: "inpaint" } });
+
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, editNode.id, editNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,RAWBASE64", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [{ base64: "EDITEDBASE64", mimeType: "image/png" }],
+      }),
+    });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(editNode.id, state, callbacks);
+
+    // API 호출 검증
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(fetchCall[0]).toBe("/api/generate-image");
+    const body = JSON.parse(fetchCall[1].body);
+    expect(body.prompt).toBe("add sunset sky");
+    expect(body.referenceImage).toBe("RAWBASE64");
+    expect(body.editMode).toBe("inpaint");
+
+    // 결과 검증
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === editNode.id)!;
+    expect(node.status).toBe("success");
+    expect(node.outputAsset).toBe("data:image/png;base64,EDITEDBASE64");
+    expect(node.outputMimeType).toBe("image");
+  });
+
+  it("should pass edited image output to downstream viewer", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const editNode = createNode(findDef("edit-image"), 300, 0);
+    const viewerNode = createNode(findDef("viewer"), 600, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, { ...editNode, data: { ...editNode.data, prompt: "enhance colors" } });
+    state = addNode(state, viewerNode);
+
+    // image → edit-image → viewer
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, editNode.id, editNode.inputs[0].id);
+    state = addEdge(state, editNode.id, editNode.outputs[0].id, viewerNode.id, viewerNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,ORIG", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [{ base64: "EDITED", mimeType: "image/png" }],
+      }),
+    });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(editNode.id, state, callbacks);
+
+    // edit-image 실행 후 viewer가 결과를 받을 수 있는지 확인
+    const latest = callbacks.getLatest();
+    const inputs = getInputAssets(latest, viewerNode.id);
+    expect(inputs[0].asset).toBe("data:image/png;base64,EDITED");
+    expect(inputs[0].mimeType).toBe("image");
+  });
+
+  it("should handle API error gracefully", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const editNode = createNode(findDef("edit-image"), 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, { ...editNode, data: { ...editNode.data, prompt: "edit" } });
+
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, editNode.id, editNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,ABC", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(editNode.id, state, callbacks);
+
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === editNode.id)!;
+    expect(node.status).toBe("failed");
+    expect(node.error).toContain("500");
+  });
+});

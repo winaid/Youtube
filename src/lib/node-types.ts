@@ -115,7 +115,7 @@ export const NODE_REGISTRY: NodeDefinition[] = [
     label: "Edit Image",
     category: "image",
     description: "이미지를 편집합니다 (인페인트/아웃페인트)",
-    enabled: false,
+    enabled: true,
     inputs: [
       { label: "image", type: "image", isInput: true },
       { label: "prompt", type: "text", isInput: true },

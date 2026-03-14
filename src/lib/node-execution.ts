@@ -241,6 +241,66 @@ async function executeGenerateVideo(
   }
 }
 
+async function executeEditImage(
+  node: CanvasNode,
+  state: CanvasState,
+  callbacks: ExecutionCallbacks,
+): Promise<void> {
+  // ── 입력 이미지 필수 검증 ──
+  const inputs = getInputAssets(state, node.id);
+  const imageInput = inputs.find(i => i.mimeType === "image");
+
+  if (!imageInput?.asset) {
+    callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, "편집할 입력 이미지를 연결하세요"));
+    return;
+  }
+
+  // ── 프롬프트: data.prompt 또는 연결된 text input ──
+  const prompt = (node.data.prompt as string) || "";
+  const textInput = inputs.find(i => !i.mimeType && i.asset);
+  const finalPrompt = prompt || textInput?.asset || "";
+
+  if (!finalPrompt.trim()) {
+    callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, "편집 프롬프트를 입력하세요"));
+    return;
+  }
+
+  callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "running"));
+
+  // 입력 이미지 base64 추출
+  const referenceImageBase64 = imageInput.asset.replace(/^data:[^;]+;base64,/, "");
+
+  try {
+    // 기존 /api/generate-image 엔드포인트 재사용 + referenceImage, editMode 추가
+    const res = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: finalPrompt,
+        referenceImage: referenceImageBase64,
+        editMode: node.data.editMode || "inpaint",
+        aspectRatio: node.data.aspectRatio || "16:9",
+      }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as { images?: { base64: string; mimeType: string }[]; error?: string };
+
+    if (data.images && data.images.length > 0) {
+      const img = data.images[0];
+      const dataUri = `data:${img.mimeType};base64,${img.base64}`;
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", dataUri, "image"));
+    } else {
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, data.error || "이미지 편집 결과 없음"));
+    }
+  } catch (err) {
+    callbacks.onStateChange(prev => updateNodeStatus(
+      prev, node.id, "failed", undefined, undefined,
+      err instanceof Error ? err.message : "이미지 편집 실패",
+    ));
+  }
+}
+
 function executeViewer(
   node: CanvasNode,
   state: CanvasState,
@@ -284,6 +344,9 @@ export async function executeNode(
   switch (node.type) {
     case "generate-image":
       await executeGenerateImage(node, state, callbacks);
+      break;
+    case "edit-image":
+      await executeEditImage(node, state, callbacks);
       break;
     case "generate-video":
       await executeGenerateVideo(node, state, callbacks);

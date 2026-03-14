@@ -380,6 +380,9 @@ function ViewerPanel({
       {node.type === "generate-image" && (
         <NodeSettings node={node} />
       )}
+      {node.type === "edit-image" && (
+        <NodeSettings node={node} />
+      )}
       {node.type === "generate-video" && (
         <NodeSettings node={node} />
       )}
@@ -1091,6 +1094,25 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
                   </select>
                 )}
               </div>
+            </>
+          )}
+          {selectedNode.type === "edit-image" && (
+            <>
+              <textarea
+                className="w-full h-16 text-xs border rounded-md p-2 resize-none focus:outline-none focus:ring-1"
+                style={{ borderColor: "#e5e5e5" }}
+                placeholder="편집 프롬프트를 입력하세요..."
+                value={(selectedNode.data.prompt as string) || ""}
+                onChange={e => handleUpdateSelectedData("prompt", e.target.value)}
+              />
+              <select
+                className="w-full h-7 text-[10px] border rounded-md px-1.5"
+                value={(selectedNode.data.editMode as string) || "inpaint"}
+                onChange={e => handleUpdateSelectedData("editMode", e.target.value)}
+              >
+                <option value="inpaint">인페인트</option>
+                <option value="outpaint">아웃페인트</option>
+              </select>
             </>
           )}
           <Button
