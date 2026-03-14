@@ -1377,3 +1377,116 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
     expect(normalResult.variants).toEqual(variantResult.variants);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 12. noRetry 계약 — 서버 미반환 시 기본 동작 + 미래 반환 시 즉시 전달
+// ═══════════════════════════════════════════════════════════════════
+
+describe("noRetry 계약", () => {
+  it("서버 FAILED 응답에 noRetry 없으면 result.noRetry는 undefined (= retry 허용)", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "FAILED",
+        error: "some error",
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("task-no-noretry", {
+      fixedIntervalMs: 10,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.noRetry).toBeUndefined();
+    // undefined는 falsy → !result.noRetry === true → auto-retry 허용
+    expect(!result.noRetry).toBe(true);
+  });
+
+  it("서버 FAILED 응답에 noRetry=true 이면 result.noRetry=true (즉시 전달)", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "FAILED",
+        error: "Model access denied",
+        noRetry: true,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("task-noretry-true", {
+      fixedIntervalMs: 10,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.noRetry).toBe(true);
+  });
+
+  it("서버 FAILED 응답에 noRetry=false 이면 result.noRetry=false", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "FAILED",
+        error: "temporary failure",
+        noRetry: false,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("task-noretry-false", {
+      fixedIntervalMs: 10,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.noRetry).toBe(false);
+  });
+
+  it("COMPLETED 응답에서는 noRetry가 세팅되지 않음", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.ai/v.mp4",
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("task-completed", {
+      fixedIntervalMs: 10,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.noRetry).toBeUndefined();
+  });
+
+  it("timeout 결과에서도 noRetry는 undefined", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ status: "RUNNING" }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("task-timeout", {
+      maxAttempts: 2,
+      fixedIntervalMs: 10,
+    });
+
+    expect(result.status).toBe("timeout");
+    expect(result.noRetry).toBeUndefined();
+  });
+
+  it("variant polling에서도 noRetry 계약 동일 (FAILED + noRetry=true)", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "FAILED",
+        error: "Rate limit exceeded",
+        noRetry: true,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("variant-noretry", {
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "variant-op-1" },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.noRetry).toBe(true);
+    expect(result.error).toContain("Rate limit exceeded");
+  });
+});

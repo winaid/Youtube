@@ -675,8 +675,6 @@ export interface ShotVariant {
   createdAt: number;
   /** 생성된 영상 URL */
   videoUrl?: string;
-  /** 썸네일 / 미리보기 이미지 */
-  thumbnailUrl?: string;
   /** Kling task ID (폴링용) */
   operationName?: string;
   /** 품질 점수 (QA 결과) */

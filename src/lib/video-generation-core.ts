@@ -80,6 +80,7 @@ export interface RawCheckVideoResponse {
   sampleCount?: number;
   engine?: string;
   progress?: number;
+  /** 서버가 재시도 무의미 판정 시 true. 현재 서버 미반환 → undefined (= retry 허용). 미래 확장 슬롯. */
   noRetry?: boolean;
   _diag?: Record<string, unknown>;
 }
@@ -95,7 +96,7 @@ export interface NormalizedVideoResult {
   engine: "kling";
   needsUpload: boolean;
   error?: string;
-  /** 서버가 재시도 무의미 판정 (FAILED 시) */
+  /** 서버가 재시도 무의미 판정 시 true. 현재 서버 미반환 → undefined (= retry 허용). 미래 확장 슬롯. */
   noRetry?: boolean;
   /** 완료 시각 */
   completedAt: number;

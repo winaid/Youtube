@@ -135,12 +135,6 @@ export default function ShotVariantPanel({
                           v.currentTime = 0;
                         }}
                       />
-                    ) : variant.thumbnailUrl ? (
-                      <img
-                        src={variant.thumbnailUrl}
-                        alt={`Variant ${i + 1}`}
-                        className="w-full h-full object-cover"
-                      />
                     ) : (
                       <span className="text-[10px] text-muted-foreground">
                         {variant.status === "failed" ? "실패" : "미리보기 없음"}
