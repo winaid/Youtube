@@ -1208,15 +1208,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       currentSegmentIndex: 0, // generate-cuts는 항상 첫 segment planning
     });
 
-    // generate-cuts 1회 호출 = 단일 segment planning unit
-    // currentSegmentTargetCuts가 이 호출의 실제 컷 수
+    // generate-cuts 1회 호출 = 전체 프로젝트의 모든 컷을 한 번에 생성
+    // cutDecision.cutCount가 전체 프로젝트의 컷 수 (segmentPlan.currentSegmentTargetCuts는 첫 15초 segment 분량만이므로 사용 금지)
     const cutDecision = resolveCutCount({
       exactCutCount: rawCutCount > 0 ? rawCutCount : undefined,
       preferredRange: parsedRange,
       totalDurationSec: effectiveTotalForDensity,
       personaBias: pBias,
     });
-    const targetCuts = Math.min(Math.max(segmentPlan.currentSegmentTargetCuts, 3), 30);
+    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), 30);
 
     console.log("[generate-cuts] duration params", {
       rawCutDuration: cutDuration, secPerCut, targetCuts,
