@@ -650,7 +650,7 @@ export default function ResultPanel({
               {result.directorPersonaPrompt && (
                 <div className="space-y-1">
                   <p className="text-xs font-medium" style={{ color: "#5a5ecc" }}>감독 페르소나</p>
-                  <p className="text-xs p-2 rounded-md leading-relaxed italic" style={{ background: "#787fff08", border: "1px solid #787fff15" }}>
+                  <p className="text-xs p-2 rounded-md leading-relaxed italic whitespace-pre-wrap break-words" style={{ background: "#787fff08", border: "1px solid #787fff15", overflowWrap: "anywhere" }}>
                     {result.directorPersonaPrompt}
                   </p>
                 </div>
