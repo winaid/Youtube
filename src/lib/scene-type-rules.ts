@@ -22,6 +22,44 @@ export type SceneType =
   | "object-detail"
   | "transition-atmosphere";
 
+export type EnvironmentSubtype = "indoor" | "outdoor" | "unknown";
+
+// ═══════════════════════════════════════════════════════════════════
+// 1b. Indoor/Outdoor Environment Detection
+// ═══════════════════════════════════════════════════════════════════
+
+const INDOOR_INDICATORS = /\b(room|office|clinic|hospital|studio|kitchen|bathroom|hallway|corridor|lobby|warehouse|factory|workshop|garage|basement|attic|cellar|apartment|bedroom|living\s+room|dining|library|museum|gallery|theater|theatre|chapel|church|mosque|temple|cathedral|palace|castle\s+interior|tavern|inn|bar|pub|café|cafe|restaurant|shop|store|market\s+hall|prison|cell|dungeon|bunker|lab|laboratory|classroom|school|station\s+interior|cabin\s+interior|tent\s+interior|cockpit|bridge\s+(?:of|interior)|engine\s+room|cargo\s+hold|dental|medical|surgical|courtroom|throne\s+room|armory|forge|bakery|pharmacy|barracks|infirmary|operating|waiting\s+room|reception|foyer|vestibule|stairwell|elevator|lift|pantry|laundry|closet|storage|vault|archive|chamber)\b/i;
+
+const OUTDOOR_INDICATORS = /\b(sky|horizon|field|forest|mountain|valley|desert|ocean|sea|lake|river|beach|coast|shore|cliff|canyon|prairie|tundra|glacier|savanna|steppe|swamp|marsh|jungle|meadow|hilltop|ridge|plateau|crater|volcano|waterfall|geyser|dune|oasis|island|peninsula|archipelago|plain|heath|moor|bog|fjord|gorge|ravine|bay|cove|harbor|port|dock|pier|wharf|lighthouse|battlefield|trench|no[\s-]?man.s\s+land|garden|courtyard|rooftop|terrace|balcony|bridge|road|highway|path|trail|alley|street|plaza|square|market|bazaar|town\s+center|village|camp|outpost|settlement|ruins|ancient\s+site|monument|graveyard|cemetery|arena|stadium|amphitheatre|amphitheater|farmland|vineyard|orchard|pasture|ranch)\b/i;
+
+/**
+ * Detect whether an environment scene is indoor or outdoor.
+ * Uses prompt text + optional explicit environmentType from structuredSequence.
+ */
+export function detectEnvironmentSubtype(
+  promptOrLocationCue: string,
+  explicitEnvironmentType?: string,
+): EnvironmentSubtype {
+  // Explicit override from structuredSequence.physicsRules.environmentType
+  if (explicitEnvironmentType) {
+    const et = explicitEnvironmentType.toLowerCase();
+    if (et === "indoor" || et === "interior") return "indoor";
+    if (et === "outdoor" || et === "exterior") return "outdoor";
+    // Compound: "indoor-Victorian" etc.
+    if (et.startsWith("indoor")) return "indoor";
+    if (et.startsWith("outdoor")) return "outdoor";
+  }
+
+  const text = promptOrLocationCue;
+  const hasIndoor = INDOOR_INDICATORS.test(text);
+  const hasOutdoor = OUTDOOR_INDICATORS.test(text);
+
+  if (hasIndoor && !hasOutdoor) return "indoor";
+  if (hasOutdoor && !hasIndoor) return "outdoor";
+  if (hasIndoor && hasOutdoor) return "outdoor"; // mixed → outdoor default
+  return "unknown";
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 2. 씬 타입별 금지 어휘 (ban list)
 // ═══════════════════════════════════════════════════════════════════
@@ -83,13 +121,12 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
     allowedFramings: ["WS", "LS", "MLS"],
     allowedMotionPattern: /\b(slow|gentle|smooth|gradual|floating|subtle|drone|flyover|aerial|sweep|orbit|crane|drift|pull[\s-]?back|push[\s-]?in|pan|tilt)\b/i,
     maxActionDensity: 1,
-    preferredMotions: ["slow push-in", "smooth pan", "drone flyover", "gentle drift", "slow crane up", "aerial sweep"],
+    preferredMotions: ["smooth pan", "gentle drift", "slow crane up", "drone flyover", "aerial sweep", "slow orbit", "slow pull-back", "steady tracking lateral", "floating dolly"],
     requiredElements: [
-      { check: /\b(sky|cloud|sun|moon|star|dawn|dusk|twilight|overcast|clear\s+sky)\b/i, fallback: "overcast sky with diffused light" },
-      { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit)\b/i, fallback: "soft natural light from above" },
-      { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric)\b/i, fallback: "subtle atmospheric haze" },
-      { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave)\b/i, fallback: "textured ground surface" },
-      { check: /\b(scale|vast|expansive|stretching|towering|immense|panoramic|sprawling|depth)\b/i, fallback: "sense of vast scale" },
+      // NOTE: These are generic fallbacks. Use getEnvironmentRequiredElements() for indoor/outdoor-aware rules.
+      { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit|lamp|fluorescent|candle|glow|neon|bulb|window\s+light)\b/i, fallback: "soft directional light" },
+      { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric|condensation|diffusion)\b/i, fallback: "subtle atmospheric depth" },
+      { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave|tile|carpet|wood\s+floor|marble)\b/i, fallback: "textured surface" },
     ],
     positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound", "ambient audio"],
   },
@@ -408,4 +445,107 @@ export function ensureDescriptiveCoverage(
     coverage: covered,
     total: rule.requiredElements.length,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 5. Indoor/Outdoor-Aware Environment Elements
+// ═══════════════════════════════════════════════════════════════════
+
+const OUTDOOR_REQUIRED_ELEMENTS: Array<{ check: RegExp; fallback: string }> = [
+  { check: /\b(sky|cloud|sun|moon|star|dawn|dusk|twilight|overcast|clear\s+sky)\b/i, fallback: "overcast sky with diffused light" },
+  { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit)\b/i, fallback: "soft natural light from above" },
+  { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric)\b/i, fallback: "subtle atmospheric haze" },
+  { check: /\b(ground|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave|earth|dirt)\b/i, fallback: "textured ground surface" },
+  { check: /\b(scale|vast|expansive|stretching|towering|immense|panoramic|sprawling|depth|distant)\b/i, fallback: "sense of vast scale" },
+];
+
+const INDOOR_REQUIRED_ELEMENTS: Array<{ check: RegExp; fallback: string }> = [
+  { check: /\b(light|lamp|fluorescent|candle|chandelier|sconce|bulb|glow|neon|window\s+light|overhead\s+light|fixture|lantern|spotlight)\b/i, fallback: "overhead artificial light" },
+  { check: /\b(wall|ceiling|floor|tile|carpet|wood|marble|concrete|plaster|paint|wallpaper|panel)\b/i, fallback: "visible wall and floor surfaces" },
+  { check: /\b(shadow|reflection|glare|pool\s+of\s+light|dim|dark\s+corner|light\s+spill)\b/i, fallback: "shadows pooling in corners" },
+  { check: /\b(dust|condensation|steam|haze|particle|cobweb|mote|stale)\b/i, fallback: "dust motes in light beams" },
+];
+
+/**
+ * Get indoor/outdoor-appropriate required elements for environment scenes.
+ * Prevents outdoor elements (sky, haze, scale) from contaminating indoor scenes.
+ */
+export function getEnvironmentRequiredElements(
+  subtype: EnvironmentSubtype,
+): Array<{ check: RegExp; fallback: string }> {
+  if (subtype === "indoor") return INDOOR_REQUIRED_ELEMENTS;
+  if (subtype === "outdoor") return OUTDOOR_REQUIRED_ELEMENTS;
+  // unknown: use the generic (minimal) set from SCENE_RULES
+  return getSceneTypeRule("environment").requiredElements || [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. Environment Camera Diversification
+// ═══════════════════════════════════════════════════════════════════
+
+const INDOOR_CAMERA_STRATEGIES: string[] = [
+  "slow tracking lateral",
+  "gentle dolly through doorway",
+  "slow orbit around room center",
+  "steady pull-back revealing interior",
+  "smooth pan across interior",
+  "subtle crane down from ceiling",
+  "floating drift through space",
+  "locked wide with environmental motion only",
+];
+
+const OUTDOOR_CAMERA_STRATEGIES: string[] = [
+  "smooth pan across landscape",
+  "drone flyover",
+  "aerial sweep",
+  "slow crane up",
+  "gentle drift along terrain",
+  "slow pull-back",
+  "steady tracking lateral",
+  "slow orbit",
+  "floating dolly forward",
+];
+
+/**
+ * Get diverse camera motion for environment scene.
+ * Avoids always returning push-in by cycling through appropriate strategies.
+ * Uses cutNumber for deterministic but varied selection.
+ */
+export function getEnvironmentCameraFallback(
+  subtype: EnvironmentSubtype,
+  cutNumber?: number,
+): string {
+  const strategies = subtype === "indoor" ? INDOOR_CAMERA_STRATEGIES : OUTDOOR_CAMERA_STRATEGIES;
+  const idx = (cutNumber ?? Math.floor(Math.random() * strategies.length)) % strategies.length;
+  return strategies[idx];
+}
+
+/**
+ * Detect if a camera motion string is a push-in variant.
+ */
+export function isPushInMotion(motion: string): boolean {
+  return /\b(push[\s-]?in|pushing[\s-]?in|dolly[\s-]?in|zoom[\s-]?in|move[\s-]?(?:slowly\s+)?(?:toward|forward|closer))\b/i.test(motion);
+}
+
+/**
+ * Check if prompt has outdoor-specific elements that contaminate indoor scenes.
+ */
+export function detectOutdoorContamination(prompt: string): string[] {
+  const contaminants: string[] = [];
+  const outdoorOnlyPatterns: Array<{ pattern: RegExp; label: string }> = [
+    { pattern: /\b(overcast\s+sky|clear\s+sky|cloudy\s+sky|night\s+sky|starry\s+sky)\b/i, label: "sky description" },
+    { pattern: /\bsky\s+with\s+\w+/i, label: "sky description" },
+    { pattern: /\b(horizon|skyline)\b/i, label: "horizon/skyline" },
+    { pattern: /\b(vast\s+scale|sense\s+of\s+vast|sprawling|panoramic\s+(?:view|vista|landscape))\b/i, label: "outdoor scale cue" },
+    { pattern: /\b(terrain|soil|grass\s+field|sand\s+dune|rocky\s+ground)\b/i, label: "outdoor terrain" },
+    { pattern: /\b(subtle\s+atmospheric\s+haze)\b/i, label: "generic atmospheric haze fallback" },
+    { pattern: /\b(drone\s+flyover|aerial\s+sweep|bird.s?\s+eye)\b/i, label: "aerial camera in indoor" },
+  ];
+
+  for (const { pattern, label } of outdoorOnlyPatterns) {
+    if (pattern.test(prompt)) {
+      contaminants.push(label);
+    }
+  }
+  return contaminants;
 }

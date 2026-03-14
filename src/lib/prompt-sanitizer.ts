@@ -15,10 +15,15 @@
 
 import {
   type SceneType,
+  type EnvironmentSubtype,
   resolveSceneType,
   applySceneTypeVocabularyRules,
   ensureDescriptiveCoverage,
   enforcePositiveKeywords,
+  detectEnvironmentSubtype,
+  getEnvironmentRequiredElements,
+  isPushInMotion,
+  detectOutdoorContamination,
 } from "@/lib/scene-type-rules";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -296,19 +301,44 @@ export interface EnvironmentDetailResult {
 export function ensureEnvironmentDetailCoverage(
   text: string,
   shotCategory?: string,
+  environmentType?: string,
 ): EnvironmentDetailResult {
   const sceneType = resolveSceneType(shotCategory);
   if (!sceneType || (sceneType !== "environment" && sceneType !== "map_visualization")) {
     return { text, additions: [], coverage: { covered: 0, total: 0 } };
   }
 
+  // For environment scenes, use indoor/outdoor-aware elements
+  if (sceneType === "environment") {
+    const subtype = detectEnvironmentSubtype(text, environmentType);
+    const elements = getEnvironmentRequiredElements(subtype);
+    const additions: string[] = [];
+    let covered = 0;
+    for (const { check, fallback } of elements) {
+      if (check.test(text)) {
+        covered++;
+      } else if (fallback) {
+        additions.push(fallback);
+      }
+    }
+    if (additions.length === 0) {
+      return { text, additions: [], coverage: { covered, total: elements.length } };
+    }
+    const enriched = text.trim() + ". " + additions.join(", ");
+    return {
+      text: enriched.replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim(),
+      additions,
+      coverage: { covered, total: elements.length },
+    };
+  }
+
+  // map_visualization: use generic coverage
   const { additions, coverage, total } = ensureDescriptiveCoverage(text, sceneType);
 
   if (additions.length === 0) {
     return { text, additions: [], coverage: { covered: coverage, total } };
   }
 
-  // 부족한 요소를 텍스트 끝에 추가
   const enriched = text.trim() + ". " + additions.join(", ");
 
   return {
@@ -429,8 +459,9 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
     log.push(`[temporal] ${temporalResult.rewrites.join("; ")}`);
   }
 
-  // 5. Environment detail coverage
-  const envResult = ensureEnvironmentDetailCoverage(prompt, input.shotCategory);
+  // 5. Environment detail coverage (indoor/outdoor-aware)
+  const envType = input.physicsRules?.environmentType;
+  const envResult = ensureEnvironmentDetailCoverage(prompt, input.shotCategory, envType);
   prompt = envResult.text;
   if (envResult.additions.length > 0) {
     log.push(`[env-detail] Added ${envResult.additions.length} missing elements: ${envResult.additions.join(", ")}`);
@@ -461,7 +492,7 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
   }
 
   // 8. Scene-aware structural issues
-  const structIssues = detectStructuralIssues(prompt, input.sceneType || input.shotCategory);
+  const structIssues = detectStructuralIssues(prompt, input.sceneType || input.shotCategory, input.physicsRules?.environmentType);
   issues.push(...structIssues);
 
   // 최종 정리
@@ -590,6 +621,7 @@ export function detectPhysicsIssues(
 export function detectStructuralIssues(
   prompt: string,
   sceneTypeOrCategory?: string,
+  environmentType?: string,
 ): SanitizeIssue[] {
   const issues: SanitizeIssue[] = [];
   const lower = prompt.toLowerCase();
@@ -639,6 +671,57 @@ export function detectStructuralIssues(
         rule: "missing_natural_motion_for_environment",
         severity: "warning",
         message: "Environment scene has no natural motion cues — add wind/water/light/particle motion",
+      });
+    }
+
+    // ── NEW: Camera motion monotony (push-in convergence) ──
+    const cameraMotionMatches = prompt.match(/\b(push[\s-]?in|dolly[\s-]?in|zoom[\s-]?in|move\s+(?:slowly\s+)?(?:toward|forward|closer))\b/gi) || [];
+    if (cameraMotionMatches.length >= 1) {
+      // Check if push-in is the ONLY motion mentioned
+      const hasOtherMotion = /\b(pan|orbit|crane|drift|tracking|pull[\s-]?back|sweep|flyover|lateral|dolly\s+(?:through|along|around)|float)\b/i.test(prompt);
+      if (!hasOtherMotion) {
+        issues.push({
+          rule: "environment_camera_monotony",
+          severity: "warning",
+          message: "Environment scene uses only push-in camera motion — consider pan, orbit, crane, drift, or tracking for variety",
+        });
+      }
+    }
+
+    // ── NEW: Indoor/outdoor contamination ──
+    const subtype = detectEnvironmentSubtype(prompt, environmentType);
+    if (subtype === "indoor") {
+      const contaminants = detectOutdoorContamination(prompt);
+      if (contaminants.length > 0) {
+        issues.push({
+          rule: "indoor_outdoor_contamination",
+          severity: "warning",
+          message: `Indoor environment has outdoor elements: ${contaminants.join(", ")} — remove or replace with indoor equivalents`,
+        });
+      }
+    }
+
+    // ── NEW: Temporal beats as distance escalation ──
+    const beatSegments = prompt.match(/\d+s[-–]\d+s\s*:?\s*[^.]+/g) || [];
+    if (beatSegments.length >= 2) {
+      const distanceWords = /\b(closer|nearer|approach|zoom\s+in|push\s+in|tighter|move\s+toward|dolly\s+in)\b/i;
+      const distanceBeats = beatSegments.filter(b => distanceWords.test(b));
+      if (distanceBeats.length >= 2) {
+        issues.push({
+          rule: "temporal_beats_distance_escalation",
+          severity: "warning",
+          message: "Temporal beats describe distance escalation (closer/nearer/approach) — render as environmental progression (light change, activity shift, atmosphere evolution) instead",
+        });
+      }
+    }
+
+    // ── NEW: Missing environmental progression ──
+    const progressionCues = /\b(shift|change|transition|evolve|deepen|brighten|darken|warm|cool|intensif|fade|grow|diminish|spread|recede|gather|scatter|settle|clear|thicken|thin)\b/i;
+    if (!progressionCues.test(prompt) && prompt.split(/\s+/).length > 30) {
+      issues.push({
+        rule: "environment_missing_progression",
+        severity: "warning",
+        message: "Environment scene has no environmental progression — add light/weather/activity changes over time",
       });
     }
   }

@@ -22,12 +22,57 @@ type SceneType =
   | "map_visualization" | "product" | "portrait"
   | "character-driven" | "cinematic_sequence" | "object-detail" | "transition-atmosphere";
 
+type EnvironmentSubtype = "indoor" | "outdoor" | "unknown";
+
 interface SceneTypeRule {
   banned: RegExp[];
   replacements: Array<{ pattern: RegExp; replacement: string }>;
   allowedFramings?: string[];
   requiredElements?: Array<{ check: RegExp; fallback: string }>;
   positiveKeywords?: string[];
+}
+
+// ── Indoor/Outdoor Detection ──────────────────────────────────────
+const INDOOR_INDICATORS = /\b(room|office|clinic|hospital|studio|kitchen|bathroom|hallway|corridor|lobby|warehouse|factory|workshop|garage|basement|attic|cellar|apartment|bedroom|living\s+room|dining|library|museum|gallery|theater|theatre|chapel|church|mosque|temple|cathedral|palace|castle\s+interior|tavern|inn|bar|pub|café|cafe|restaurant|shop|store|market\s+hall|prison|cell|dungeon|bunker|lab|laboratory|classroom|school|station\s+interior|cabin\s+interior|tent\s+interior|cockpit|bridge\s+(?:of|interior)|engine\s+room|cargo\s+hold|dental|medical|surgical|courtroom|throne\s+room|armory|forge|bakery|pharmacy|barracks|infirmary|operating|waiting\s+room|reception|foyer|vestibule|stairwell|elevator|lift|pantry|laundry|closet|storage|vault|archive|chamber)\b/i;
+
+const OUTDOOR_INDICATORS = /\b(sky|horizon|field|forest|mountain|valley|desert|ocean|sea|lake|river|beach|coast|shore|cliff|canyon|prairie|tundra|glacier|savanna|steppe|swamp|marsh|jungle|meadow|hilltop|ridge|plateau|crater|volcano|waterfall|geyser|dune|oasis|island|peninsula|plain|heath|moor|bog|fjord|gorge|ravine|bay|cove|harbor|port|dock|pier|wharf|lighthouse|battlefield|trench|garden|courtyard|rooftop|terrace|balcony|bridge|road|highway|path|trail|alley|street|plaza|square|market|bazaar|village|camp|outpost|ruins|ancient\s+site|monument|graveyard|cemetery|arena|stadium|farmland|vineyard|orchard|pasture|ranch)\b/i;
+
+function detectEnvironmentSubtype(text: string, explicitType?: string): EnvironmentSubtype {
+  if (explicitType) {
+    const et = explicitType.toLowerCase();
+    if (et === "indoor" || et === "interior") return "indoor";
+    if (et === "outdoor" || et === "exterior") return "outdoor";
+    if (et.startsWith("indoor")) return "indoor";
+    if (et.startsWith("outdoor")) return "outdoor";
+  }
+  const hasIndoor = INDOOR_INDICATORS.test(text);
+  const hasOutdoor = OUTDOOR_INDICATORS.test(text);
+  if (hasIndoor && !hasOutdoor) return "indoor";
+  if (hasOutdoor && !hasIndoor) return "outdoor";
+  if (hasIndoor && hasOutdoor) return "outdoor";
+  return "unknown";
+}
+
+// ── Indoor/Outdoor Required Elements ──────────────────────────────
+const OUTDOOR_REQUIRED_ELEMENTS: Array<{ check: RegExp; fallback: string }> = [
+  { check: /\b(sky|cloud|sun|moon|star|dawn|dusk|twilight|overcast|clear\s+sky)\b/i, fallback: "overcast sky with diffused light" },
+  { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit)\b/i, fallback: "soft natural light from above" },
+  { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric)\b/i, fallback: "subtle atmospheric haze" },
+  { check: /\b(ground|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave|earth|dirt)\b/i, fallback: "textured ground surface" },
+  { check: /\b(scale|vast|expansive|stretching|towering|immense|panoramic|sprawling|depth|distant)\b/i, fallback: "sense of vast scale" },
+];
+
+const INDOOR_REQUIRED_ELEMENTS: Array<{ check: RegExp; fallback: string }> = [
+  { check: /\b(light|lamp|fluorescent|candle|chandelier|sconce|bulb|glow|neon|window\s+light|overhead\s+light|fixture|lantern|spotlight)\b/i, fallback: "overhead artificial light" },
+  { check: /\b(wall|ceiling|floor|tile|carpet|wood|marble|concrete|plaster|paint|wallpaper|panel)\b/i, fallback: "visible wall and floor surfaces" },
+  { check: /\b(shadow|reflection|glare|pool\s+of\s+light|dim|dark\s+corner|light\s+spill)\b/i, fallback: "shadows pooling in corners" },
+  { check: /\b(dust|condensation|steam|haze|particle|cobweb|mote|stale)\b/i, fallback: "dust motes in light beams" },
+];
+
+function getEnvironmentRequiredElements(subtype: EnvironmentSubtype): Array<{ check: RegExp; fallback: string }> {
+  if (subtype === "indoor") return INDOOR_REQUIRED_ELEMENTS;
+  if (subtype === "outdoor") return OUTDOOR_REQUIRED_ELEMENTS;
+  return SCENE_RULES.environment.requiredElements || [];
 }
 
 const SCENE_RULES: Record<string, SceneTypeRule> = {
@@ -53,11 +98,10 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
     ],
     allowedFramings: ["WS", "LS", "MLS"],
     requiredElements: [
-      { check: /\b(sky|cloud|sun|moon|star|dawn|dusk|twilight|overcast|clear\s+sky)\b/i, fallback: "overcast sky with diffused light" },
-      { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit)\b/i, fallback: "soft natural light from above" },
-      { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric)\b/i, fallback: "subtle atmospheric haze" },
-      { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel)\b/i, fallback: "textured ground surface" },
-      { check: /\b(scale|vast|expansive|stretching|towering|immense|panoramic|sprawling|depth)\b/i, fallback: "sense of vast scale" },
+      // Generic minimal set — use getEnvironmentRequiredElements() for indoor/outdoor-aware rules
+      { check: /\b(light|sunlight|moonlight|golden\s+hour|blue\s+hour|shadow|illuminat|backlit|sidelit|lamp|fluorescent|candle|glow|neon|bulb|window\s+light)\b/i, fallback: "soft directional light" },
+      { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric|condensation|diffusion)\b/i, fallback: "subtle atmospheric depth" },
+      { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave|tile|carpet|wood\s+floor|marble)\b/i, fallback: "textured surface" },
     ],
     positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound", "ambient audio"],
   },
@@ -323,16 +367,17 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     }
   }
 
-  // ── Step 5: Descriptive coverage by scene type ──────────────────
+  // ── Step 5: Descriptive coverage by scene type (indoor/outdoor-aware) ──
   if (sceneType === "environment") {
-    const envElements = SCENE_RULES.environment.requiredElements || [];
+    const envSubtype = detectEnvironmentSubtype(prompt, input.physicsRules?.environmentType);
+    const envElements = getEnvironmentRequiredElements(envSubtype);
     const additions: string[] = [];
     for (const { check, fallback } of envElements) {
-      if (!check.test(prompt)) additions.push(fallback);
+      if (!check.test(prompt) && fallback) additions.push(fallback);
     }
     if (additions.length > 0) {
       prompt = prompt.trim() + ". " + additions.join(", ");
-      log.push(`[env-detail] Added ${additions.length} missing: ${additions.join(", ")}`);
+      log.push(`[env-detail] (${envSubtype}) Added ${additions.length} missing: ${additions.join(", ")}`);
     }
   }
 
@@ -479,6 +524,52 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     const motPatterns = /\b(sway|drift|ripple|flutter|rustle|shimmer|flow|wave|settle|spin|dust|particle|cloud\s+move|light\s+shift)\b/i;
     if (!motPatterns.test(prompt)) {
       issues.push({ rule: "missing_natural_motion_for_environment", severity: "warning", message: "Environment scene has no natural motion cues" });
+    }
+
+    // Camera motion monotony (push-in convergence)
+    const pushInMatches = prompt.match(/\b(push[\s-]?in|dolly[\s-]?in|zoom[\s-]?in|move\s+(?:slowly\s+)?(?:toward|forward|closer))\b/gi) || [];
+    if (pushInMatches.length >= 1) {
+      const hasOtherMotion = /\b(pan|orbit|crane|drift|tracking|pull[\s-]?back|sweep|flyover|lateral|dolly\s+(?:through|along|around)|float)\b/i.test(prompt);
+      if (!hasOtherMotion) {
+        issues.push({ rule: "environment_camera_monotony", severity: "warning", message: "Environment scene uses only push-in camera — consider pan, orbit, crane, drift, or tracking" });
+      }
+    }
+
+    // Indoor/outdoor contamination
+    const envSubtypeForIssue = detectEnvironmentSubtype(prompt, input.physicsRules?.environmentType);
+    if (envSubtypeForIssue === "indoor") {
+      const outdoorContaminants: string[] = [];
+      const contaminantChecks: Array<{ pattern: RegExp; label: string }> = [
+        { pattern: /\b(overcast\s+sky|clear\s+sky|cloudy\s+sky|night\s+sky|starry\s+sky)\b/i, label: "sky description" },
+        { pattern: /\bsky\s+with\s+\w+/i, label: "sky description" },
+        { pattern: /\b(horizon|skyline)\b/i, label: "horizon/skyline" },
+        { pattern: /\b(vast\s+scale|sense\s+of\s+vast|sprawling|panoramic\s+(?:view|vista|landscape))\b/i, label: "outdoor scale cue" },
+        { pattern: /\b(terrain|soil|grass\s+field|sand\s+dune|rocky\s+ground)\b/i, label: "outdoor terrain" },
+        { pattern: /\b(subtle\s+atmospheric\s+haze)\b/i, label: "generic atmospheric haze fallback" },
+        { pattern: /\b(drone\s+flyover|aerial\s+sweep|bird.s?\s+eye)\b/i, label: "aerial camera in indoor" },
+      ];
+      for (const { pattern, label } of contaminantChecks) {
+        if (pattern.test(prompt)) outdoorContaminants.push(label);
+      }
+      if (outdoorContaminants.length > 0) {
+        issues.push({ rule: "indoor_outdoor_contamination", severity: "warning", message: `Indoor scene has outdoor elements: ${outdoorContaminants.join(", ")}` });
+      }
+    }
+
+    // Temporal beats as distance escalation
+    const beatSegs = prompt.match(/\d+s[-–]\d+s\s*:?\s*[^.]+/g) || [];
+    if (beatSegs.length >= 2) {
+      const distWords = /\b(closer|nearer|approach|zoom\s+in|push\s+in|tighter|move\s+toward|dolly\s+in)\b/i;
+      const distBeats = beatSegs.filter(b => distWords.test(b));
+      if (distBeats.length >= 2) {
+        issues.push({ rule: "temporal_beats_distance_escalation", severity: "warning", message: "Temporal beats describe distance escalation — render as environmental progression instead" });
+      }
+    }
+
+    // Missing environmental progression
+    const progressCues = /\b(shift|change|transition|evolve|deepen|brighten|darken|warm|cool|intensif|fade|grow|diminish|spread|recede|gather|scatter|settle|clear|thicken|thin)\b/i;
+    if (!progressCues.test(prompt) && prompt.split(/\s+/).length > 30) {
+      issues.push({ rule: "environment_missing_progression", severity: "warning", message: "Environment scene has no environmental progression" });
     }
   }
 
