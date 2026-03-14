@@ -4,6 +4,7 @@ import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts, KLING_SEGMENT_CAP } from "@/lib/sequence-density";
 import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconciliation";
+import { estimateProjectDuration } from "@/lib/story-duration-estimator";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -37,7 +38,8 @@ async function fetchGeminiCuts(
   director: DirectorPersona,
   directorPersonaText: string,
   cutCount: number,
-  cutDuration: number
+  cutDuration: number,
+  projectTotalDurationSec: number,
 ): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; sequencePlan?: unknown; sequenceValidation?: unknown }> {
   try {
     const res = await fetch("/api/generate-cuts", {
@@ -55,13 +57,10 @@ async function fetchGeminiCuts(
         region: input.region,
         cutCount,
         cutDuration,
-        // ── 편집 밀도 범위 + 총 길이 ──
+        // ── 편집 밀도 범위 + project total 길이 ──
+        // effectiveDuration은 명시값 또는 스토리 기반 추정값. undefined로 빠지지 않음.
         preferredCutCountRange: input.preferredCutCountRange ?? null,
-        totalDurationSeconds: typeof input.duration === "number"
-          ? input.duration
-          : (cutCount > 0
-            ? cutCount * (cutDuration > 0 ? cutDuration : KLING_SEGMENT_CAP)
-            : undefined),
+        totalDurationSeconds: projectTotalDurationSec,
         // 페르소나 시스템
         generationPersona: input.generationPersona ?? null,
         characterPersonas: input.characterPersonas ?? [],
@@ -231,9 +230,11 @@ export async function generatePrompt(
   const directorName = director?.nameKo ?? "알 수 없는 감독";
   const directorStyle = director?.style ?? "";
 
+  // project total duration 추정: 명시값이면 그대로, auto이면 스토리 기반 추정
+  // 주의: 이 값은 project total이다. current segment cap(15초)과 혼동하지 말 것.
   const effectiveDuration =
     input.duration === "auto"
-      ? Math.min(120, Math.max(60, Math.round(input.storyText.length / 2)))
+      ? estimateProjectDuration(input.storyText).estimatedTotalSec
       : input.duration;
 
   const autoResult = computeAutoDuration({
@@ -252,7 +253,7 @@ export async function generatePrompt(
 
   // 2. 페르소나를 포함하여 장면 생성 (캐릭터 시드 + 감독 스타일 주입)
   const cutsResult = director
-    ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration)
+    ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration)
     : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
   const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, sequencePlan, sequenceValidation } = cutsResult;
 

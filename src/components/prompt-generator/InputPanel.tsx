@@ -10,6 +10,7 @@ import { recommendCutCountRange, densityPresetToRange } from "@/lib/sequence-den
 import { directors, workToDirectorMap } from "@/data/directors";
 import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
+import { estimateProjectDuration } from "@/lib/story-duration-estimator";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -534,14 +535,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
     // ── preferredCutCountRange 계산 ──
     // duration="auto"일 때도 editingDensity가 반드시 payload에 실려야 한다.
-    // effectiveTotalSec: 명시 duration > 0이면 그대로, auto이면 Kling segment cap(15) 기준 추정.
-    const KLING_SEGMENT_CAP = 15;
+    // effectiveTotalSec: 명시 duration > 0이면 그대로, auto이면 스토리 길이 기반 project total 추정.
+    // 주의: 이 값은 project total duration이다. current segment cap(15초)과 혼동하지 말 것.
     const totalSec = typeof duration === "number" ? duration : 0;
     const effectiveTotalSec = totalSec > 0
       ? totalSec
-      : (typeof cutCount === "number" && cutCount > 0
-        ? cutCount * (cutDuration > 0 ? cutDuration : KLING_SEGMENT_CAP)
-        : KLING_SEGMENT_CAP); // fallback: 단일 segment 기준
+      : estimateProjectDuration(storyText).estimatedTotalSec;
     let resolvedRange: CutCountRange | undefined;
     if (editingDensity === "custom") {
       resolvedRange = customCutRange;
