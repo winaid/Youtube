@@ -181,6 +181,38 @@ export function buildEditorialPlanningRules(ep: EditorialPersona): string {
  * - 6초+ → 2-3 beats cap (start + develop + climax)
  * - 한 cut 내부 wide→medium→close-up escalation 금지
  */
+/**
+ * Editorial persona → 짧은 운영 규칙 요약 (compact/degraded/step2-3 재강조용).
+ * extreme token pressure에서도 살아남는 1-2줄 요약.
+ */
+export function buildCompactEditorialSummary(ep: EditorialPersona): string {
+  const paceTag = ep.preferredCutPace[1] <= 4
+    ? "short punctuation cuts"
+    : ep.preferredCutPace[0] >= 5
+      ? "measured deliberate cuts"
+      : "balanced cadence";
+  const coverTag = ep.preferredCoverage === "wide-dominant" ? "establish-led"
+    : ep.preferredCoverage === "close-dominant" ? "detail-led"
+    : ep.preferredCoverage === "extreme-contrast" ? "extreme-contrast coverage"
+    : "balanced coverage";
+  const insertTag = ep.insertBias === "high" ? "high inserts"
+    : ep.insertBias === "low" ? "minimal inserts"
+    : ep.insertBias === "none" ? "no inserts"
+    : "moderate inserts";
+  const motionTag = ep.motionBias === "static" ? "static camera"
+    : ep.motionBias === "minimal" ? "near-static camera"
+    : ep.motionBias === "frenetic" ? "frenetic camera"
+    : ep.motionBias === "dynamic" ? "active camera"
+    : "motivated camera";
+  const transTag = ep.transitionBias === "dissolve" ? "soft dissolves"
+    : ep.transitionBias === "jump-cut" ? "jump-cut rhythm"
+    : ep.transitionBias === "match-cut" ? "match-cut flow"
+    : ep.transitionBias === "mixed" ? "varied transitions"
+    : "hard cuts";
+
+  return `[EDITORIAL: ${paceTag}, ${coverTag}, ${insertTag}, ${motionTag}, ${transTag}]`;
+}
+
 export function buildDurationAwareBeatTemplate(
   secPerCut: number,
   _ep?: EditorialPersona,

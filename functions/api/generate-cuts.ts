@@ -15,7 +15,7 @@ import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-pla
 import { classifyCuts } from "./_structure-classification";
 import { densifyCuts } from "./_sequence-density";
 import { computeServerAutoDuration } from "./_duration-constants";
-import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate } from "./_editorial-persona";
+import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate, buildCompactEditorialSummary } from "./_editorial-persona";
 import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount } from "./_sequence-density";
 
@@ -512,9 +512,13 @@ JSON만 출력:
       if (result.truncated || !safeParseObj(result.text)) {
         console.warn(`[cuts:step1] COMPACT RETRY — stripping verbose instructions from prompt`);
         parseMode = "compact_retry";
+        // compact editorial: editorialPlanningBlock의 축약 버전 (있으면 50자 내로)
+        const compactEditorial = editorialPlanningBlock
+          ? editorialPlanningBlock.split("\n").filter(l => l.startsWith("- ")).map(l => l.replace(/^-\s*/, "").split(":")[0]).slice(0, 3).join(", ")
+          : "";
         const compactPrompt = `당신은 시나리오 분석가입니다. JSON만 출력하세요.
 ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/해설자 금지." : "일반 영상."}
-감독: ${directorNameKo}. 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
+감독: ${directorNameKo}. 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.${compactEditorial ? `\n편집 기조: ${compactEditorial}` : ""}
 
 시나리오: ${storyExcerpt}
 
@@ -546,7 +550,11 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
     // Check if it's a timeout — try ultra-compact before throwing
     if (result.timedOut || (result.status === 524)) {
       console.warn(`[cuts:step1] TIMEOUT detected — attempting ultra-compact retry`);
-      const ultraPrompt = buildUltraCompactStep1Prompt(storyText, directorNameKo, cutCount, secPerCut);
+      // editorialPlanningBlock → 짧은 축약 (ultra-compact용)
+      const ultraEditorial = editorialPlanningBlock
+        ? editorialPlanningBlock.split("\n").filter(l => l.startsWith("- ")).map(l => l.replace(/^-\s*/, "").split(":")[0]).slice(0, 3).join(", ")
+        : undefined;
+      const ultraPrompt = buildUltraCompactStep1Prompt(storyText, directorNameKo, cutCount, secPerCut, ultraEditorial ? `[편집: ${ultraEditorial}]` : undefined);
       const ultraResult = await streamingGenerate(env, MODEL_OUTLINE, {
         contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
         generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
@@ -657,6 +665,7 @@ async function step23DetailBatch(
   stepLabel: string,
   generationPersonaBlock: string,  // buildGenerationPersonaBlock() 결과
   characterPersonaBlock: string,   // buildCharacterPersonaBlock() 결과
+  editorialSummary: string,        // buildCompactEditorialSummary() 결과 — step2/3 재강조용
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -735,6 +744,7 @@ ${secPerCut}초/씬 | 화면비: ${aspectRatio}
 
 ## 연출 엔진 (이 철학이 모든 컷의 구조를 지배한다 — 단순 스타일 태그가 아닌 설계 원칙)
 ${directorEngine}
+${editorialSummary ? `\n## ⚠️ EDITORIAL PERSONA REMINDER (step1에서 결정된 편집 기조 — 모든 컷에 적용)\n${editorialSummary}\n- complexity budget 유지: max 1 subject, 1 action, 1 camera motion per cut.` : ""}
 
 ## 전체 시퀀스 컨텍스트 (반복 방지용 — 이 컷들의 흐름 파악에만 사용)
 ${sequenceContext}
@@ -968,20 +978,40 @@ function buildDeterministicCuts(
   veoStyle: string,
   regionFlavor: string,
   animationMode: string,
+  editorialPersona?: EditorialPersona,
 ) {
   const physics = getPhysicsForScene(storyText);
   const storyExcerpt = storyText.slice(0, 200);
   const shotCycle = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
   const purposeCycle = ["establish", "develop", "climax", "resolve"];
-  const movementCycle = [
-    "slow pan revealing space and atmosphere",
-    "subtle dolly forward as subject is introduced",
-    "slow push-in as tension builds",
-    "locked-off static — contained reaction",
-    "restrained reframing as focus narrows",
-  ];
+  // editorial persona에 따른 카메라 움직임 기본값
+  const epMotion = editorialPersona?.motionBias;
+  const movementCycle = epMotion === "static" || epMotion === "minimal"
+    ? [
+        "locked-off static camera — stillness emphasizes composition",
+        "near-static camera with subtle creeping movement",
+        "locked-off static — contained observation",
+        "minimal dolly — restrained lateral drift",
+        "static frame — subject moves within fixed composition",
+      ]
+    : epMotion === "frenetic" || epMotion === "dynamic"
+      ? [
+          "handheld tracking following subject",
+          "quick dolly forward with energy",
+          "whip pan to new element",
+          "active tracking — subject-led camera",
+          "push-in with urgency",
+        ]
+      : [
+          "slow pan revealing space and atmosphere",
+          "subtle dolly forward as subject is introduced",
+          "slow push-in as tension builds",
+          "locked-off static — contained reaction",
+          "restrained reframing as focus narrows",
+        ];
 
-  const noTextSuffix = `${veoStyle}, directed by ${directorName}, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
+  const editorialTag = editorialPersona ? `. ${buildCompactEditorialSummary(editorialPersona)}` : "";
+  const noTextSuffix = `${veoStyle}, directed by ${directorName}, with natural diegetic sound and ambient audio, no text, no watermark, no captions${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
@@ -1067,9 +1097,10 @@ function buildUltraCompactStep1Prompt(
   directorNameKo: string,
   cutCount: number,
   secPerCut: number,
+  editorialSummary?: string,
 ): string {
   const storySnippet = storyText.slice(0, 400);
-  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/컷 × ${cutCount}컷. 12초초과→최소3컷,9~12초→최소3컷,반드시${cutCount}개outlines작성.
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/컷 × ${cutCount}컷. 12초초과→최소3컷,9~12초→최소3컷,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
 시나리오: ${storySnippet}
 
 {"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
@@ -1280,6 +1311,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             String(directorNameKo || directorName),
             targetCuts,
             secPerCut,
+            buildCompactEditorialSummary(editorial),
           );
           const retryResult = await streamingGenerate(context.env, MODEL_OUTLINE, {
             contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
@@ -1345,6 +1377,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             veoStyle,
             regionFlavor,
             String(animationMode),
+            editorial,
           );
 
           const defaultSeeds: CharacterSeed[] = [{
@@ -1389,6 +1422,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           veoStyle,
           regionFlavor,
           String(animationMode),
+          editorial,
         );
 
         const defaultSeeds: CharacterSeed[] = [{
@@ -1480,11 +1514,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       editingNote,
     ] as const;
 
+    // editorial summary for step2/3 reinforcement
+    const editorialSummary = buildCompactEditorialSummary(editorial);
+
     try {
       [details1, details2] = await Promise.all([
-        step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock),
+        step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary),
         batch2.length > 0
-          ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock)
+          ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary)
           : Promise.resolve([]),
       ]);
     } catch (e) {
