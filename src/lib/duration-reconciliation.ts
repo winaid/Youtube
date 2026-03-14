@@ -276,3 +276,67 @@ export function reconcileDuration(input: DurationReconcileInput): DurationReconc
     basis: "auto",
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Duration Summary Helpers — actual cuts 기반 source of truth
+// ═══════════════════════════════════════════════════════════════════
+
+export interface DurationSummaryInput {
+  /** 실제 생성된 cuts의 durationSec 배열 */
+  cuts: Array<{ durationSec: number }>;
+  /** 사용자 요청 장면당 초 (0 = auto) */
+  requestedSecondsPerScene?: number;
+  /** auto duration 결정 basis */
+  durationBasis?: string;
+}
+
+export interface DurationSummaryResult {
+  /** 실제 장면 수 */
+  actualSceneCount: number;
+  /** 실제 총 길이 (초) */
+  actualTotalDurationSeconds: number;
+  /** 자동 모드 여부 */
+  isAutoMode: boolean;
+  /** 헤드라인 summary 텍스트 (actual 기준) */
+  headline: string;
+  /** 보조 정보 텍스트 (requested vs actual) */
+  detail: string;
+}
+
+/**
+ * actual cuts 기반으로 duration summary를 생성.
+ * auto 모드에서는 곱셈 수식 금지.
+ * 명시 모드에서는 requested vs actual 분리 표기.
+ */
+export function buildDurationSummary(input: DurationSummaryInput): DurationSummaryResult {
+  const { cuts, requestedSecondsPerScene, durationBasis } = input;
+  const actualSceneCount = cuts.length;
+  const actualTotalDurationSeconds = cuts.reduce((s, c) => s + (c.durationSec ?? DURATION_FALLBACK), 0);
+  const isAutoMode = !requestedSecondsPerScene || requestedSecondsPerScene <= 0;
+
+  let headline: string;
+  let detail: string;
+
+  if (isAutoMode) {
+    // 자동 모드: 곱셈 수식 금지, actual 기준만 표시
+    headline = `자동 편집 리듬으로 ${actualSceneCount}장면 구성, 총 ${actualTotalDurationSeconds}초`;
+    const basisLabel = durationBasis
+      ? ` (${durationBasis})`
+      : "";
+    detail = `장면 길이 자동 보정${basisLabel}`;
+  } else {
+    // 명시 모드
+    const requestedTotal = requestedSecondsPerScene * actualSceneCount;
+    if (requestedTotal === actualTotalDurationSeconds) {
+      // 일치: 곱셈 수식 허용
+      headline = `${requestedSecondsPerScene}초 x ${actualSceneCount}장면 = ${actualTotalDurationSeconds}초`;
+      detail = "";
+    } else {
+      // 불일치: requested vs actual 분리
+      headline = `${actualSceneCount}장면, 실제 계획 총 ${actualTotalDurationSeconds}초`;
+      detail = `요청: ${requestedSecondsPerScene}초/장면 (${requestedTotal}초) → 실제: ${actualTotalDurationSeconds}초 (자동 보정됨)`;
+    }
+  }
+
+  return { actualSceneCount, actualTotalDurationSeconds, isAutoMode, headline, detail };
+}

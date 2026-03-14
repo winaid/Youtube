@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef } from "@/types";
-import { DURATION_FALLBACK } from "@/lib/duration-reconciliation";
+import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts } from "@/lib/sequence-density";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -472,9 +472,22 @@ export default function ResultPanel({
           <div className="flex items-center gap-2 flex-wrap">
             <Badge style={{ background: "#787fff", color: "white" }}>총 {result.totalCuts}장면</Badge>
             <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}장면</Badge>
-            <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
-              {(() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? DURATION_FALLBACK), 0); return `총 ${t}초 (${Math.floor(t / 60)}분 ${t % 60}초)`; })()}
-            </Badge>
+            {(() => {
+              const summary = buildDurationSummary({ cuts: result.cuts, requestedSecondsPerScene: secondsPerScene });
+              const t = summary.actualTotalDurationSeconds;
+              return (
+                <>
+                  <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
+                    {`총 ${t}초 (${Math.floor(t / 60)}분 ${t % 60}초)`}
+                  </Badge>
+                  {summary.detail && (
+                    <Badge variant="outline" style={{ borderColor: "#f59e0b80", fontSize: "10px" }}>
+                      {summary.detail}
+                    </Badge>
+                  )}
+                </>
+              );
+            })()}
             <Badge variant="outline" style={{ borderColor: "#e09900" }}>
               캐릭터 {result.characterSeeds.length}명 시드 고정
             </Badge>

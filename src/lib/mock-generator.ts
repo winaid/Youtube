@@ -3,7 +3,7 @@ import { directors } from "@/data/directors";
 import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts, KLING_SEGMENT_CAP } from "@/lib/sequence-density";
-import { computeAutoDuration } from "@/lib/duration-reconciliation";
+import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconciliation";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -278,9 +278,17 @@ export async function generatePrompt(
     ? characterSeeds.map(s => `[${s.id}: ${s.appearance}]`).join(" ")
     : "";
 
+  // actual cuts 기반 duration summary 생성 (source of truth)
+  const isAutoMode = !input.cutDuration || input.cutDuration <= 0;
+  const durationSummary = buildDurationSummary({
+    cuts,
+    requestedSecondsPerScene: isAutoMode ? 0 : input.cutDuration,
+    durationBasis: autoResult.basis,
+  });
+
   return {
     projectTitle: `${directorName}의 시선으로: ${storyWords}...`,
-    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 ${cutDuration}초 x ${cuts.length}장면 = ${cuts.length * cutDuration}초 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
+    conceptSummary: `${directorName} 감독의 연출 스타일(${directorStyle})을 적용하여, "${storyWords}..." 시나리오를 ${durationSummary.headline} 분량의 ${input.animationMode} 영상으로 구성했습니다. ${characterSeeds.length}명의 캐릭터가 시드 고정되어 전체 장면에서 동일한 외형을 유지합니다.`,
     totalCuts: cuts.length,
     globalStylePrompt: `[Veo Global Style] ${veoStyle}, ${region}, directed by ${director?.name ?? "auteur"}, ${charSeedSummary}, consistent character design across all cuts, unified color palette, ${input.aspectRatio} aspect ratio, cinematic quality, no text overlay, no watermark`,
     directorPersonaPrompt: directorPersonaText,
@@ -290,7 +298,7 @@ export async function generatePrompt(
       "Extend 프롬프트 사용 시 이전 장면 마지막 순간을 구체적으로 묘사하여 자연스러운 연결",
       "캐릭터 외형(의상, 헤어스타일, 체형, 피부톤)을 모든 장면에서 절대 변경 금지",
       `색감/조명은 ${directorName} 스타일의 시그니처 톤으로 통일`,
-      `각 ${cutDuration}초 클립의 시작 프레임이 이전 클립의 끝 프레임과 매칭되도록 구성`,
+      "각 클립의 시작 프레임이 이전 클립의 끝 프레임과 매칭되도록 구성",
       "CUT 1은 Video Prompt로 생성, CUT 2부터는 이전 클립 + Extend Prompt로 연장",
     ],
     cuts,
