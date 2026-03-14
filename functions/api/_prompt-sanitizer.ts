@@ -243,6 +243,12 @@ export interface ServerSanitizeInput {
   sceneType?: string;
   /** 컷 길이(초) — complexity budget 판단에 사용 */
   durationSec?: number;
+  /** editorial persona — persona 충돌 검증에 사용 */
+  editorialPersona?: {
+    motionBias?: string;
+    insertBias?: string;
+    preferredCutPace?: [number, number];
+  };
 }
 
 export interface ServerSanitizeResult {
@@ -594,6 +600,15 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     log.push(`[complexity] ${complexityIssues.length} cut complexity issues: ${complexityIssues.map(i => i.rule).join(", ")}`);
   }
 
+  // ── Step 5g: Editorial persona conflict detection ──────────────
+  if (input.editorialPersona) {
+    const personaIssues = detectEditorialPersonaConflicts(prompt, input.editorialPersona, input.durationSec, input.physicsRules);
+    issues.push(...personaIssues);
+    if (personaIssues.length > 0) {
+      log.push(`[persona] ${personaIssues.length} editorial persona conflicts: ${personaIssues.map(i => i.rule).join(", ")}`);
+    }
+  }
+
   // ── Step 6: Final validation ───────────────────────────────────
   let valid = true;
 
@@ -689,6 +704,55 @@ function detectCutComplexityIssues(
   const densityThreshold = (durationSec && durationSec <= 4) ? 6 : 8;
   if (totalIndicators > densityThreshold) {
     issues.push({ rule: "cut_overstuffed", severity: "warning", message: `Cut complexity ${totalIndicators}/${densityThreshold}` });
+  }
+
+  return issues;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Editorial Persona Conflict Detection
+// ═══════════════════════════════════════════════════════════════════
+
+function detectEditorialPersonaConflicts(
+  prompt: string,
+  persona: {
+    motionBias?: string;
+    insertBias?: string;
+    preferredCutPace?: [number, number];
+  },
+  durationSec?: number,
+  physicsRules?: PhysicsRulesContext,
+): SanitizeIssue[] {
+  const issues: SanitizeIssue[] = [];
+
+  const cameraMotions = (prompt.match(/\b(push[\s-]?in|pull[\s-]?back|pan\s+(?:left|right)|tilt\s+(?:up|down)|dolly|track(?:ing)?|crane|orbit|zoom|handheld|steadicam|jib|flyover|whip\s+pan|rack\s+focus|sweep)\b/gi) || []).length;
+  const actionVerbs = (prompt.match(/\b(walks?|runs?|jumps?|falls?|turns?|grabs?|throws?|kicks?|hits?|lifts?|pushes?|pulls?|climbs?|fights?|swings?|fires?|dances?|spins?|leaps?)\b/gi) || []).length;
+  const totalComplexity = cameraMotions + actionVerbs;
+  const threshold = (durationSec && durationSec <= 4) ? 4 : 6;
+
+  if (totalComplexity > threshold && (persona.motionBias === "frenetic" || persona.motionBias === "dynamic")) {
+    issues.push({ rule: "persona_conflicts_with_cut_complexity_budget", severity: "warning", message: `${persona.motionBias} motion bias + ${totalComplexity} complexity indicators exceeds budget for ${durationSec || "unknown"}s cut` });
+  }
+
+  if (persona.insertBias === "high") {
+    const insertPatterns = (prompt.match(/\b(insert|detail|close[\s-]?up|macro|texture|surface|shadow|silhouette)\b/gi) || []).length;
+    if (insertPatterns >= 4) {
+      issues.push({ rule: "persona_overdrives_insert_frequency", severity: "warning", message: `high insert bias + ${insertPatterns} insert/detail cues in single cut — risk of overstuffing` });
+    }
+  }
+
+  if (persona.preferredCutPace && persona.preferredCutPace[0] >= 5) {
+    const beatSegments = (prompt.match(/\d+s?\s*[-–]\s*\d+s?\s*:/g) || []).length;
+    if (durationSec && durationSec <= 3 && beatSegments >= 2) {
+      issues.push({ rule: "persona_forces_excessive_temporal_progression", severity: "warning", message: `slow pace persona (${persona.preferredCutPace[0]}-${persona.preferredCutPace[1]}s) but ${beatSegments} beats in ${durationSec}s cut` });
+    }
+  }
+
+  if (physicsRules && !physicsRules.hasWind && (persona.motionBias === "frenetic" || persona.motionBias === "dynamic")) {
+    const windMotion = /\b(flutter|wave|blow|ripple|billow|sway)\b/i.test(prompt);
+    if (windMotion) {
+      issues.push({ rule: "persona_motion_bias_conflicts_with_scene_constraints", severity: "warning", message: `${persona.motionBias} motion bias produced wind-dependent motion in ${physicsRules.environmentType} environment` });
+    }
   }
 
   return issues;

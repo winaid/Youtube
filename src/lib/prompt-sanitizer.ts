@@ -369,6 +369,12 @@ export interface SanitizePipelineInput {
   sceneType?: string;
   /** 컷 길이(초) — complexity budget 판단에 사용 */
   durationSec?: number;
+  /** editorial persona — persona 충돌 검증에 사용 */
+  editorialPersona?: {
+    motionBias?: string;
+    insertBias?: string;
+    preferredCutPace?: [number, number];
+  };
 }
 
 /** 물리 환경 제약 — sanitizer에서 사용하는 최소 subset */
@@ -502,6 +508,15 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
   issues.push(...complexityIssues);
   if (complexityIssues.length > 0) {
     log.push(`[complexity] ${complexityIssues.length} cut complexity issues: ${complexityIssues.map(i => i.rule).join(", ")}`);
+  }
+
+  // 9b. Editorial persona conflict detection
+  if (input.editorialPersona) {
+    const personaIssues = detectEditorialPersonaConflicts(prompt, input.editorialPersona, input.durationSec, input.physicsRules);
+    issues.push(...personaIssues);
+    if (personaIssues.length > 0) {
+      log.push(`[persona] ${personaIssues.length} editorial persona conflicts: ${personaIssues.map(i => i.rule).join(", ")}`);
+    }
   }
 
   // 최종 정리
@@ -847,6 +862,83 @@ export function detectCutComplexityIssues(
       severity: "warning",
       message: `Cut complexity score ${totalIndicators}/${densityThreshold} — reduce subjects, actions, camera moves, or temporal beats`,
     });
+  }
+
+  return issues;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Editorial Persona Conflict Detection
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Editorial persona가 cut complexity budget / physics constraints와
+ * 충돌하는 경우를 감지한다.
+ */
+export function detectEditorialPersonaConflicts(
+  prompt: string,
+  persona: {
+    motionBias?: string;
+    insertBias?: string;
+    preferredCutPace?: [number, number];
+  },
+  durationSec?: number,
+  physicsRules?: PhysicsRulesContext,
+): SanitizeIssue[] {
+  const issues: SanitizeIssue[] = [];
+
+  // 1. persona_conflicts_with_cut_complexity_budget
+  // persona가 high insert / frenetic motion인데 cut이 이미 overstuffed이면 경고
+  const cameraMotions = (prompt.match(/\b(push[\s-]?in|pull[\s-]?back|pan\s+(?:left|right)|tilt\s+(?:up|down)|dolly|track(?:ing)?|crane|orbit|zoom|handheld|steadicam|jib|flyover|whip\s+pan|rack\s+focus|sweep)\b/gi) || []).length;
+  const actionVerbs = (prompt.match(/\b(walks?|runs?|jumps?|falls?|turns?|grabs?|throws?|kicks?|hits?|lifts?|pushes?|pulls?|climbs?|fights?|swings?|fires?|dances?|spins?|leaps?)\b/gi) || []).length;
+  const totalComplexity = cameraMotions + actionVerbs;
+  const threshold = (durationSec && durationSec <= 4) ? 4 : 6;
+
+  if (totalComplexity > threshold && (persona.motionBias === "frenetic" || persona.motionBias === "dynamic")) {
+    issues.push({
+      rule: "persona_conflicts_with_cut_complexity_budget",
+      severity: "warning",
+      message: `${persona.motionBias} motion bias + ${totalComplexity} complexity indicators exceeds budget for ${durationSec || "unknown"}s cut`,
+    });
+  }
+
+  // 2. persona_overdrives_insert_frequency
+  // high insert bias인데 insert/detail 패턴이 동일 프롬프트 안에서 과다
+  if (persona.insertBias === "high") {
+    const insertPatterns = (prompt.match(/\b(insert|detail|close[\s-]?up|macro|texture|surface|shadow|silhouette)\b/gi) || []).length;
+    if (insertPatterns >= 4) {
+      issues.push({
+        rule: "persona_overdrives_insert_frequency",
+        severity: "warning",
+        message: `high insert bias + ${insertPatterns} insert/detail cues in single cut — risk of overstuffing`,
+      });
+    }
+  }
+
+  // 3. persona_forces_excessive_temporal_progression
+  // measured/slow pace persona인데 2s 이하 컷에 2+ beats 있으면 충돌
+  if (persona.preferredCutPace && persona.preferredCutPace[0] >= 5) {
+    const beatSegments = (prompt.match(/\d+s?\s*[-–]\s*\d+s?\s*:/g) || []).length;
+    if (durationSec && durationSec <= 3 && beatSegments >= 2) {
+      issues.push({
+        rule: "persona_forces_excessive_temporal_progression",
+        severity: "warning",
+        message: `slow pace persona (${persona.preferredCutPace[0]}-${persona.preferredCutPace[1]}s) but ${beatSegments} beats in ${durationSec}s cut`,
+      });
+    }
+  }
+
+  // 4. persona_motion_bias_conflicts_with_scene_constraints
+  // dynamic/frenetic motion bias인데 no-wind 환경이면 충돌 가능
+  if (physicsRules && !physicsRules.hasWind && (persona.motionBias === "frenetic" || persona.motionBias === "dynamic")) {
+    const windMotion = /\b(flutter|wave|blow|ripple|billow|sway)\b/i.test(prompt);
+    if (windMotion) {
+      issues.push({
+        rule: "persona_motion_bias_conflicts_with_scene_constraints",
+        severity: "warning",
+        message: `${persona.motionBias} motion bias produced wind-dependent motion in ${physicsRules.environmentType} environment`,
+      });
+    }
   }
 
   return issues;

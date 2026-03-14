@@ -15,7 +15,8 @@ import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-pla
 import { classifyCuts } from "./_structure-classification";
 import { densifyCuts } from "./_sequence-density";
 import { computeServerAutoDuration } from "./_duration-constants";
-import { extractEditorialPersona } from "./_editorial-persona";
+import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate } from "./_editorial-persona";
+import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount } from "./_sequence-density";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
@@ -55,6 +56,7 @@ function buildDirectorEngine(
   directorStyle: string,
   directorTechniques: Record<string, string> | null,
   animationMode: string,
+  editorialPersona?: EditorialPersona,
 ): string {
   const persona = directorPersona.slice(0, 800);
   const style   = directorStyle.slice(0, 200);
@@ -99,6 +101,7 @@ function buildDirectorEngine(
     tech.emotionalCore ? `Emotional core: ${tech.emotionalCore}` : "",
     stopMotionRules,
     hybridRules,
+    editorialPersona ? buildEditorialPlanningRules(editorialPersona) : "",
     "### Per-cut application (apply ALL of the above to EVERY cut):",
     "- How are characters physically exaggerated or stylized by this director's eye?",
     "- Is movement fluid, jerky, stiff, or rhythmically authored — and WHY for this scene?",
@@ -355,6 +358,7 @@ async function step1Outlines(
   contentMode: "dramatized_reenactment" | "general",
   generationPersonaBlock: string,
   characterPersonaBlock: string,
+  editorialPlanningBlock: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
@@ -404,7 +408,7 @@ async function step1Outlines(
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 ${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
-${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
+${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
 
 ## 시나리오
@@ -1178,26 +1182,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     };
     const regionFlavor = regionFlavorMap[String(region)] ?? "cinematic atmosphere";
 
-    // ── Temporal beat 템플릿 ──────────────────────────────────────────────────
-    const beatTemplate = secPerCut === 4
-      ? "0s-1s:[start]. 1s-3s:[develop]. 3s-4s:[climax]"
-      : secPerCut === 6
-        ? "0s-2s:[start]. 2s-4s:[develop]. 4s-6s:[climax]"
-        : secPerCut === 10
-          ? "0s-3s:[start]. 3s-7s:[develop]. 7s-10s:[climax]"
-          : secPerCut === 15
-            ? "0s-4s:[start]. 4s-10s:[develop]. 10s-15s:[climax]"
-            : "0s-2s:[start]. 2s-5s:[develop]. 5s-8s:[climax]";
-
-    const extendBeatTemplate = secPerCut === 4
-      ? "0s-1s:[prev→trans]. 1s-3s:[new scene]. 3s-4s:[settle]"
-      : secPerCut === 6
-        ? "0s-2s:[prev→trans]. 2s-4s:[new scene]. 4s-6s:[settle]"
-        : secPerCut === 10
-          ? "0s-3s:[prev→trans]. 3s-7s:[new scene]. 7s-10s:[settle]"
-          : secPerCut === 15
-            ? "0s-4s:[prev→trans]. 4s-10s:[new scene]. 10s-15s:[settle]"
-            : "0s-2s:[prev→trans]. 2s-5s:[new scene]. 5s-8s:[settle]";
+    // ── Temporal beat 템플릿 (duration-aware + persona-aware) ──────────────────
+    // 짧은 컷일수록 beat 수가 적어야 한다. 한 cut = 1 visual goal 원칙 유지.
+    const { beatTemplate, extendBeatTemplate } = buildDurationAwareBeatTemplate(secPerCut, editorial);
 
     const techniques = directorTechniques && typeof directorTechniques === "object"
       ? directorTechniques as Record<string, string>
@@ -1213,6 +1200,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       String(directorStyle ?? ""),
       techniques,
       String(animationMode),
+      editorial,
     );
 
     // ── 콘텐츠 모드 감지 (역사 재연 vs 일반) ─────────────────────────────────
@@ -1246,6 +1234,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const step1Warnings: string[] = [];
 
     try {
+      // ── editorial planning block 빌드 ──
+      const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
+
       ({ characterSeeds, outlines } = await step1Outlines(
         context.env,
         String(storyText),
@@ -1256,6 +1247,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         contentMode,
         generationPersonaBlock,
         characterPersonaBlock,
+        editorialPlanningBlock,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

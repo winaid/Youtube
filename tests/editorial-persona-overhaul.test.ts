@@ -21,6 +21,8 @@ import {
 import {
   extractEditorialPersona,
   editorialPaceMidpoint,
+  buildEditorialPlanningRules,
+  buildDurationAwareBeatTemplate,
 } from "@/lib/editorial-persona";
 import {
   DEFAULT_EDITORIAL_PERSONA,
@@ -34,6 +36,7 @@ import {
 import {
   detectCutComplexityIssues,
   runSanitizePipeline,
+  detectEditorialPersonaConflicts,
 } from "@/lib/prompt-sanitizer";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -500,6 +503,8 @@ describe("multi-cut insert allowed", () => {
 import {
   extractEditorialPersona as serverExtract,
   editorialPaceMidpoint as serverPaceMid,
+  buildEditorialPlanningRules as serverBuildRules,
+  buildDurationAwareBeatTemplate as serverBuildBeatTemplate,
 } from "../functions/api/_editorial-persona";
 
 describe("editorial persona — client/server parity", () => {
@@ -565,4 +570,274 @@ describe("duration — client/server parity", () => {
     expect(client.duration).toBe(server.duration);
     expect(client.basis).toBe(server.basis);
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// A. Editorial Persona Planning Rules — 실제 cut planning에 반영
+// ═══════════════════════════════════════════════════════════════════
+
+describe("editorial persona planning rules", () => {
+  it("gothic-macabre → shadow/object/detail bias + minimal motion + symmetrical", () => {
+    const ep = EDITORIAL_PERSONA_PRESETS["gothic-macabre"];
+    const rules = buildEditorialPlanningRules(ep);
+    expect(rules).toContain("EDITORIAL PLANNING RULES");
+    expect(rules).toContain("near-static camera"); // minimal motion
+    expect(rules).toContain("bilateral symmetry"); // symmetrical composition
+    expect(rules).toContain("high insert frequency"); // high insertBias
+    expect(rules).toContain("extreme-contrast coverage"); // extreme-contrast coverage
+    expect(rules).toContain("soft dissolves"); // dissolve transition
+  });
+
+  it("symmetrical-formalist → establish/symmetry/lateral bias", () => {
+    const ep = EDITORIAL_PERSONA_PRESETS["symmetrical-formalist"];
+    const rules = buildEditorialPlanningRules(ep);
+    expect(rules).toContain("locked-off static camera"); // static motion
+    expect(rules).toContain("bilateral symmetry"); // symmetrical composition
+    expect(rules).toContain("establish-first coverage"); // wide-dominant
+    expect(rules).toContain("clean hard cuts"); // hard-cut transition
+    expect(rules).toContain("minimal inserts"); // low insertBias
+  });
+
+  it("propulsive-action → shorter cadence + medium/detail alternation", () => {
+    const ep = EDITORIAL_PERSONA_PRESETS["propulsive-action"];
+    const rules = buildEditorialPlanningRules(ep);
+    expect(rules).toContain("2-4s per cut"); // fast pace
+    expect(rules).toContain("Short rapid cuts"); // fast pace note
+    expect(rules).toContain("aggressive rapid camera"); // frenetic motion
+    expect(rules).toContain("detail-first coverage"); // close-dominant
+    expect(rules).toContain("jump-cut rhythm"); // jump-cut transition
+    expect(rules).toContain("high insert frequency"); // high insertBias
+  });
+
+  it("lyrical-atmospheric → observation-led / softer transition bias", () => {
+    const ep = EDITORIAL_PERSONA_PRESETS["lyrical-atmospheric"];
+    const rules = buildEditorialPlanningRules(ep);
+    expect(rules).toContain("4-6s per cut"); // measured pace
+    expect(rules).toContain("near-static camera"); // minimal motion
+    expect(rules).toContain("rule-of-thirds intersection"); // rule-of-thirds
+    expect(rules).toContain("establish-first coverage"); // wide-dominant
+    expect(rules).toContain("soft dissolves"); // dissolve transition
+  });
+
+  it("default persona generates valid planning rules", () => {
+    const rules = buildEditorialPlanningRules(DEFAULT_EDITORIAL_PERSONA);
+    expect(rules).toContain("EDITORIAL PLANNING RULES");
+    expect(rules).toContain("GUARD"); // complexity budget guard
+    expect(rules).toContain("CAMERA MOTION");
+    expect(rules).toContain("COMPOSITION");
+    expect(rules).toContain("TRANSITION RHYTHM");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// B. Beat Template Alignment — duration-aware
+// ═══════════════════════════════════════════════════════════════════
+
+describe("beat template alignment", () => {
+  it("2-3s cut → 1 visual beat (single focus)", () => {
+    const { beatTemplate } = buildDurationAwareBeatTemplate(3);
+    // Should have only 1 beat segment
+    const beatCount = (beatTemplate.match(/\[/g) || []).length;
+    expect(beatCount).toBe(1);
+    expect(beatTemplate).toContain("single visual focus");
+  });
+
+  it("3-4s cut → 1-2 simple beats", () => {
+    const { beatTemplate } = buildDurationAwareBeatTemplate(4);
+    const beatCount = (beatTemplate.match(/\[/g) || []).length;
+    expect(beatCount).toBeLessThanOrEqual(2);
+  });
+
+  it("4-5s cut → 2 beats max", () => {
+    const { beatTemplate } = buildDurationAwareBeatTemplate(5);
+    const beatCount = (beatTemplate.match(/\[/g) || []).length;
+    expect(beatCount).toBeLessThanOrEqual(2);
+  });
+
+  it("old secPerCut=8 感覚 does NOT produce 3-beat template for 3s cut", () => {
+    const { beatTemplate } = buildDurationAwareBeatTemplate(3);
+    // Should NOT contain "start", "develop", "climax" structure
+    expect(beatTemplate).not.toMatch(/\[start\].*\[develop\].*\[climax\]/);
+  });
+
+  it("6s+ gets 3 beats (start/develop/climax)", () => {
+    const { beatTemplate } = buildDurationAwareBeatTemplate(8);
+    expect(beatTemplate).toContain("[start]");
+    expect(beatTemplate).toContain("[develop]");
+    expect(beatTemplate).toContain("[climax]");
+  });
+
+  it("extend beat template also follows same rules", () => {
+    const { extendBeatTemplate } = buildDurationAwareBeatTemplate(3);
+    const beatCount = (extendBeatTemplate.match(/\[/g) || []).length;
+    expect(beatCount).toBe(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// C. Payload Preview — persona differentiation
+// ═══════════════════════════════════════════════════════════════════
+
+describe("payload preview persona differentiation", () => {
+  it("different presets produce different planning rules", () => {
+    const gothicRules = buildEditorialPlanningRules(EDITORIAL_PERSONA_PRESETS["gothic-macabre"]);
+    const actionRules = buildEditorialPlanningRules(EDITORIAL_PERSONA_PRESETS["propulsive-action"]);
+    const lyricalRules = buildEditorialPlanningRules(EDITORIAL_PERSONA_PRESETS["lyrical-atmospheric"]);
+
+    // All should be different from each other
+    expect(gothicRules).not.toBe(actionRules);
+    expect(gothicRules).not.toBe(lyricalRules);
+    expect(actionRules).not.toBe(lyricalRules);
+  });
+
+  it("all personas do NOT flatten to same push-in/same cadence", () => {
+    const presetKeys = Object.keys(EDITORIAL_PERSONA_PRESETS);
+    const motionDirectives = presetKeys.map(k =>
+      buildEditorialPlanningRules(EDITORIAL_PERSONA_PRESETS[k])
+    );
+    // At least 3 distinct CAMERA MOTION lines
+    const motionLines = motionDirectives.map(r => {
+      const match = r.match(/CAMERA MOTION: (.+)/);
+      return match ? match[1] : "";
+    });
+    const uniqueMotions = new Set(motionLines);
+    expect(uniqueMotions.size).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// D. Complexity Budget Protection with Persona
+// ═══════════════════════════════════════════════════════════════════
+
+describe("complexity budget protection with persona", () => {
+  it("persona does NOT prevent cut_overstuffed detection", () => {
+    const prompt = "a man runs and jumps and kicks and falls and swings, push-in, pan left, crane up";
+    const issues = detectCutComplexityIssues(prompt, 3);
+    const overstuffed = issues.find(i => i.rule === "cut_overstuffed");
+    expect(overstuffed).toBeDefined();
+  });
+
+  it("persona does NOT prevent multiple_actions detection", () => {
+    const issues = detectCutComplexityIssues(
+      "warrior swings sword, kicks enemy, jumps over wall, grabs shield",
+    );
+    expect(issues.find(i => i.rule === "multiple_actions")).toBeDefined();
+  });
+
+  it("persona does NOT prevent excessive_temporal detection", () => {
+    const issues = detectCutComplexityIssues(
+      "0s-1s: start. 1s-2s: develop. 2s-3s: climax. 3s-4s: resolve.",
+      4,
+    );
+    expect(issues.find(i => i.rule === "excessive_temporal")).toBeDefined();
+  });
+
+  it("persona_conflicts_with_cut_complexity_budget detected", () => {
+    const issues = detectEditorialPersonaConflicts(
+      "a man runs and jumps and kicks and falls, push-in, pan left, crane up, orbit, zoom in",
+      { motionBias: "frenetic" },
+      3,
+    );
+    expect(issues.find(i => i.rule === "persona_conflicts_with_cut_complexity_budget")).toBeDefined();
+  });
+
+  it("persona_overdrives_insert_frequency detected", () => {
+    const issues = detectEditorialPersonaConflicts(
+      "close-up insert detail of texture, shadow silhouette on surface, macro detail shot",
+      { insertBias: "high" },
+    );
+    expect(issues.find(i => i.rule === "persona_overdrives_insert_frequency")).toBeDefined();
+  });
+
+  it("persona_motion_bias_conflicts_with_scene_constraints detected", () => {
+    const issues = detectEditorialPersonaConflicts(
+      "flag flutter on lunar surface, dynamic movement",
+      { motionBias: "frenetic" },
+      5,
+      { hasWind: false, hasAtmosphere: false, gravity: "low", environmentType: "lunar" },
+    );
+    expect(issues.find(i => i.rule === "persona_motion_bias_conflicts_with_scene_constraints")).toBeDefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// E. Regressions — existing tests must still pass
+// ═══════════════════════════════════════════════════════════════════
+
+describe("regression — auto duration unchanged", () => {
+  it("environment still 4s", () => {
+    expect(computeAutoDuration({ sceneType: "environment" }).duration).toBe(4);
+  });
+  it("character-driven still 5s", () => {
+    expect(computeAutoDuration({ sceneType: "character-driven" }).duration).toBe(5);
+  });
+  it("object-detail still 3s", () => {
+    expect(computeAutoDuration({ sceneType: "object-detail" }).duration).toBe(3);
+  });
+});
+
+describe("regression — multi-cut density unchanged", () => {
+  it("8s → 3+ cuts", () => {
+    expect(recommendMinimumCutCount(8)).toBe(3);
+  });
+  it("15s → 5+ cuts", () => {
+    expect(recommendMinimumCutCount(15)).toBe(5);
+  });
+});
+
+describe("regression — lunar physics preserved", () => {
+  it("lunar wind expressions still removed", () => {
+    const result = runSanitizePipeline({
+      prompt: "flag fluttering in wind on moon surface",
+      negatives: [],
+      framing: "WS",
+      shotCategory: "environment",
+      physicsRules: {
+        hasWind: false, hasAtmosphere: false, gravity: "low",
+        environmentType: "lunar", bannedExpressions: ["wind"],
+      },
+    });
+    expect(result.prompt).not.toMatch(/flutter.*wind/i);
+  });
+});
+
+describe("regression — indoor/outdoor contamination preserved", () => {
+  it("indoor scene with sky still flagged", () => {
+    const result = runSanitizePipeline({
+      prompt: "narrow clinic room, fluorescent light, overcast sky",
+      negatives: [],
+      framing: "WS",
+      shotCategory: "environment",
+      physicsRules: {
+        hasWind: false, hasAtmosphere: true, gravity: "earth",
+        environmentType: "indoor",
+      },
+    });
+    expect(result.issues.find(i => i.rule === "indoor_outdoor_contamination")).toBeDefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// F. Server/Client Parity — new functions
+// ═══════════════════════════════════════════════════════════════════
+
+describe("parity — buildEditorialPlanningRules", () => {
+  for (const [key, preset] of Object.entries(EDITORIAL_PERSONA_PRESETS)) {
+    it(`parity: ${key} planning rules`, () => {
+      const client = buildEditorialPlanningRules(preset);
+      const server = serverBuildRules(preset);
+      expect(client).toBe(server);
+    });
+  }
+});
+
+describe("parity — buildDurationAwareBeatTemplate", () => {
+  const durations = [3, 4, 5, 6, 8, 10, 15];
+  for (const d of durations) {
+    it(`parity: ${d}s beat template`, () => {
+      const client = buildDurationAwareBeatTemplate(d);
+      const server = serverBuildBeatTemplate(d);
+      expect(client).toEqual(server);
+    });
+  }
 });
