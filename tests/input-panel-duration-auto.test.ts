@@ -71,7 +71,7 @@ describe("scene-aware auto duration in InputPanel context", () => {
   it("environment scene에서 auto → 8보다 짧음", () => {
     const r = computeAutoDuration({ sceneType: "environment" });
     expect(r.duration).toBeLessThan(8);
-    expect(r.duration).toBe(5);
+    expect(r.duration).toBe(4); // lowered from 5
   });
 
   it("portrait scene에서 auto → 8보다 짧음", () => {
@@ -79,9 +79,9 @@ describe("scene-aware auto duration in InputPanel context", () => {
     expect(r.duration).toBeLessThan(8);
   });
 
-  it("character-driven → 6초", () => {
+  it("character-driven → 5초 (lowered from 6)", () => {
     const r = computeAutoDuration({ sceneType: "character-driven" });
-    expect(r.duration).toBe(6);
+    expect(r.duration).toBe(5);
   });
 });
 

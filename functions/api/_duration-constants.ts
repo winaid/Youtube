@@ -26,15 +26,29 @@ export function safeDuration(v: number | undefined | null): number {
 }
 
 /**
+ * 멀티컷 편집 우선 scene defaults.
+ * insert/detail=3s, establish/environment=4s, human/action=4-5s.
+ */
+const SCENE_DEFAULTS: Record<string, number> = {
+  "object-detail": 3, "transition-atmosphere": 3, "product": 3,
+  "environment": 4, "portrait": 4, "map_visualization": 4, "map-graphic": 4,
+  "person": 5, "character-driven": 5, "crowd": 5, "battle": 5,
+  "cinematic_sequence": 5, "cinematic-sequence": 5,
+};
+
+/**
  * auto duration 계산 — 서버 사이드.
  * cutDuration이 0/undefined면 totalDuration/cutCount 기반 계산.
  * 둘 다 없으면 sceneType 기반 기본값, 최후에 DURATION_FALLBACK.
+ *
+ * @param editorialPace - editorial persona의 preferredCutPace [min, max]
  */
 export function computeServerAutoDuration(
   cutDuration: number | undefined,
   totalDurationSeconds?: number,
   cutCount?: number,
   sceneType?: string,
+  editorialPace?: [number, number],
 ): { duration: number; basis: string } {
   if (cutDuration && cutDuration > 0) {
     return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(cutDuration))), basis: "explicit" };
@@ -46,15 +60,20 @@ export function computeServerAutoDuration(
   }
 
   if (sceneType) {
-    const defaults: Record<string, number> = {
-      "environment": 5, "transition-atmosphere": 4, "object-detail": 4,
-      "portrait": 5, "map_visualization": 5, "map-graphic": 5, "product": 5,
-      "person": 6, "character-driven": 6, "crowd": 6, "battle": 6,
-      "cinematic_sequence": 6, "cinematic-sequence": 6,
-    };
-    if (defaults[sceneType]) {
-      return { duration: defaults[sceneType], basis: "scene_default" };
+    const sceneDur = SCENE_DEFAULTS[sceneType];
+    if (sceneDur) {
+      if (editorialPace) {
+        const paceMid = Math.round((editorialPace[0] + editorialPace[1]) / 2);
+        const blended = Math.round((sceneDur + paceMid) / 2);
+        return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, blended)), basis: "scene_default" };
+      }
+      return { duration: sceneDur, basis: "scene_default" };
     }
+  }
+
+  if (editorialPace) {
+    const paceMid = Math.round((editorialPace[0] + editorialPace[1]) / 2);
+    return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, paceMid)), basis: "scene_default" };
   }
 
   return { duration: DURATION_FALLBACK, basis: "emergency_fallback" };

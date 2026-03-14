@@ -85,6 +85,8 @@ export interface AutoDurationInput {
   cutCount?: number;
   /** 장면 유형 (environment, character-driven 등) */
   sceneType?: string;
+  /** editorial persona의 preferredCutPace [min, max] */
+  editorialPace?: [number, number];
 }
 
 export interface AutoDurationResult {
@@ -92,8 +94,29 @@ export interface AutoDurationResult {
   basis: "explicit" | "recommended" | "computed" | "scene_default" | "emergency_fallback";
 }
 
+/**
+ * 멀티컷 편집 우선 scene defaults.
+ * insert/detail=3s, establish/environment=4s, human/action=4-5s.
+ * 8s 단일 컷은 예외적인 경우에만 사용.
+ */
+const SCENE_DEFAULTS: Record<string, number> = {
+  "object-detail": 3,
+  "transition-atmosphere": 3,
+  "product": 3,
+  "environment": 4,
+  "portrait": 4,
+  "map_visualization": 4,
+  "map-graphic": 4,
+  "person": 5,
+  "character-driven": 5,
+  "crowd": 5,
+  "battle": 5,
+  "cinematic_sequence": 5,
+  "cinematic-sequence": 5,
+};
+
 export function computeAutoDuration(input: AutoDurationInput): AutoDurationResult {
-  const { cutDuration, recommendedDuration, totalDurationSeconds, cutCount, sceneType } = input;
+  const { cutDuration, recommendedDuration, totalDurationSeconds, cutCount, sceneType, editorialPace } = input;
 
   // 1. explicit
   if (cutDuration && cutDuration > 0) {
@@ -112,27 +135,24 @@ export function computeAutoDuration(input: AutoDurationInput): AutoDurationResul
     return { duration: clamped, basis: "computed" };
   }
 
-  // 4. sceneType 기반 기본값
+  // 4. sceneType + editorialPace 기반 기본값
   if (sceneType) {
-    const sceneDefaults: Record<string, number> = {
-      "environment": 5,
-      "transition-atmosphere": 4,
-      "object-detail": 4,
-      "portrait": 5,
-      "map_visualization": 5,
-      "map-graphic": 5,
-      "product": 5,
-      "person": 6,
-      "character-driven": 6,
-      "crowd": 6,
-      "battle": 6,
-      "cinematic_sequence": 6,
-      "cinematic-sequence": 6,
-    };
-    const sceneDur = sceneDefaults[sceneType];
+    const sceneDur = SCENE_DEFAULTS[sceneType];
     if (sceneDur) {
+      // editorial persona의 pace가 있으면 scene default와 blend
+      if (editorialPace) {
+        const paceMid = Math.round((editorialPace[0] + editorialPace[1]) / 2);
+        const blended = Math.round((sceneDur + paceMid) / 2);
+        return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, blended)), basis: "scene_default" };
+      }
       return { duration: sceneDur, basis: "scene_default" };
     }
+  }
+
+  // 4b. editorialPace만 있고 sceneType 없을 때
+  if (editorialPace) {
+    const paceMid = Math.round((editorialPace[0] + editorialPace[1]) / 2);
+    return { duration: Math.min(DURATION_MAX, Math.max(DURATION_MIN, paceMid)), basis: "scene_default" };
   }
 
   // 5. emergency fallback

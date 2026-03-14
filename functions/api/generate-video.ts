@@ -248,6 +248,7 @@ function serializeSequenceToPrompt(
       bannedExpressions: seq.physicsRules.bannedExpressions,
     } : undefined,
     sceneType: seq.sceneType,
+    durationSec: seq.durationSec,
   });
   prompt = sanitizeResult.prompt;
   uniqueNeg = sanitizeResult.negatives;

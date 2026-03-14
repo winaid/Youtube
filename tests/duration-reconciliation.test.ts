@@ -427,21 +427,21 @@ describe("computeAutoDuration", () => {
     expect(r.basis).toBe("computed");
   });
 
-  it("auto + sceneType=environment → 5초", () => {
+  it("auto + sceneType=environment → 4초 (lowered from 5)", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
+    expect(r.duration).toBe(4);
+    expect(r.basis).toBe("scene_default");
+  });
+
+  it("auto + sceneType=character-driven → 5초 (lowered from 6)", () => {
+    const r = computeAutoDuration({ cutDuration: 0, sceneType: "character-driven" });
     expect(r.duration).toBe(5);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("auto + sceneType=character-driven → 6초", () => {
-    const r = computeAutoDuration({ cutDuration: 0, sceneType: "character-driven" });
-    expect(r.duration).toBe(6);
-    expect(r.basis).toBe("scene_default");
-  });
-
-  it("auto + sceneType=transition-atmosphere → 4초", () => {
+  it("auto + sceneType=transition-atmosphere → 3초 (lowered from 4)", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "transition-atmosphere" });
-    expect(r.duration).toBe(4);
+    expect(r.duration).toBe(3);
     expect(r.basis).toBe("scene_default");
   });
 
@@ -482,7 +482,7 @@ describe("computeAutoDuration", () => {
     // computed도 불가면 scene_default
     const r4 = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
     expect(r4.basis).toBe("scene_default");
-    expect(r4.duration).toBe(5);
+    expect(r4.duration).toBe(4);
   });
 
   it("environment/physics-sensitive scene은 8초보다 짧게 유도", () => {

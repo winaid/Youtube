@@ -15,6 +15,8 @@ import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-pla
 import { classifyCuts } from "./_structure-classification";
 import { densifyCuts } from "./_sequence-density";
 import { computeServerAutoDuration } from "./_duration-constants";
+import { extractEditorialPersona } from "./_editorial-persona";
+import { recommendMinimumCutCount } from "./_sequence-density";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1093,15 +1095,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
     const rawSecPerCut = Number(cutDuration) || 0;
     const rawCutCount = Number(cutCount) || 0;
+
+    // ── editorial persona 추출 ──
+    const editorial = extractEditorialPersona(
+      String(directorPersona || ""),
+      String(directorStyle || ""),
+      directorTechniques && typeof directorTechniques === "object"
+        ? (directorTechniques as Record<string, string>).editingStyle
+        : undefined,
+    );
+
     const autoResult = computeServerAutoDuration(
       rawSecPerCut > 0 ? rawSecPerCut : undefined,
       undefined, // totalDurationSeconds는 generate-cuts에서 직접 사용하지 않음
       rawCutCount > 0 ? rawCutCount : undefined,
+      undefined, // sceneType — 컷 생성 시점에서는 미정
+      editorial.preferredCutPace,
     );
     const secPerCut = autoResult.duration;
-    const targetCuts = Math.min(rawCutCount > 0 ? rawCutCount : secPerCut, 15);
 
-    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts, basis: autoResult.basis });
+    // ── targetCuts: density 기반 계산 (secPerCut를 cutCount로 쓰던 버그 수정) ──
+    // 명시적 cutCount가 있으면 사용, 없으면 secPerCut 기반 밀도 추정
+    const targetCuts = rawCutCount > 0
+      ? Math.min(rawCutCount, 15)
+      : Math.min(Math.max(recommendMinimumCutCount(secPerCut * 3), 3), 15);
+
+    console.log("[generate-cuts] duration params", { rawCutDuration: cutDuration, secPerCut, targetCuts, basis: autoResult.basis, editorial: editorial.preferredCutPace });
 
     if (!storyText || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });

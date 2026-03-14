@@ -122,6 +122,74 @@ export const GENERATION_PERSONA_PRESETS: { id: string; name: string; desc: strin
 
 export const DEFAULT_GENERATION_PERSONA: GenerationPersona = GENERATION_PERSONA_PRESETS[0].preset;
 
+// ===== Editorial Persona — 감독별 편집 운영 규칙 =====
+
+/**
+ * EditorialPersona — 감독별 편집 의사결정 규칙.
+ * SignatureTechniques(시각 스타일)와 분리된 편집 운영 계층.
+ * 컷 수, 컷 길이, 삽입 빈도, 모션 성향 등 편집 결정에 직접 영향.
+ */
+export interface EditorialPersona {
+  /** 선호 컷 페이스: 컷당 초 범위 [min, max] */
+  preferredCutPace: [number, number];
+  /** 선호 커버리지: wide 중심인지 close-up 중심인지 */
+  preferredCoverage: "wide-dominant" | "close-dominant" | "balanced" | "extreme-contrast";
+  /** insert(디테일/오브젝트) 컷 삽입 빈도 */
+  insertBias: "none" | "low" | "moderate" | "high";
+  /** 카메라 모션 성향 */
+  motionBias: "static" | "minimal" | "moderate" | "dynamic" | "frenetic";
+  /** 구도 성향 */
+  compositionBias: "centered" | "rule-of-thirds" | "symmetrical" | "dutch-angle" | "mixed";
+  /** 전환 성향 */
+  transitionBias: "hard-cut" | "dissolve" | "match-cut" | "jump-cut" | "mixed";
+}
+
+/** 기본(중립) editorial persona */
+export const DEFAULT_EDITORIAL_PERSONA: EditorialPersona = {
+  preferredCutPace: [3, 5],
+  preferredCoverage: "balanced",
+  insertBias: "moderate",
+  motionBias: "moderate",
+  compositionBias: "mixed",
+  transitionBias: "hard-cut",
+};
+
+/** 편집 persona 프리셋 — 감독 스타일 키워드에서 매핑 */
+export const EDITORIAL_PERSONA_PRESETS: Record<string, EditorialPersona> = {
+  "gothic-macabre": {
+    preferredCutPace: [3, 5],
+    preferredCoverage: "extreme-contrast",
+    insertBias: "high",
+    motionBias: "minimal",
+    compositionBias: "symmetrical",
+    transitionBias: "dissolve",
+  },
+  "symmetrical-formalist": {
+    preferredCutPace: [4, 6],
+    preferredCoverage: "wide-dominant",
+    insertBias: "low",
+    motionBias: "static",
+    compositionBias: "symmetrical",
+    transitionBias: "hard-cut",
+  },
+  "propulsive-action": {
+    preferredCutPace: [2, 4],
+    preferredCoverage: "close-dominant",
+    insertBias: "high",
+    motionBias: "frenetic",
+    compositionBias: "dutch-angle",
+    transitionBias: "jump-cut",
+  },
+  "lyrical-atmospheric": {
+    preferredCutPace: [4, 6],
+    preferredCoverage: "wide-dominant",
+    insertBias: "moderate",
+    motionBias: "minimal",
+    compositionBias: "rule-of-thirds",
+    transitionBias: "dissolve",
+  },
+};
+
 // ===== 캐릭터 시드 =====
 export interface CharacterSeed {
   id: string;

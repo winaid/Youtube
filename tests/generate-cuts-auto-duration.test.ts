@@ -103,7 +103,7 @@ describe("safeDuration regression", () => {
     // auto 해석 → computeAutoDuration으로 basis 결정 → safeDuration으로 클램핑
     const auto = computeAutoDuration({ sceneType: "environment" });
     const final = safeDuration(auto.duration);
-    expect(final).toBe(5);
+    expect(final).toBe(4); // environment default lowered from 5 to 4
     expect(final).not.toBe(DURATION_FALLBACK);
   });
 

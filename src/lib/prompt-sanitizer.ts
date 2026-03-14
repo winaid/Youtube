@@ -367,6 +367,8 @@ export interface SanitizePipelineInput {
   physicsRules?: PhysicsRulesContext;
   /** 씬 타입 (structuredSequence.sceneType) — shotCategory보다 우선 */
   sceneType?: string;
+  /** 컷 길이(초) — complexity budget 판단에 사용 */
+  durationSec?: number;
 }
 
 /** 물리 환경 제약 — sanitizer에서 사용하는 최소 subset */
@@ -494,6 +496,13 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
   // 8. Scene-aware structural issues
   const structIssues = detectStructuralIssues(prompt, input.sceneType || input.shotCategory, input.physicsRules?.environmentType);
   issues.push(...structIssues);
+
+  // 9. Cut complexity budget
+  const complexityIssues = detectCutComplexityIssues(prompt, input.durationSec);
+  issues.push(...complexityIssues);
+  if (complexityIssues.length > 0) {
+    log.push(`[complexity] ${complexityIssues.length} cut complexity issues: ${complexityIssues.map(i => i.rule).join(", ")}`);
+  }
 
   // 최종 정리
   prompt = prompt
@@ -744,6 +753,99 @@ export function detectStructuralIssues(
       rule: "abstract_symbolism_over_specific_visuals",
       severity: "warning",
       message: `${abstractMatches.length} abstract/symbolic phrases detected — ensure physical/visual descriptions dominate`,
+    });
+  }
+
+  return issues;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Cut Complexity Budget
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 컷 복잡도 예산 검사.
+ * 규칙: 1 primary subject, 1 action, 1 camera motion, 1-2 temporal beats per cut.
+ *
+ * 감지 이슈:
+ * - cut_overstuffed: 전반적으로 과적재
+ * - too_many_subjects: 주체 2개 이상
+ * - multiple_actions: 동작 2개 이상
+ * - excessive_temporal: temporal beat 3개 이상
+ * - symbolism_overriding: 상징/은유가 시각 묘사를 압도
+ * - camera_overload: 카메라 모션 지시 2개 이상
+ */
+export function detectCutComplexityIssues(
+  prompt: string,
+  durationSec?: number,
+): SanitizeIssue[] {
+  const issues: SanitizeIssue[] = [];
+
+  // ── Subject count: 명확한 인물/주체 묘사 패턴 ──
+  const subjectPatterns = /\b(a\s+(?:man|woman|figure|person|child|soldier|warrior|king|queen|monk|priest|doctor|worker)|(?:two|three|four|five|several|multiple)\s+(?:people|men|women|figures|soldiers|warriors))\b/gi;
+  const subjectMatches = prompt.match(subjectPatterns) || [];
+  const multipleSubjectCue = /\b(two|three|four|five|several|multiple|group\s+of|crowd\s+of|pair\s+of)\b/i;
+  if (subjectMatches.length >= 2 || multipleSubjectCue.test(prompt)) {
+    issues.push({
+      rule: "too_many_subjects",
+      severity: "warning",
+      message: "Multiple subjects detected in single cut — prefer 1 primary subject per cut",
+    });
+  }
+
+  // ── Action count: 동작 동사 밀도 ──
+  const actionVerbs = /\b(walks?|runs?|jumps?|falls?|turns?|grabs?|throws?|kicks?|hits?|lifts?|pushes?|pulls?|climbs?|crawls?|fights?|draws?|swings?|fires?|dances?|spins?|leaps?|dives?|slams?|charges?|retreats?|collapses?|rises?|kneels?|bows?|strikes?|blocks?|dodges?|shoots?|stabs?)\b/gi;
+  const actionMatches = prompt.match(actionVerbs) || [];
+  if (actionMatches.length >= 3) {
+    issues.push({
+      rule: "multiple_actions",
+      severity: "warning",
+      message: `${actionMatches.length} action verbs in single cut — prefer 1 primary action per cut`,
+    });
+  }
+
+  // ── Camera motion count ──
+  const cameraMotions = /\b(push[\s-]?in|pull[\s-]?back|pan\s+(?:left|right)|tilt\s+(?:up|down)|dolly|track(?:ing)?|crane\s+(?:up|down)|orbit|zoom\s+(?:in|out)|handheld|steadicam|jib|flyover|whip\s+pan|rack\s+focus|sweep)\b/gi;
+  const cameraMatches = prompt.match(cameraMotions) || [];
+  if (cameraMatches.length >= 3) {
+    issues.push({
+      rule: "camera_overload",
+      severity: "warning",
+      message: `${cameraMatches.length} camera motions in single cut — prefer 1 camera motion directive per cut`,
+    });
+  }
+
+  // ── Temporal beat count ──
+  const beatSegments = prompt.match(/\d+s?\s*[-–]\s*\d+s?\s*:/g) || [];
+  const maxBeats = (durationSec && durationSec <= 4) ? 2 : 3;
+  if (beatSegments.length > maxBeats) {
+    issues.push({
+      rule: "excessive_temporal",
+      severity: "warning",
+      message: `${beatSegments.length} temporal beats in ${durationSec || "unknown"}s cut — max ${maxBeats} recommended`,
+    });
+  }
+
+  // ── Symbolism overriding visuals ──
+  const symbolismPatterns = /\b(symboliz(?:ing|es?)|represent(?:ing|s)|evok(?:ing|es?)|metaphor(?:ically)?|allegory|embod(?:ying|ies?)|signif(?:ying|ies?))\b/gi;
+  const symbolismMatches = prompt.match(symbolismPatterns) || [];
+  const wordCount = prompt.split(/\s+/).length;
+  if (symbolismMatches.length >= 2 && symbolismMatches.length / wordCount > 0.02) {
+    issues.push({
+      rule: "symbolism_overriding",
+      severity: "warning",
+      message: `${symbolismMatches.length} symbolism/metaphor phrases — ensure concrete visual descriptions dominate over abstract symbolism`,
+    });
+  }
+
+  // ── Overall overstuffed check ──
+  const totalIndicators = subjectMatches.length + actionMatches.length + cameraMatches.length + beatSegments.length;
+  const densityThreshold = (durationSec && durationSec <= 4) ? 6 : 8;
+  if (totalIndicators > densityThreshold) {
+    issues.push({
+      rule: "cut_overstuffed",
+      severity: "warning",
+      message: `Cut complexity score ${totalIndicators}/${densityThreshold} — reduce subjects, actions, camera moves, or temporal beats`,
     });
   }
 

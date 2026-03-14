@@ -241,6 +241,8 @@ export interface ServerSanitizeInput {
   provider: "veo" | "kling";
   physicsRules?: PhysicsRulesContext;
   sceneType?: string;
+  /** 컷 길이(초) — complexity budget 판단에 사용 */
+  durationSec?: number;
 }
 
 export interface ServerSanitizeResult {
@@ -585,6 +587,13 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     issues.push({ rule: "abstract_symbolism_over_specific_visuals", severity: "warning", message: `${abstractMatches.length} abstract/symbolic phrases detected` });
   }
 
+  // ── Step 5f: Cut complexity budget ──────────────────────────────
+  const complexityIssues = detectCutComplexityIssues(prompt, input.durationSec);
+  issues.push(...complexityIssues);
+  if (complexityIssues.length > 0) {
+    log.push(`[complexity] ${complexityIssues.length} cut complexity issues: ${complexityIssues.map(i => i.rule).join(", ")}`);
+  }
+
   // ── Step 6: Final validation ───────────────────────────────────
   let valid = true;
 
@@ -627,6 +636,62 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
     .trim();
 
   return { prompt, negatives, framing, log, issues, valid };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Cut Complexity Budget
+// ═══════════════════════════════════════════════════════════════════
+
+function detectCutComplexityIssues(
+  prompt: string,
+  durationSec?: number,
+): SanitizeIssue[] {
+  const issues: SanitizeIssue[] = [];
+
+  // Subject count
+  const subjectPatterns = /\b(a\s+(?:man|woman|figure|person|child|soldier|warrior|king|queen|monk|priest|doctor|worker)|(?:two|three|four|five|several|multiple)\s+(?:people|men|women|figures|soldiers|warriors))\b/gi;
+  const subjectMatches = prompt.match(subjectPatterns) || [];
+  const multipleSubjectCue = /\b(two|three|four|five|several|multiple|group\s+of|crowd\s+of|pair\s+of)\b/i;
+  if (subjectMatches.length >= 2 || multipleSubjectCue.test(prompt)) {
+    issues.push({ rule: "too_many_subjects", severity: "warning", message: "Multiple subjects in single cut" });
+  }
+
+  // Action count
+  const actionVerbs = /\b(walks?|runs?|jumps?|falls?|turns?|grabs?|throws?|kicks?|hits?|lifts?|pushes?|pulls?|climbs?|crawls?|fights?|draws?|swings?|fires?|dances?|spins?|leaps?|dives?|slams?|charges?|retreats?|collapses?|rises?|kneels?|bows?|strikes?|blocks?|dodges?|shoots?|stabs?)\b/gi;
+  const actionMatches = prompt.match(actionVerbs) || [];
+  if (actionMatches.length >= 3) {
+    issues.push({ rule: "multiple_actions", severity: "warning", message: `${actionMatches.length} action verbs in single cut` });
+  }
+
+  // Camera motion count
+  const cameraMotions = /\b(push[\s-]?in|pull[\s-]?back|pan\s+(?:left|right)|tilt\s+(?:up|down)|dolly|track(?:ing)?|crane\s+(?:up|down)|orbit|zoom\s+(?:in|out)|handheld|steadicam|jib|flyover|whip\s+pan|rack\s+focus|sweep)\b/gi;
+  const cameraMatches = prompt.match(cameraMotions) || [];
+  if (cameraMatches.length >= 3) {
+    issues.push({ rule: "camera_overload", severity: "warning", message: `${cameraMatches.length} camera motions in single cut` });
+  }
+
+  // Temporal beat count
+  const beatSegments = prompt.match(/\d+s?\s*[-–]\s*\d+s?\s*:/g) || [];
+  const maxBeats = (durationSec && durationSec <= 4) ? 2 : 3;
+  if (beatSegments.length > maxBeats) {
+    issues.push({ rule: "excessive_temporal", severity: "warning", message: `${beatSegments.length} temporal beats in ${durationSec || "unknown"}s cut` });
+  }
+
+  // Symbolism overriding
+  const symbolismMatches = prompt.match(/\b(symboliz(?:ing|es?)|represent(?:ing|s)|evok(?:ing|es?)|metaphor(?:ically)?|allegory|embod(?:ying|ies?)|signif(?:ying|ies?))\b/gi) || [];
+  const wordCount = prompt.split(/\s+/).length;
+  if (symbolismMatches.length >= 2 && symbolismMatches.length / wordCount > 0.02) {
+    issues.push({ rule: "symbolism_overriding", severity: "warning", message: `${symbolismMatches.length} symbolism phrases — visuals should dominate` });
+  }
+
+  // Overall overstuffed
+  const totalIndicators = subjectMatches.length + actionMatches.length + cameraMatches.length + beatSegments.length;
+  const densityThreshold = (durationSec && durationSec <= 4) ? 6 : 8;
+  if (totalIndicators > densityThreshold) {
+    issues.push({ rule: "cut_overstuffed", severity: "warning", message: `Cut complexity ${totalIndicators}/${densityThreshold}` });
+  }
+
+  return issues;
 }
 
 function escapeRegex(str: string): string {
