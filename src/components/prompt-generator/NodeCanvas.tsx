@@ -477,6 +477,20 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     setShowPalette(false);
   }, [viewport]);
 
+  /** Assets/History 탭에서 asset을 Viewer 노드로 캔버스에 삽입 */
+  const handleInsertAsset = useCallback((asset: string, mimeType: "image" | "video") => {
+    const viewerDef = NODE_REGISTRY.find(d => d.type === "viewer");
+    if (!viewerDef) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const cx = rect ? (rect.width / 2 / viewport.zoom - viewport.panX) : 200;
+    const cy = rect ? (rect.height / 2 / viewport.zoom - viewport.panY) : 200;
+    const x = cx - viewerDef.defaultWidth / 2 + (Math.random() - 0.5) * 40;
+    const y = cy - viewerDef.defaultHeight / 2 + (Math.random() - 0.5) * 40;
+    const node = createNode(viewerDef, x, y);
+    setState(prev => addNode(prev, { ...node, outputAsset: asset, outputMimeType: mimeType, status: "success" }));
+    setShowPalette(false);
+  }, [viewport]);
+
   const handleDeleteSelected = useCallback(() => {
     if (!state.selectedNodeId) return;
     setState(prev => removeNode(prev, prev.selectedNodeId!));
@@ -1038,6 +1052,8 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
         <NodePalette
           onAddNode={handleAddNode}
           onClose={() => setShowPalette(false)}
+          canvasNodes={state.nodes}
+          onInsertAsset={handleInsertAsset}
         />
       )}
 
