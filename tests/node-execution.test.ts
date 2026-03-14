@@ -591,3 +591,151 @@ describe("executeEditImage", () => {
     expect(node.error).toContain("500");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Upscale Image 노드 실행
+// ═══════════════════════════════════════════════════════════════════
+
+describe("executeUpscaleImage", () => {
+  it("upscale-image should be enabled in NODE_REGISTRY", () => {
+    const def = findDef("upscale-image");
+    expect(def).toBeDefined();
+    expect(def.enabled).toBe(true);
+    expect(def.category).toBe("image");
+    expect(def.inputs).toHaveLength(1);
+    expect(def.inputs[0].type).toBe("image");
+    expect(def.outputs).toHaveLength(1);
+    expect(def.outputs[0].type).toBe("image");
+  });
+
+  it("should fail when no input image is connected", async () => {
+    const upNode = createNode(findDef("upscale-image"), 0, 0);
+    let state = createInitialCanvasState();
+    state = addNode(state, upNode);
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(upNode.id, state, callbacks);
+
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === upNode.id)!;
+    expect(node.status).toBe("failed");
+    expect(node.error).toContain("입력 이미지");
+  });
+
+  it("should call /api/generate-image with referenceImage and editMode=upscale", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const upNode = createNode(findDef("upscale-image"), 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, upNode);
+
+    // Connect image → upscale-image
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, upNode.id, upNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,RAWBASE64", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [{ base64: "UPSCALEDBASE64", mimeType: "image/png" }],
+      }),
+    });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(upNode.id, state, callbacks);
+
+    // API 호출 검증
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(fetchCall[0]).toBe("/api/generate-image");
+    const body = JSON.parse(fetchCall[1].body);
+    expect(body.referenceImage).toBe("RAWBASE64");
+    expect(body.editMode).toBe("upscale");
+    expect(body.prompt).toContain("Upscale");
+
+    // 결과 검증
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === upNode.id)!;
+    expect(node.status).toBe("success");
+    expect(node.outputAsset).toBe("data:image/png;base64,UPSCALEDBASE64");
+    expect(node.outputMimeType).toBe("image");
+  });
+
+  it("should pass upscaled output to downstream viewer", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const upNode = createNode(findDef("upscale-image"), 300, 0);
+    const viewerNode = createNode(findDef("viewer"), 600, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, upNode);
+    state = addNode(state, viewerNode);
+
+    // image → upscale → viewer
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, upNode.id, upNode.inputs[0].id);
+    state = addEdge(state, upNode.id, upNode.outputs[0].id, viewerNode.id, viewerNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,ORIG", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [{ base64: "UPSCALED", mimeType: "image/png" }],
+      }),
+    });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(upNode.id, state, callbacks);
+
+    // upscale 실행 후 viewer가 결과를 받을 수 있는지 확인
+    const latest = callbacks.getLatest();
+    const inputs = getInputAssets(latest, viewerNode.id);
+    expect(inputs[0].asset).toBe("data:image/png;base64,UPSCALED");
+    expect(inputs[0].mimeType).toBe("image");
+  });
+
+  it("should handle API error gracefully", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const upNode = createNode(findDef("upscale-image"), 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, upNode);
+
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, upNode.id, upNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,ABC", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(upNode.id, state, callbacks);
+
+    const latest = callbacks.getLatest();
+    const node = latest.nodes.find(n => n.id === upNode.id)!;
+    expect(node.status).toBe("failed");
+    expect(node.error).toContain("500");
+  });
+
+  it("should include scale factor in upscale prompt", async () => {
+    const imgNode = createNode(findDef("generate-image"), 0, 0);
+    const upNode = createNode(findDef("upscale-image"), 300, 0);
+
+    let state = createInitialCanvasState();
+    state = addNode(state, imgNode);
+    state = addNode(state, { ...upNode, data: { ...upNode.data, scale: 4 } });
+
+    state = addEdge(state, imgNode.id, imgNode.outputs[0].id, upNode.id, upNode.inputs[0].id);
+    state = updateNodeStatus(state, imgNode.id, "success", "data:image/png;base64,DATA", "image");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [{ base64: "UP4X", mimeType: "image/png" }],
+      }),
+    });
+
+    const callbacks = makeCallbacksWithState(state);
+    await executeNode(upNode.id, state, callbacks);
+
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.prompt).toContain("4x");
+  });
+});

@@ -301,6 +301,56 @@ async function executeEditImage(
   }
 }
 
+async function executeUpscaleImage(
+  node: CanvasNode,
+  state: CanvasState,
+  callbacks: ExecutionCallbacks,
+): Promise<void> {
+  // ── 입력 이미지 필수 검증 ──
+  const inputs = getInputAssets(state, node.id);
+  const imageInput = inputs.find(i => i.mimeType === "image");
+
+  if (!imageInput?.asset) {
+    callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, "업스케일할 입력 이미지를 연결하세요"));
+    return;
+  }
+
+  callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "running"));
+
+  const referenceImageBase64 = imageInput.asset.replace(/^data:[^;]+;base64,/, "");
+  const scale = (node.data.scale as number) || 2;
+
+  try {
+    // 기존 /api/generate-image 재사용 — editMode="upscale" + 고정 업스케일 프롬프트
+    const res = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: `Upscale this image to ${scale}x higher resolution. Preserve all details, colors, composition, and style exactly. Enhance sharpness and clarity. No changes to content.`,
+        referenceImage: referenceImageBase64,
+        editMode: "upscale",
+        aspectRatio: node.data.aspectRatio || "16:9",
+      }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as { images?: { base64: string; mimeType: string }[]; error?: string };
+
+    if (data.images && data.images.length > 0) {
+      const img = data.images[0];
+      const dataUri = `data:${img.mimeType};base64,${img.base64}`;
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "success", dataUri, "image"));
+    } else {
+      callbacks.onStateChange(prev => updateNodeStatus(prev, node.id, "failed", undefined, undefined, data.error || "이미지 업스케일 결과 없음"));
+    }
+  } catch (err) {
+    callbacks.onStateChange(prev => updateNodeStatus(
+      prev, node.id, "failed", undefined, undefined,
+      err instanceof Error ? err.message : "이미지 업스케일 실패",
+    ));
+  }
+}
+
 function executeViewer(
   node: CanvasNode,
   state: CanvasState,
@@ -347,6 +397,9 @@ export async function executeNode(
       break;
     case "edit-image":
       await executeEditImage(node, state, callbacks);
+      break;
+    case "upscale-image":
+      await executeUpscaleImage(node, state, callbacks);
       break;
     case "generate-video":
       await executeGenerateVideo(node, state, callbacks);

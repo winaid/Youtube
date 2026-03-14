@@ -132,7 +132,7 @@ export const NODE_REGISTRY: NodeDefinition[] = [
     label: "Upscale Image",
     category: "image",
     description: "이미지 해상도를 업스케일합니다",
-    enabled: false,
+    enabled: true,
     inputs: [
       { label: "image", type: "image", isInput: true },
     ],
