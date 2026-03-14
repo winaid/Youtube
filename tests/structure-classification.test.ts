@@ -24,6 +24,7 @@ import {
   DURATION_THRESHOLD,
   CUT_COUNT_THRESHOLD,
 } from "@/lib/structure-classification";
+import { classifyCuts as serverClassifyCuts } from "../functions/api/_structure-classification";
 import { promptOutputToCanvasState } from "@/lib/sequence-to-nodes";
 import {
   exportAllChainsToPromptOutput,
@@ -727,5 +728,128 @@ describe("13. UI 표시용 구조 메타 존재 검증", () => {
     expect(reordered[0].durationClass).toBe("sequence-like");
     expect(reordered[1].durationClass).toBe("scene-like");
     expect(reordered[2].durationClass).toBe("cut-like");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 14. client/server classifyCuts parity — drift 방지
+// ═══════════════════════════════════════════════════════════════════
+
+describe("14. client/server classifyCuts parity", () => {
+  it("일반 mixed cuts — 짧은/중간/긴 컷 혼합", () => {
+    const cuts = [
+      { durationSec: 2, cutNumber: 1 },
+      { durationSec: 5, cutNumber: 2 },
+      { durationSec: 10, cutNumber: 3 },
+    ];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("기존 structureType이 있는 cut — 보존 일관성", () => {
+    const cuts = [
+      { durationSec: 3, cutNumber: 1, structureType: "scene" as const },
+      { durationSec: 8, cutNumber: 2, structureType: "sequence" as const },
+    ];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("기존 durationClass가 있는 cut — 보존 일관성", () => {
+    const cuts = [
+      { durationSec: 3, cutNumber: 1, durationClass: "sequence-like" as const },
+      { durationSec: 10, cutNumber: 2, durationClass: "cut-like" as const },
+    ];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("structureType + durationClass 둘 다 있는 cut — 완전 보존", () => {
+    const cuts = [
+      { durationSec: 6, cutNumber: 1, structureType: "scene" as const, durationClass: "scene-like" as const },
+    ];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("groupId가 있는 cut — passthrough 일관성", () => {
+    const cuts = [
+      { durationSec: 5, cutNumber: 1, groupId: "g1" },
+      { durationSec: 8, cutNumber: 2, groupId: "g1" },
+    ];
+    const clientResult = classifyCuts(cuts);
+    const serverResult = serverClassifyCuts(cuts);
+    expect(clientResult).toEqual(serverResult);
+    // groupId 보존 확인
+    expect((clientResult[0] as Record<string, unknown>).groupId).toBe("g1");
+    expect((serverResult[0] as Record<string, unknown>).groupId).toBe("g1");
+  });
+
+  it("groupId 없는 cut — undefined 유지", () => {
+    const cuts = [{ durationSec: 5, cutNumber: 1 }];
+    const clientResult = classifyCuts(cuts);
+    const serverResult = serverClassifyCuts(cuts);
+    expect(clientResult).toEqual(serverResult);
+    expect((clientResult[0] as Record<string, unknown>).groupId).toBeUndefined();
+    expect((serverResult[0] as Record<string, unknown>).groupId).toBeUndefined();
+  });
+
+  it("duration = 0 — 안전 fallback 일관성", () => {
+    const cuts = [{ durationSec: 0, cutNumber: 1 }];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("duration = NaN — 안전 fallback 일관성", () => {
+    const cuts = [{ durationSec: NaN, cutNumber: 1 }];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("duration 음수 — edge case 일관성", () => {
+    const cuts = [{ durationSec: -3, cutNumber: 1 }];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("원본 필드 보존 — title, videoPrompt 등", () => {
+    const cuts = [
+      {
+        durationSec: 6,
+        cutNumber: 1,
+        sceneDescription: "A scene",
+        videoPrompt: "cinematic shot",
+        cameraDirection: "pan left",
+        moodLighting: "warm",
+      },
+    ];
+    const clientResult = classifyCuts(cuts);
+    const serverResult = serverClassifyCuts(cuts);
+    expect(clientResult).toEqual(serverResult);
+    // 원본 필드 보존 확인
+    expect(clientResult[0].sceneDescription).toBe("A scene");
+    expect(clientResult[0].videoPrompt).toBe("cinematic shot");
+    expect(serverResult[0].sceneDescription).toBe("A scene");
+    expect(serverResult[0].videoPrompt).toBe("cinematic shot");
+  });
+
+  it("빈 배열 — 양쪽 모두 빈 배열 반환", () => {
+    expect(classifyCuts([])).toEqual(serverClassifyCuts([]));
+  });
+
+  it("임계값 경계 — 정확히 4초, 8초", () => {
+    const cuts = [
+      { durationSec: 3.99, cutNumber: 1 },
+      { durationSec: 4, cutNumber: 2 },
+      { durationSec: 7.99, cutNumber: 3 },
+      { durationSec: 8, cutNumber: 4 },
+    ];
+    expect(classifyCuts(cuts)).toEqual(serverClassifyCuts(cuts));
+  });
+
+  it("멱등성 — 재적용 시 결과 동일", () => {
+    const cuts = [
+      { durationSec: 5, cutNumber: 1 },
+      { durationSec: 10, cutNumber: 2 },
+    ];
+    const firstClient = classifyCuts(cuts);
+    const firstServer = serverClassifyCuts(cuts);
+    const secondClient = classifyCuts(firstClient);
+    const secondServer = serverClassifyCuts(firstServer);
+    expect(secondClient).toEqual(secondServer);
+    expect(firstClient).toEqual(secondClient);
   });
 });
