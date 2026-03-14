@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Cut, CharacterSeed, VideoClip } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { computeMontageExportState, downloadAllClips } from "@/lib/montage-export";
 
 interface VideoGenerationPanelProps {
   cuts: Cut[];
@@ -13,6 +15,7 @@ interface VideoGenerationPanelProps {
   progress: number;
   completedCount: number;
   totalCount: number;
+  projectTitle?: string;
   onGenerateCut: (cutNumber: number) => void;
   onStartAuto: () => void;
   onStopAuto: () => void;
@@ -60,6 +63,7 @@ export default function VideoGenerationPanel({
   progress,
   completedCount,
   totalCount,
+  projectTitle,
   onGenerateCut,
   onStartAuto,
   onStopAuto,
@@ -67,6 +71,21 @@ export default function VideoGenerationPanel({
   onAddCut,
   onSelectVariant,
 }: VideoGenerationPanelProps) {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadResult, setDownloadResult] = useState<{ downloaded: number; failed: number } | null>(null);
+
+  const montageState = computeMontageExportState(cuts, clips);
+
+  const handleDownloadAll = async () => {
+    setIsDownloading(true);
+    setDownloadResult(null);
+    try {
+      const result = await downloadAllClips(cuts, clips, projectTitle);
+      setDownloadResult(result);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#22c55e40" }}>
@@ -609,6 +628,87 @@ export default function VideoGenerationPanel({
             );
           })}
         </div>
+
+        {/* ── 몽타주 Export 섹션 ── */}
+        {totalCount > 0 && (
+          <div
+            className="rounded-lg p-4 space-y-3"
+            style={{ background: "#f8f9fa", border: "1px solid #e5e5e5" }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium" style={{ color: "#333" }}>
+                몽타주 내보내기
+              </span>
+              <Badge
+                variant="outline"
+                className="text-[10px]"
+                style={{
+                  borderColor: montageState.allClipsReady ? "#22c55e" : "#d97706",
+                  color: montageState.allClipsReady ? "#16a34a" : "#d97706",
+                }}
+              >
+                {montageState.completedCount}/{montageState.totalCount} clip 완료
+              </Badge>
+            </div>
+
+            {/* 진행 바 */}
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e5e5e5" }}>
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${montageState.totalCount > 0 ? (montageState.completedCount / montageState.totalCount) * 100 : 0}%`,
+                  background: montageState.allClipsReady ? "#22c55e" : "#d97706",
+                }}
+              />
+            </div>
+
+            {/* 누락 컷 경고 */}
+            {montageState.missingCutNumbers.length > 0 && (
+              <p className="text-[11px]" style={{ color: "#d97706" }}>
+                미완료 장면: {montageState.missingCutNumbers.map((n) => `#${n}`).join(", ")}
+              </p>
+            )}
+
+            {/* 총 예상 길이 */}
+            {montageState.totalDurationSec > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                총 예상 길이: {montageState.totalDurationSec}초
+                {montageState.totalDurationSec >= 60 && (
+                  <> ({Math.floor(montageState.totalDurationSec / 60)}분 {montageState.totalDurationSec % 60}초)</>
+                )}
+              </p>
+            )}
+
+            {/* stitch 미구현 안내 */}
+            <div
+              className="rounded-md p-2.5 text-[11px]"
+              style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}
+            >
+              <span className="font-medium">최종 편집본 없음</span> — {montageState.stitchUnavailableReason}
+            </div>
+
+            {/* 전체 다운로드 버튼 */}
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="text-white text-xs"
+                disabled={montageState.completedCount === 0 || isDownloading}
+                onClick={handleDownloadAll}
+                style={{
+                  background: montageState.completedCount > 0 ? "#787fff" : "#ccc",
+                }}
+              >
+                {isDownloading ? "다운로드 중..." : `완료된 clip 전체 다운로드 (${montageState.completedCount}개)`}
+              </Button>
+              {downloadResult && (
+                <span className="text-[11px] text-muted-foreground">
+                  {downloadResult.downloaded}개 완료
+                  {downloadResult.failed > 0 && <>, {downloadResult.failed}개 실패</>}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

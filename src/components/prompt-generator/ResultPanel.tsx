@@ -903,6 +903,7 @@ export default function ResultPanel({
             progress={videoGen.progress}
             completedCount={videoGen.completedCount}
             totalCount={videoGen.totalCount}
+            projectTitle={result.projectTitle}
             onGenerateCut={(n) => videoGen.generateCut(n)}
             onStartAuto={videoGen.startAutoGeneration}
             onStopAuto={videoGen.stopAutoGeneration}
