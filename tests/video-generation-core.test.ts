@@ -1135,3 +1135,143 @@ describe("hook polling execution path — full unification with node-execution",
     expect(timeoutHandling).not.toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. Shot variant polling — pollVideoTask 공통 경로 사용
+// ═══════════════════════════════════════════════════════════════════
+
+describe("shot variant polling — core pollVideoTask 재사용", () => {
+  it("pollShotVariant uses pollVideoTask (no inline polling loop)", async () => {
+    const fs = await import("fs");
+    const hookSource = fs.readFileSync(
+      new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
+      "utf-8",
+    );
+
+    // pollShotVariant 함수 내부에서 pollVideoTask 호출 확인
+    const fnBody = hookSource.match(
+      /const pollShotVariant[\s\S]*?(?=\n  const \w)/
+    )?.[0] ?? "";
+    expect(fnBody).toContain("pollVideoTask(");
+    // inline for-loop나 setTimeout 재귀 폴링이 없어야 함
+    expect(fnBody).not.toMatch(/for\s*\(/);
+    expect(fnBody).not.toContain("setTimeout(poll");
+  });
+
+  it("shot variant polling success → NormalizedVideoResult completed", async () => {
+    vi.useRealTimers();
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      if (callCount <= 2) {
+        return new Response(JSON.stringify({ status: "RUNNING" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.ai/variant-123.mp4",
+        rawVideoUri: "https://raw.kling.ai/variant-123.mp4",
+        seed: "42",
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("op-variant-123", {
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "op-variant-123" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.videoUri).toBe("https://cdn.kling.ai/variant-123.mp4");
+    expect(result.seed).toBe("42");
+    expect(result.pollMeta.totalAttempts).toBe(3);
+  });
+
+  it("shot variant polling failure → NormalizedVideoResult failed", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        status: "FAILED",
+        error: "Model access denied",
+        noRetry: true,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("op-variant-fail", {
+      extraPollBody: { operationName: "op-variant-fail" },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("Model access denied");
+    expect(result.noRetry).toBe(true);
+  });
+
+  it("shot variant polling timeout → NormalizedVideoResult timeout", async () => {
+    vi.useRealTimers();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ status: "RUNNING" }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("op-variant-timeout", {
+      maxAttempts: 3,
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "op-variant-timeout" },
+    });
+
+    expect(result.status).toBe("timeout");
+    expect(result.pollMeta.totalAttempts).toBeGreaterThanOrEqual(3);
+  });
+
+  it("model access denied classification is consistent for variant path", () => {
+    const err = classifyVideoError(new Error("model access denied"), 403);
+    expect(err.type).toBeDefined();
+    expect(err.retryable).toBe(false);
+  });
+
+  it("providerMeta is preserved through variant polling path", () => {
+    const meta = extractProviderMeta({
+      taskId: "variant-task-1",
+      engine: "kling",
+      modeUsed: "generate",
+      modelUsed: "kling-v1-6",
+    } as VideoSubmitResult);
+
+    expect(meta.engine).toBe("kling");
+    expect(meta.modeUsed).toBe("generate");
+    expect(meta.modelUsed).toBe("kling-v1-6");
+  });
+
+  it("durationMeta is normalized for variant results", () => {
+    const meta = buildDurationMeta(5, {
+      requestedSecondsPerScene: 5,
+      normalizedSecondsPerScene: 5,
+      sentSecondsPerScene: 5,
+      warnings: [],
+    });
+
+    expect(meta.normalizedSecondsPerScene).toBe(5);
+    expect(meta.source).toBe("api-response");
+    expect(meta.warnings).toEqual([]);
+  });
+
+  it("variant polling result includes pollMeta for diagnostics", async () => {
+    vi.useRealTimers();
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      if (callCount <= 1) {
+        return new Response(JSON.stringify({ status: "RUNNING" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        status: "COMPLETED",
+        videoUri: "https://cdn.kling.ai/v.mp4",
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const result = await pollVideoTask("op-meta", {
+      fixedIntervalMs: 10,
+      extraPollBody: { operationName: "op-meta" },
+    });
+
+    expect(result.pollMeta).toBeDefined();
+    expect(result.pollMeta.totalAttempts).toBe(2);
+    expect(result.pollMeta.totalDurationMs).toBeGreaterThanOrEqual(0);
+  });
+});

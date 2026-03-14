@@ -2487,7 +2487,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   }, [state.clips, state.config]);
 
   /**
-   * shot variant 전용 폴링. 기존 cut 폴링과 분리.
+   * shot variant 전용 폴링 — 공통 pollVideoTask 사용.
+   * 상태 판정/timeout/에러 분류/backoff는 core에 위임하고,
+   * variant 상태 업데이트만 후처리한다.
    */
   const pollShotVariant = useCallback(async (
     cutNumber: number,
@@ -2495,67 +2497,38 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     variantId: string,
     operationName: string,
   ) => {
-    const maxAttempts = 72;
-    let attempts = 0;
+    const result = await pollVideoTask(operationName, {
+      extraPollBody: { operationName },
+    });
 
-    const poll = async () => {
-      attempts++;
-      if (attempts > maxAttempts) {
-        setShotVariantState(prev => {
-          let next = setShotStatus(prev, shotId, "failed");
-          next = updateShotVariant(next, shotId, variantId, {
-            status: "failed",
-            error: "폴링 시간 초과 (6분)",
-          });
-          return next;
+    if (result.status === "completed") {
+      setShotVariantState(prev => {
+        let next = setShotStatus(prev, shotId, "success");
+        next = updateShotVariant(next, shotId, variantId, {
+          status: "success",
+          videoUrl: result.videoUri,
         });
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/check-video?operationName=${encodeURIComponent(operationName)}&engine=kling`);
-        if (!res.ok) {
-          setTimeout(poll, 5000);
-          return;
+        // Auto-activate first successful variant if none active
+        if (!prev.activeVariantIds[shotId]) {
+          next = setActiveShotVariantState(next, shotId, variantId);
         }
-
-        const data = await res.json();
-
-        if (data.status === "COMPLETED" && data.videoUri) {
-          setShotVariantState(prev => {
-            let next = setShotStatus(prev, shotId, "success");
-            next = updateShotVariant(next, shotId, variantId, {
-              status: "success",
-              videoUrl: data.videoUri,
-              thumbnailUrl: data.thumbnailUri,
-            });
-            // Auto-activate first successful variant if none active
-            if (!prev.activeVariantIds[shotId]) {
-              next = setActiveShotVariantState(next, shotId, variantId);
-            }
-            return next;
-          });
-          console.log(`[SHOT REGEN] ${shotId} variant ${variantId} completed`, { videoUri: data.videoUri });
-        } else if (data.status === "FAILED") {
-          setShotVariantState(prev => {
-            let next = setShotStatus(prev, shotId, "failed");
-            next = updateShotVariant(next, shotId, variantId, {
-              status: "failed",
-              error: data.error || "생성 실패",
-            });
-            return next;
-          });
-        } else {
-          // Still running — continue polling
-          const interval = attempts < 10 ? 5000 : 7000;
-          setTimeout(poll, interval);
-        }
-      } catch {
-        setTimeout(poll, 5000);
-      }
-    };
-
-    setTimeout(poll, 3000); // Initial delay
+        return next;
+      });
+      console.log(`[SHOT REGEN] ${shotId} variant ${variantId} completed`, { videoUri: result.videoUri });
+    } else {
+      // failed or timeout — 공통 에러 분류 결과 사용
+      const errorMsg = result.status === "timeout"
+        ? "폴링 시간 초과 (6분)"
+        : (result.error || "생성 실패");
+      setShotVariantState(prev => {
+        let next = setShotStatus(prev, shotId, "failed");
+        next = updateShotVariant(next, shotId, variantId, {
+          status: "failed",
+          error: errorMsg,
+        });
+        return next;
+      });
+    }
   }, []);
 
   /**
