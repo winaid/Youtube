@@ -1336,7 +1336,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             appearanceKo: "캐주얼 의상의 젊은 인물",
           }];
 
-          const sequencePlan = buildSequencePlanFromCuts(deterministicCuts, {
+          const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
+          const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
             aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
             directorId: String(directorName || ""),
@@ -1350,7 +1351,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             source: "deterministic-fallback",
             warnings: step1Warnings,
             characterSeeds: defaultSeeds,
-            cuts: classifyCuts(densifyCuts(deterministicCuts)),
+            cuts: finalizedCuts,
             sequencePlan,
             sequenceValidation,
             secPerCut,
@@ -1379,7 +1380,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           appearanceKo: "캐주얼 의상의 젊은 인물",
         }];
 
-        const sequencePlan = buildSequencePlanFromCuts(deterministicCuts, {
+        const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
+        const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
           aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
           directorId: String(directorName || ""),
@@ -1393,7 +1395,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           source: "deterministic-fallback",
           warnings: step1Warnings,
           characterSeeds: defaultSeeds,
-          cuts: classifyCuts(densifyCuts(deterministicCuts)),
+          cuts: finalizedCuts,
           sequencePlan,
           sequenceValidation,
           secPerCut,
@@ -1637,9 +1639,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       };
     });
 
+    // ═══ density 보정 + classify → finalizedCuts ═══════════════════
+    const finalizedCuts = classifyCuts(densifyCuts(cuts));
+
     // ═══ 시퀀스 플랜 구축 + 검증 ═══════════════════════════════════
-    // cuts[]를 SequencePlan JSON으로 구조화하고, shot plan 무결성 검증
-    const sequencePlan = buildSequencePlanFromCuts(cuts, {
+    // finalizedCuts 기준으로 SequencePlan 생성 (cuts와 sequencePlan 정합성 보장)
+    const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
       styleId: String(animationMode || "live-action"),
       aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
       directorId: String(directorName || ""),
@@ -1657,7 +1662,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       source: "gemini" as const,
       warnings: step1Warnings,
       characterSeeds,
-      cuts: classifyCuts(densifyCuts(cuts)),
+      cuts: finalizedCuts,
       sequencePlan,
       sequenceValidation,
       secPerCut,

@@ -374,6 +374,7 @@ describe("MULTI_SHOT_SCENE_TYPES", () => {
 
 import { classifyCuts } from "../functions/api/_structure-classification";
 import { densifyCuts } from "../functions/api/_sequence-density";
+import { buildSequencePlanFromCuts, validateSequencePlan } from "../functions/api/_sequence-plan";
 
 // ═══════════════════════════════════════════════════════════════════
 // 8.5. Server-side densifyCuts — deterministic fallback density enforcement
@@ -416,6 +417,84 @@ describe("server-side densifyCuts — deterministic fallback density", () => {
     for (const c of result) {
       expect(c.shotType).toBe("MS");
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8.6. finalizedCuts ↔ sequencePlan 정합성
+// ═══════════════════════════════════════════════════════════════════
+
+describe("finalizedCuts ↔ sequencePlan consistency", () => {
+  // 헬퍼: deterministic fallback 시뮬레이션 (실제 generate-cuts.ts와 동일 흐름)
+  function simulateFallbackResponse(cutCount: number, secPerCut: number) {
+    const deterministicCuts = Array.from({ length: cutCount }, (_, i) => ({
+      cutNumber: i + 1,
+      durationSec: secPerCut,
+      sceneDescription: `장면 ${i + 1}`,
+      shotCategory: i === 0 ? "environment" : "character-driven",
+      characterRole: i === 0 ? "absent" : "protagonist",
+    }));
+
+    const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
+    const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
+      styleId: "live-action",
+      aspectRatio: "16:9",
+      directorId: "test",
+    });
+    const sequenceValidation = validateSequencePlan(sequencePlan);
+
+    return { cuts: finalizedCuts, sequencePlan, sequenceValidation };
+  }
+
+  it("15s single cut → cuts와 sequencePlan shot 수 일치", () => {
+    const resp = simulateFallbackResponse(1, 15);
+    expect(resp.cuts.length).toBeGreaterThanOrEqual(3);
+    expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
+  });
+
+  it("12s single cut → cuts와 sequencePlan shot 수 일치", () => {
+    const resp = simulateFallbackResponse(1, 12);
+    expect(resp.cuts.length).toBeGreaterThanOrEqual(3);
+    expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
+  });
+
+  it("8s single cut → cuts와 sequencePlan shot 수 일치", () => {
+    const resp = simulateFallbackResponse(1, 8);
+    expect(resp.cuts.length).toBeGreaterThanOrEqual(2);
+    expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
+  });
+
+  it("4s single cut → 분할 없음, sequencePlan shot=1", () => {
+    const resp = simulateFallbackResponse(1, 4);
+    expect(resp.cuts.length).toBe(1);
+    expect(resp.sequencePlan.shots.length).toBe(1);
+  });
+
+  it("5 cuts x 8s → 분할 불필요, sequencePlan shot=5", () => {
+    const resp = simulateFallbackResponse(5, 8);
+    expect(resp.cuts.length).toBe(5);
+    expect(resp.sequencePlan.shots.length).toBe(5);
+  });
+
+  it("sequencePlan totalDurationSec가 cuts 합계와 일치", () => {
+    const resp = simulateFallbackResponse(1, 15);
+    const cutsTotal = resp.cuts.reduce((s, c) => s + c.durationSec, 0);
+    expect(resp.sequencePlan.globalIntent.durationSec).toBe(cutsTotal);
+  });
+
+  it("sequencePlan validation이 통과", () => {
+    const resp = simulateFallbackResponse(1, 15);
+    // errors 없어야 정합
+    expect(resp.sequenceValidation.summary.errors).toBe(0);
+  });
+
+  it("densify 후 classify 메타가 있는 cuts로 sequencePlan 생성 가능", () => {
+    const resp = simulateFallbackResponse(1, 10);
+    for (const cut of resp.cuts) {
+      expect(cut.structureType).toBeDefined();
+      expect(cut.durationClass).toBeDefined();
+    }
+    expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 });
 
