@@ -37,6 +37,7 @@
   ],
   "exclude": [
     "node_modules",
-    "functions"
+    "functions",
+    "tests/*.runner.ts"
   ]
 }
