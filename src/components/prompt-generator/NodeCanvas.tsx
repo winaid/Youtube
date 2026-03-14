@@ -43,6 +43,8 @@ import {
   type MergeErrorCode,
 } from "@/lib/nodes-to-sequence";
 import type { PromptOutput } from "@/types";
+import type { PreservedCutData } from "@/lib/node-types";
+import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import NodePalette from "./NodePalette";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -145,6 +147,15 @@ function CanvasNodeBox({
               {hlStyle.label}
             </span>
           )}
+          {node.type === "generate-video" && (() => {
+            const p = node.data._preservedCut as PreservedCutData | undefined;
+            if (!p?.structureType && !p?.durationClass) return null;
+            return (
+              <span className="text-[8px]" style={{ color: "#9ca3af" }}>
+                {[p.structureType?.toUpperCase(), p.durationClass].filter(Boolean).join(" · ")}
+              </span>
+            );
+          })()}
         </div>
         <div
           className="w-2.5 h-2.5 rounded-full"
@@ -312,6 +323,21 @@ function ViewerPanel({
           </Badge>
         </div>
       </div>
+
+      {/* 구조 메타 (generate-video 노드, preserved metadata에서 읽기) */}
+      {node.type === "generate-video" && (() => {
+        const p = node.data._preservedCut as PreservedCutData | undefined;
+        if (!p?.structureType && !p?.durationClass) return null;
+        return (
+          <div className="px-3 pb-1 flex items-center gap-1">
+            <StructureMetaBadges
+              structureType={p?.structureType as "cut" | "scene" | "sequence" | undefined}
+              durationClass={p?.durationClass as "cut-like" | "scene-like" | "sequence-like" | undefined}
+              compact
+            />
+          </div>
+        );
+      })()}
 
       {/* Preview */}
       <div className="px-3 pb-3">

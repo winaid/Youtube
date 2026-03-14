@@ -575,3 +575,81 @@ describe("merge export preserves _preservedCut and output-level metadata", () =>
     expect(result.output.cuts[1].videoPrompt).toBe("Video prompt for cut 2");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. 구조 메타 preserved → UI 소비 경로 전달 검증
+// ═══════════════════════════════════════════════════════════════════
+
+describe("10. 구조 메타 preserved metadata → UI 소비 경로", () => {
+  it("structureType/durationClass가 있는 cut → generate-video 노드 _preservedCutData에 포함", () => {
+    const output = makePromptOutput([
+      makeCut(1, { structureType: "scene", durationClass: "scene-like" }),
+    ]);
+    const state = promptOutputToCanvasState(output);
+    const vidNode = state.nodes.find(n => n.type === "generate-video")!;
+    const preserved = vidNode.data._preservedCut as PreservedCutData;
+
+    expect(preserved.structureType).toBe("scene");
+    expect(preserved.durationClass).toBe("scene-like");
+  });
+
+  it("structureType/durationClass가 없는 cut → _preservedCutData에도 없음", () => {
+    const output = makePromptOutput([makeCut(1)]);
+    const state = promptOutputToCanvasState(output);
+    const vidNode = state.nodes.find(n => n.type === "generate-video")!;
+    const preserved = vidNode.data._preservedCut as PreservedCutData;
+
+    expect(preserved.structureType).toBeUndefined();
+    expect(preserved.durationClass).toBeUndefined();
+  });
+
+  it("구조 메타 있는 cut → export 후 roundtrip 보존", () => {
+    const output = makePromptOutput([
+      makeCut(1, { structureType: "sequence", durationClass: "sequence-like" }),
+      makeCut(2, { structureType: "cut", durationClass: "cut-like" }),
+    ]);
+    const state = promptOutputToCanvasState(output);
+    const result = exportAllChainsToPromptOutput(state);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.output.cuts[0].structureType).toBe("sequence");
+    expect(result.output.cuts[0].durationClass).toBe("sequence-like");
+    expect(result.output.cuts[1].structureType).toBe("cut");
+    expect(result.output.cuts[1].durationClass).toBe("cut-like");
+  });
+
+  it("구조 메타 있는 cut → merge 후 보존", () => {
+    const original = makePromptOutput([
+      makeCut(1, { structureType: "scene", durationClass: "scene-like" }),
+      makeCut(2),
+    ]);
+    let state = promptOutputToCanvasState(original);
+    // cut 1의 prompt만 수정
+    const vidNode = state.nodes.find(n => n.type === "generate-video")!;
+    state = updateNodeData(state, vidNode.id, { prompt: "edited" });
+
+    const chains = findAllChains(state);
+    const result = mergeSelectedChainsToOutput([chains[0]], original);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // 구조 메타 보존
+    expect(result.output.cuts[0].structureType).toBe("scene");
+    expect(result.output.cuts[0].durationClass).toBe("scene-like");
+  });
+
+  it("groupId는 preserved에 있지만 UI에서 표시하지 않는 정책 확인", () => {
+    const output = makePromptOutput([
+      makeCut(1, { structureType: "scene", durationClass: "scene-like", groupId: "g1" }),
+    ]);
+    const state = promptOutputToCanvasState(output);
+    const vidNode = state.nodes.find(n => n.type === "generate-video")!;
+    const preserved = vidNode.data._preservedCut as PreservedCutData;
+
+    // groupId는 preserved에 존재 (roundtrip용)
+    expect(preserved.groupId).toBe("g1");
+    // structureType/durationClass도 존재
+    expect(preserved.structureType).toBe("scene");
+  });
+});
