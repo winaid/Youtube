@@ -216,9 +216,10 @@ function recommendStylesForDirector(
 
 const durations: { value: Duration; label: string }[] = [
   { value: "auto", label: "자동" },
-  { value: 60, label: "60초" },
-  { value: 90, label: "90초" },
+  { value: 60, label: "1분" },
   { value: 120, label: "2분" },
+  { value: 180, label: "3분" },
+  { value: 300, label: "5분" },
 ];
 
 const CUSTOM_DIRECTORS_KEY = "kling-custom-directors";
@@ -1263,7 +1264,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           {/* 영상 길이 */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>영상 길이</Label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-5 gap-1.5">
               {durations.map((d) => (
                 <button
                   key={String(d.value)}
@@ -1339,7 +1340,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             )}
 
             <div className="grid grid-cols-4 gap-1.5">
-              {([{ value: "auto" as const, label: "자동" }, ...([4, 6, 8, 10] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
+              {([{ value: "auto" as const, label: "자동" }, ...([6, 10, 15, 20] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
                 <button
                   key={String(item.value)}
                   className="h-8 rounded-lg text-xs font-medium transition-all"
@@ -1358,12 +1359,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               <input
                 type="number"
                 min={4}
-                max={10}
-                placeholder="직접 입력 (4~10)"
-                value={typeof cutCount === "number" && ![4, 6, 8, 10].includes(cutCount) ? cutCount : ""}
+                max={30}
+                placeholder="직접 입력 (4~30)"
+                value={typeof cutCount === "number" && ![6, 10, 15, 20].includes(cutCount) ? cutCount : ""}
                 onChange={(e) => {
                   const v = parseInt(e.target.value);
-                  if (v >= 4 && v <= 10) setCutCount(v);
+                  if (v >= 4 && v <= 30) setCutCount(v);
                   else if (e.target.value === "") setCutCount("auto");
                 }}
                 className="flex h-8 w-full rounded-lg border bg-white px-3 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#787fff]"

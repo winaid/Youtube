@@ -1216,7 +1216,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       totalDurationSec: effectiveTotalForDensity,
       personaBias: pBias,
     });
-    const targetCuts = Math.min(Math.max(segmentPlan.currentSegmentTargetCuts, 3), 15);
+    const targetCuts = Math.min(Math.max(segmentPlan.currentSegmentTargetCuts, 3), 30);
 
     console.log("[generate-cuts] duration params", {
       rawCutDuration: cutDuration, secPerCut, targetCuts,

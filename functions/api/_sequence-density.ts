@@ -111,7 +111,7 @@ export function resolveCutCount(opts: {
       notes.push(`exact cutCount(${exactCutCount}) < density minimum(${densityMin}), using density minimum`);
       return { cutCount: densityMin, source: "exact_cutCount", densityMinimum: densityMin, notes };
     }
-    return { cutCount: Math.min(exactCutCount, 15), source: "exact_cutCount", densityMinimum: densityMin, notes };
+    return { cutCount: Math.min(exactCutCount, 30), source: "exact_cutCount", densityMinimum: densityMin, notes };
   }
 
   if (preferredRange) {
@@ -135,7 +135,7 @@ export function resolveCutCount(opts: {
     }
 
     return {
-      cutCount: Math.min(selected, 15),
+      cutCount: Math.min(selected, 30),
       source: "preferred_range",
       densityMinimum: densityMin,
       notes,
@@ -154,7 +154,7 @@ export function resolveCutCount(opts: {
   fallbackCount = Math.max(fallbackCount, densityMin);
 
   return {
-    cutCount: Math.min(fallbackCount, 15),
+    cutCount: Math.min(fallbackCount, 30),
     source: "fallback",
     densityMinimum: densityMin,
     notes: ["no exact cutCount or preferred range provided, using density policy"],

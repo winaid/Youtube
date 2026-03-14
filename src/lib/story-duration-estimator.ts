@@ -175,9 +175,9 @@ export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
     cutDuration = 5;
   }
 
-  // cutCount = totalSec / cutDuration, 4~15 범위
+  // cutCount = totalSec / cutDuration, 4~30 범위
   const rawCutCount = Math.round(totalSec / cutDuration);
-  const cutCount = Math.min(15, Math.max(4, rawCutCount));
+  const cutCount = Math.min(30, Math.max(4, rawCutCount));
 
   // cutDuration 재조정: cutCount × cutDuration ≈ totalSec
   const adjustedDuration = Math.round(totalSec / cutCount);
