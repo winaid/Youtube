@@ -988,6 +988,43 @@ export interface CharacterFaceRef {
   boundingBox?: { x: number; y: number; width: number; height: number };
 }
 
+// ===== Kling Custom Element (캐릭터 일관성) =====
+/**
+ * KlingElementAsset — Kling Custom Element API로 생성된 reusable subject asset.
+ *
+ * CharacterFaceRef(얼굴 crop 이미지)와 완전 분리된 타입.
+ * CharacterFaceRef = 소스 이미지 데이터
+ * KlingElementAsset = Kling 서버에 등록된 reusable element (element_id 보유)
+ *
+ * 라이프사이클: pending → processing → completed → (사용 가능) | failed
+ */
+export type KlingElementStatus = "pending" | "processing" | "completed" | "failed";
+
+export type KlingElementSourceType = "image_refer" | "video_refer";
+
+export interface KlingElementAsset {
+  /** CharacterSeed.id와 매칭 */
+  characterId: string;
+  /** Kling create element task ID */
+  taskId: string;
+  /** 완료 후 할당되는 element ID — video generation 시 element_list에 전달 */
+  elementId: string | null;
+  /** element 이름 (캐릭터 label 기반) */
+  elementName: string;
+  /** element 설명 (캐릭터 appearance 기반) */
+  elementDescription: string;
+  /** 생성 상태 */
+  status: KlingElementStatus;
+  /** 소스 타입 */
+  sourceType: KlingElementSourceType;
+  /** 에러 메시지 (실패 시) */
+  error?: string;
+  /** 생성 시작 시각 (ms) */
+  createdAt: number;
+  /** 완료 시각 (ms) */
+  completedAt?: number;
+}
+
 // ===== 효과음 (SFX) =====
 export interface SfxMatch {
   id: string;

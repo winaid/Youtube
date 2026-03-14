@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef } from "@/types";
+import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset } from "@/types";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts } from "@/lib/sequence-density";
@@ -70,6 +70,8 @@ export default function ResultPanel({
   const [srtLoading, setSrtLoading] = useState(false);
   // 캐릭터 얼굴 레퍼런스
   const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
+  // Kling Custom Element assets
+  const [elementAssets, setElementAssets] = useState<KlingElementAsset[]>([]);
   // 인라인 감독 변경 재생성
   const [altDirector, setAltDirector] = useState("");
   const [altGenerating, setAltGenerating] = useState(false);
@@ -79,6 +81,7 @@ export default function ResultPanel({
     storyboardImages,
     storyboardEndImages,
     faceRefs,
+    elementAssets,
     onSeedDetected: (cutNumber, seed) => {
       console.log(`CUT ${cutNumber} seed: ${seed}`);
     },
@@ -636,6 +639,8 @@ export default function ResultPanel({
               storyboardImages={storyboardImages}
               faceRefs={faceRefs}
               onFaceRefsChange={setFaceRefs}
+              elementAssets={elementAssets}
+              onElementAssetsChange={setElementAssets}
             />
           )}
 

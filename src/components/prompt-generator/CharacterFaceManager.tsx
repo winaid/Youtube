@@ -1,16 +1,26 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { CharacterSeed, CharacterFaceRef } from "@/types";
+import type { CharacterSeed, CharacterFaceRef, KlingElementAsset } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  createKlingElement,
+  createElementAsset,
+  upsertElementAsset,
+  pollElementUntilDone,
+  canCreateElement,
+  getElementUnavailableReason,
+} from "@/lib/kling-element-store";
 
 interface CharacterFaceManagerProps {
   characterSeeds: CharacterSeed[];
   storyboardImages: Record<number, string>;
   faceRefs: CharacterFaceRef[];
   onFaceRefsChange: (refs: CharacterFaceRef[]) => void;
+  elementAssets: KlingElementAsset[];
+  onElementAssetsChange: React.Dispatch<React.SetStateAction<KlingElementAsset[]>>;
 }
 
 export default function CharacterFaceManager({
@@ -18,9 +28,12 @@ export default function CharacterFaceManager({
   storyboardImages,
   faceRefs,
   onFaceRefsChange,
+  elementAssets,
+  onElementAssetsChange,
 }: CharacterFaceManagerProps) {
   const [extracting, setExtracting] = useState<number | null>(null);
   const [autoExtractingAll, setAutoExtractingAll] = useState(false);
+  const [creatingElement, setCreatingElement] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // 이미지에서 얼굴 영역 크롭
@@ -190,7 +203,87 @@ export default function CharacterFaceManager({
     [faceRefs, onFaceRefsChange]
   );
 
+  // Kling Element 생성
+  const handleCreateElement = useCallback(
+    async (characterId: string) => {
+      const faceRef = faceRefs.find((r) => r.characterId === characterId);
+      if (!faceRef || !canCreateElement(faceRef.faceBase64)) return;
+
+      const seed = characterSeeds.find((s) => s.id === characterId);
+      setCreatingElement(characterId);
+
+      try {
+        const { taskId } = await createKlingElement({
+          characterId,
+          name: seed?.label || characterId,
+          description: seed?.appearance,
+          image: faceRef.faceBase64,
+          sourceType: "image_refer",
+        });
+
+        // 즉시 pending asset 추가
+        const newAsset = createElementAsset({
+          characterId,
+          taskId,
+          elementName: seed?.label || characterId,
+          elementDescription: seed?.appearance || "",
+          sourceType: "image_refer",
+        });
+        onElementAssetsChange(upsertElementAsset(elementAssets, newAsset));
+
+        // 백그라운드 폴링 시작
+        pollElementUntilDone(taskId, (update) => {
+          onElementAssetsChange((prev) => {
+            const existing = prev.find((a) => a.taskId === taskId);
+            if (!existing) return prev;
+            const updated: KlingElementAsset = {
+              ...existing,
+              status: update.status,
+              elementId: update.elementId,
+              error: update.error ?? undefined,
+              ...(update.status === "completed" ? { completedAt: Date.now() } : {}),
+            };
+            return upsertElementAsset(prev, updated);
+          });
+        }).catch((err) => {
+          console.error("[CharacterFaceManager] element poll error:", err);
+        });
+      } catch (err) {
+        console.error("[CharacterFaceManager] element create error:", err);
+      } finally {
+        setCreatingElement(null);
+      }
+    },
+    [faceRefs, characterSeeds, elementAssets, onElementAssetsChange]
+  );
+
   const hasStoryboards = Object.keys(storyboardImages).length > 0;
+
+  // Element 상태 뱃지 렌더링
+  const renderElementBadge = (characterId: string) => {
+    const asset = elementAssets.find((a) => a.characterId === characterId);
+    if (!asset) return null;
+
+    const statusConfig: Record<string, { bg: string; color: string; label: string }> = {
+      pending: { bg: "#fef3c720", color: "#d97706", label: "생성 대기" },
+      processing: { bg: "#dbeafe20", color: "#2563eb", label: "생성 중..." },
+      completed: { bg: "#dcfce720", color: "#16a34a", label: "Element 완료" },
+      failed: { bg: "#fee2e220", color: "#dc2626", label: "생성 실패" },
+    };
+    const cfg = statusConfig[asset.status] || statusConfig.pending;
+
+    return (
+      <Badge
+        className="text-[8px] py-0"
+        style={{ background: cfg.bg, color: cfg.color }}
+      >
+        {(asset.status === "pending" || asset.status === "processing") && (
+          <span className="inline-block h-2 w-2 animate-spin rounded-full border border-current border-t-transparent mr-1" />
+        )}
+        {cfg.label}
+      </Badge>
+    );
+  };
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#ff6b6b40" }}>
@@ -206,7 +299,7 @@ export default function CharacterFaceManager({
               캐릭터 얼굴 고정
             </CardTitle>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              스토리보드에서 얼굴을 추출하여 모든 장면의 reference image로 자동 주입합니다
+              스토리보드에서 얼굴을 추출하고 Kling Element를 생성하여 캐릭터 일관성을 유지합니다
             </p>
           </div>
           {hasStoryboards && (
@@ -238,18 +331,21 @@ export default function CharacterFaceManager({
               className="text-[10px] font-medium"
               style={{ color: "#d63031" }}
             >
-              추출된 얼굴 ({faceRefs.length}명) — 영상 생성 시 자동 주입됩니다
+              추출된 얼굴 ({faceRefs.length}명) — Kling Element 생성 후 영상에 자동 주입됩니다
             </p>
             <div className="flex gap-3 flex-wrap">
               {faceRefs.map((ref) => {
                 const seed = characterSeeds.find(
                   (s) => s.id === ref.characterId
                 );
+                const asset = elementAssets.find(
+                  (a) => a.characterId === ref.characterId
+                );
                 return (
                   <div key={ref.characterId} className="text-center group">
                     <div
                       className="relative w-20 h-20 rounded-xl overflow-hidden border-2 shadow-sm"
-                      style={{ borderColor: "#ff6b6b60" }}
+                      style={{ borderColor: asset?.status === "completed" ? "#22c55e60" : "#ff6b6b60" }}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -265,9 +361,9 @@ export default function CharacterFaceManager({
                       </button>
                       <Badge
                         className="absolute bottom-0.5 left-0.5 text-[8px] py-0 text-white"
-                        style={{ background: "#d63031cc" }}
+                        style={{ background: asset?.status === "completed" ? "#16a34acc" : "#d63031cc" }}
                       >
-                        REF
+                        {asset?.status === "completed" ? "ELM" : "REF"}
                       </Badge>
                     </div>
                     <p className="text-[10px] font-medium mt-1">
@@ -290,19 +386,26 @@ export default function CharacterFaceManager({
           </div>
         )}
 
-        {/* 캐릭터별 수동 업로드 / 장면에서 추출 */}
+        {/* 캐릭터별 수동 업로드 / 장면에서 추출 / Element 생성 */}
         <div className="space-y-2">
           {characterSeeds.map((seed) => {
             const hasRef = faceRefs.some((r) => r.characterId === seed.id);
+            const faceRef = faceRefs.find((r) => r.characterId === seed.id);
+            const asset = elementAssets.find((a) => a.characterId === seed.id);
             const fileInputId = `face-upload-${seed.id}`;
+            const unavailableReason = getElementUnavailableReason(faceRef?.faceBase64);
+            const isCreating = creatingElement === seed.id;
+            const isElementInProgress = asset?.status === "pending" || asset?.status === "processing";
 
             return (
               <div
                 key={seed.id}
                 className="flex items-center gap-2 p-2 rounded-lg"
                 style={{
-                  background: hasRef ? "#ff6b6b08" : "#f8f8f8",
-                  border: hasRef
+                  background: asset?.status === "completed" ? "#22c55e08" : hasRef ? "#ff6b6b08" : "#f8f8f8",
+                  border: asset?.status === "completed"
+                    ? "1px solid #22c55e20"
+                    : hasRef
                     ? "1px solid #ff6b6b20"
                     : "1px dashed #ddd",
                 }}
@@ -312,13 +415,13 @@ export default function CharacterFaceManager({
                     <Badge
                       className="text-[9px] text-white py-0"
                       style={{
-                        background: hasRef ? "#d63031" : "#999",
+                        background: asset?.status === "completed" ? "#16a34a" : hasRef ? "#d63031" : "#999",
                       }}
                     >
                       {seed.id}
                     </Badge>
                     <span className="text-xs font-medium">{seed.label}</span>
-                    {hasRef && (
+                    {hasRef && !asset && (
                       <Badge
                         className="text-[8px] py-0"
                         style={{
@@ -329,13 +432,50 @@ export default function CharacterFaceManager({
                         고정됨
                       </Badge>
                     )}
+                    {renderElementBadge(seed.id)}
                   </div>
                   <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                     {seed.appearanceKo}
                   </p>
+                  {asset?.status === "failed" && asset.error && (
+                    <p className="text-[9px] text-red-500 mt-0.5">{asset.error}</p>
+                  )}
                 </div>
 
                 <div className="flex gap-1.5 shrink-0">
+                  {/* Kling Element 생성 */}
+                  {hasRef && !asset?.elementId && (
+                    <button
+                      className="text-[10px] px-2 py-1 rounded-md"
+                      style={{
+                        background: unavailableReason ? "#99999910" : "#8b5cf610",
+                        color: unavailableReason ? "#999" : "#7c3aed",
+                        border: unavailableReason ? "1px solid #99999920" : "1px solid #8b5cf620",
+                      }}
+                      disabled={!!unavailableReason || isCreating || isElementInProgress}
+                      onClick={() => handleCreateElement(seed.id)}
+                      title={unavailableReason || "Kling Custom Element 생성"}
+                    >
+                      {isCreating || isElementInProgress ? (
+                        <span className="flex items-center gap-1">
+                          <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                          생성 중
+                        </span>
+                      ) : asset?.status === "failed" ? (
+                        "재시도"
+                      ) : (
+                        "Element 생성"
+                      )}
+                    </button>
+                  )}
+
+                  {/* Element 완료 표시 */}
+                  {asset?.elementId && (
+                    <span className="text-[9px] px-2 py-1 rounded-md" style={{ background: "#dcfce7", color: "#16a34a" }}>
+                      ID: {asset.elementId.slice(0, 8)}...
+                    </span>
+                  )}
+
                   {/* 스토리보드에서 추출 */}
                   {hasStoryboards && (
                     <div className="relative group/dropdown">

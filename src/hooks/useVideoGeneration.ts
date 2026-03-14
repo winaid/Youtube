@@ -51,6 +51,7 @@ import {
   type ShotVariantState,
 } from "@/lib/shot-variants";
 import { extractEditable } from "@/lib/shot-editing";
+import { resolveElementListForCut } from "@/lib/kling-element-store";
 import {
   submitVideoGeneration,
   pollVideoTask,
@@ -68,6 +69,8 @@ interface UseVideoGenerationOptions {
   storyboardImages?: Record<number, string>;
   storyboardEndImages?: Record<number, string>;
   faceRefs?: CharacterFaceRef[];
+  /** Kling Custom Element assets — characterId 기반 element_list 자동 주입 */
+  elementAssets?: import("@/types").KlingElementAsset[];
   onSeedDetected?: (cutNumber: number, seed: string) => void;
 }
 
@@ -172,7 +175,7 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
 // sanitizeTextContent, ensureTemporalBeats, naturalizeMetaFields는
 // style-system.ts의 assemblePrompt() 내부에서 처리됨
 
-export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
+export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, storyboardImages, storyboardEndImages, faceRefs, elementAssets, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
     clips: [],
     isAutoMode: false,
@@ -1332,6 +1335,15 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         })()),
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
+        // Custom Element: charactersInScene 기반 element_list 자동 주입
+        ...((() => {
+          if (!elementAssets || elementAssets.length === 0) return {};
+          const charsInScene = cut.charactersInScene || [];
+          if (charsInScene.length === 0) return {}; // 인물 없는 cut → element_list 미전달
+          const elementList = resolveElementListForCut(elementAssets, charsInScene);
+          if (elementList.length === 0) return {};
+          return { element_list: elementList };
+        })()),
         extraFields: {
           mode: cfg.mode,
           resolution: cfg.resolution,

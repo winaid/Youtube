@@ -419,6 +419,8 @@ interface GenerateVideoRequest {
   lastFrameBase64?: string;
   multiShot?: KlingMultiShot[];
   generateAudio?: boolean; // true = sound "on", false = sound "off"
+  // ── Custom Element (캐릭터 일관성) ──────────────────────────────────────
+  element_list?: Array<{ element_id: string }>;
   // ── Legacy Veo fields (무시됨) ──────────────────────────────────────────
   mode?: string;
   resolution?: string;
@@ -628,6 +630,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           ...(validFirst ? { image:      validFirst } : {}),
           ...(validLast  ? { image_tail: validLast  } : {}),
           ...(req.multiShot && req.multiShot.length > 0 ? { multiShot: req.multiShot } : {}),
+          ...(req.element_list && req.element_list.length > 0 ? { element_list: req.element_list } : {}),
         });
         taskId = result.taskId;
         sentDuration = result.sentDuration;

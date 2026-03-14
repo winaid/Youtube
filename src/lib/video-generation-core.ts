@@ -35,6 +35,8 @@ export interface VideoSubmitParams {
   multiShot?: unknown[];
   /** source video for extend */
   sourceVideo?: string;
+  /** Kling Custom Element — charactersInScene 기반 element_id 목록 */
+  element_list?: Array<{ element_id: string }>;
   /** hook-specific 추가 필드 (mode, resolution, seed 등) — body에 그대로 spread */
   extraFields?: Record<string, unknown>;
 }
@@ -190,6 +192,7 @@ export async function submitVideoGeneration(
   if (params.extendPromptJson) body.extendPromptJson = params.extendPromptJson;
   if (params.multiShot) body.multiShot = params.multiShot;
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
+  if (params.element_list && params.element_list.length > 0) body.element_list = params.element_list;
 
   // hook-specific 추가 필드 passthrough
   if (params.extraFields) {

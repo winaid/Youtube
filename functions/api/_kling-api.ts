@@ -63,6 +63,11 @@ export interface KlingMultiShot {
   duration: string; // 초 단위 문자열 (예: "5")
 }
 
+/** Kling Custom Element — video generation 시 element_list에 전달 */
+export interface KlingElementRef {
+  element_id: string;
+}
+
 export interface KlingGenerateRequest {
   prompt: string;
   negative_prompt?: string;
@@ -78,6 +83,8 @@ export interface KlingGenerateRequest {
   // Image-to-video
   image?: string;       // base64 or public URL for start frame
   image_tail?: string;  // base64 or public URL for end frame
+  // Custom Element: reusable subject identity (캐릭터 일관성)
+  element_list?: KlingElementRef[];
 }
 
 export interface KlingExtendRequest {
@@ -157,6 +164,18 @@ export async function klingGenerate(
     if (req.multiShot.length > multiShotMaxCount) {
       console.warn(`[_kling-api] multiShot clamped: ${req.multiShot.length} → ${multiShotMaxCount} (duration=${effectiveDuration}s)`);
     }
+  }
+
+  // Custom Element: element_list → model_params.element_list
+  if (req.element_list && req.element_list.length > 0) {
+    if (!body.model_params) body.model_params = {};
+    (body.model_params as Record<string, unknown>).element_list = req.element_list.map((el) => ({
+      element_id: el.element_id,
+    }));
+    console.log("[_kling-api] element_list injected", {
+      count: req.element_list.length,
+      elementIds: req.element_list.map((el) => el.element_id),
+    });
   }
 
   const res = await fetch(`${klingBase(env)}/v1/videos/generations`, {
@@ -306,4 +325,128 @@ export function toKlingDuration(sec: number): number {
 
 export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {
   return ratio === "9:16" ? "9:16" : ratio === "1:1" ? "1:1" : "16:9";
+}
+
+// ── Custom Element API ──────────────────────────────────────────────────────
+
+export interface KlingCreateElementRequest {
+  /** element 이름 (캐릭터 label) */
+  name: string;
+  /** element 설명 (캐릭터 외형 설명) */
+  description?: string;
+  /** 소스 이미지 base64 또는 public URL */
+  image?: string;
+  /** 소스 영상 base64 또는 public URL */
+  video?: string;
+  /** 소스 타입 */
+  source_type: "image_refer" | "video_refer";
+}
+
+export interface KlingElementStatus {
+  taskId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  elementId?: string;
+  error?: string;
+}
+
+/**
+ * Kling Custom Element 생성 요청.
+ * reusable subject asset를 생성 — 영상 생성과 별도의 비동기 task.
+ */
+export async function klingCreateElement(
+  env: KlingEnv,
+  req: KlingCreateElementRequest,
+): Promise<{ taskId: string }> {
+  const headers = klingHeaders(env);
+
+  const body: Record<string, unknown> = {
+    name: req.name,
+    source_type: req.source_type,
+  };
+  if (req.description) body.description = req.description;
+  if (req.image) body.image = req.image;
+  if (req.video) body.video = req.video;
+
+  // image_refer인데 image 없으면 차단
+  if (req.source_type === "image_refer" && !req.image) {
+    throw new Error("Kling createElement: image_refer requires image field");
+  }
+  if (req.source_type === "video_refer" && !req.video) {
+    throw new Error("Kling createElement: video_refer requires video field");
+  }
+
+  console.log("[_kling-api] klingCreateElement", {
+    name: req.name,
+    sourceType: req.source_type,
+    hasImage: !!req.image,
+    hasVideo: !!req.video,
+  });
+
+  const res = await fetch(`${klingBase(env)}/v1/elements`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Kling createElement (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  let data: { id?: string; task_id?: string; error?: { message?: string } };
+  try { data = JSON.parse(text); } catch { throw new Error(`Kling createElement non-JSON: ${text.slice(0, 200)}`); }
+
+  if (data.error?.message) throw new Error(`Kling createElement failed: ${data.error.message}`);
+
+  const taskId = data.id ?? data.task_id;
+  if (!taskId) throw new Error("Kling createElement: no task id in response");
+
+  return { taskId };
+}
+
+/**
+ * Kling Custom Element task 상태 조회.
+ * 완료 시 element_id 반환.
+ */
+export async function klingCheckElement(
+  env: KlingEnv,
+  taskId: string,
+): Promise<KlingElementStatus> {
+  const headers = klingHeaders(env);
+
+  const res = await fetch(`${klingBase(env)}/v1/elements/${taskId}`, {
+    method: "GET",
+    headers,
+  });
+
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Kling checkElement (${res.status}): ${text.slice(0, 400)}`);
+
+  let data: {
+    id?: string;
+    status?: string;
+    element_id?: string;
+    data?: { status?: string; element_id?: string };
+    error?: { message?: string } | string;
+  };
+  try { data = JSON.parse(text); } catch { throw new Error(`Kling checkElement non-JSON: ${text.slice(0, 200)}`); }
+
+  const rawStatus = data.status ?? data.data?.status ?? "processing";
+  const status: KlingElementStatus["status"] =
+    rawStatus === "completed" ? "completed"
+    : rawStatus === "failed" ? "failed"
+    : rawStatus === "pending" ? "pending"
+    : "processing";
+
+  const elementId = data.element_id ?? data.data?.element_id ?? undefined;
+  const errMsg = typeof data.error === "string" ? data.error : data.error?.message;
+
+  console.log("[_kling-api] klingCheckElement", { taskId, rawStatus, elementId: elementId ?? null });
+
+  return {
+    taskId,
+    status,
+    elementId,
+    error: status === "failed" ? (errMsg ?? "element creation failed") : undefined,
+  };
 }
