@@ -6,6 +6,9 @@
  *
  * 입력: taskId
  * 출력: status, elementId (완료 시)
+ *
+ * 주의: 상태 조회 endpoint(GET /v1/elements/{taskId})는 문서에서
+ *       완전 확정 근거가 부족한 추정 경로. 실환경 검증 필수.
  */
 
 import { klingCheckElement, type KlingEnv } from "./_kling-api";

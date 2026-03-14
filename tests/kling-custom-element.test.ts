@@ -2,13 +2,16 @@
  * kling-custom-element.test.ts — Kling Custom Element 통합 테스트
  *
  * 검증 항목:
- * 1. image_refer create body 검증
- * 2. video_refer create body 검증
+ * 1. image_refer create payload — 문서 스펙 구조 검증
+ *    model: "kling-custom-element", model_params.element_name, element_description,
+ *    reference_type, element_image_list.frontal_image
+ * 2. video_refer create payload — model_params.element_video_list.video_url
  * 3. element_id 추출 (completed response)
- * 4. charactersInScene 기반 element_list 주입
+ * 4. charactersInScene 기반 element_list 주입 회귀
  * 5. 인물 없는 cut → element_list 미전달
- * 6. Element 상태 변환 (pending → processing → completed/failed)
- * 7. multiShot clamp / segment planner 회귀 없음
+ * 6. Element 상태 전환 (pending → completed / failed)
+ * 7. canCreateElement / getElementUnavailableReason
+ * 8. multiShot / element_list 격리
  */
 
 import { describe, it, expect } from "vitest";
@@ -18,11 +21,13 @@ import {
   resolveElementListForCut,
   canCreateElement,
   getElementUnavailableReason,
+  buildCreateElementPayload,
+  KLING_ELEMENT_MODEL,
 } from "@/lib/kling-element-store";
 import type { KlingElementAsset } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
-// Helper: 테스트용 KlingElementAsset 생성
+// Helper
 // ═══════════════════════════════════════════════════════════════════
 
 function makeAsset(
@@ -43,45 +48,113 @@ function makeAsset(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 1. image_refer create body 검증
+// 1. image_refer create payload — 문서 스펙 구조 검증
 // ═══════════════════════════════════════════════════════════════════
 
-describe("createElementAsset — image_refer", () => {
-  it("should create a pending asset with image_refer sourceType", () => {
-    const asset = createElementAsset({
-      characterId: "char-1",
-      taskId: "task-abc",
-      elementName: "Hero",
-      elementDescription: "Male hero with black hair",
-      sourceType: "image_refer",
+describe("buildCreateElementPayload — image_refer", () => {
+  it("should produce model + model_params structure per document spec", () => {
+    const payload = buildCreateElementPayload({
+      element_name: "Hero",
+      element_description: "Male hero with black hair",
+      reference_type: "image_refer",
+      frontal_image: "base64-face-data-long-enough",
     });
 
-    expect(asset.characterId).toBe("char-1");
-    expect(asset.taskId).toBe("task-abc");
-    expect(asset.elementId).toBeNull();
-    expect(asset.status).toBe("pending");
-    expect(asset.sourceType).toBe("image_refer");
-    expect(asset.createdAt).toBeGreaterThan(0);
+    // 최상위: model
+    expect(payload.model).toBe("kling-custom-element");
+    expect(payload.model).toBe(KLING_ELEMENT_MODEL);
+
+    // model_params 존재
+    const mp = payload.model_params as Record<string, unknown>;
+    expect(mp).toBeDefined();
+
+    // model_params 필드들
+    expect(mp.element_name).toBe("Hero");
+    expect(mp.element_description).toBe("Male hero with black hair");
+    expect(mp.reference_type).toBe("image_refer");
+
+    // element_image_list.frontal_image
+    const imageList = mp.element_image_list as Record<string, unknown>;
+    expect(imageList).toBeDefined();
+    expect(imageList.frontal_image).toBe("base64-face-data-long-enough");
+
+    // element_video_list 없어야 함
+    expect(mp.element_video_list).toBeUndefined();
+  });
+
+  it("should NOT contain flat name/source_type/image fields (구 스키마 금지)", () => {
+    const payload = buildCreateElementPayload({
+      element_name: "Hero",
+      reference_type: "image_refer",
+      frontal_image: "base64data",
+    });
+
+    // 평면 구조 필드가 최상위에 존재하면 안 됨
+    expect(payload).not.toHaveProperty("name");
+    expect(payload).not.toHaveProperty("source_type");
+    expect(payload).not.toHaveProperty("image");
+    expect(payload).not.toHaveProperty("video");
+    expect(payload).not.toHaveProperty("description");
+  });
+
+  it("should omit element_description from model_params when not provided", () => {
+    const payload = buildCreateElementPayload({
+      element_name: "Hero",
+      reference_type: "image_refer",
+      frontal_image: "base64data",
+    });
+
+    const mp = payload.model_params as Record<string, unknown>;
+    expect(mp.element_description).toBeUndefined();
+    expect(mp.element_name).toBe("Hero");
+  });
+
+  it("should throw when image_refer has no frontal_image", () => {
+    expect(() =>
+      buildCreateElementPayload({
+        element_name: "Hero",
+        reference_type: "image_refer",
+      }),
+    ).toThrow("frontal_image");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 2. video_refer create body 검증
+// 2. video_refer create payload — 문서 스펙 구조 검증
 // ═══════════════════════════════════════════════════════════════════
 
-describe("createElementAsset — video_refer", () => {
-  it("should create a pending asset with video_refer sourceType", () => {
-    const asset = createElementAsset({
-      characterId: "char-2",
-      taskId: "task-xyz",
-      elementName: "Villain",
-      elementDescription: "Tall villain",
-      sourceType: "video_refer",
+describe("buildCreateElementPayload — video_refer", () => {
+  it("should produce model_params with element_video_list.video_url", () => {
+    const payload = buildCreateElementPayload({
+      element_name: "Villain",
+      element_description: "Tall villain in dark coat",
+      reference_type: "video_refer",
+      video_url: "https://example.com/clip.mp4",
     });
 
-    expect(asset.sourceType).toBe("video_refer");
-    expect(asset.status).toBe("pending");
-    expect(asset.elementId).toBeNull();
+    expect(payload.model).toBe("kling-custom-element");
+
+    const mp = payload.model_params as Record<string, unknown>;
+    expect(mp.reference_type).toBe("video_refer");
+    expect(mp.element_name).toBe("Villain");
+    expect(mp.element_description).toBe("Tall villain in dark coat");
+
+    // element_video_list.video_url
+    const videoList = mp.element_video_list as Record<string, unknown>;
+    expect(videoList).toBeDefined();
+    expect(videoList.video_url).toBe("https://example.com/clip.mp4");
+
+    // element_image_list 없어야 함
+    expect(mp.element_image_list).toBeUndefined();
+  });
+
+  it("should throw when video_refer has no video_url", () => {
+    expect(() =>
+      buildCreateElementPayload({
+        element_name: "Villain",
+        reference_type: "video_refer",
+      }),
+    ).toThrow("video_url");
   });
 });
 
@@ -110,10 +183,10 @@ describe("upsertElementAsset — element_id extraction", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 4. charactersInScene 기반 element_list 주입
+// 4. charactersInScene 기반 element_list 주입 회귀
 // ═══════════════════════════════════════════════════════════════════
 
-describe("resolveElementListForCut", () => {
+describe("resolveElementListForCut — element_list injection", () => {
   it("should return element_ids only for completed assets matching charactersInScene", () => {
     const assets = [
       makeAsset("char-1", "completed", "elm-001"),
@@ -125,7 +198,7 @@ describe("resolveElementListForCut", () => {
     expect(result).toEqual([{ element_id: "elm-001" }]);
   });
 
-  it("should return all matching completed elements when multiple characters in scene", () => {
+  it("should return all matching completed elements", () => {
     const assets = [
       makeAsset("char-1", "completed", "elm-001"),
       makeAsset("char-2", "completed", "elm-002"),
@@ -137,16 +210,6 @@ describe("resolveElementListForCut", () => {
       { element_id: "elm-001" },
       { element_id: "elm-002" },
     ]);
-  });
-
-  it("should return empty array when no assets are completed", () => {
-    const assets = [
-      makeAsset("char-1", "processing", null),
-      makeAsset("char-2", "pending", null),
-    ];
-
-    const result = resolveElementListForCut(assets, ["char-1", "char-2"]);
-    expect(result).toEqual([]);
   });
 });
 
@@ -160,26 +223,30 @@ describe("resolveElementListForCut — empty charactersInScene", () => {
       makeAsset("char-1", "completed", "elm-001"),
       makeAsset("char-2", "completed", "elm-002"),
     ];
-
-    const result = resolveElementListForCut(assets, []);
-    expect(result).toEqual([]);
+    expect(resolveElementListForCut(assets, [])).toEqual([]);
   });
 
   it("should return empty array when no assets exist", () => {
-    const result = resolveElementListForCut([], ["char-1"]);
-    expect(result).toEqual([]);
+    expect(resolveElementListForCut([], ["char-1"])).toEqual([]);
+  });
+
+  it("should return empty array when no assets are completed", () => {
+    const assets = [
+      makeAsset("char-1", "processing", null),
+      makeAsset("char-2", "pending", null),
+    ];
+    expect(resolveElementListForCut(assets, ["char-1", "char-2"])).toEqual([]);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 6. Element 상태 전환
+// 6. Element 상태 전환 (failed/completed 회귀)
 // ═══════════════════════════════════════════════════════════════════
 
 describe("Element status lifecycle", () => {
   it("pending → processing → completed via upsert", () => {
     let assets: KlingElementAsset[] = [];
 
-    // Step 1: pending
     const pending = createElementAsset({
       characterId: "char-1",
       taskId: "task-1",
@@ -191,15 +258,10 @@ describe("Element status lifecycle", () => {
     expect(assets[0].status).toBe("pending");
     expect(assets[0].elementId).toBeNull();
 
-    // Step 2: processing
-    const processing: KlingElementAsset = {
-      ...assets[0],
-      status: "processing",
-    };
+    const processing: KlingElementAsset = { ...assets[0], status: "processing" };
     assets = upsertElementAsset(assets, processing);
     expect(assets[0].status).toBe("processing");
 
-    // Step 3: completed
     const completed: KlingElementAsset = {
       ...assets[0],
       status: "completed",
@@ -242,8 +304,7 @@ describe("Element status lifecycle", () => {
 
 describe("canCreateElement", () => {
   it("should return true for valid base64 face image", () => {
-    const validBase64 = "x".repeat(200);
-    expect(canCreateElement(validBase64)).toBe(true);
+    expect(canCreateElement("x".repeat(200))).toBe(true);
   });
 
   it("should return false for undefined", () => {
@@ -260,28 +321,25 @@ describe("canCreateElement", () => {
 });
 
 describe("getElementUnavailableReason", () => {
-  it("should return null for valid face data", () => {
+  it("should return null for valid face data (실제 성공은 Kling 검증에 따름)", () => {
     expect(getElementUnavailableReason("x".repeat(200))).toBeNull();
   });
 
   it("should return reason for undefined", () => {
-    const reason = getElementUnavailableReason(undefined);
-    expect(reason).toContain("얼굴 이미지가 없습니다");
+    expect(getElementUnavailableReason(undefined)).toContain("얼굴 이미지가 없습니다");
   });
 
   it("should return reason for too-short image", () => {
-    const reason = getElementUnavailableReason("abc");
-    expect(reason).toContain("너무 작습니다");
+    expect(getElementUnavailableReason("abc")).toContain("너무 작습니다");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 8. multiShot / segment planner 회귀 확인
+// 8. multiShot / element_list 격리
 // ═══════════════════════════════════════════════════════════════════
 
 describe("multiShot clamp regression — element_list isolation", () => {
   it("element_list should not interfere with multiShot data shape", () => {
-    // element_list와 multiShot은 완전 별개 필드
     const elementList = resolveElementListForCut(
       [makeAsset("char-1", "completed", "elm-001")],
       ["char-1"],
@@ -292,11 +350,26 @@ describe("multiShot clamp regression — element_list isolation", () => {
       { type: "shot", prompt: "wide landscape", duration: 5 },
     ];
 
-    // 둘 다 존재해도 서로 간섭 없음
     expect(elementList).toHaveLength(1);
     expect(multiShot).toHaveLength(2);
-
-    // element_list 항목에는 element_id만 존재
     expect(Object.keys(elementList[0])).toEqual(["element_id"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. payload 최상위 키 검증 — model, model_params만 존재해야
+// ═══════════════════════════════════════════════════════════════════
+
+describe("buildCreateElementPayload — top-level key validation", () => {
+  it("should have exactly model and model_params as top-level keys", () => {
+    const payload = buildCreateElementPayload({
+      element_name: "Test",
+      element_description: "Desc",
+      reference_type: "image_refer",
+      frontal_image: "base64data",
+    });
+
+    const topKeys = Object.keys(payload).sort();
+    expect(topKeys).toEqual(["model", "model_params"]);
   });
 });

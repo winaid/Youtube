@@ -215,10 +215,10 @@ export default function CharacterFaceManager({
       try {
         const { taskId } = await createKlingElement({
           characterId,
-          name: seed?.label || characterId,
-          description: seed?.appearance,
-          image: faceRef.faceBase64,
-          sourceType: "image_refer",
+          elementName: seed?.label || characterId,
+          elementDescription: seed?.appearance,
+          frontalImage: faceRef.faceBase64,
+          referenceType: "image_refer",
         });
 
         // 즉시 pending asset 추가

@@ -331,15 +331,15 @@ export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {
 
 export interface KlingCreateElementRequest {
   /** element 이름 (캐릭터 label) */
-  name: string;
+  element_name: string;
   /** element 설명 (캐릭터 외형 설명) */
-  description?: string;
-  /** 소스 이미지 base64 또는 public URL */
-  image?: string;
-  /** 소스 영상 base64 또는 public URL */
-  video?: string;
-  /** 소스 타입 */
-  source_type: "image_refer" | "video_refer";
+  element_description?: string;
+  /** reference_type: "image_refer" = 정지 이미지, "video_refer" = 영상 */
+  reference_type: "image_refer" | "video_refer";
+  /** 정면 얼굴 이미지 — image_refer 시 필수 (base64 또는 public URL) */
+  frontal_image?: string;
+  /** 영상 URL — video_refer 시 필수 (base64 또는 public URL) */
+  video_url?: string;
 }
 
 export interface KlingElementStatus {
@@ -350,36 +350,75 @@ export interface KlingElementStatus {
 }
 
 /**
+ * 문서 스펙 기준 create element payload 조립.
+ * 순수 함수 — HTTP 없이 테스트 가능.
+ *
+ * 문서 스펙 구조:
+ *   model: "kling-custom-element"
+ *   model_params:
+ *     element_name
+ *     element_description
+ *     reference_type: "image_refer" | "video_refer"
+ *     element_image_list: { frontal_image }   (image_refer 시)
+ *     element_video_list: { video_url }       (video_refer 시)
+ */
+export function buildCreateElementPayload(
+  req: KlingCreateElementRequest,
+): Record<string, unknown> {
+  // 사전 검증
+  if (req.reference_type === "image_refer" && !req.frontal_image) {
+    throw new Error("Kling createElement: image_refer requires frontal_image");
+  }
+  if (req.reference_type === "video_refer" && !req.video_url) {
+    throw new Error("Kling createElement: video_refer requires video_url");
+  }
+
+  const modelParams: Record<string, unknown> = {
+    element_name: req.element_name,
+    reference_type: req.reference_type,
+  };
+
+  if (req.element_description) {
+    modelParams.element_description = req.element_description;
+  }
+
+  if (req.reference_type === "image_refer") {
+    modelParams.element_image_list = {
+      frontal_image: req.frontal_image,
+    };
+  } else {
+    modelParams.element_video_list = {
+      video_url: req.video_url,
+    };
+  }
+
+  return {
+    model: KLING_ELEMENT_MODEL,
+    model_params: modelParams,
+  };
+}
+
+/** Kling Custom Element 모델명 (문서 스펙 기준) */
+export const KLING_ELEMENT_MODEL = "kling-custom-element" as const;
+
+/**
  * Kling Custom Element 생성 요청.
  * reusable subject asset를 생성 — 영상 생성과 별도의 비동기 task.
+ *
+ * payload는 문서 스펙 `model + model_params.*` 구조.
  */
 export async function klingCreateElement(
   env: KlingEnv,
   req: KlingCreateElementRequest,
 ): Promise<{ taskId: string }> {
   const headers = klingHeaders(env);
-
-  const body: Record<string, unknown> = {
-    name: req.name,
-    source_type: req.source_type,
-  };
-  if (req.description) body.description = req.description;
-  if (req.image) body.image = req.image;
-  if (req.video) body.video = req.video;
-
-  // image_refer인데 image 없으면 차단
-  if (req.source_type === "image_refer" && !req.image) {
-    throw new Error("Kling createElement: image_refer requires image field");
-  }
-  if (req.source_type === "video_refer" && !req.video) {
-    throw new Error("Kling createElement: video_refer requires video field");
-  }
+  const body = buildCreateElementPayload(req);
 
   console.log("[_kling-api] klingCreateElement", {
-    name: req.name,
-    sourceType: req.source_type,
-    hasImage: !!req.image,
-    hasVideo: !!req.video,
+    model: body.model,
+    referenceType: req.reference_type,
+    hasFrontalImage: !!req.frontal_image,
+    hasVideoUrl: !!req.video_url,
   });
 
   const res = await fetch(`${klingBase(env)}/v1/elements`, {
@@ -407,6 +446,10 @@ export async function klingCreateElement(
 /**
  * Kling Custom Element task 상태 조회.
  * 완료 시 element_id 반환.
+ *
+ * 주의: 상태 조회 endpoint는 `GET /v1/elements/{taskId}`로 추정 구현.
+ * 문서에서 완전 확정 근거가 부족하므로, 실환경에서 404 등 발생 시
+ * endpoint 경로를 재검증해야 함.
  */
 export async function klingCheckElement(
   env: KlingEnv,
