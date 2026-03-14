@@ -23,6 +23,16 @@ export function recommendMinimumCutCount(totalDurationSec: number): number {
   return 4;
 }
 
+export function needsDensityBoost(
+  cuts: Array<{ durationSec: number; durationClass?: string }>,
+  totalDurationSec?: number,
+): boolean {
+  if (cuts.length === 0) return false;
+  const total = totalDurationSec ?? cuts.reduce((s, c) => s + (c.durationSec || 0), 0);
+  const minCuts = recommendMinimumCutCount(total);
+  return cuts.length < minCuts;
+}
+
 export function densifyCuts<T extends { durationSec: number; structureType?: string; durationClass?: string }>(
   cuts: T[],
   totalDurationSec?: number,

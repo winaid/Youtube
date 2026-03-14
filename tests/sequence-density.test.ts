@@ -323,3 +323,179 @@ describe("densifyCuts — edge cases", () => {
     expect(result.length).toBe(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 13. Client ↔ Server PARITY — drift 방지
+// ═══════════════════════════════════════════════════════════════════
+
+import {
+  recommendMinimumCutCount as serverRecommend,
+  needsDensityBoost as serverNeedsBoost,
+  densifyCuts as serverDensify,
+} from "../functions/api/_sequence-density";
+
+describe("client ↔ server parity — recommendMinimumCutCount", () => {
+  const durations = [0, -5, 1, 3, 5, 6, 8, 9, 10, 12, 15, 16, 20, 30, NaN];
+
+  for (const d of durations) {
+    it(`recommendMinimumCutCount(${d}) parity`, () => {
+      expect(recommendMinimumCutCount(d)).toBe(serverRecommend(d));
+    });
+  }
+});
+
+describe("client ↔ server parity — needsDensityBoost", () => {
+  it("15s single cut", () => {
+    const cuts = [{ durationSec: 15 }];
+    expect(needsDensityBoost(cuts)).toBe(serverNeedsBoost(cuts));
+  });
+
+  it("12s single cut", () => {
+    const cuts = [{ durationSec: 12 }];
+    expect(needsDensityBoost(cuts)).toBe(serverNeedsBoost(cuts));
+  });
+
+  it("8s single cut", () => {
+    const cuts = [{ durationSec: 8 }];
+    expect(needsDensityBoost(cuts)).toBe(serverNeedsBoost(cuts));
+  });
+
+  it("4s single cut", () => {
+    const cuts = [{ durationSec: 4 }];
+    expect(needsDensityBoost(cuts)).toBe(serverNeedsBoost(cuts));
+  });
+
+  it("15s 3 cuts (sufficient)", () => {
+    const cuts = [{ durationSec: 5 }, { durationSec: 5 }, { durationSec: 5 }];
+    expect(needsDensityBoost(cuts)).toBe(serverNeedsBoost(cuts));
+  });
+
+  it("empty array", () => {
+    expect(needsDensityBoost([])).toBe(serverNeedsBoost([]));
+  });
+
+  it("with explicit totalDurationSec", () => {
+    const cuts = [{ durationSec: 3 }];
+    expect(needsDensityBoost(cuts, 15)).toBe(serverNeedsBoost(cuts, 15));
+  });
+});
+
+describe("client ↔ server parity — densifyCuts", () => {
+  it("15s 1컷 parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: 15 }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("12s 1컷 parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: 12 }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("8s 1컷 parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: 8 }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("4s 1컷 parity (no split)", () => {
+    const cuts = [{ cutNumber: 1, durationSec: 4 }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("15s 이미 3컷 parity (no split)", () => {
+    const cuts = [
+      { cutNumber: 1, durationSec: 5 },
+      { cutNumber: 2, durationSec: 5 },
+      { cutNumber: 3, durationSec: 5 },
+    ];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("scene-like 긴 컷 + cut-like 짧은 컷 혼합 parity", () => {
+    const cuts = [
+      { cutNumber: 1, durationSec: 3, durationClass: "cut-like" as const },
+      { cutNumber: 2, durationSec: 8, durationClass: "scene-like" as const },
+    ];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("sequence-like 긴 컷 parity", () => {
+    const cuts = [
+      { cutNumber: 1, durationSec: 12, durationClass: "sequence-like" as const },
+    ];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("duration=0 parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: 0 }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("duration=NaN parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: NaN }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("duration 음수 parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: -5 }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("2초 이하 컷 분할 중단 parity", () => {
+    // 총 7초, 2컷 필요. 1초+6초 → 6초만 분할 대상
+    const cuts = [
+      { cutNumber: 1, durationSec: 1 },
+      { cutNumber: 2, durationSec: 6 },
+    ];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("원본 필드 보존 parity", () => {
+    const cuts = [{
+      cutNumber: 1,
+      durationSec: 15,
+      sceneDescription: "테스트",
+      subjectAction: "walks",
+      videoPrompt: "prompt text",
+      shotCategory: "character-driven",
+    }];
+    expect(densifyCuts(cuts)).toEqual(serverDensify(cuts));
+  });
+
+  it("groupId passthrough (있으면 유지, 없으면 미생성) parity", () => {
+    const cutsWithGroupId = [{
+      cutNumber: 1,
+      durationSec: 15,
+      groupId: "existing-group",
+    }];
+    const clientResult = densifyCuts(cutsWithGroupId);
+    const serverResult = serverDensify(cutsWithGroupId);
+    expect(clientResult).toEqual(serverResult);
+    // groupId가 passthrough 되었는지 확인
+    for (const c of clientResult) {
+      expect((c as Record<string, unknown>).groupId).toBe("existing-group");
+    }
+
+    const cutsWithout = [{ cutNumber: 1, durationSec: 15 }];
+    const clientResult2 = densifyCuts(cutsWithout);
+    const serverResult2 = serverDensify(cutsWithout);
+    expect(clientResult2).toEqual(serverResult2);
+    for (const c of clientResult2) {
+      expect((c as Record<string, unknown>).groupId).toBeUndefined();
+    }
+  });
+
+  it("멱등성 — densify 재적용 시 결과 동일 parity", () => {
+    const cuts = [{ cutNumber: 1, durationSec: 15 }];
+    const first = densifyCuts(cuts);
+    const second = densifyCuts(first);
+    const serverFirst = serverDensify(cuts);
+    const serverSecond = serverDensify(serverFirst);
+    expect(first).toEqual(serverFirst);
+    expect(second).toEqual(serverSecond);
+    expect(second).toEqual(first); // 멱등성
+  });
+
+  it("empty array parity", () => {
+    expect(densifyCuts([])).toEqual(serverDensify([]));
+  });
+});
