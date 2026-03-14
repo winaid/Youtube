@@ -205,6 +205,177 @@ export function resolveCutCount(opts: {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Segment Orchestration Plan
+// ═══════════════════════════════════════════════════════════════════
+
+/** 단일 segment의 planning 결과 */
+export interface SegmentCutBudget {
+  segmentIndex: number;
+  segmentDurationSec: number;
+  cutRange: { min: number; max: number };
+  preferredCutTarget: number;
+  densityMinimum: number;
+}
+
+/** 전체 시퀀스 orchestration plan */
+export interface SequenceOrchestrationPlan {
+  totalDurationSec: number;
+  segmentDurationCap: number;
+  segmentCount: number;
+  currentPlanningScope: "segment" | "full_sequence";
+  /** 전체 시퀀스 기준 목표 컷 수 */
+  totalTargetCuts: number;
+  /** 현재 segment(generate-cuts 1회 호출) 기준 목표 컷 수 */
+  currentSegmentTargetCuts: number;
+  /** 전체 시퀀스 기준 권장 범위 */
+  totalCutRange: { min: number; max: number };
+  /** per-segment 기준 권장 범위 (15초 segment 기본) */
+  perSegmentCutRange: { min: number; max: number };
+  /** segment별 상세 예산 */
+  segments: SegmentCutBudget[];
+  /** 결정 근거 */
+  planningBasis: string;
+  personaBias: "lower" | "upper" | "neutral";
+  notes: string[];
+}
+
+/**
+ * resolveSegmentPlan — 전체 시퀀스를 Kling 15초 segment 단위로 분해한 orchestration plan.
+ *
+ * 이 함수가 반환하는 plan이 generate-cuts의 targetCuts와 응답 메타의 source of truth.
+ * 단일 generate-cuts 호출은 plan.currentSegmentTargetCuts만 사용.
+ * 전체 시퀀스 orchestrator는 plan.segments를 순회하며 generate-cuts를 반복 호출.
+ */
+export function resolveSegmentPlan(opts: {
+  totalDurationSec: number;
+  exactCutCount?: number;
+  preferredRange?: { min: number; max: number };
+  personaBias?: "lower" | "upper" | "neutral";
+  currentSegmentIndex?: number; // 0-based, 기본 0 (첫 번째 segment)
+}): SequenceOrchestrationPlan {
+  const {
+    totalDurationSec,
+    exactCutCount,
+    preferredRange,
+    personaBias = "neutral",
+    currentSegmentIndex = 0,
+  } = opts;
+
+  const cap = KLING_SEGMENT_CAP;
+  const notes: string[] = [];
+
+  // ── segment 분해 ──
+  const effectiveTotal = totalDurationSec > 0 ? totalDurationSec : cap;
+  const segmentCount = Math.max(1, Math.ceil(effectiveTotal / cap));
+  const isMultiSegment = segmentCount > 1;
+
+  // ── segment별 duration 계산 ──
+  const segmentDurations: number[] = [];
+  for (let i = 0; i < segmentCount; i++) {
+    if (i < segmentCount - 1) {
+      segmentDurations.push(cap);
+    } else {
+      const remainder = effectiveTotal - (segmentCount - 1) * cap;
+      segmentDurations.push(remainder > 0 ? remainder : cap);
+    }
+  }
+
+  // ── 전체 시퀀스 기준 범위 ──
+  const totalCutRange = recommendCutCountRange(effectiveTotal);
+  const perSegRange = singleSegmentRange(cap); // 15초 기준 = {3, 5}
+
+  // ── exact cutCount 처리 ──
+  if (exactCutCount && exactCutCount > 0) {
+    // 전체 컷 수 고정, segment 분배
+    const cutsPerSeg = Math.max(1, Math.round(exactCutCount / segmentCount));
+    const segments: SegmentCutBudget[] = segmentDurations.map((dur, i) => {
+      const isLast = i === segmentCount - 1;
+      const segCuts = isLast
+        ? exactCutCount - cutsPerSeg * (segmentCount - 1)
+        : cutsPerSeg;
+      return {
+        segmentIndex: i,
+        segmentDurationSec: dur,
+        cutRange: { min: segCuts, max: segCuts },
+        preferredCutTarget: Math.max(1, segCuts),
+        densityMinimum: recommendMinimumCutCount(dur),
+      };
+    });
+
+    const currentSeg = segments[Math.min(currentSegmentIndex, segments.length - 1)];
+    notes.push(`exact cutCount=${exactCutCount}, distributed ~${cutsPerSeg}/segment`);
+
+    return {
+      totalDurationSec: effectiveTotal,
+      segmentDurationCap: cap,
+      segmentCount,
+      currentPlanningScope: isMultiSegment ? "segment" : "full_sequence",
+      totalTargetCuts: exactCutCount,
+      currentSegmentTargetCuts: Math.min(currentSeg.preferredCutTarget, cap),
+      totalCutRange: { min: exactCutCount, max: exactCutCount },
+      perSegmentCutRange: { min: cutsPerSeg, max: cutsPerSeg },
+      segments,
+      planningBasis: "exact_cutCount",
+      personaBias,
+      notes,
+    };
+  }
+
+  // ── preferred range 또는 density fallback ──
+  const segments: SegmentCutBudget[] = segmentDurations.map((dur, i) => {
+    const segRange = preferredRange
+      ? preferredRange  // 사용자 지정 범위는 per-segment 기준으로 해석
+      : singleSegmentRange(dur);
+    const densMin = recommendMinimumCutCount(dur);
+    const effectiveMin = Math.max(segRange.min, densMin);
+    const effectiveMax = Math.max(segRange.max, effectiveMin);
+
+    let target: number;
+    if (personaBias === "upper") {
+      target = effectiveMax;
+    } else if (personaBias === "lower") {
+      target = effectiveMin;
+    } else {
+      target = Math.round((effectiveMin + effectiveMax) / 2);
+    }
+
+    return {
+      segmentIndex: i,
+      segmentDurationSec: dur,
+      cutRange: { min: effectiveMin, max: effectiveMax },
+      preferredCutTarget: target,
+      densityMinimum: densMin,
+    };
+  });
+
+  const totalTargetCuts = segments.reduce((s, seg) => s + seg.preferredCutTarget, 0);
+  const currentSeg = segments[Math.min(currentSegmentIndex, segments.length - 1)];
+
+  if (isMultiSegment) {
+    notes.push(`${segmentCount} segments, ~${currentSeg.preferredCutTarget} cuts for segment ${currentSegmentIndex}`);
+  }
+  if (preferredRange) {
+    notes.push(`preferredRange per segment: ${preferredRange.min}~${preferredRange.max}`);
+  }
+  notes.push(`persona bias: ${personaBias}`);
+
+  return {
+    totalDurationSec: effectiveTotal,
+    segmentDurationCap: cap,
+    segmentCount,
+    currentPlanningScope: isMultiSegment ? "segment" : "full_sequence",
+    totalTargetCuts,
+    currentSegmentTargetCuts: currentSeg.preferredCutTarget,
+    totalCutRange,
+    perSegmentCutRange: preferredRange ?? perSegRange,
+    segments,
+    planningBasis: preferredRange ? "preferred_range" : "density_policy",
+    personaBias,
+    notes,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════════
 

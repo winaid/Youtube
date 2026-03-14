@@ -2,7 +2,7 @@ import { PromptInput, PromptOutput, Cut, DirectorPersona, CharacterSeed } from "
 import { directors } from "@/data/directors";
 import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
-import { densifyCuts } from "@/lib/sequence-density";
+import { densifyCuts, KLING_SEGMENT_CAP } from "@/lib/sequence-density";
 import { computeAutoDuration } from "@/lib/duration-reconciliation";
 
 async function fetchGeminiPersona(
@@ -57,9 +57,11 @@ async function fetchGeminiCuts(
         cutDuration,
         // ── 편집 밀도 범위 + 총 길이 ──
         preferredCutCountRange: input.preferredCutCountRange ?? null,
-        totalDurationSeconds: input.duration === "auto"
-          ? undefined
-          : (typeof input.duration === "number" ? input.duration : undefined),
+        totalDurationSeconds: typeof input.duration === "number"
+          ? input.duration
+          : (cutCount > 0
+            ? cutCount * (cutDuration > 0 ? cutDuration : KLING_SEGMENT_CAP)
+            : undefined),
         // 페르소나 시스템
         generationPersona: input.generationPersona ?? null,
         characterPersonas: input.characterPersonas ?? [],
