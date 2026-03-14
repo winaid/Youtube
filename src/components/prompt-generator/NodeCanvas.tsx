@@ -491,6 +491,20 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     setShowPalette(false);
   }, [viewport]);
 
+  /** History 탭에서 prompt 텍스트를 TextInput 노드로 캔버스에 삽입 */
+  const handleInsertPrompt = useCallback((text: string) => {
+    const textInputDef = NODE_REGISTRY.find(d => d.type === "text-input");
+    if (!textInputDef || !text.trim()) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const cx = rect ? (rect.width / 2 / viewport.zoom - viewport.panX) : 200;
+    const cy = rect ? (rect.height / 2 / viewport.zoom - viewport.panY) : 200;
+    const x = cx - textInputDef.defaultWidth / 2 + (Math.random() - 0.5) * 40;
+    const y = cy - textInputDef.defaultHeight / 2 + (Math.random() - 0.5) * 40;
+    const node = createNode(textInputDef, x, y);
+    setState(prev => addNode(prev, { ...node, data: { ...node.data, text } }));
+    setShowPalette(false);
+  }, [viewport]);
+
   const handleDeleteSelected = useCallback(() => {
     if (!state.selectedNodeId) return;
     setState(prev => removeNode(prev, prev.selectedNodeId!));
@@ -1054,6 +1068,7 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
           onClose={() => setShowPalette(false)}
           canvasNodes={state.nodes}
           onInsertAsset={handleInsertAsset}
+          onInsertPrompt={handleInsertPrompt}
         />
       )}
 

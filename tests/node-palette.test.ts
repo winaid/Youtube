@@ -14,8 +14,10 @@ import { describe, it, expect } from "vitest";
 import {
   collectCanvasAssets,
   collectVideoAssets,
+  collectPromptItems,
   type PaletteTab,
   type AssetItem,
+  type PromptItem,
 } from "@/lib/palette-helpers";
 import {
   createNode,
@@ -26,6 +28,7 @@ import {
   type CanvasNode,
 } from "@/lib/node-types";
 import type { VideoRecord } from "@/lib/video-history";
+import type { PromptHistoryEntry } from "@/lib/prompt-history";
 
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
@@ -33,6 +36,22 @@ import type { VideoRecord } from "@/lib/video-history";
 
 function findDef(type: string) {
   return NODE_REGISTRY.find(d => d.type === type)!;
+}
+
+function makePromptEntry(inputOverrides: { storyText?: string; directorPersona?: string } = {}): PromptHistoryEntry {
+  return {
+    id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: Date.now(),
+    input: {
+      storyText: inputOverrides.storyText ?? "test story",
+      directorPersona: inputOverrides.directorPersona ?? "",
+      region: "ko" as never,
+      animationMode: "실사" as never,
+      duration: "short" as never,
+      aspectRatio: "16:9" as never,
+    } as never,
+    output: {} as never,
+  };
 }
 
 function makeVideoRecord(overrides: Partial<VideoRecord> = {}): VideoRecord {
@@ -199,5 +218,88 @@ describe("AssetItem format", () => {
     const records = [makeVideoRecord({ proxyUri: "https://x.com/v.mp4" })];
     const assets = collectVideoAssets(records);
     expect(assets[0].id).toMatch(/^video-/);
+  });
+
+  it("prompt items should have correct id prefix", () => {
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: "hello world" }),
+    ];
+    const items = collectPromptItems(entries);
+    expect(items[0].id).toMatch(/^prompt-/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. collectPromptItems
+// ═══════════════════════════════════════════════════════════════════
+
+describe("collectPromptItems", () => {
+  it("should convert valid entries to PromptItems with fullText", () => {
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: "A cat sitting on a wall" }),
+    ];
+
+    const items = collectPromptItems(entries);
+    expect(items).toHaveLength(1);
+    expect(items[0].fullText).toBe("A cat sitting on a wall");
+    expect(items[0].preview).toBe("A cat sitting on a wall");
+    expect(items[0].createdAt).toBeGreaterThan(0);
+  });
+
+  it("should truncate preview for long text but keep fullText intact", () => {
+    const longText = "B".repeat(100);
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: longText }),
+    ];
+
+    const items = collectPromptItems(entries);
+    expect(items[0].preview.length).toBeLessThanOrEqual(60);
+    expect(items[0].preview).toContain("...");
+    expect(items[0].fullText).toBe(longText);
+    expect(items[0].fullText.length).toBe(100);
+  });
+
+  it("should skip entries with empty or whitespace-only storyText", () => {
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: "" }),
+      makePromptEntry({ storyText: "   " }),
+      makePromptEntry({ storyText: "valid prompt" }),
+    ];
+
+    const items = collectPromptItems(entries);
+    expect(items).toHaveLength(1);
+    expect(items[0].fullText).toBe("valid prompt");
+  });
+
+  it("should return empty for empty entries", () => {
+    expect(collectPromptItems([])).toHaveLength(0);
+  });
+
+  it("should include directorPersona when present", () => {
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: "prompt text", directorPersona: "tarantino" }),
+    ];
+
+    const items = collectPromptItems(entries);
+    expect(items[0].directorPersona).toBe("tarantino");
+  });
+
+  it("should handle entries without input gracefully", () => {
+    const entries = [
+      { id: "ph-bad", createdAt: Date.now(), input: null, output: {} } as unknown as PromptHistoryEntry,
+    ];
+
+    const items = collectPromptItems(entries);
+    expect(items).toHaveLength(0);
+  });
+
+  it("should preserve exact text for TextInput insertion", () => {
+    const specialText = "  leading spaces\nnewlines\ttabs  ";
+    const entries: PromptHistoryEntry[] = [
+      makePromptEntry({ storyText: specialText }),
+    ];
+
+    const items = collectPromptItems(entries);
+    expect(items[0].fullText).toBe(specialText);
   });
 });

@@ -9,6 +9,7 @@
 
 import type { CanvasNode } from "./node-types";
 import type { VideoRecord } from "./video-history";
+import type { PromptHistoryEntry } from "./prompt-history";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -22,6 +23,16 @@ export interface AssetItem {
   url: string;
   mimeType: "image" | "video";
   source: "canvas" | "history";
+}
+
+export interface PromptItem {
+  id: string;
+  /** preview용 짧은 텍스트 (최대 60자) */
+  preview: string;
+  /** TextInput에 삽입할 전체 텍스트 */
+  fullText: string;
+  createdAt: number;
+  directorPersona?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -38,6 +49,21 @@ export function collectCanvasAssets(nodes: CanvasNode[]): AssetItem[] {
       url: n.outputAsset!,
       mimeType: n.outputMimeType!,
       source: "canvas" as const,
+    }));
+}
+
+/** PromptHistoryEntry에서 유효한 storyText를 가진 항목을 PromptItem으로 변환 */
+export function collectPromptItems(entries: PromptHistoryEntry[]): PromptItem[] {
+  return entries
+    .filter(e => e.input?.storyText?.trim())
+    .map(e => ({
+      id: `prompt-${e.id}`,
+      preview: e.input.storyText.length > 60
+        ? e.input.storyText.slice(0, 57) + "..."
+        : e.input.storyText,
+      fullText: e.input.storyText,
+      createdAt: e.createdAt,
+      directorPersona: e.input.directorPersona || undefined,
     }));
 }
 

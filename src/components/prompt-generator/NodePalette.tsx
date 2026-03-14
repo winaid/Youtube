@@ -5,15 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NODE_REGISTRY, type NodeCategory, type NodeDefinition, type CanvasNode } from "@/lib/node-types";
 import { getVideoHistory, type VideoRecord } from "@/lib/video-history";
+import { getPromptHistory, type PromptHistoryEntry } from "@/lib/prompt-history";
 import {
   collectCanvasAssets,
   collectVideoAssets,
+  collectPromptItems,
   type PaletteTab,
   type AssetItem,
+  type PromptItem,
 } from "@/lib/palette-helpers";
 
-export type { PaletteTab, AssetItem };
-export { collectCanvasAssets, collectVideoAssets };
+export type { PaletteTab, AssetItem, PromptItem };
+export { collectCanvasAssets, collectVideoAssets, collectPromptItems };
 
 export interface NodePaletteProps {
   onAddNode: (def: NodeDefinition) => void;
@@ -22,6 +25,8 @@ export interface NodePaletteProps {
   canvasNodes?: CanvasNode[];
   /** asset을 Viewer 노드로 캔버스에 삽입 */
   onInsertAsset?: (asset: string, mimeType: "image" | "video") => void;
+  /** prompt 텍스트를 TextInput 노드로 캔버스에 삽입 */
+  onInsertPrompt?: (text: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -48,11 +53,12 @@ const CATEGORIES: { key: NodeCategory; label: string; color: string }[] = [
 // Component
 // ═══════════════════════════════════════════════════════════════════
 
-export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertAsset }: NodePaletteProps) {
+export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertAsset, onInsertPrompt }: NodePaletteProps) {
   const [activeTab, setActiveTab] = useState<PaletteTab>("addNode");
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<NodeCategory>("all");
   const [videoRecords, setVideoRecords] = useState<VideoRecord[]>([]);
+  const [promptEntries, setPromptEntries] = useState<PromptHistoryEntry[]>([]);
 
   // Video history 로드 (History/Assets 탭용)
   useEffect(() => {
@@ -61,6 +67,11 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
     const handler = () => setVideoRecords(getVideoHistory());
     window.addEventListener("video-history-updated", handler);
     return () => window.removeEventListener("video-history-updated", handler);
+  }, []);
+
+  // Prompt history 로드 (History 탭용)
+  useEffect(() => {
+    setPromptEntries(getPromptHistory());
   }, []);
 
   // ── Add Node 탭 필터 ──
@@ -86,6 +97,10 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
   const historyItems = useMemo(() => {
     return videoRecords.filter(r => r.status === "completed").slice(0, 30);
   }, [videoRecords]);
+
+  const promptItems = useMemo(() => {
+    return collectPromptItems(promptEntries);
+  }, [promptEntries]);
 
   return (
     <div className="absolute left-3 top-3 z-50 w-72 rounded-xl shadow-lg border"
@@ -247,49 +262,99 @@ export default function NodePalette({ onAddNode, onClose, canvasNodes, onInsertA
       {/* ══════ History Tab ══════ */}
       {activeTab === "history" && (
         <div className="max-h-72 overflow-y-auto px-2 pb-2 space-y-1">
-          {historyItems.length === 0 ? (
-            <div className="text-center py-6" data-testid="history-empty">
-              <p className="text-xs text-muted-foreground">생성 히스토리가 없습니다</p>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                비디오를 생성하면 여기에 표시됩니다
+          {/* ── Prompt History ── */}
+          {promptItems.length > 0 && (
+            <>
+              <p className="text-[10px] font-semibold text-muted-foreground px-1 pt-1 pb-0.5">
+                Prompts
               </p>
-            </div>
-          ) : (
-            historyItems.map(record => {
-              const hasPlayableUri = !!record.proxyUri;
-              return (
+              {promptItems.map(item => (
                 <button
-                  key={record.id}
-                  onClick={() => hasPlayableUri && onInsertAsset?.(record.proxyUri, "video")}
-                  disabled={!hasPlayableUri || !onInsertAsset}
+                  key={item.id}
+                  onClick={() => onInsertPrompt?.(item.fullText)}
+                  disabled={!onInsertPrompt}
                   className="w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-all hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  data-testid="history-item"
+                  data-testid="prompt-history-item"
                 >
                   <div
                     className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                    style={{ background: "#22c55e" }}
+                    style={{ background: "#6b7280" }}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate">
-                      {record.prompt ? record.prompt.slice(0, 50) : `Cut #${record.cutNumber}`}
+                    <p className="text-xs font-medium leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {item.preview}
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground">
-                        {record.engine} · {record.durationSec}s
-                      </span>
-                      {!hasPlayableUri && (
-                        <Badge variant="outline" className="text-[8px] px-1 py-0" style={{ borderColor: "#d1d5db", color: "#9ca3af" }}>
-                          재생 불가
-                        </Badge>
+                      <Badge variant="outline" className="text-[8px] px-1 py-0" style={{ borderColor: "#6b7280", color: "#6b7280" }}>
+                        text
+                      </Badge>
+                      {item.directorPersona && (
+                        <span className="text-[9px] text-muted-foreground truncate">
+                          {item.directorPersona}
+                        </span>
                       )}
                     </div>
                     <p className="text-[9px] text-muted-foreground mt-0.5">
-                      {new Date(record.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                 </button>
-              );
-            })
+              ))}
+            </>
+          )}
+
+          {/* ── Video History ── */}
+          {historyItems.length > 0 && (
+            <>
+              <p className="text-[10px] font-semibold text-muted-foreground px-1 pt-1 pb-0.5">
+                Videos
+              </p>
+              {historyItems.map(record => {
+                const hasPlayableUri = !!record.proxyUri;
+                return (
+                  <button
+                    key={record.id}
+                    onClick={() => hasPlayableUri && onInsertAsset?.(record.proxyUri, "video")}
+                    disabled={!hasPlayableUri || !onInsertAsset}
+                    className="w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-all hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    data-testid="history-item"
+                  >
+                    <div
+                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                      style={{ background: "#22c55e" }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium truncate">
+                        {record.prompt ? record.prompt.slice(0, 50) : `Cut #${record.cutNumber}`}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-muted-foreground">
+                          {record.engine} · {record.durationSec}s
+                        </span>
+                        {!hasPlayableUri && (
+                          <Badge variant="outline" className="text-[8px] px-1 py-0" style={{ borderColor: "#d1d5db", color: "#9ca3af" }}>
+                            재생 불가
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">
+                        {new Date(record.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* ── 둘 다 없으면 빈 상태 ── */}
+          {promptItems.length === 0 && historyItems.length === 0 && (
+            <div className="text-center py-6" data-testid="history-empty">
+              <p className="text-xs text-muted-foreground">생성 히스토리가 없습니다</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                프롬프트/비디오를 생성하면 여기에 표시됩니다
+              </p>
+            </div>
           )}
         </div>
       )}
