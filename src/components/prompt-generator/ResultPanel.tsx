@@ -645,7 +645,7 @@ export default function ResultPanel({
           )}
 
           {/* 감독 페르소나 & 글로벌 스타일 */}
-          <Card className="overflow-hidden">
+          <Card>
             <CardContent className="space-y-3 pt-4">
               {result.directorPersonaPrompt && (
                 <div className="space-y-1">
