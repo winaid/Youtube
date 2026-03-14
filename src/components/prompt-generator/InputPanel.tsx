@@ -511,7 +511,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyText, localDirectors: localDirectorList }),
       });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => res.text().then((t: string) => ({ raw: t })));
+        console.error("[recommend-director] 서버 에러:", {
+          status: res.status,
+          ...(typeof errBody === "object" && errBody !== null ? errBody : { raw: String(errBody) }),
+        });
+        const msg = typeof errBody === "object" && errBody !== null && "error" in errBody
+          ? `${(errBody as Record<string, unknown>).code ?? res.status}: ${(errBody as Record<string, unknown>).error}`
+          : `API error: ${res.status}`;
+        throw new Error(msg);
+      }
       const data = await res.json();
       setDirectorRecommendation(data);
     } catch (err) {

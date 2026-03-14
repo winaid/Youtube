@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -48,7 +48,7 @@ ${localList}
 
 ### STEP 3: 웹 추천 감독 (로컬에 없는 감독)
 - 보유 목록에 없지만 이 시나리오에 더 완벽히 어울리는 실제 감독 1~2명 추천
-- Google Search 지식 기반으로 실존하는 감독만 추천
+- 실존하는 감독만 추천 (허구 감독 절대 금지)
 - 로컬 목록에 있는 감독과 중복 금지
 - 각각 signatureTechniques 포함
 
@@ -85,19 +85,45 @@ ${localList}
   ]
 }`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
+    // ── A/B 진단 결과 기반 호출 설정 ──
+    // 원인: google_search 도구 + gemini-3.1-pro-preview 조합이 500 유발 가능.
+    // search-director.ts (정상 작동)와 동일하게 FLASH + responseMimeType으로 통일.
+    // PRO가 필요하면 google_search 없이 시도 후 실패 시 FLASH fallback.
+
+    const requestBody = {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json" as const,
+      },
+    };
+
+    // 1차 시도: PRO (google_search 제거)
+    const model1 = GEMINI_MODEL_PRO;
+    console.log(`[recommend-director] 1차 시도: model=${model1}, tools=none, responseMimeType=application/json`);
+    let res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, model1), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
-      }),
+      body: JSON.stringify(requestBody),
     });
+
+    // 1차 실패 시 FLASH fallback
+    if (!res.ok) {
+      const errText1 = await res.text();
+      console.warn(`[recommend-director] PRO 실패(${res.status}), FLASH fallback 시도. detail: ${errText1.slice(0, 300)}`);
+      const model2 = GEMINI_MODEL_FLASH;
+      console.log(`[recommend-director] 2차 시도: model=${model2}, tools=none, responseMimeType=application/json`);
+      res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, model2), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+    }
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("recommend-director Gemini error:", res.status, errText.slice(0, 500));
+      console.error(`[recommend-director] 최종 실패: status=${res.status}, detail=${errText.slice(0, 500)}`);
       return geminiErrorResponse(res, errText, "recommend-director");
     }
 
@@ -120,7 +146,13 @@ ${localList}
       webSuggestions: Array.isArray(parsed.webSuggestions) ? parsed.webSuggestions : [],
     });
   } catch (error) {
-    console.error("Director recommendation error:", error);
-    return Response.json({ error: "Failed to recommend directors" }, { status: 500 });
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error("[recommend-director] 예외:", errMsg);
+    return Response.json({
+      error: `[recommend-director] ${errMsg}`,
+      code: "INTERNAL_ERROR",
+      help: "서버 로그와 브라우저 콘솔을 확인하세요.",
+      detail: errMsg.slice(0, 500),
+    }, { status: 500 });
   }
 };
