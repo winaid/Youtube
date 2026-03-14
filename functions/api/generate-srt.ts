@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -35,7 +35,7 @@ JSON 배열로 응답:
   ...
 ]`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

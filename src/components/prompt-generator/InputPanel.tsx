@@ -1557,6 +1557,47 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           </div>
         </div>
 
+        {/* ── payload 상태 요약: auto vs 수동 조합 경고 ── */}
+        {(() => {
+          const isAutoLen = duration === "auto";
+          const isAutoCut = cutCount === "auto";
+          const isAutoDur = cutDuration === 0;
+          const allAuto = isAutoLen && isAutoCut && isAutoDur;
+          const hasManualOverride = isAutoLen && (!isAutoCut || !isAutoDur);
+
+          if (hasManualOverride && storyText.trim().length >= 20) {
+            const manualParts: string[] = [];
+            if (!isAutoCut && typeof cutCount === "number") manualParts.push(`장면 수: ${cutCount}`);
+            if (!isAutoDur) manualParts.push(`장면당 초: ${cutDuration}초`);
+            const totalSec = typeof cutCount === "number" && cutDuration > 0
+              ? cutCount * Math.min(DURATION_MAX, Math.max(DURATION_MIN, cutDuration))
+              : null;
+            return (
+              <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#fef3c7", border: "1px solid #fde68a" }}>
+                <p className="font-semibold" style={{ color: "#92400e" }}>
+                  영상 길이: 자동 / {manualParts.join(", ")}: 수동
+                </p>
+                {totalSec !== null && (
+                  <p style={{ color: "#b45309" }}>
+                    실제 생성: {totalSec}초 (auto 추정과 무관하게 수동값 우선 적용)
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          if (allAuto && storyText.trim().length >= 20) {
+            const est = estimateProjectDuration(storyText);
+            return (
+              <p className="text-[10px] px-3 py-1.5 rounded-lg" style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>
+                전체 자동: 스토리 기반 약 {est.estimatedTotalSec}초 추정 ({est.basis})
+              </p>
+            );
+          }
+
+          return null;
+        })()}
+
         {/* 생성 버튼 */}
         <Button
           onClick={handleSubmit}

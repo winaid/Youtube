@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -108,13 +108,12 @@ ${localList}
       body: JSON.stringify(requestBody),
     });
 
-    // 1차 실패 시 FLASH fallback
+    // 1차 실패 시 PRO 재시도 (모델 통일 — FLASH fallback 제거)
     if (!res.ok) {
       const errText1 = await res.text();
-      console.warn(`[recommend-director] PRO 실패(${res.status}), FLASH fallback 시도. detail: ${errText1.slice(0, 300)}`);
-      const model2 = GEMINI_MODEL_FLASH;
-      console.log(`[recommend-director] 2차 시도: model=${model2}, tools=none, responseMimeType=application/json`);
-      res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, model2), {
+      console.warn(`[recommend-director] PRO 1차 실패(${res.status}), PRO 재시도. detail: ${errText1.slice(0, 300)}`);
+      console.log(`[recommend-director] 2차 시도: model=${GEMINI_MODEL_PRO}, tools=none, responseMimeType=application/json`);
+      res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),

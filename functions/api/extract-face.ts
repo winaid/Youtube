@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -50,7 +50,7 @@ JSON으로만 응답:
 
 얼굴이 없으면 빈 배열을 반환: { "faces": [] }`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

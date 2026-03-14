@@ -14,11 +14,12 @@ export interface GeminiEnv {
 
 // === 모델 상수 (Google AI Studio) ===
 // 모델 변경 시 여기만 수정하면 전체 엔드포인트에 반영됨.
-// 최종 업데이트: 2026-03-12
+// 최종 업데이트: 2026-03-14
+// 변경: 영상 생성 제외 전 엔드포인트 → PRO 통일
 
-/** 무거운 추론 (프롬프트 생성, 분석, 리뷰) — Gemini 3.1 Pro Preview */
+/** 메인 추론 (영상 제외 전 엔드포인트) — Gemini 3.1 Pro Preview */
 export const GEMINI_MODEL_PRO   = "gemini-3.1-pro-preview";
-/** 경량 추론 (검증, 분류, 추출) — Gemini 3 Flash */
+/** 미사용 (레거시 참조용 보존) — Gemini 3 Flash */
 export const GEMINI_MODEL_FLASH = "gemini-3-flash-preview";
 /** 이미지 생성 (primary) — Nano Banana 2 */
 export const GEMINI_MODEL_IMAGE       = "gemini-3.1-flash-image-preview";

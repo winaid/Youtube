@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -74,7 +74,7 @@ action: sfx-punch, sfx-explosion, sfx-sword-slash
 emotional: sfx-sparkle, sfx-piano-hit, sfx-clock-ticking
 viral: sfx-ding, sfx-wrong-buzzer, sfx-record-scratch, sfx-tik-tok-oh-no`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
+    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

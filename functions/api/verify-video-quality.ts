@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -121,7 +121,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const res = await fetchWithAuth(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
+      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

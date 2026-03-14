@@ -9,7 +9,7 @@
  *   Step2: maxTokens=8192  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192  (컷 N/2+1~N 상세) — Step2와 병렬
  */
-import { GeminiEnv, streamingGenerate, GEMINI_MODEL_FLASH } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
@@ -46,8 +46,8 @@ interface GenerateCutsResponse {
 
 type Env = GeminiEnv;
 
-const MODEL_OUTLINE = GEMINI_MODEL_FLASH;
-const MODEL_DETAIL  = GEMINI_MODEL_FLASH;
+const MODEL_OUTLINE = GEMINI_MODEL_PRO;
+const MODEL_DETAIL  = GEMINI_MODEL_PRO;
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**
