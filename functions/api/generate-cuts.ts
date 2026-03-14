@@ -12,6 +12,7 @@
 import { GeminiEnv, streamingGenerate, GEMINI_MODEL_FLASH } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
+import { classifyCuts } from "./_structure-classification";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1339,7 +1340,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             source: "deterministic-fallback",
             warnings: step1Warnings,
             characterSeeds: defaultSeeds,
-            cuts: deterministicCuts,
+            cuts: classifyCuts(deterministicCuts),
             sequencePlan,
             sequenceValidation,
             secPerCut,
@@ -1382,7 +1383,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           source: "deterministic-fallback",
           warnings: step1Warnings,
           characterSeeds: defaultSeeds,
-          cuts: deterministicCuts,
+          cuts: classifyCuts(deterministicCuts),
           sequencePlan,
           sequenceValidation,
           secPerCut,
@@ -1646,7 +1647,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       source: "gemini" as const,
       warnings: step1Warnings,
       characterSeeds,
-      cuts,
+      cuts: classifyCuts(cuts),
       sequencePlan,
       sequenceValidation,
       secPerCut,

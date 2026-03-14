@@ -367,3 +367,87 @@ describe("MULTI_SHOT_SCENE_TYPES", () => {
     expect(MULTI_SHOT_SCENE_TYPES).not.toContain("object-detail");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Structure classification in server-side classifyCuts
+// ═══════════════════════════════════════════════════════════════════
+
+import { classifyCuts } from "../functions/api/_structure-classification";
+
+describe("server-side classifyCuts — structureType/durationClass 보장", () => {
+  it("should add structureType='cut' to individual cuts", () => {
+    const cuts = [{ durationSec: 5 }, { durationSec: 3 }];
+    const result = classifyCuts(cuts);
+    result.forEach(c => expect(c.structureType).toBe("cut"));
+  });
+
+  it("should classify durationClass by duration thresholds", () => {
+    const cuts = [
+      { durationSec: 2 },   // cut-like (< 4)
+      { durationSec: 5 },   // scene-like (>= 4, < 8)
+      { durationSec: 10 },  // sequence-like (>= 8)
+    ];
+    const result = classifyCuts(cuts);
+    expect(result[0].durationClass).toBe("cut-like");
+    expect(result[1].durationClass).toBe("scene-like");
+    expect(result[2].durationClass).toBe("sequence-like");
+  });
+
+  it("should preserve existing structureType if already set", () => {
+    const cuts = [{ durationSec: 5, structureType: "scene" as const }];
+    const result = classifyCuts(cuts);
+    expect(result[0].structureType).toBe("scene");
+  });
+
+  it("should preserve existing durationClass if already set", () => {
+    const cuts = [{ durationSec: 2, durationClass: "sequence-like" as const }];
+    const result = classifyCuts(cuts);
+    expect(result[0].durationClass).toBe("sequence-like");
+  });
+
+  it("should NOT add groupId", () => {
+    const cuts = [{ durationSec: 8 }];
+    const result = classifyCuts(cuts);
+    expect((result[0] as Record<string, unknown>).groupId).toBeUndefined();
+  });
+
+  it("should handle fallback duration (0/NaN/undefined)", () => {
+    const cuts = [
+      { durationSec: 0 },
+      { durationSec: NaN },
+    ];
+    const result = classifyCuts(cuts);
+    result.forEach(c => {
+      expect(c.structureType).toBe("cut");
+      expect(c.durationClass).toBe("cut-like");
+    });
+  });
+
+  it("should handle typical deterministic fallback cuts (8s each)", () => {
+    const deterministicCuts = Array.from({ length: 5 }, (_, i) => ({
+      cutNumber: i + 1,
+      durationSec: 8,
+      shotType: "WS",
+    }));
+    const result = classifyCuts(deterministicCuts);
+    result.forEach(c => {
+      expect(c.structureType).toBe("cut");
+      expect(c.durationClass).toBe("sequence-like"); // 8s >= threshold
+    });
+  });
+
+  it("should preserve all original fields", () => {
+    const cuts = [{
+      cutNumber: 1,
+      durationSec: 5,
+      shotType: "CU",
+      sceneDescription: "테스트 장면",
+      subjectAction: "walks",
+    }];
+    const result = classifyCuts(cuts);
+    expect(result[0].cutNumber).toBe(1);
+    expect(result[0].shotType).toBe("CU");
+    expect(result[0].sceneDescription).toBe("테스트 장면");
+    expect(result[0].subjectAction).toBe("walks");
+  });
+});
