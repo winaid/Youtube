@@ -1,19 +1,27 @@
 /**
- * multi-shot-planner.ts — Kling 멀티샷 자동 계획 엔진
+ * multi-shot-planner.ts — Kling 멀티샷 릴 프로그레션 엔진
  *
- * 핵심 역할:
+ * 핵심 원칙: 모든 샷은 존재 이유가 있어야 한다.
+ *   - 각 샷은 이전 샷과 반드시 다른 visual element를 도입
+ *   - role은 단순 라벨이 아닌 프로그레션 규칙 (escalation → payoff)
+ *   - 같은 프레이밍/액션 반복 금지
+ *   - 릴 시청 유지를 위한 시각적 진행 + 감정 에스컬레이션
+ *
+ * 역할:
  *   1. duration + sceneType + modelId 기반 추천 샷 수 계산
  *   2. retention 기반 role 시퀀스 자동 배정 (hook → develop → reveal → payoff)
- *   3. duration 분배 (retention 가중치 기반)
- *   4. 강제 멀티샷 정책 (긴 시네마틱 클립 = 단일샷 불가)
- *   5. 누락 멀티샷 자동 복구 (submission 직전 방어)
- *   6. 의도적 원테이크 예외 처리
+ *   3. 프로그레션 규칙: 각 role별 visual change directive
+ *   4. duration 분배 (retention 가중치 기반)
+ *   5. 강제 멀티샷 정책 (긴 시네마틱 클립 = 단일샷 불가)
+ *   6. 누락 멀티샷 자동 복구 (submission 직전 방어)
+ *   7. 의도적 원테이크 예외 처리
  *
  * 이 모듈이 default planning engine.
  * 단일샷은 짧은 클립이거나 명시적 one-take 예외일 때만 허용.
  *
  * grep: planRecommendedShotCount, planShotRoles, buildDefaultMultiShot,
- *       shouldForceMultiShot, repairMissingMultiShot, RETENTION_ROLE_PATTERNS
+ *       shouldForceMultiShot, repairMissingMultiShot, RETENTION_ROLE_PATTERNS,
+ *       ROLE_PROGRESSION_DIRECTIVE
  */
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
@@ -59,16 +67,75 @@ export interface MultiShotPlan {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * 릴 프로그레션 디렉티브 — 각 role이 반드시 변경해야 하는 visual element.
+ *
+ * 이것은 numeric rule이 아니라 progression rule:
+ *   - 모든 샷은 이전 샷 대비 반드시 하나 이상 변경
+ *   - shotSize, angle, subject, motion 중 최소 2개 변경 필수
+ *   - 같은 프레이밍에서 같은 행동 반복 = 의미 없는 분할
+ *
+ * prompt 생성 시 이 directive를 suffix로 붙여 LLM이 진짜 다른 장면을 만들도록 강제.
+ */
+export const ROLE_PROGRESSION_DIRECTIVE: Record<ShotRole, {
+  /** 이 role에서 반드시 변경해야 하는 요소 */
+  mustChange: string;
+  /** 권장 shot size */
+  shotSize: string;
+  /** 프로그레션에서의 기능 (한국어 설명) */
+  function: string;
+  /** prompt에 붙일 visual directive (영어) */
+  visualDirective: string;
+}> = {
+  establish: {
+    mustChange: "location identity, spatial context",
+    shotSize: "WS / LS",
+    function: "시선 포착 — 공간 정체성 즉시 전달",
+    visualDirective: "WIDE establishing shot. Show the full environment/location. Set the spatial context that every following shot will build from.",
+  },
+  transition: {
+    mustChange: "camera angle, subject distance",
+    shotSize: "MS / MLS",
+    function: "시점 전환 — 관찰자 위치 재설정",
+    visualDirective: "SHIFT perspective. Move camera to a new angle or position. Bridge from the establishing context to the developing action.",
+  },
+  develop: {
+    mustChange: "subject action, narrative information",
+    shotSize: "MS / MCU",
+    function: "정보 확장 — 새로운 시각적 증거 도입",
+    visualDirective: "MEDIUM shot revealing new information. Show a specific action, gesture, or detail NOT visible in previous shots. Advance the narrative.",
+  },
+  insert: {
+    mustChange: "scale (jump to extreme close-up), detail focus",
+    shotSize: "CU / ECU",
+    function: "텐션 상승 — 핵심 디테일 극대화",
+    visualDirective: "EXTREME CLOSE-UP on a critical detail. Dramatic scale shift from previous shot. Intensify tension through visual focus.",
+  },
+  peak: {
+    mustChange: "emotional intensity, dramatic framing",
+    shotSize: "CU / ECU",
+    function: "클라이맥스 — 감정/갈등 최고점",
+    visualDirective: "CLIMAX moment. The most dramatic or emotionally intense framing. Maximum visual impact — this is the shot viewers remember.",
+  },
+  resolve: {
+    mustChange: "energy level (release), compositional closure",
+    shotSize: "WS / CU (contrast)",
+    function: "마무리 — 시각적 보상과 해소",
+    visualDirective: "PAYOFF shot. Release the built tension. Either pull back to wide for resolution, or hold on the final emotional beat. Provide visual closure.",
+  },
+};
+
+/**
  * 샷 수별 retention 기반 role 시퀀스.
  *
- * 기존 ShotRole 타입(establish/develop/peak/resolve/insert/transition) 사용하되
- * retention 의도에 맞게 매핑:
- *   hook    → establish (시선 포착)
- *   orient  → transition (상황 파악)
- *   develop → develop (정보 확장)
- *   intensify → insert (텐션 상승)
- *   reveal  → peak (클라이맥스)
- *   payoff  → resolve (마무리/보상)
+ * 릴 프로그레션 원칙:
+ *   hook    → establish (시선 포착) — 공간/상황 즉시 인식
+ *   orient  → transition (시점 전환) — 관찰자 위치 재설정
+ *   develop → develop (정보 확장) — 새 visual evidence 도입
+ *   intensify → insert (텐션 상승) — 극적 스케일 변화
+ *   reveal  → peak (클라이맥스) — 감정/갈등 최고점
+ *   payoff  → resolve (보상/해소) — 시각적 closure
+ *
+ * 모든 인접 샷은 반드시 다른 shotSize + angle 조합을 써야 함.
  */
 export const RETENTION_ROLE_PATTERNS: Record<number, ShotRole[]> = {
   1: ["establish"],
@@ -231,9 +298,14 @@ export function distributeDurations(
 }
 
 /**
- * 기본 멀티샷 배열을 자동 생성.
+ * 릴 프로그레션 기반 멀티샷 배열을 자동 생성.
  *
- * @returns 생성된 MultiShotPrompt[] (prompt는 basePrompt 기반 placeholder)
+ * 핵심 원칙:
+ *   - 각 샷의 prompt는 role별 visual directive를 포함
+ *   - basePrompt를 그대로 복사하지 않고, 프로그레션 컨텍스트를 붙임
+ *   - 모든 샷은 이전 샷과 반드시 다른 시각적 요소를 도입
+ *
+ * @returns 생성된 MultiShotPrompt[] (prompt에 progression directive 포함)
  */
 export function buildDefaultMultiShot(opts: {
   durationSec: number;
@@ -256,10 +328,37 @@ export function buildDefaultMultiShot(opts: {
 
   return roles.map((role, i) => ({
     index: i + 1,
-    prompt: basePrompt,
+    prompt: buildProgressionPrompt(basePrompt, role, i, effectiveCount),
     duration: String(durations[i]),
     role,
   }));
+}
+
+/**
+ * 프로그레션 기반 샷 프롬프트 생성.
+ *
+ * basePrompt가 있으면 그것을 기반으로 role directive를 suffix로 붙이고,
+ * basePrompt가 없으면 directive만 반환.
+ *
+ * 이렇게 하면 모든 샷이 같은 텍스트를 공유하지 않고
+ * 각각의 시각적 역할이 prompt 수준에서 명시된다.
+ */
+function buildProgressionPrompt(
+  basePrompt: string,
+  role: ShotRole,
+  index: number,
+  total: number,
+): string {
+  const directive = ROLE_PROGRESSION_DIRECTIVE[role];
+  if (!directive) return basePrompt;
+
+  // basePrompt가 비어있으면 directive만 반환 (placeholder)
+  if (!basePrompt.trim()) {
+    return `[Shot ${index + 1}/${total} — ${role}] ${directive.visualDirective}`;
+  }
+
+  // basePrompt + role-specific visual direction
+  return `${basePrompt.trim()} [${directive.shotSize}] ${directive.visualDirective}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -221,15 +221,44 @@ export function validateMultiShots(
     });
   }
 
-  // ── role 단조로움 경고 ──
-  if (shots.length >= 3) {
+  // ── 프로그레션 품질 검증 ──
+  if (shots.length >= 2) {
     const roles = shots.map((s) => s.role ?? inferShotRole(shots.indexOf(s), shots.length));
     const uniqueRoles = new Set(roles);
-    if (uniqueRoles.size === 1) {
+
+    // role 단조로움 경고
+    if (shots.length >= 3 && uniqueRoles.size === 1) {
       aggregateIssues.push({
         severity: "warning",
-        message: `모든 샷이 같은 역할 (${roles[0]}) — 다양화 권장`,
+        message: `모든 샷이 같은 역할 (${roles[0]}) — 프로그레션 없음. 역할 재정렬 필요.`,
       });
+    }
+
+    // 인접 role 반복 경고 (같은 role이 연속으로 오면 시각적 진행이 없을 가능성)
+    for (let i = 1; i < roles.length; i++) {
+      if (roles[i] === roles[i - 1] && roles[i] !== "develop") {
+        shotIssues.push({
+          shotIndex: shots[i].index,
+          field: "role",
+          severity: "warning",
+          message: `샷 ${i}과 ${i + 1}이 같은 역할 (${roles[i]}) — 시각적 변화 없이 반복될 수 있음`,
+        });
+      }
+    }
+
+    // 동일 prompt 경고 (fake split 감지)
+    const trimmedPrompts = shots.map(s => s.prompt.trim().toLowerCase()).filter(p => p.length > 0);
+    if (trimmedPrompts.length >= 2) {
+      for (let i = 1; i < trimmedPrompts.length; i++) {
+        if (trimmedPrompts[i] === trimmedPrompts[i - 1]) {
+          shotIssues.push({
+            shotIndex: shots[i].index,
+            field: "prompt",
+            severity: "warning",
+            message: `이전 샷과 프롬프트가 동일 — 각 샷은 다른 프레이밍/액션을 묘사해야 합니다`,
+          });
+        }
+      }
     }
   }
 

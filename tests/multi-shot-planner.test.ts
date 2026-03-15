@@ -230,9 +230,11 @@ describe("buildDefaultMultiShot", () => {
     expect(shots[0].role).toBe("establish");
     expect(shots[shots.length - 1].role).toBe("resolve");
 
-    // 모든 샷에 prompt 있음
+    // 모든 샷에 basePrompt 포함 + progression directive 추가
     for (const s of shots) {
-      expect(s.prompt).toBe("A warrior walks into battle");
+      expect(s.prompt).toContain("A warrior walks into battle");
+      // 프로그레션 directive가 붙어서 basePrompt보다 길어야 함
+      expect(s.prompt.length).toBeGreaterThan("A warrior walks into battle".length);
     }
 
     // duration 합 일치

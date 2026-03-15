@@ -950,7 +950,7 @@ ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade
 예: empty reception desk, dusty floor reflection, worn dental chair silhouette, flickering fluorescent tube, half-open blinds, faded wall paint, cracked tile floor, condensation on window, peeling wallpaper strip, rusted pipe along wall
 메타 정보(REVEALED/WITHHELD)를 늘리지 말고 실제 화면 디테일을 늘려라.
 
-## MULTI-SHOT 규칙 (secPerCut 기반 조건부 — 독립 컷 우선, O3 모델 기준 최대 6샷)
+## MULTI-SHOT 릴 프로그레션 규칙 (secPerCut 기반 — 인스타그램 릴처럼 빠른 시각 진행)
 ${(() => {
     const maxShots = getMaxShots(KLING_DEFAULT_TEXT_MODEL, secPerCut);
     if (maxShots <= 0) {
@@ -960,28 +960,39 @@ ${(() => {
 - "multiShot" 필드는 출력하지 말 것.`;
     }
     if (maxShots <= 2) {
-      return `### multiShot 권장 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
-- ${secPerCut}초에서는 multiShot을 최대 ${maxShots}개까지 허용한다.
-- 리텐션을 위해 ${maxShots}개 서브샷 사용을 기본 권장한다.
-- 단일 long-take가 서사적으로 더 강력한 경우에만 multiShot 없이 구성.
-- 각 서브샷에 "role" 필드를 포함하라: "establish"|"develop"|"peak"|"resolve"|"insert"|"transition"
-- duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.`;
-    }
-    const shotRoles = [
-      { role: "establish", desc: "LOCATION: 장소 정체성 즉시 인식 — shot size: WS/LS" },
-      { role: "develop",   desc: "SITUATION: 상황의 시각적 증거 — shot size: MS/MCU" },
-      { role: "peak",      desc: "EMOTION: 감정/갈등 앵커 — shot size: CU/ECU" },
-      { role: "insert",    desc: "DETAIL: 핵심 디테일 클로즈업 — shot size: CU/ECU" },
-      { role: "develop",   desc: "CONTEXT: 맥락 전환 — shot size: MS" },
-      { role: "resolve",   desc: "PAYOFF: 최종 임팩트 — shot size: WS/CU" },
-    ];
-    const roles = shotRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}" = ${r.desc} (≤80 words)`).join("\n");
-    return `### multiShot 허용 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
-- ${secPerCut}초에서는 2~${maxShots}개 서브샷을 허용한다.
-- 각 서브샷에 "role" 필드를 포함하라: "establish"|"develop"|"peak"|"resolve"|"insert"|"transition"
-${roles}
+      return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+핵심 원칙: 모든 서브샷은 이전 샷과 반드시 다른 것을 보여줘야 한다.
+- ${secPerCut}초에서는 ${maxShots}개 서브샷을 생성하라.
+- 각 서브샷은 반드시: (1) 다른 shot size, (2) 다른 카메라 앵글, (3) 다른 시각적 정보를 사용
+- 같은 프레이밍에서 같은 액션을 반복하면 안 됨 = 가짜 분할
+- 각 서브샷에 "role" 필드 포함: "establish"|"resolve"
 - duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
-- 서브샷마다 반드시 다른 shot size + 앵글 사용.`;
+- 서브샷 1(establish): 공간/대상 확인 (WS/LS). 서브샷 2(resolve): 감정적 payoff (CU/ECU).`;
+    }
+    const progressionRoles = [
+      { role: "establish", desc: "HOOK — 공간 정체성 즉시 전달. WS/LS로 위치/상황 보여줌. 시청자 시선 포착." },
+      { role: "transition", desc: "SHIFT — 시점 변경. 카메라 위치/앵글 이동. establish와 반드시 다른 거리감." },
+      { role: "develop",   desc: "EVIDENCE — 새로운 시각 정보 도입. 이전 샷에 없던 행동/디테일/인물 표정." },
+      { role: "insert",    desc: "TENSION — 스케일 급변 (ECU). 핵심 오브젝트/표정 극대화. 텐션 최고조." },
+      { role: "peak",      desc: "CLIMAX — 가장 극적인 순간. 감정/갈등 최고점. 시청자가 기억할 1프레임." },
+      { role: "resolve",   desc: "PAYOFF — 시각적 해소. 에너지 릴리즈. WS로 빠지거나 CU로 마지막 감정 비트." },
+    ];
+    const roles = progressionRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
+    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+
+핵심 원칙 — 이것은 숫자 규칙이 아니라 프로그레션 규칙이다:
+1. 모든 서브샷은 존재 이유가 있어야 한다 — 같은 화면을 나누는 것은 금지
+2. 인접 서브샷은 반드시 shot size + 앵글이 달라야 한다 (WS→MCU→ECU→WS 식 진행)
+3. 에스컬레이션: establish → develop → peak → resolve 순으로 감정/액션 강도가 올라감
+4. 마지막 서브샷(resolve)은 반드시 시각적 payoff를 제공 — 시청자가 "봤다" 느끼는 보상
+5. 프롬프트가 구체적으로 다른 화면을 묘사해야 함 (같은 텍스트 복사 금지)
+
+릴 프로그레션 role별 지침:
+${roles}
+
+- duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
+- 서브샷마다 구체적으로 다른 화면을 묘사 (≤80 words each)
+- 프롬프트에 shot size 명시 필수 (예: "ECU on trembling hands", "WS of empty hallway")`;
   })()}
 
 JSON 배열로만 출력 (마크다운 없이):

@@ -237,14 +237,22 @@ export interface CharacterSeed {
  */
 export type ShotRole = "establish" | "develop" | "peak" | "resolve" | "insert" | "transition";
 
-/** ShotRole 한국어 라벨 + 색상 매핑 (UI 전용) */
-export const SHOT_ROLE_META: Record<ShotRole, { label: string; color: string; bg: string }> = {
-  establish:  { label: "도입",   color: "#3b82f6", bg: "#3b82f610" },
-  develop:    { label: "전개",   color: "#22c55e", bg: "#22c55e10" },
-  peak:       { label: "절정",   color: "#ef4444", bg: "#ef444410" },
-  resolve:    { label: "마무리", color: "#a855f7", bg: "#a855f710" },
-  insert:     { label: "삽입",   color: "#f59e0b", bg: "#f59e0b10" },
-  transition: { label: "전환",   color: "#6b7280", bg: "#6b728010" },
+/** ShotRole 한국어 라벨 + 색상 + 프로그레션 설명 (UI 전용) */
+export const SHOT_ROLE_META: Record<ShotRole, {
+  label: string;
+  color: string;
+  bg: string;
+  /** 릴 프로그레션에서의 역할 (UI 표시용) */
+  progression: string;
+  /** 권장 shot size */
+  shotSize: string;
+}> = {
+  establish:  { label: "도입",   color: "#3b82f6", bg: "#3b82f610", progression: "공간 정체성 — 시선 포착", shotSize: "WS/LS" },
+  transition: { label: "전환",   color: "#6b7280", bg: "#6b728010", progression: "시점 전환 — 앵글 변경", shotSize: "MS/MLS" },
+  develop:    { label: "전개",   color: "#22c55e", bg: "#22c55e10", progression: "새 정보 도입 — 액션 진전", shotSize: "MS/MCU" },
+  insert:     { label: "삽입",   color: "#f59e0b", bg: "#f59e0b10", progression: "스케일 점프 — 텐션 상승", shotSize: "CU/ECU" },
+  peak:       { label: "절정",   color: "#ef4444", bg: "#ef444410", progression: "클라이맥스 — 최대 임팩트", shotSize: "CU/ECU" },
+  resolve:    { label: "마무리", color: "#a855f7", bg: "#a855f710", progression: "해소 — 시각적 보상", shotSize: "WS/CU" },
 };
 
 /** ShotRole 목록 (드롭다운 순서) */

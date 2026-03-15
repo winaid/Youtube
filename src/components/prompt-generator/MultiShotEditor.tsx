@@ -122,9 +122,14 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
     <div className="space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-medium" style={{ color: "#e85d04" }}>
-          멀티샷 ({shots.length}/{maxShots})
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium" style={{ color: "#e85d04" }}>
+            릴 프로그레션 ({shots.length}샷)
+          </span>
+          <span className="text-[9px]" style={{ color: "#9ca3af" }}>
+            매 샷 다른 프레이밍 · 에스컬레이션 · 페이오프
+          </span>
+        </div>
         <div className="flex gap-1">
           {shots.length >= 3 && (
             <Button
@@ -174,7 +179,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
                 border: `1px solid ${meta.color}25`,
               }}
             >
-              {/* Top row: index, role dropdown, duration controls, delete */}
+              {/* Top row: index, role dropdown, progression hint, duration controls, delete */}
               <div className="flex items-center gap-2">
                 <span
                   className="text-[11px] font-bold w-5 text-center"
@@ -198,12 +203,17 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
                     {SHOT_ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-[11px]">
                         <span style={{ color: SHOT_ROLE_META[r].color }}>
-                          {SHOT_ROLE_META[r].label}
+                          {SHOT_ROLE_META[r].label} — {SHOT_ROLE_META[r].progression}
                         </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* Progression hint */}
+                <span className="text-[9px] hidden sm:inline" style={{ color: `${meta.color}99` }}>
+                  {meta.shotSize} · {meta.progression}
+                </span>
 
                 {/* Duration Controls */}
                 <div className="flex items-center gap-0.5 ml-auto">
