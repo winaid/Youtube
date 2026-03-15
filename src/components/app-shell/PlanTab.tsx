@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   PromptInput, PromptOutput, GeneratorStatus, Region, AnimationMode,
   Duration, AspectRatio, Cut, ShotRole,
@@ -66,6 +66,8 @@ interface PlanTabProps {
   onUpdateBatchEntries: (entries: ClipBudgetEntry[]) => void;
   onScriptChange?: (text: string) => void;
   onTargetRuntimeChange?: (sec: number) => void;
+  initialScript?: string | null;
+  onInitialScriptConsumed?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -87,18 +89,35 @@ export default function PlanTab({
   onUpdateBatchEntries,
   onScriptChange,
   onTargetRuntimeChange,
+  initialScript,
+  onInitialScriptConsumed,
 }: PlanTabProps) {
   const [storyText, setStoryText] = useState(lastInput?.storyText ?? "");
   const [targetRuntime, setTargetRuntime] = useState<number>(60);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(lastInput?.aspectRatio ?? "16:9");
   const [segmentPlan, setSegmentPlan] = useState<SegmentationPlan | null>(null);
   const [editedSegments, setEditedSegments] = useState<ScriptSegment[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (lastInput?.storyText && storyText === "") {
       setStoryText(lastInput.storyText);
     }
   }, [lastInput, storyText]);
+
+  useEffect(() => {
+    if (initialScript && initialScript.trim()) {
+      setStoryText(initialScript);
+      onScriptChange?.(initialScript);
+      setSegmentPlan(null);
+      setEditedSegments([]);
+      onInitialScriptConsumed?.();
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+  }, [initialScript, onInitialScriptConsumed, onScriptChange]);
 
   const scriptIsLong = useMemo(() => isLongScript(storyText), [storyText]);
 
@@ -241,6 +260,7 @@ export default function PlanTab({
           <div className="space-y-2">
             <Label htmlFor="story">나레이션 / 스크립트 / 시나리오</Label>
             <Textarea
+              ref={textareaRef}
               id="story"
               value={storyText}
               onChange={e => { setStoryText(e.target.value); onScriptChange?.(e.target.value); }}

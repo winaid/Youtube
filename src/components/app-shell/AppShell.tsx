@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
 import { recommendMode, type ModeRecommendation } from "@/lib/mode-recommendation";
-import { isLongScript } from "@/lib/script-segmenter";
 import PlanTab from "./PlanTab";
 import BuildTab from "./BuildTab";
 import GenerateTab from "./GenerateTab";
@@ -38,6 +37,7 @@ export default function AppShell() {
   const [activeTab, setActiveTab] = useState<AppTab>("plan");
   const [mode, setMode] = useState<AppMode>("studio");
   const [modeManuallySet, setModeManuallySet] = useState(false);
+  const [showModeOverride, setShowModeOverride] = useState(false);
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +46,8 @@ export default function AppShell() {
   const [batchEntries, setBatchEntries] = useState<ClipBudgetEntry[]>([]);
   const [targetRuntime, setTargetRuntime] = useState<number>(60);
   const [scriptText, setScriptText] = useState("");
+  const [initialScript, setInitialScript] = useState<string | null>(null);
+  const planScrollRef = useRef<number>(0);
 
   const modeRec = useMemo<ModeRecommendation>(() => {
     const charCount = scriptText.replace(/\s+/g, "").length;
@@ -67,6 +69,7 @@ export default function AppShell() {
   const handleModeSwitch = useCallback((newMode: AppMode) => {
     setMode(newMode);
     setModeManuallySet(true);
+    setShowModeOverride(false);
   }, []);
 
   const projectBudgetEntries = useMemo<ClipBudgetEntry[]>(() => {
@@ -117,6 +120,24 @@ export default function AppShell() {
   const handleAdvanceToBuild = useCallback(() => setActiveTab("build"), []);
   const handleAdvanceToGenerate = useCallback(() => setActiveTab("generate"), []);
 
+  const handleUseAsScenario = useCallback((text: string) => {
+    setInitialScript(text);
+    setScriptText(text);
+    setActiveTab("plan");
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }, []);
+
+  const handleInitialScriptConsumed = useCallback(() => {
+    setInitialScript(null);
+  }, []);
+
+  const modeLabel = mode === "batch" ? "Batch" : "Studio";
+  const modeDescription = mode === "batch"
+    ? "대량 세그먼트 순차 생성"
+    : "세그먼트별 정밀 편집";
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* ── Header ── */}
@@ -135,35 +156,65 @@ export default function AppShell() {
               </span>
             </div>
 
-            {/* ── Mode Toggle with Recommendation ── */}
-            <div className="flex items-center gap-2">
-              {!modeManuallySet && (
-                <span className="text-[9px] hidden sm:inline px-1.5 py-0.5 rounded" style={{ background: "#f0fdf4", color: "#16a34a" }}>
-                  추천: {modeRec.mode === "batch" ? "Batch" : "Studio"} — {modeRec.reason}
-                </span>
-              )}
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: "#f1f1f4" }}>
-                <button
-                  onClick={() => handleModeSwitch("studio")}
-                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                  style={mode === "studio"
-                    ? { background: "white", color: "#1a1a2e", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
-                    : { color: "#888" }
-                  }
-                >
-                  Studio
-                </button>
-                <button
-                  onClick={() => handleModeSwitch("batch")}
-                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                  style={mode === "batch"
-                    ? { background: "white", color: "#1a1a2e", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
-                    : { color: "#888" }
-                  }
-                >
-                  Batch
-                </button>
+            {/* ── Mode: Recommendation-first, toggle-secondary ── */}
+            <div className="flex items-center gap-2 relative">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md" style={{ background: "#f8f9fa" }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: mode === "batch" ? "#787fff" : "#22c55e" }} />
+                <span className="text-[11px] font-medium" style={{ color: "#333" }}>{modeLabel}</span>
+                <span className="text-[9px]" style={{ color: "#999" }}>{modeDescription}</span>
               </div>
+              <button
+                onClick={() => setShowModeOverride(!showModeOverride)}
+                className="text-[10px] underline"
+                style={{ color: "#999" }}
+              >
+                변경
+              </button>
+
+              {/* Override dropdown */}
+              {showModeOverride && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg border bg-white shadow-lg p-3 space-y-2"
+                >
+                  <p className="text-[10px] font-medium" style={{ color: "#666" }}>
+                    {modeManuallySet ? "수동 선택됨" : `추천: ${modeRec.mode === "batch" ? "Batch" : "Studio"}`}
+                  </p>
+                  {!modeManuallySet && (
+                    <p className="text-[9px]" style={{ color: "#999" }}>{modeRec.reason}</p>
+                  )}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => handleModeSwitch("studio")}
+                      className="flex-1 py-1.5 rounded text-xs font-medium border transition-colors"
+                      style={mode === "studio"
+                        ? { background: "#22c55e15", borderColor: "#22c55e", color: "#16a34a" }
+                        : { borderColor: "#e5e7eb", color: "#888" }
+                      }
+                    >
+                      Studio
+                    </button>
+                    <button
+                      onClick={() => handleModeSwitch("batch")}
+                      className="flex-1 py-1.5 rounded text-xs font-medium border transition-colors"
+                      style={mode === "batch"
+                        ? { background: "#787fff15", borderColor: "#787fff", color: "#787fff" }
+                        : { borderColor: "#e5e7eb", color: "#888" }
+                      }
+                    >
+                      Batch
+                    </button>
+                  </div>
+                  {modeManuallySet && (
+                    <button
+                      onClick={() => { setModeManuallySet(false); setShowModeOverride(false); }}
+                      className="text-[9px] underline w-full text-center"
+                      style={{ color: "#999" }}
+                    >
+                      자동 추천으로 되돌리기
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -190,9 +241,14 @@ export default function AppShell() {
         </div>
       </header>
 
-      {/* ── Runtime Budget Bar — always visible when project exists ── */}
+      {/* ── Runtime Budget Bar ── */}
       {projectBudgetEntries.length > 0 && (
         <RuntimeBudgetBar entries={projectBudgetEntries} onUpdateEntries={setBatchEntries} />
+      )}
+
+      {/* ── Click-away for mode override dropdown ── */}
+      {showModeOverride && (
+        <div className="fixed inset-0 z-40" onClick={() => setShowModeOverride(false)} />
       )}
 
       {/* ── Main Content ── */}
@@ -214,6 +270,8 @@ export default function AppShell() {
               onUpdateBatchEntries={setBatchEntries}
               onScriptChange={setScriptText}
               onTargetRuntimeChange={setTargetRuntime}
+              initialScript={initialScript}
+              onInitialScriptConsumed={handleInitialScriptConsumed}
             />
           )}
           {activeTab === "build" && (
@@ -243,11 +301,7 @@ export default function AppShell() {
             <ExtrasTab
               result={result}
               onUpdateResult={setResult}
-              onUseAsScenario={(text) => {
-                setScriptText(text);
-                setLastInput(prev => prev ? { ...prev, storyText: text } : null);
-                setActiveTab("plan");
-              }}
+              onUseAsScenario={handleUseAsScenario}
             />
           )}
         </div>
