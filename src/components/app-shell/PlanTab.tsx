@@ -58,8 +58,8 @@ export default function PlanTab({
   onGenerate,
   onUpdateResult,
   onAdvanceToBuild,
-  batchEntries: _batchEntries,
-  onUpdateBatchEntries: _onUpdateBatchEntries,
+  batchEntries,
+  onUpdateBatchEntries,
 }: PlanTabProps) {
   // ── Input State ──
   const [storyText, setStoryText] = useState(lastInput?.storyText ?? "");
@@ -280,6 +280,30 @@ export default function PlanTab({
                 ))}
               </div>
 
+              {/* Retention Analysis */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="p-2 rounded-lg border text-center">
+                  <p className="text-[10px]" style={{ color: "#999" }}>총 런타임</p>
+                  <p className="text-lg font-bold" style={{ color: "#1a1a2e" }}>{totalPlannedRuntime}s</p>
+                </div>
+                <div className="p-2 rounded-lg border text-center">
+                  <p className="text-[10px]" style={{ color: "#999" }}>총 컷</p>
+                  <p className="text-lg font-bold" style={{ color: "#1a1a2e" }}>{result.totalCuts}</p>
+                </div>
+                <div className="p-2 rounded-lg border text-center">
+                  <p className="text-[10px]" style={{ color: "#999" }}>평균 컷 길이</p>
+                  <p className="text-lg font-bold" style={{ color: "#1a1a2e" }}>
+                    {result.totalCuts > 0 ? (totalPlannedRuntime / result.totalCuts).toFixed(1) : 0}s
+                  </p>
+                </div>
+                <div className="p-2 rounded-lg border text-center">
+                  <p className="text-[10px]" style={{ color: "#999" }}>샷 역할 다양성</p>
+                  <p className="text-lg font-bold" style={{ color: "#1a1a2e" }}>
+                    {new Set(result.cuts.flatMap(c => (c.multiShot ?? []).map(s => s.role || "develop"))).size}/{SHOT_ROLES.length}
+                  </p>
+                </div>
+              </div>
+
               <Separator className="my-4" />
 
               {/* Per-Cut Shot Editor */}
@@ -298,6 +322,41 @@ export default function PlanTab({
               </div>
             </CardContent>
           </Card>
+
+          {/* Batch: Add to Queue */}
+          {mode === "batch" && (
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">배치 큐에 추가</p>
+                    <p className="text-xs" style={{ color: "#999" }}>
+                      현재 시퀀스를 배치 큐에 추가하고 새 클립을 계속 계획하세요.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (!result) return;
+                        const entry: ClipBudgetEntry = {
+                          clipId: `clip-${Date.now()}`,
+                          label: result.projectTitle || `클립 ${batchEntries.length + 1}`,
+                          shotCount: result.totalCuts,
+                          totalDurationSec: result.cuts.reduce((s, c) => s + c.durationSec, 0),
+                          priority: "normal",
+                        };
+                        onUpdateBatchEntries([...batchEntries, entry]);
+                      }}
+                    >
+                      큐에 추가 ({batchEntries.length}개 대기 중)
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Advance to Build */}
           <div className="flex justify-end">
