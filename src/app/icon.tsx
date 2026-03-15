@@ -12,35 +12,21 @@ export default function Icon() {
           width: 32,
           height: 32,
           borderRadius: 8,
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+          background: "linear-gradient(135deg, #1a1a2e, #787fff)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        {/* Camera body */}
         <div
           style={{
-            width: 18,
-            height: 13,
-            borderRadius: 3,
-            background: "white",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
+            color: "white",
+            fontSize: 18,
+            fontWeight: 900,
+            letterSpacing: -1,
           }}
         >
-          {/* Lens circle */}
-          <div
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              border: "2px solid #6366f1",
-              background: "transparent",
-            }}
-          />
+          CF
         </div>
       </div>
     ),

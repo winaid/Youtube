@@ -107,6 +107,9 @@ export default function AppShell() {
               <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "#787fff20", color: "#787fff" }}>
                 Kling O3
               </span>
+              <span className="text-[10px] hidden md:inline" style={{ color: "#aaa" }}>
+                Shortform Cinematic Production
+              </span>
             </div>
 
             {/* ── Mode Toggle ── */}
