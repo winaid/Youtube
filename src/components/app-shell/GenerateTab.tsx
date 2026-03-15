@@ -176,97 +176,134 @@ export default function GenerateTab({
             </div>
           </div>
 
-          {/* Clip Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {clips.map(clip => {
-              const cut = result.cuts.find(c => c.cutNumber === clip.cutNumber);
-              const statusColor = {
-                idle: "#999",
-                generating: "#787fff",
-                polling: "#787fff",
-                completed: "#22c55e",
-                failed: "#ef4444",
-              }[clip.status];
-
-              return (
-                <div
-                  key={clip.cutNumber}
-                  className="border rounded-lg p-3 space-y-2"
-                  style={{ borderColor: `${statusColor}40` }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold">컷 {clip.cutNumber}</span>
-                      <span className="text-[10px]" style={{ color: "#999" }}>{clip.durationSec}s</span>
-                    </div>
-                    <Badge
-                      className="text-[10px]"
-                      style={{ background: `${statusColor}15`, color: statusColor }}
-                    >
+          {/* Clip Cards — Studio: detailed, Batch: compact */}
+          {mode === "batch" ? (
+            <div className="space-y-1">
+              {clips.map(clip => {
+                const statusColor = {
+                  idle: "#999",
+                  generating: "#787fff",
+                  polling: "#787fff",
+                  completed: "#22c55e",
+                  failed: "#ef4444",
+                }[clip.status];
+                return (
+                  <div key={clip.cutNumber} className="flex items-center gap-3 py-1.5 px-3 rounded border text-xs">
+                    <span className="font-bold w-12">컷 {clip.cutNumber}</span>
+                    <span style={{ color: "#999" }}>{clip.durationSec}s</span>
+                    <div className="flex-1" />
+                    <span className="font-medium" style={{ color: statusColor }}>
                       {clip.status === "idle" ? "대기" :
                        clip.status === "generating" ? "생성 중" :
                        clip.status === "polling" ? "처리 중" :
                        clip.status === "completed" ? "완료" : "실패"}
-                    </Badge>
+                    </span>
+                    {clip.status === "failed" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-[10px] h-6 px-2"
+                        onClick={() => videoGen.generateCut(clip.cutNumber)}
+                      >
+                        재시도
+                      </Button>
+                    )}
                   </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {clips.map(clip => {
+                const cut = result.cuts.find(c => c.cutNumber === clip.cutNumber);
+                const statusColor = {
+                  idle: "#999",
+                  generating: "#787fff",
+                  polling: "#787fff",
+                  completed: "#22c55e",
+                  failed: "#ef4444",
+                }[clip.status];
 
-                  {cut?.multiShot && cut.multiShot.length > 0 && (
-                    <div className="flex gap-1">
-                      {cut.multiShot.map((s, i) => (
-                        <span
-                          key={i}
-                          className="text-[9px] px-1.5 py-0.5 rounded"
-                          style={{
-                            background: SHOT_ROLE_META[s.role || "develop"]?.bg ?? "#f5f5f5",
-                            color: SHOT_ROLE_META[s.role || "develop"]?.color ?? "#666",
-                          }}
-                        >
-                          {SHOT_ROLE_META[s.role || "develop"]?.label ?? "전개"}
-                        </span>
-                      ))}
+                return (
+                  <div
+                    key={clip.cutNumber}
+                    className="border rounded-lg p-3 space-y-2"
+                    style={{ borderColor: `${statusColor}40` }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold">컷 {clip.cutNumber}</span>
+                        <span className="text-[10px]" style={{ color: "#999" }}>{clip.durationSec}s</span>
+                      </div>
+                      <Badge
+                        className="text-[10px]"
+                        style={{ background: `${statusColor}15`, color: statusColor }}
+                      >
+                        {clip.status === "idle" ? "대기" :
+                         clip.status === "generating" ? "생성 중" :
+                         clip.status === "polling" ? "처리 중" :
+                         clip.status === "completed" ? "완료" : "실패"}
+                      </Badge>
                     </div>
-                  )}
 
-                  {clip.status === "completed" && clip.videoUri && (
-                    <video
-                      src={clip.videoUri}
-                      className="w-full rounded aspect-video bg-black"
-                      controls
-                      muted
-                      playsInline
-                    />
-                  )}
+                    {cut?.multiShot && cut.multiShot.length > 0 && (
+                      <div className="flex gap-1">
+                        {cut.multiShot.map((s, i) => (
+                          <span
+                            key={i}
+                            className="text-[9px] px-1.5 py-0.5 rounded"
+                            style={{
+                              background: SHOT_ROLE_META[s.role || "develop"]?.bg ?? "#f5f5f5",
+                              color: SHOT_ROLE_META[s.role || "develop"]?.color ?? "#666",
+                            }}
+                          >
+                            {SHOT_ROLE_META[s.role || "develop"]?.label ?? "전개"}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
-                  {clip.status === "failed" && (
-                    <div className="space-y-1">
-                      <p className="text-[10px]" style={{ color: "#dc2626" }}>
-                        {clip.error || "생성 실패"}
-                      </p>
+                    {clip.status === "completed" && clip.videoUri && (
+                      <video
+                        src={clip.videoUri}
+                        className="w-full rounded aspect-video bg-black"
+                        controls
+                        muted
+                        playsInline
+                      />
+                    )}
+
+                    {clip.status === "failed" && (
+                      <div className="space-y-1">
+                        <p className="text-[10px]" style={{ color: "#dc2626" }}>
+                          {clip.error || "생성 실패"}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs w-full"
+                          onClick={() => videoGen.generateCut(clip.cutNumber)}
+                        >
+                          재시도
+                        </Button>
+                      </div>
+                    )}
+
+                    {clip.status === "idle" && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="text-xs w-full"
                         onClick={() => videoGen.generateCut(clip.cutNumber)}
                       >
-                        재시도
+                        개별 생성
                       </Button>
-                    </div>
-                  )}
-
-                  {clip.status === "idle" && mode === "studio" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs w-full"
-                      onClick={() => videoGen.generateCut(clip.cutNumber)}
-                    >
-                      개별 생성
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
