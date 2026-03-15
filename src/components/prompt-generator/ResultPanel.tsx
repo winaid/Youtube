@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset } from "@/types";
+import { resolveModelForWorkflow } from "@/lib/kling-capability";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts } from "@/lib/sequence-density";
@@ -766,6 +767,7 @@ export default function ResultPanel({
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
                   userVideoMode={videoGen.config.mode}
+                  modelId={resolveModelForWorkflow({ workflow: videoGen.config.workflowType })}
                   shotSnapshots={videoGen.shotSnapshots.get(cut.cutNumber)}
                   narrationState={videoGen.shotNarrationStates.get(cut.cutNumber)}
                   storyboardImage={storyboardImages[cut.cutNumber]}

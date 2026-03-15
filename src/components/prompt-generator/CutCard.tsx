@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
+import MultiShotEditor from "./MultiShotEditor";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -31,6 +32,8 @@ interface CutCardProps {
   onGenerateEndImage?: () => void;
   sceneTtsUrl?: string;
   userVideoMode?: "fast";
+  /** Kling 모델 ID — MultiShotEditor에서 capability 조회에 사용 */
+  modelId?: string;
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;
   onFeedbackRefine?: (cutNumber: number, feedback: string) => Promise<void>;
@@ -312,7 +315,7 @@ export default function CutCard({
   storyboardEndImage: _storyboardEndImage, storyboardEndLoading: _storyboardEndLoading, onGenerateEndImage: _onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
-  userVideoMode: _userVideoMode,
+  userVideoMode: _userVideoMode, modelId,
   shotSnapshots,
   narrationState,
 }: CutCardProps) {
@@ -405,6 +408,11 @@ export default function CutCard({
       <CardContent className="px-4 pb-4 space-y-3">
         {/* 장면 설명 */}
         <p className="text-sm">{cut.sceneDescription}</p>
+
+        {/* 멀티샷 인라인 에디터 */}
+        {modelId && onUpdate && cut.multiShot && cut.multiShot.length > 0 && (
+          <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />
+        )}
 
         {/* 장면별 TTS */}
         {onGenerateSceneTts && (

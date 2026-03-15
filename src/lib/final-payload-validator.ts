@@ -46,6 +46,10 @@ export interface ValidatePayloadInput {
   actionText?: string;
   /** shot duration */
   durationSec?: number;
+  /** multi-shot 배열 (export layer 검증) */
+  multiShots?: Array<{ index: number; prompt: string; duration: string; role?: string }>;
+  /** Kling 모델 ID (multiShot 검증 시 필요) */
+  modelId?: string;
 }
 
 // ── 중점 검사 단어 ────────────────────────────────────────────────
@@ -360,6 +364,51 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
         severity: "warning",
         message: "Map visualization contains abstract terms — use concrete visual cues instead",
       });
+    }
+  }
+
+  // ── Rule 15: MultiShot export validation ───────────────────
+  if (input.multiShots && input.multiShots.length > 0) {
+    const PROMPT_MAX = 512;
+    // 빈 prompt 검사
+    const emptyShots = input.multiShots.filter(s => !s.prompt || s.prompt.trim().length === 0);
+    if (emptyShots.length > 0) {
+      issues.push({
+        rule: "multishot_empty_prompt",
+        severity: "error",
+        message: `MultiShot: 빈 프롬프트 (샷 ${emptyShots.map(s => s.index).join(", ")})`,
+      });
+    }
+    // 개별 prompt 길이
+    const overLength = input.multiShots.filter(s => s.prompt && s.prompt.length > PROMPT_MAX);
+    if (overLength.length > 0) {
+      issues.push({
+        rule: "multishot_prompt_too_long",
+        severity: "error",
+        message: `MultiShot: 프롬프트 ${PROMPT_MAX}자 초과 (샷 ${overLength.map(s => `${s.index}:${s.prompt.length}`).join(", ")})`,
+      });
+    }
+    // duration 합
+    if (input.durationSec) {
+      const durSum = input.multiShots.reduce((s, sh) => s + (parseInt(sh.duration, 10) || 0), 0);
+      if (Math.abs(durSum - input.durationSec) > 1) {
+        issues.push({
+          rule: "multishot_duration_mismatch",
+          severity: "error",
+          message: `MultiShot: duration 합 ${durSum}초 ≠ 전체 ${input.durationSec}초`,
+        });
+      }
+    }
+    // role 단조로움 경고
+    if (input.multiShots.length >= 3) {
+      const roles = input.multiShots.map(s => s.role).filter(Boolean);
+      if (roles.length > 0 && new Set(roles).size === 1) {
+        issues.push({
+          rule: "multishot_monotone_role",
+          severity: "warning",
+          message: `MultiShot: 모든 샷이 같은 역할 (${roles[0]}) — 다양화 권장`,
+        });
+      }
     }
   }
 

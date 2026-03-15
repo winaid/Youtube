@@ -335,6 +335,7 @@ interface MultiShotItem {
   index: number;
   prompt: string;
   duration: string;
+  role?: string;
 }
 
 interface CutDetail {
@@ -346,6 +347,19 @@ interface CutDetail {
   cameraDirection: string;
   moodLighting: string;
   multiShot?: MultiShotItem[];
+}
+
+// ─── ShotRole 자동 추론 (서버사이드 — src/lib/multishot-validation.ts 동기화) ──
+
+type ShotRoleServer = "establish" | "develop" | "peak" | "resolve" | "insert" | "transition";
+
+function inferMultiShotRole(index: number, total: number): ShotRoleServer {
+  if (total <= 1) return "establish";
+  if (index === 0) return "establish";
+  if (index === total - 1) return "resolve";
+  const midPoint = Math.floor(total / 2);
+  if (index === midPoint) return "peak";
+  return "develop";
 }
 
 // ─── JSON 파싱 유틸 ───────────────────────────────────────────────────────────
@@ -953,16 +967,17 @@ ${(() => {
 - duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.`;
     }
     const shotRoles = [
-      "BEAT1 LOCATION: 장소 정체성 즉시 인식 — shot size: WS/LS",
-      "BEAT2 SITUATION: 상황의 시각적 증거 — shot size: MS/MCU",
-      "BEAT3 EMOTION: 감정/갈등 앵커 — shot size: CU/ECU",
-      "BEAT4 DETAIL: 핵심 디테일 클로즈업 — shot size: CU/ECU",
-      "BEAT5 CONTEXT: 맥락 전환 — shot size: MS",
-      "BEAT6 PAYOFF: 최종 임팩트 — shot size: WS/CU",
+      { role: "establish", desc: "LOCATION: 장소 정체성 즉시 인식 — shot size: WS/LS" },
+      { role: "develop",   desc: "SITUATION: 상황의 시각적 증거 — shot size: MS/MCU" },
+      { role: "peak",      desc: "EMOTION: 감정/갈등 앵커 — shot size: CU/ECU" },
+      { role: "insert",    desc: "DETAIL: 핵심 디테일 클로즈업 — shot size: CU/ECU" },
+      { role: "develop",   desc: "CONTEXT: 맥락 전환 — shot size: MS" },
+      { role: "resolve",   desc: "PAYOFF: 최종 임팩트 — shot size: WS/CU" },
     ];
-    const roles = shotRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} = ${r} (≤80 words)`).join("\n");
+    const roles = shotRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}" = ${r.desc} (≤80 words)`).join("\n");
     return `### multiShot 허용 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
 - ${secPerCut}초에서는 2~${maxShots}개 서브샷을 허용한다.
+- 각 서브샷에 "role" 필드를 포함하라: "establish"|"develop"|"peak"|"resolve"|"insert"|"transition"
 ${roles}
 - duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
 - 서브샷마다 반드시 다른 shot size + 앵글 사용.`;
@@ -976,11 +991,12 @@ ${(() => {
     // 예시 multiShot: 균등 분배
     const shotDur = Math.max(2, Math.floor(secPerCut / Math.min(maxShots, 3)));
     const exampleShots = [];
+    const exampleRoles = ["establish", "develop", "resolve"];
     let remaining = secPerCut;
     const exampleCount = Math.min(maxShots, 3); // 예시는 3개까지만
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
-      exampleShots.push(`{"index":${i},"prompt":"...","duration":"${d}"}`);
+      exampleShots.push(`{"index":${i},"prompt":"...","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
       remaining -= shotDur;
     }
     return `[${base},"multiShot":[${exampleShots.join(",")}]}]`;
@@ -1918,9 +1934,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // JSON 기반 프롬프트 (provider별 렌더링용)
         videoPromptJson,
         ...(extendPromptJson ? { extendPromptJson } : {}),
-        // 멀티샷: Kling(10s+)은 model_params로 전달
+        // 멀티샷: Kling(10s+)은 model_params로 전달 + role 자동 추론
         ...(d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0
-          ? { multiShot: d.multiShot }
+          ? { multiShot: d.multiShot.map((sh: MultiShotItem, si: number) => ({
+              ...sh,
+              role: sh.role ?? inferMultiShotRole(si, d.multiShot!.length),
+            })) }
           : {}),
       };
     });

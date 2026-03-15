@@ -229,10 +229,33 @@ export interface CharacterSeed {
 }
 
 // ===== 출력 타입 =====
+
+// ── Shot Role (멀티샷 역할 분류) ──
+/**
+ * ShotRole — 시퀀스 내 개별 샷의 서사적 역할.
+ * generate-cuts에서 자동 할당, 사용자가 UI에서 변경 가능.
+ */
+export type ShotRole = "establish" | "develop" | "peak" | "resolve" | "insert" | "transition";
+
+/** ShotRole 한국어 라벨 + 색상 매핑 (UI 전용) */
+export const SHOT_ROLE_META: Record<ShotRole, { label: string; color: string; bg: string }> = {
+  establish:  { label: "도입",   color: "#3b82f6", bg: "#3b82f610" },
+  develop:    { label: "전개",   color: "#22c55e", bg: "#22c55e10" },
+  peak:       { label: "절정",   color: "#ef4444", bg: "#ef444410" },
+  resolve:    { label: "마무리", color: "#a855f7", bg: "#a855f710" },
+  insert:     { label: "삽입",   color: "#f59e0b", bg: "#f59e0b10" },
+  transition: { label: "전환",   color: "#6b7280", bg: "#6b728010" },
+};
+
+/** ShotRole 목록 (드롭다운 순서) */
+export const SHOT_ROLES: ShotRole[] = ["establish", "develop", "peak", "resolve", "insert", "transition"];
+
 export interface MultiShotPrompt {
   index: number;
   prompt: string;
   duration: string; // 초 단위 문자열 (예: "5")
+  /** 샷 역할 — 미지정 시 position 기반 자동 추론 */
+  role?: ShotRole;
 }
 
 // ===== JSON 기반 영상 프롬프트 구조 =====

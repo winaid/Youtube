@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Cut, CharacterSeed, VideoClip } from "@/types";
+import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META } from "@/types";
+import { inferShotRole } from "@/lib/multishot-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -339,12 +340,17 @@ export default function VideoGenerationPanel({
                     {/* 멀티샷 서브샷 목록 */}
                     {cut.multiShot && cut.multiShot.length > 0 && (
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {cut.multiShot.map((s) => (
-                          <span key={s.index} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{ background: "#e85d0415", color: "#e85d04", border: "1px solid #e85d0425" }}>
-                            <span className="font-semibold">샷{s.index}</span>
-                            <span>{s.duration}s</span>
-                          </span>
-                        ))}
+                        {cut.multiShot.map((s) => {
+                          const role = s.role ?? inferShotRole(s.index - 1, cut.multiShot!.length);
+                          const meta = SHOT_ROLE_META[role];
+                          return (
+                            <span key={s.index} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25` }}>
+                              <span className="font-semibold">샷{s.index}</span>
+                              <span>{meta.label}</span>
+                              <span>{s.duration}s</span>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
