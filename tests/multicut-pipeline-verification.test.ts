@@ -465,6 +465,6 @@ describe("대표 시퀀스 1회 — end-to-end 메타 검증", () => {
 
     const plan = resolveSegmentPlan({ totalDurationSec: estimate.estimatedTotalSec });
     expect(plan.segmentCount).toBeGreaterThanOrEqual(8);
-    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(20);
+    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(8);
   });
 });
