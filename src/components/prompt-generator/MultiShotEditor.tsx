@@ -108,7 +108,13 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
   );
 
   // ── No multiShot support ──
-  if (maxShots <= 0 && shots.length === 0) return null;
+  if (maxShots <= 0 && shots.length === 0) {
+    return (
+      <div className="text-[9px] py-1.5 px-2 rounded" style={{ color: "#9ca3af", background: "#f3f4f610" }}>
+        이 모델/길이에서는 멀티샷을 지원하지 않습니다.
+      </div>
+    );
+  }
 
   const canAdd = shots.length < maxShots;
 

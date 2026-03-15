@@ -330,6 +330,31 @@ export default function CutCard({
   const [englishRefining, setEnglishRefining] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
 
+  // 멀티샷 자동 초기화 — useEffect로 안전하게 처리
+  // 조건: modelId 있고, onUpdate 있고, multiShot 비어있고, 의도적 원테이크 아니고, eligible
+  useEffect(() => {
+    if (!modelId || !onUpdate) return;
+    if (cut.multiShot && cut.multiShot.length > 0) return;
+    if (cut.intentionalOneTake) return;
+
+    const sceneType = (cut.shotCategory ?? "default") as PlannerSceneType;
+    const maxShots = getMaxShots(modelId, cut.durationSec);
+    const forced = shouldForceMultiShot(sceneType, cut.durationSec, modelId);
+
+    if (forced || maxShots >= 2) {
+      const autoShots = buildDefaultMultiShot({
+        durationSec: cut.durationSec,
+        sceneType,
+        basePrompt: cut.sceneDescription || "",
+        modelId,
+      });
+      if (autoShots.length >= 2) {
+        onUpdate({ ...cut, multiShot: autoShots });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelId, cut.cutNumber, cut.durationSec, cut.shotCategory]);
+
   const handleFieldSave = (field: keyof Cut, value: string) => {
     if (onUpdate) {
       onUpdate({ ...cut, [field]: value });
@@ -467,24 +492,14 @@ export default function CutCard({
             );
           }
 
-          // 강제 멀티샷 또는 eligible — 자동 초기화
+          // 강제 멀티샷 또는 eligible — useEffect가 자동 초기화 처리
+          // 다음 렌더에서 multiShot이 채워지므로 대기 표시
           if (forced || maxShots >= 2) {
-            const autoShots = buildDefaultMultiShot({
-              durationSec: cut.durationSec,
-              sceneType,
-              basePrompt: cut.sceneDescription || "",
-              modelId,
-            });
-            if (autoShots.length >= 2) {
-              // 자동으로 멀티샷 초기화 (useEffect 대신 즉시 실행)
-              // 단, 렌더 중 setState 방지를 위해 requestAnimationFrame 사용
-              requestAnimationFrame(() => onUpdate({ ...cut, multiShot: autoShots }));
-              return (
-                <div className="text-[9px] py-2" style={{ color: "#6b7280" }}>
-                  {forced ? "멀티샷 필수" : "멀티샷 추천"} — {autoShots.length}샷 자동 생성 중...
-                </div>
-              );
-            }
+            return (
+              <div className="text-[9px] py-2" style={{ color: "#6b7280" }}>
+                {forced ? "멀티샷 필수" : "멀티샷 추천"} — 자동 생성 대기 중...
+              </div>
+            );
           }
 
           // maxShots > 0이지만 자동 생성 대상 아닌 경우 — 수동 시작 버튼

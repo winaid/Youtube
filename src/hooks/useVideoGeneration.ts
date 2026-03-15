@@ -1488,6 +1488,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           aspectRatio: cfg.aspectRatio,
           videoMode,
           promptPreview: (legacyPrompt || "").slice(0, 80),
+          multiShotCount: cut.multiShot?.length ?? 0,
+          multiShotRoles: cut.multiShot?.map(s => s.role ?? "unknown") ?? [],
+          generationMode: cfg.generationMode ?? "batch",
         },
         projectTitle: undefined, // TODO: PromptGenerator에서 전달
       });
