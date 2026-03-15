@@ -89,7 +89,7 @@ export interface RawCheckVideoResponse {
 
 /** 정규화된 비디오 생성 결과 (polling 완료 후) */
 export interface NormalizedVideoResult {
-  status: "completed" | "failed" | "timeout";
+  status: "completed" | "failed" | "timeout" | "timeout_recoverable";
   videoUri?: string;
   rawVideoUri?: string;
   canonicalVideoUri?: string | null;
@@ -130,6 +130,14 @@ export interface PollOptions {
   signal?: AbortSignal;
   /** check-video 요청에 추가할 필드 (operationName, isExtend, cutNumber 등) */
   extraPollBody?: Record<string, unknown>;
+  /** job store 연동 — jobId를 전달하면 polling 상태가 자동으로 영속 저장됨 */
+  jobId?: string;
+  /**
+   * 장기 polling 모드 활성화.
+   * true이면 maxAttempts 도달 시 "failed" 대신 "timeout_recoverable" 반환.
+   * 사용자가 "다시 확인" 버튼으로 polling을 재개할 수 있다.
+   */
+  longRunning?: boolean;
 }
 
 /** provider/model 메타 */
@@ -143,7 +151,10 @@ export interface ProviderMeta {
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
+/** 기본 polling 최대 시도 횟수 — 장기 polling 모드에서는 더 높은 값 사용 */
 export const POLL_MAX_ATTEMPTS = 72;
+/** 장기 polling 최대 시도 횟수 — ~15분 커버 */
+export const POLL_LONG_MAX_ATTEMPTS = 180;
 export const MAX_CONSECUTIVE_ERRORS = 3;
 export const POLL_ERROR_BACKOFF = [5000, 7500, 10000, 15000, 20000];
 
@@ -152,12 +163,19 @@ export const POLL_ERROR_BACKOFF = [5000, 7500, 10000, 15000, 20000];
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 적응형 폴링 간격 — Kling은 보통 30-90초 소요.
- * 초반 5초 → 90초 이후 7초로 서버 부담 경감.
+ * 적응형 폴링 간격 — 점진적 확대.
+ * 초반 빠르게 확인, 장시간 시 서버 부담 경감.
+ *
+ * 0~2분 (attempt 0-23):  5초 간격
+ * 2~5분 (attempt 24-59): 10초 간격
+ * 5~10분 (attempt 60-89): 20초 간격
+ * 10분+ (attempt 90+):   30초 간격
  */
 export function getAdaptivePollInterval(attempt: number): number {
-  if (attempt < 18) return 5000;  // 0-90s: 5s 간격
-  return 7000;                     // 90s+: 7s 간격
+  if (attempt < 24) return 5000;   // 0~2분: 5초
+  if (attempt < 60) return 10000;  // 2~5분: 10초
+  if (attempt < 90) return 20000;  // 5~10분: 20초
+  return 30000;                     // 10분+: 30초
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -245,19 +263,37 @@ export async function submitVideoGeneration(
 /**
  * taskId로 비디오 생성 상태를 폴링한다.
  * 적응형 간격, 에러 분류, 재시도 백오프를 포함한 공통 로직.
+ *
+ * longRunning=true이면:
+ *   - 최대 POLL_LONG_MAX_ATTEMPTS까지 polling
+ *   - 타임아웃 시 "timeout" 대신 "timeout_recoverable" 반환
+ *   - job store에 상태 자동 영속 저장 (페이지 새로고침 복구용)
  */
 export async function pollVideoTask(
   taskId: string,
   options: PollOptions = {},
 ): Promise<NormalizedVideoResult> {
-  const maxAttempts = options.maxAttempts ?? POLL_MAX_ATTEMPTS;
+  const isLongRunning = options.longRunning ?? false;
+  const maxAttempts = options.maxAttempts
+    ?? (isLongRunning ? POLL_LONG_MAX_ATTEMPTS : POLL_MAX_ATTEMPTS);
   const useAdaptive = options.fixedIntervalMs == null;
   let consecutiveErrors = 0;
   const startTime = Date.now();
 
+  // job store 연동 (lazy import — React 비의존 모듈이므로 dynamic import)
+  let jobStore: typeof import("@/lib/video-job-store") | null = null;
+  if (options.jobId) {
+    try {
+      jobStore = await import("@/lib/video-job-store");
+    } catch { /* job store 없어도 polling은 동작 */ }
+  }
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     // abort check
     if (options.signal?.aborted) {
+      if (options.jobId && jobStore) {
+        jobStore.markTimeoutRecoverable(options.jobId);
+      }
       return makeTimeoutResult(attempt, startTime, "폴링이 취소되었습니다");
     }
 
@@ -271,6 +307,11 @@ export async function pollVideoTask(
       await sleep(waitMs);
     }
 
+    // job store: polling 진행 업데이트 (매 10회마다 — 성능)
+    if (options.jobId && jobStore && attempt % 10 === 0 && attempt > 0) {
+      jobStore.updatePollProgress(options.jobId, attempt);
+    }
+
     // HTTP request
     let res: Response;
     try {
@@ -282,7 +323,13 @@ export async function pollVideoTask(
     } catch {
       consecutiveErrors++;
       if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        return makeFailedResult(attempt, startTime, "네트워크 연결 실패 — 인터넷 연결을 확인하세요");
+        const result = makeFailedResult(attempt, startTime, "네트워크 연결 실패 — 인터넷 연결을 확인하세요");
+        if (options.jobId && jobStore) {
+          // 네트워크 실패지만 서버에서 계속 처리 가능 → recoverable
+          jobStore.markTimeoutRecoverable(options.jobId);
+          return { ...result, status: "timeout" };
+        }
+        return result;
       }
       continue;
     }
@@ -290,14 +337,21 @@ export async function pollVideoTask(
     // HTTP error
     if (!res.ok) {
       if (res.status >= 400 && res.status < 500) {
-        // 4xx: client error → no retry
         const errBody = await res.json().catch(() => ({})) as { error?: string };
-        return makeFailedResult(attempt, startTime, errBody.error || `클라이언트 오류 (${res.status})`);
+        const result = makeFailedResult(attempt, startTime, errBody.error || `클라이언트 오류 (${res.status})`);
+        if (options.jobId && jobStore) {
+          jobStore.markFailed(options.jobId, result.error || "클라이언트 오류", "provider_rejected");
+        }
+        return result;
       }
-      // 5xx: server error → retry with backoff
       consecutiveErrors++;
       if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        return makeFailedResult(attempt, startTime, `서버 오류 (${res.status}) — 잠시 후 다시 시도하세요`);
+        const result = makeFailedResult(attempt, startTime, `서버 오류 (${res.status}) — 잠시 후 다시 시도하세요`);
+        if (options.jobId && jobStore) {
+          jobStore.markTimeoutRecoverable(options.jobId);
+          return { ...result, status: "timeout" };
+        }
+        return result;
       }
       continue;
     }
@@ -319,10 +373,20 @@ export async function pollVideoTask(
 
     // Status-based handling
     if (!data.status && data.error) {
+      if (options.jobId && jobStore) {
+        jobStore.markFailed(options.jobId, data.error, "unknown");
+      }
       return makeFailedResult(attempt, startTime, data.error);
     }
 
     if (data.status === "COMPLETED" && data.videoUri) {
+      if (options.jobId && jobStore) {
+        jobStore.markCompleted(options.jobId, {
+          resultUrl: data.videoUri,
+          rawResultUrl: data.rawVideoUri,
+          seed: data.seed,
+        });
+      }
       return {
         status: "completed",
         videoUri: data.videoUri,
@@ -341,14 +405,28 @@ export async function pollVideoTask(
     if (data.status === "FAILED") {
       const result = makeFailedResult(attempt, startTime, data.error || "비디오 생성 실패");
       result.noRetry = data.noRetry;
+      if (options.jobId && jobStore) {
+        jobStore.markFailed(options.jobId, result.error || "비디오 생성 실패", "provider_rejected");
+      }
       return result;
+    }
+
+    // RUNNING — job store에 processing 마킹 (첫 RUNNING 응답 시)
+    if (options.jobId && jobStore && attempt === 0) {
+      jobStore.markProcessing(options.jobId, data.status || "processing");
     }
 
     // RUNNING — notify progress and continue
     options.onProgress?.(attempt, maxAttempts, data.progress ?? undefined);
   }
 
-  // Timeout
+  // Timeout — longRunning이면 recoverable, 아니면 hard timeout
+  if (isLongRunning) {
+    if (options.jobId && jobStore) {
+      jobStore.markTimeoutRecoverable(options.jobId);
+    }
+    return makeTimeoutRecoverableResult(maxAttempts, startTime);
+  }
   return makeTimeoutResult(maxAttempts, startTime);
 }
 
@@ -466,11 +544,24 @@ function makeFailedResult(attempt: number, startTime: number, error: string): No
 }
 
 function makeTimeoutResult(attempts: number, startTime: number, error?: string): NormalizedVideoResult {
+  const elapsedMin = Math.round((Date.now() - startTime) / 60000);
   return {
     status: "timeout",
     engine: "kling",
     needsUpload: false,
-    error: error || `영상 생성 타임아웃 (${Math.round(attempts * 5 / 60)}분 초과)`,
+    error: error || `영상 생성 타임아웃 (${elapsedMin}분 초과)`,
+    completedAt: Date.now(),
+    pollMeta: { totalAttempts: attempts, totalDurationMs: Date.now() - startTime },
+  };
+}
+
+function makeTimeoutRecoverableResult(attempts: number, startTime: number): NormalizedVideoResult {
+  const elapsedMin = Math.round((Date.now() - startTime) / 60000);
+  return {
+    status: "timeout_recoverable",
+    engine: "kling",
+    needsUpload: false,
+    error: `${elapsedMin}분 동안 확인했지만 아직 완료되지 않았어요. 서버에서 계속 처리 중일 수 있어요.`,
     completedAt: Date.now(),
     pollMeta: { totalAttempts: attempts, totalDurationMs: Date.now() - startTime },
   };

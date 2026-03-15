@@ -61,6 +61,14 @@ import {
   type VideoSubmitResult,
   type NormalizedVideoResult,
 } from "@/lib/video-generation-core";
+import {
+  createJob,
+  markSubmitted,
+  markFailed as markJobFailed,
+  getRecoverableJobs,
+  cleanupOldJobs,
+  type VideoJobRecord,
+} from "@/lib/video-job-store";
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
@@ -309,6 +317,43 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     };
   }, []);
 
+  // ── 페이지 로드 시 미완료 작업 복구 ──────────────────────────────────
+  // localStorage에 저장된 submitted/processing/timeout_recoverable 작업을 감지하고
+  // 사용자에게 알린다 (자동 polling 재개는 resumeJob에서 수동으로)
+  const [recoverableJobs, setRecoverableJobs] = useState<VideoJobRecord[]>([]);
+  useEffect(() => {
+    const jobs = getRecoverableJobs();
+    if (jobs.length > 0) {
+      setRecoverableJobs(jobs);
+      console.log(`[recovery] ${jobs.length}개 미완료 작업 발견`, jobs.map(j => ({
+        jobId: j.jobId, taskId: j.taskId, cutNumber: j.cutNumber, status: j.status,
+      })));
+    }
+    // 오래된 완료/실패 작업 정리
+    cleanupOldJobs();
+  }, []);
+
+  // 미완료 작업 polling 재개
+  const resumeJob = useCallback((job: VideoJobRecord) => {
+    if (!job.taskId) return;
+    // recoverableJobs 목록에서 제거
+    setRecoverableJobs(prev => prev.filter(j => j.jobId !== job.jobId));
+    // 해당 cutNumber의 clip을 polling 상태로 전환
+    updateClip(job.cutNumber, {
+      status: "polling",
+      operationName: job.operationName || job.taskId,
+    });
+    startPolling(
+      job.cutNumber,
+      job.operationName || job.taskId,
+      (job.engine as "kling") || "kling",
+      job.taskId,
+      false,
+      undefined,
+      job.jobId,
+    );
+  }, [updateClip, startPolling]);
+
   const updateClip = useCallback((cutNumber: number, update: Partial<VideoClip>) => {
     setState((prev) => ({
       ...prev,
@@ -384,6 +429,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     taskId?: string,
     isExtend?: boolean,
     variantsToPreserve?: VideoVariant[],
+    jobId?: string,
   ) => {
     // ── 중복 폴링 방지: 이미 폴링 중이면 즉시 리턴
     if (activePolls.current.has(cutNumber)) {
@@ -799,6 +845,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
               console.log(`[CUT ${cutNumber}] 폴링 진행 중 — poll #${attempt + 1}/${maxAttempts}, engine=${engine}`);
             }
           },
+          jobId,
+          longRunning: true,
         },
       );
 
@@ -820,8 +868,17 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           { error: result.error, noRetry: result.noRetry },
           result.pollMeta.totalAttempts,
         );
+      } else if (result.status === "timeout_recoverable") {
+        // 장기 생성 — 서버에서 계속 처리 중일 수 있음
+        updateClip(cutNumber, {
+          status: "failed",
+          error: result.error || "시간이 오래 걸리고 있어요. '다시 확인' 버튼을 눌러주세요.",
+          // taskId를 보존하여 복구 가능
+          operationName: operationName,
+        });
+        console.warn(`[CUT ${cutNumber}] timeout_recoverable — taskId=${taskId ?? operationName}, jobId=${jobId}`);
       } else {
-        // timeout
+        // timeout — hard timeout (longRunning=false 경로)
         const classified = classifyVideoError(new Error(result.error || "영상 생성 시간 초과"));
         updateClip(cutNumber, { status: "failed", error: classified.message });
       }
@@ -1396,6 +1453,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         negative: negativePrompt?.slice(0, 80) || "(없음)",
       });
 
+      // ── Job Store: 요청 전 job record 생성 (queued) ────────────────
+      const job = createJob({
+        engine,
+        cutNumber,
+        requestSummary: {
+          durationSeconds: cfg.durationSeconds,
+          aspectRatio: cfg.aspectRatio,
+          videoMode,
+          promptPreview: (legacyPrompt || "").slice(0, 80),
+        },
+        projectTitle: undefined, // TODO: PromptGenerator에서 전달
+      });
+
       // ── Submit via core helper ───────────────────────────────────────
       const tApiStart = performance.now();
       let data: VideoSubmitResult;
@@ -1476,18 +1546,20 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           }
         }
 
-        updateClip(cutNumber, {
-          status: "failed",
-          error: isSafetyError
-            ? `안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
-            : classifyVideoError(submitErr, statusCode).message,
-        });
+        const failMsg = isSafetyError
+          ? `안전 필터 차단 — 민감한 표현(폭력·의료시술·신체손상·공포)을 완화해 다시 시도하세요.`
+          : classifyVideoError(submitErr, statusCode).message;
+        markJobFailed(job.jobId, failMsg, isSafetyError ? "provider_rejected" : "unknown");
+        updateClip(cutNumber, { status: "failed", error: failMsg });
         return;
       }
       const tApiEnd = performance.now();
       const apiRequestMs = Math.round(tApiEnd - tApiStart);
 
       console.log(`[CUT ${cutNumber}] ⏱ apiRequest`, { apiRequestMs });
+
+      // ── Job Store: submit 성공 → submitted (taskId 즉시 저장) ──
+      markSubmitted(job.jobId, data.taskId || data.operationName, data.operationName);
 
       updateClip(cutNumber, {
         operationName: data.operationName,
@@ -1555,6 +1627,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         data.taskId,
         data.modeUsed === "extend",
         variantsToPreserve,
+        job.jobId,
       );
     } catch (err) {
       const classified = classifyVideoError(
@@ -2596,5 +2669,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     // Batch narration regeneration
     batchNarrationState,
     regenerateAllDirtyNarrations,
+    // Job recovery (S1 resilience)
+    recoverableJobs,
+    resumeJob,
   };
 }

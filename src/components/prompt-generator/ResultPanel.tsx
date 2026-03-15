@@ -930,6 +930,8 @@ export default function ResultPanel({
             onResetClip={videoGen.resetClip}
             onAddCut={videoGen.addCutVariant}
             onSelectVariant={videoGen.selectVariant}
+            recoverableJobs={videoGen.recoverableJobs}
+            onResumeJob={videoGen.resumeJob}
           />
 
           {/* AI 리뷰 패널 */}

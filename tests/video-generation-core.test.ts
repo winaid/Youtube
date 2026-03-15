@@ -166,13 +166,19 @@ describe("normalized response shape — consistent between node and hook paths",
 
 describe("polling logic — matches useVideoGeneration behavior", () => {
   it("getAdaptivePollInterval should match useVideoGeneration intervals", () => {
-    // 0-17: 5s (matches hook: attempts 0-17 = 5s)
+    // 0-23: 5s (0~2분)
     expect(getAdaptivePollInterval(0)).toBe(5000);
     expect(getAdaptivePollInterval(5)).toBe(5000);
-    expect(getAdaptivePollInterval(17)).toBe(5000);
-    // 18+: 7s (matches hook: 90s+ → 7s)
-    expect(getAdaptivePollInterval(18)).toBe(7000);
-    expect(getAdaptivePollInterval(30)).toBe(7000);
+    expect(getAdaptivePollInterval(23)).toBe(5000);
+    // 24-59: 10s (2~5분)
+    expect(getAdaptivePollInterval(24)).toBe(10000);
+    expect(getAdaptivePollInterval(59)).toBe(10000);
+    // 60-89: 20s (5~10분)
+    expect(getAdaptivePollInterval(60)).toBe(20000);
+    expect(getAdaptivePollInterval(89)).toBe(20000);
+    // 90+: 30s (10분+)
+    expect(getAdaptivePollInterval(90)).toBe(30000);
+    expect(getAdaptivePollInterval(180)).toBe(30000);
   });
 
   it("should timeout after maxAttempts", async () => {
@@ -819,12 +825,18 @@ describe("polling policy equivalence — hook and node use identical parameters"
 
   it("adaptive polling intervals match between hook and core", () => {
     // Both paths use getAdaptivePollInterval from core
-    // Verify the policy: 0-17 → 5s, 18+ → 7s
-    for (let i = 0; i < 18; i++) {
+    // Verify the policy: 0-23 → 5s, 24-59 → 10s, 60-89 → 20s, 90+ → 30s
+    for (let i = 0; i < 24; i++) {
       expect(getAdaptivePollInterval(i)).toBe(5000);
     }
-    for (let i = 18; i < 30; i++) {
-      expect(getAdaptivePollInterval(i)).toBe(7000);
+    for (let i = 24; i < 60; i++) {
+      expect(getAdaptivePollInterval(i)).toBe(10000);
+    }
+    for (let i = 60; i < 90; i++) {
+      expect(getAdaptivePollInterval(i)).toBe(20000);
+    }
+    for (let i = 90; i < 100; i++) {
+      expect(getAdaptivePollInterval(i)).toBe(30000);
     }
   });
 

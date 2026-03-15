@@ -14,6 +14,8 @@ import {
   type StitchCapability,
 } from "@/lib/montage-export";
 import type { StitchProgress, StitchJob } from "@/lib/client-stitch";
+import type { VideoJobRecord } from "@/lib/video-job-store";
+import { JOB_STATUS_LABELS, JOB_STATUS_DESCRIPTIONS } from "@/lib/video-job-store";
 
 interface VideoGenerationPanelProps {
   cuts: Cut[];
@@ -30,6 +32,10 @@ interface VideoGenerationPanelProps {
   onResetClip: (cutNumber: number) => void;
   onAddCut?: (cutNumber: number) => void;
   onSelectVariant: (cutNumber: number, variantIndex: number) => void;
+  /** 복구 가능한 미완료 작업 목록 */
+  recoverableJobs?: VideoJobRecord[];
+  /** 미완료 작업 polling 재개 */
+  onResumeJob?: (job: VideoJobRecord) => void;
 }
 
 function ElapsedTime({ startedAt }: { startedAt?: number }) {
@@ -78,6 +84,8 @@ export default function VideoGenerationPanel({
   onResetClip,
   onAddCut,
   onSelectVariant,
+  recoverableJobs,
+  onResumeJob,
 }: VideoGenerationPanelProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadResult, setDownloadResult] = useState<{ downloaded: number; failed: number } | null>(null);
@@ -160,6 +168,72 @@ export default function VideoGenerationPanel({
       </CardHeader>
 
       <CardContent className="space-y-3 pt-4">
+        {/* ── 미완료 작업 복구 배너 ── */}
+        {recoverableJobs && recoverableJobs.length > 0 && (
+          <div
+            className="rounded-lg p-3 space-y-2"
+            style={{ background: "#fef3c7", border: "1px solid #fcd34d" }}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium" style={{ color: "#92400e" }}>
+                이전에 진행 중이던 작업이 있어요
+              </span>
+              <Badge className="text-[10px] text-white" style={{ background: "#d97706" }}>
+                {recoverableJobs.length}건
+              </Badge>
+            </div>
+            <div className="space-y-1.5">
+              {recoverableJobs.map((job) => {
+                const elapsed = Math.floor((Date.now() - job.createdAt) / 1000);
+                const min = Math.floor(elapsed / 60);
+                return (
+                  <div
+                    key={job.jobId}
+                    className="flex items-center justify-between gap-2 rounded-md p-2"
+                    style={{ background: "#fffbeb", border: "1px solid #fde68a" }}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium" style={{ color: "#78350f" }}>
+                          장면 {job.cutNumber}
+                        </span>
+                        <Badge
+                          className="text-[9px]"
+                          style={{
+                            background: job.status === "timeout_recoverable" ? "#ef444420" : "#f59e0b20",
+                            color: job.status === "timeout_recoverable" ? "#dc2626" : "#d97706",
+                          }}
+                        >
+                          {JOB_STATUS_LABELS[job.status]}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">
+                          {min > 0 ? `${min}분 전 시작` : "방금 전 시작"}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                        {job.requestSummary.promptPreview}
+                      </p>
+                      <p className="text-[10px]" style={{ color: "#92400e" }}>
+                        {JOB_STATUS_DESCRIPTIONS[job.status]}
+                      </p>
+                    </div>
+                    {onResumeJob && (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs text-white flex-shrink-0"
+                        style={{ background: "#d97706" }}
+                        onClick={() => onResumeJob(job)}
+                      >
+                        다시 확인
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* 전체 생성 / 중단 */}
         <div className="flex gap-2">
           {!isAutoMode ? (
