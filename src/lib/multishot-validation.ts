@@ -26,6 +26,16 @@ import { getMaxShots, getCapability } from "@/lib/kling-capability";
 // ═══════════════════════════════════════════════════════════════════
 
 export const PROMPT_WARN_LENGTH = 450;
+/**
+ * 최대 prompt 길이.
+ *
+ * 이중 방어 전략:
+ *   1. UI 입력 차단 — MultiShotEditor의 <textarea maxLength={512}>로 초과 타이핑 방지
+ *   2. Validation 검증 — 서버 생성/붙여넣기 등 외부 유입 데이터에 대한 후행 검증
+ *
+ * maxLength는 "입력 시 차단", validation은 "기존 데이터 검출" 역할.
+ * export layer(final-payload-validator)에서도 동일 상수로 Rule 15 적용.
+ */
 export const PROMPT_MAX_LENGTH = 512;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -174,6 +184,30 @@ export function validateMultiShots(
     aggregateIssues.some((i) => i.severity === "error");
 
   return { valid: !hasError, shotIssues, aggregateIssues };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Role Re-assignment
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * position 기반 role 재할당.
+ * 기존 role이 있더라도 position에 맞게 재추론.
+ * 사용자가 명시 설정한 role은 건드리지 않되,
+ * auto-inferred role만 갱신하려면 userSetRoles Set을 전달.
+ *
+ * @param shots - 현재 shots 배열
+ * @param userSetRoles - 사용자가 명시 설정한 shotIndex Set (1-based). 이 샷의 role은 유지.
+ * @returns 새 shots 배열 (불변)
+ */
+export function autoAssignRoles(
+  shots: MultiShotPrompt[],
+  userSetRoles?: Set<number>,
+): MultiShotPrompt[] {
+  return shots.map((s, i) => {
+    if (userSetRoles && userSetRoles.has(s.index)) return { ...s };
+    return { ...s, role: inferShotRole(i, shots.length) };
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════

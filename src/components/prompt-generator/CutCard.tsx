@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
+import { getMaxShots } from "@/lib/kling-capability";
+import { distributeEvenly } from "@/lib/multishot-validation";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -409,10 +411,29 @@ export default function CutCard({
         {/* 장면 설명 */}
         <p className="text-sm">{cut.sceneDescription}</p>
 
-        {/* 멀티샷 인라인 에디터 */}
-        {modelId && onUpdate && cut.multiShot && cut.multiShot.length > 0 && (
-          <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />
-        )}
+        {/* 멀티샷 인라인 에디터 + 진입점 */}
+        {modelId && onUpdate && (() => {
+          const maxShots = getMaxShots(modelId, cut.durationSec);
+          const hasMultiShot = cut.multiShot && cut.multiShot.length > 0;
+          if (hasMultiShot) {
+            return <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />;
+          }
+          if (maxShots > 0) {
+            return (
+              <button
+                onClick={() => {
+                  const initial = distributeEvenly(modelId, 2, cut.durationSec);
+                  onUpdate({ ...cut, multiShot: initial });
+                }}
+                className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                style={{ background: "#e85d0410", color: "#e85d04", border: "1px solid #e85d0420" }}
+              >
+                멀티샷 시작 ({maxShots}샷 가능)
+              </button>
+            );
+          }
+          return null;
+        })()}
 
         {/* 장면별 TTS */}
         {onGenerateSceneTts && (

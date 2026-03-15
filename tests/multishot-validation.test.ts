@@ -16,6 +16,7 @@ import {
   removeShot,
   resizeShot,
   distributeEvenly,
+  autoAssignRoles,
   PROMPT_MAX_LENGTH,
   PROMPT_WARN_LENGTH,
 } from "@/lib/multishot-validation";
@@ -331,5 +332,36 @@ describe("distributeEvenly", () => {
     expect(result[0].role).toBe("establish");
     expect(result[1].role).toBe("peak");
     expect(result[2].role).toBe("resolve");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// autoAssignRoles
+// ═══════════════════════════════════════════════════════════════════
+
+describe("autoAssignRoles", () => {
+  it("모든 role을 position 기반으로 재할당", () => {
+    const shots: MultiShotPrompt[] = [
+      { index: 1, prompt: "A", duration: "3", role: "insert" },
+      { index: 2, prompt: "B", duration: "4", role: "insert" },
+      { index: 3, prompt: "C", duration: "3", role: "insert" },
+    ];
+    const result = autoAssignRoles(shots);
+    expect(result[0].role).toBe("establish");
+    expect(result[1].role).toBe("peak");
+    expect(result[2].role).toBe("resolve");
+  });
+
+  it("userSetRoles에 포함된 샷은 role 유지", () => {
+    const shots: MultiShotPrompt[] = [
+      { index: 1, prompt: "A", duration: "3", role: "transition" },
+      { index: 2, prompt: "B", duration: "4", role: "insert" },
+      { index: 3, prompt: "C", duration: "3", role: "peak" },
+    ];
+    const userSet = new Set([1, 3]); // shot 1, 3은 사용자 설정
+    const result = autoAssignRoles(shots, userSet);
+    expect(result[0].role).toBe("transition"); // 유지
+    expect(result[1].role).toBe("peak"); // 재할당 (중간점)
+    expect(result[2].role).toBe("peak"); // 유지
   });
 });

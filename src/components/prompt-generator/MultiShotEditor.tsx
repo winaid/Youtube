@@ -20,6 +20,7 @@ import {
   removeShot,
   resizeShot,
   inferShotRole,
+  autoAssignRoles,
   PROMPT_MAX_LENGTH,
   type MultiShotValidationResult,
 } from "@/lib/multishot-validation";
@@ -118,17 +119,31 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
         <span className="text-[11px] font-medium" style={{ color: "#e85d04" }}>
           멀티샷 ({shots.length}/{maxShots})
         </span>
-        {canAdd && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-[10px] px-2"
-            style={{ color: "#e85d04" }}
-            onClick={handleAddShot}
-          >
-            + 샷 추가
-          </Button>
-        )}
+        <div className="flex gap-1">
+          {shots.length >= 3 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] px-2"
+              style={{ color: "#6b7280" }}
+              onClick={() => updateShots(autoAssignRoles(shots))}
+              title="position 기반 role 자동 재할당"
+            >
+              역할 재정렬
+            </Button>
+          )}
+          {canAdd && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] px-2"
+              style={{ color: "#e85d04" }}
+              onClick={handleAddShot}
+            >
+              + 샷 추가
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Shot Cards */}

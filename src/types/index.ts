@@ -325,7 +325,7 @@ export interface Cut {
   transitionHint: string;
   characterConsistency: string;
   charactersInScene: string[];
-  multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (durationSec >= 10 시 생성)
+  multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (duration 기반 — getMaxShots 정책 참조)
   // 씬 타입 분류
   shotCategory?: string;    // character-driven | environment | object-detail | map-graphic | transition-atmosphere
   characterRole?: string;   // protagonist | background | silhouette | partial | absent
