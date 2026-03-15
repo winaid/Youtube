@@ -119,10 +119,11 @@ describe("Compact QA conversion", () => {
 
 describe("Token budget estimation", () => {
   // 실제 generate-cuts.ts Step1 토큰 예산 공식과 동일하게 유지
-  // Phase 2B: Step1 스키마 경량화로 per-outline 400 토큰 (14개 필드, beat/hook 제거)
+  // Phase 2C: Step1 maxOutputTokens 32768로 상향 (신뢰성 극대화)
+  const STEP1_MAX_TOKENS = 32768;
   function estimateStep1Tokens(cutCount: number): number {
     const estimatedTokens = 200 + cutCount * 400 + 200;
-    return Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
+    return Math.min(STEP1_MAX_TOKENS, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
   }
 
   it("4 cuts → at least 4096 tokens", () => {
@@ -133,23 +134,29 @@ describe("Token budget estimation", () => {
     expect(estimateStep1Tokens(8)).toBeGreaterThan(estimateStep1Tokens(4));
   });
 
-  it("10 cuts → cap is now 16384 (not 8192)", () => {
-    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(16384);
+  it("10 cuts → cap is now 32768 (Phase 2C)", () => {
+    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(32768);
   });
 
-  it("15 cuts → cap is now 16384 (not 8192)", () => {
-    expect(estimateStep1Tokens(15)).toBeLessThanOrEqual(16384);
+  it("15 cuts → cap is now 32768 (Phase 2C)", () => {
+    expect(estimateStep1Tokens(15)).toBeLessThanOrEqual(32768);
   });
 
   it("6 cuts → slim schema needs less tokens per outline", () => {
-    // 6컷: (200 + 6*400 + 200) * 1.5 = 4200 → within 4096-16384
+    // 6컷: (200 + 6*400 + 200) * 1.5 = 4200 → within 4096-32768
     expect(estimateStep1Tokens(6)).toBeGreaterThanOrEqual(4096);
   });
 
-  it("10+ cuts → budget still has headroom within 16384 cap", () => {
+  it("10+ cuts → budget still has headroom within 32768 cap", () => {
     // 10컷: (200 + 10*400 + 200) * 1.5 = 6600 → comfortable within cap
-    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(16384);
+    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(32768);
     expect(estimateStep1Tokens(10)).toBeGreaterThanOrEqual(4096);
+  });
+
+  it("30 cuts → 예산이 32768 내에 충분 (Phase 2C)", () => {
+    // 30컷: (200 + 30*400 + 200) * 1.5 = 18600 → within 32768
+    expect(estimateStep1Tokens(30)).toBeLessThanOrEqual(32768);
+    expect(estimateStep1Tokens(30)).toBe(18600);
   });
 });
 

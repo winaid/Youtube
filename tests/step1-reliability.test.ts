@@ -211,10 +211,11 @@ describe("Missing-cut 감지 및 merge", () => {
 // 3. Token budget: 경량화된 스키마 반영
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Step1 경량 스키마 토큰 예산", () => {
+describe("Step1 경량 스키마 토큰 예산 (Phase 2C: cap=32768)", () => {
+  const STEP1_MAX_TOKENS = 32768;
   function estimateStep1Tokens(cutCount: number): number {
     const estimatedTokens = 200 + cutCount * 400 + 200;
-    return Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
+    return Math.min(STEP1_MAX_TOKENS, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
   }
 
   it("경량 스키마(14필드) → per-outline 400토큰 기준", () => {
@@ -223,19 +224,26 @@ describe("Step1 경량 스키마 토큰 예산", () => {
     expect(budget6).toBe(4200);
   });
 
-  it("10컷 → 예산이 16384 내에 충분", () => {
+  it("10컷 → 예산이 32768 내에 충분", () => {
     // 10컷: (200 + 10*400 + 200) * 1.5 = 6600
     const budget10 = estimateStep1Tokens(10);
     expect(budget10).toBe(6600);
-    expect(budget10).toBeLessThan(16384);
+    expect(budget10).toBeLessThan(32768);
   });
 
   it("경량화 전(18필드, 600/outline) 대비 토큰 절약 확인", () => {
-    const oldFormula = (c: number) => Math.min(16384, Math.max(4096, Math.ceil((200 + c * 600 + 200) * 1.5)));
-    const newFormula = (c: number) => Math.min(16384, Math.max(4096, Math.ceil((200 + c * 400 + 200) * 1.5)));
+    const oldFormula = (c: number) => Math.min(STEP1_MAX_TOKENS, Math.max(4096, Math.ceil((200 + c * 600 + 200) * 1.5)));
+    const newFormula = (c: number) => Math.min(STEP1_MAX_TOKENS, Math.max(4096, Math.ceil((200 + c * 400 + 200) * 1.5)));
 
     for (const cutCount of [4, 6, 8, 10, 15]) {
       expect(newFormula(cutCount)).toBeLessThanOrEqual(oldFormula(cutCount));
     }
+  });
+
+  it("30컷 고부하 시나리오도 32768 내에 충분", () => {
+    // 30컷: (200 + 30*400 + 200) * 1.5 = 18600
+    const budget30 = estimateStep1Tokens(30);
+    expect(budget30).toBe(18600);
+    expect(budget30).toBeLessThan(STEP1_MAX_TOKENS);
   });
 });

@@ -49,6 +49,23 @@ type Env = GeminiEnv;
 const MODEL_OUTLINE = GEMINI_MODEL_PRO;
 const MODEL_DETAIL  = GEMINI_MODEL_PRO;
 
+// ─── Step1 토큰/타임아웃 상수 ────────────────────────────────────────────────
+// 각 retry 경로에서 리터럴 값 대신 이 상수를 사용.
+// 변경 시 여기만 수정하면 전 경로에 반영됨.
+
+/** Step1 초기 요청 maxOutputTokens 상한 */
+const STEP1_MAX_TOKENS = 32768;
+/** Higher-token retry / compact retry maxOutputTokens */
+const STEP1_RETRY_MAX_TOKENS = 32768;
+/** Ultra-compact retry maxOutputTokens */
+const STEP1_ULTRA_MAX_TOKENS = 16384;
+/** Step1 per-outline 토큰 추정 (14개 필드 경량 스키마) */
+const STEP1_TOKENS_PER_OUTLINE = 400;
+/** Step1 초기 요청 타임아웃 (ms) — 기본 55s보다 여유 있게 */
+const STEP1_TIMEOUT_MS = 90_000;
+/** Ultra-compact retry 타임아웃 (ms) */
+const STEP1_ULTRA_TIMEOUT_MS = 45_000;
+
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**
  * directorPersona + directorStyle + directorTechniques를 조합해
@@ -490,17 +507,17 @@ JSON만 출력:
   // ── Token budget: 컷 수에 비례하여 maxOutputTokens 산정 ──
   // 경량화된 outline ≈ 350-400 tokens (14개 필드, sceneBeat1/2/3+endHook 제거)
   // characterSeeds ≈ 200, JSON overhead ≈ 200
-  // 안전 마진 1.5배 → 최소 4096, 최대 16384
-  const estimatedTokens = 200 + cutCount * 400 + 200;
-  const step1MaxTokens = Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
-  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens}`);
+  // 안전 마진 1.5배 → 최소 4096, 최대 STEP1_MAX_TOKENS
+  const estimatedTokens = 200 + cutCount * STEP1_TOKENS_PER_OUTLINE + 200;
+  const step1MaxTokens = Math.min(STEP1_MAX_TOKENS, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
+  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens} cap=${STEP1_MAX_TOKENS} timeoutMs=${STEP1_TIMEOUT_MS}`);
 
   let result = await streamingGenerate(env, MODEL_OUTLINE, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.5, maxOutputTokens: step1MaxTokens, responseMimeType: "application/json" },
-  });
+  }, { timeoutMs: STEP1_TIMEOUT_MS });
 
-  console.info(`[cuts:step1] responseLen=${result.text.length} truncated=${result.truncated ?? false} parseMode=normal`);
+  console.info(`[cuts:step1] responseLen=${result.text.length} truncated=${result.truncated ?? false} timedOut=${result.timedOut ?? false} parseMode=normal`);
 
   // ── Truncation 감지 + compact retry 전략 ──
   // retry 순서: (1) higher maxTokens retry → (2) compact prompt retry → (3) throw
@@ -514,15 +531,15 @@ JSON만 출력:
       parseMode = "partial_recovery";
       console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${(partial.outlines as unknown[]).length}/${cutCount} parseMode=${parseMode}`);
     } else {
-      // (1) maxOutputTokens를 16384로 올려서 재시도
-      if (step1MaxTokens < 16384) {
-        console.warn(`[cuts:step1] RETRY with higher maxTokens=16384 (was ${step1MaxTokens})`);
+      // (1) maxOutputTokens를 STEP1_RETRY_MAX_TOKENS로 올려서 재시도
+      if (step1MaxTokens < STEP1_RETRY_MAX_TOKENS) {
+        console.warn(`[cuts:step1] RETRY with higher maxTokens=${STEP1_RETRY_MAX_TOKENS} (was ${step1MaxTokens}) timeoutMs=${STEP1_TIMEOUT_MS}`);
         parseMode = "higher_tokens_retry";
         result = await streamingGenerate(env, MODEL_OUTLINE, {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 16384, responseMimeType: "application/json" },
-        });
-        console.info(`[cuts:step1] higher_tokens_retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+          generationConfig: { temperature: 0.4, maxOutputTokens: STEP1_RETRY_MAX_TOKENS, responseMimeType: "application/json" },
+        }, { timeoutMs: STEP1_TIMEOUT_MS });
+        console.info(`[cuts:step1] higher_tokens_retry responseLen=${result.text.length} truncated=${result.truncated ?? false} timedOut=${result.timedOut ?? false}`);
       }
 
       // (2) 여전히 truncated이면 compact prompt로 재시도
@@ -547,9 +564,9 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
 
         result = await streamingGenerate(env, MODEL_OUTLINE, {
           contents: [{ role: "user", parts: [{ text: compactPrompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 16384, responseMimeType: "application/json" },
-        });
-        console.info(`[cuts:step1] compact_retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+          generationConfig: { temperature: 0.3, maxOutputTokens: STEP1_RETRY_MAX_TOKENS, responseMimeType: "application/json" },
+        }, { timeoutMs: STEP1_TIMEOUT_MS });
+        console.info(`[cuts:step1] compact_retry responseLen=${result.text.length} truncated=${result.truncated ?? false} timedOut=${result.timedOut ?? false} maxTokens=${STEP1_RETRY_MAX_TOKENS}`);
 
         if (result.truncated) {
           // compact retry도 truncated → partial 파싱 시도 후 실패하면 throw
@@ -558,7 +575,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
             parseMode = "partial_recovery";
             console.info(`[cuts:step1] compact partial recovery: ${(lastPartial.outlines as unknown[]).length} outlines`);
           } else {
-            throw new Error(`step1 truncated after compact retry: output ${result.text.length}chars, maxTokens=16384. cutCount=${cutCount}개가 너무 많거나 스토리가 너무 깁니다.`);
+            throw new Error(`step1 truncated after compact retry: output ${result.text.length}chars, maxTokens=${STEP1_RETRY_MAX_TOKENS}. cutCount=${cutCount}개가 너무 많거나 스토리가 너무 깁니다.`);
           }
         }
       }
@@ -574,8 +591,9 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
       const ultraPrompt = buildUltraCompactStep1Prompt(storyText, directorNameKo, cutCount, secPerCut, ultraEditorial ? `[편집: ${ultraEditorial}]` : undefined);
       const ultraResult = await streamingGenerate(env, MODEL_OUTLINE, {
         contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" },
-      }, { timeoutMs: 30_000 });
+        generationConfig: { temperature: 0.3, maxOutputTokens: STEP1_ULTRA_MAX_TOKENS, responseMimeType: "application/json" },
+      }, { timeoutMs: STEP1_ULTRA_TIMEOUT_MS });
+      console.info(`[cuts:step1] ultra-compact attempt: maxTokens=${STEP1_ULTRA_MAX_TOKENS} timeoutMs=${STEP1_ULTRA_TIMEOUT_MS}`);
 
       if (!ultraResult.error && !ultraResult.timedOut && ultraResult.text) {
         result = ultraResult;
@@ -1496,10 +1514,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             secPerCut,
             buildCompactEditorialSummary(editorial),
           );
+          console.info(`[generate-cuts] ultra-compact retry: maxTokens=${STEP1_ULTRA_MAX_TOKENS} timeoutMs=${STEP1_ULTRA_TIMEOUT_MS}`);
           const retryResult = await streamingGenerate(context.env, MODEL_OUTLINE, {
             contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" },
-          }, { timeoutMs: 30_000 });
+            generationConfig: { temperature: 0.3, maxOutputTokens: STEP1_ULTRA_MAX_TOKENS, responseMimeType: "application/json" },
+          }, { timeoutMs: STEP1_ULTRA_TIMEOUT_MS });
 
           if (!retryResult.error && !retryResult.timedOut) {
             const parsed = safeParseObj(retryResult.text);
