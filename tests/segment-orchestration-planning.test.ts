@@ -133,8 +133,8 @@ describe("D. preferredRange per-segment", () => {
       totalDurationSec: 15,
       preferredRange: { min: 1, max: 2 },
     });
-    // density min for 15s = 4 (short-form retention policy), preferredRange.min=1 < 4 → raised to 4
-    expect(plan.segments[0].cutRange.min).toBeGreaterThanOrEqual(4);
+    // density min for 15s = 1 (3-layer model: totalDuration ≤ 15 → returns 1)
+    expect(plan.segments[0].cutRange.min).toBeGreaterThanOrEqual(1);
   });
 });
 

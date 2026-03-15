@@ -41,9 +41,9 @@ interface InputPanelProps {
   isLoading: boolean;
   prefillScenario?: string;
   onPrefillConsumed?: () => void;
-  /** 부모가 소유하는 장면당 초 (0=자동, 3-15=명시) */
+  /** 부모가 소유하는 시퀀스당 초 (0=자동, 3-15=명시) */
   secondsPerScene: number;
-  /** 장면당 초 변경 콜백 */
+  /** 시퀀스당 초 변경 콜백 */
   onSecondsPerSceneChange: (v: number) => void;
   /** 결과가 이미 생성되었는지 여부 — 사전 계획 요약 표시 제어 */
   hasResult?: boolean;
@@ -440,7 +440,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     }
   };
 
-  // AI 장면 분석 — 영상 길이 지정 시에만 실행 (자동=건너뜀)
+  // AI 시퀀스 분석 — 영상 길이 지정 시에만 실행 (자동=건너뜀)
   const analyzeStory = useCallback(async (targetDurationSec: number) => {
     if (!storyText.trim() || storyText.length < 20) return;
     console.log("[analyze-cuts] 분석 시작, 텍스트 길이:", storyText.length, "목표 길이:", targetDurationSec);
@@ -1261,7 +1261,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           })()}
         </div>
 
-        {/* 영상 길이 + 장면 수 + 화면 비율 */}
+        {/* 영상 길이 + 시퀀스 수 + 화면 비율 */}
         <div className="rounded-xl p-4 space-y-4" style={{ background: "#f8f9fc", border: "1px solid #e8e9f0" }}>
           {/* 영상 길이 */}
           <div className="space-y-2">
@@ -1286,16 +1286,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
 
-          {/* 장면 수 */}
+          {/* 시퀀스 수 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면 수</Label>
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>시퀀스 수</Label>
             </div>
 
             {/* AI 추천 — 영상 길이 지정 시에만 표시 */}
             {duration === "auto" && storyText.trim().length >= 20 && (
               <p className="text-[10px] px-2 py-1.5 rounded-lg" style={{ background: "#f1f5f9", color: "#94a3b8" }}>
-                영상 길이를 선택하면 AI가 장면 수와 초를 자동 추천합니다
+                영상 길이를 선택하면 AI가 시퀀스 수와 초를 자동 추천합니다
               </p>
             )}
             {isAnalyzing && (
@@ -1318,7 +1318,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                     AI 추천
                   </span>
                   <span className="text-xs font-bold" style={{ color: "#16a34a" }}>
-                    {aiCutRecommendation.recommendedCuts}장면
+                    {aiCutRecommendation.recommendedCuts}시퀀스
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: "#dcfce7", color: "#15803d" }}>
                     × {aiCutRecommendation.recommendedDuration}초
@@ -1377,10 +1377,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
 
-          {/* 장면당 초 (슬라이더) */}
+          {/* 시퀀스당 초 (슬라이더) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>장면당 초</Label>
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>시퀀스당 초</Label>
               <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{ background: cutDuration === 0 ? "#f0f0ff" : "#787fff15", color: cutDuration === 0 ? "#787fff" : "#5a5ecc" }}>
                 {cutDuration === 0 ? "자동" : `${cutDuration}초`}
               </span>
@@ -1432,14 +1432,14 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             </div>
             <p className="text-[9px] text-muted-foreground">
               {cutDuration === 0
-                ? "길이와 장면 수를 기준으로 자동 계산"
+                ? "총 길이와 시퀀스 수를 기준으로 자동 계산"
                 : cutDuration >= 1 && cutDuration < DURATION_MIN
                   ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MIN}초 (최소 허용 길이로 보정)`
                   : cutDuration > DURATION_MAX
                     ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MAX}초 (최대 허용 길이로 보정)`
                     : cutDuration >= 10
-                      ? `⚠ ${cutDuration}초는 Kling 전용 — 각 장면을 ${cutDuration}초 기준으로 생성`
-                      : `각 장면을 ${cutDuration}초 기준으로 생성`}
+                      ? `⚠ ${cutDuration}초는 Kling 전용 — 각 시퀀스를 ${cutDuration}초 기준으로 생성`
+                      : `각 시퀀스를 ${cutDuration}초 기준으로 생성`}
             </p>
             {/* reconciliation 미리보기 */}
             {cutDuration > 0 && cutCount !== "auto" && typeof cutCount === "number" && (
@@ -1449,9 +1449,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   const expectedTotal = applied * cutCount;
                   const durationNum = typeof duration === "number" ? duration : 0;
                   if (durationNum > 0 && Math.abs(expectedTotal - durationNum) > 1) {
-                    return `⚠ ${applied}초 × ${cutCount}장면 = ${expectedTotal}초 (목표 ${durationNum}초와 차이 ${Math.abs(expectedTotal - durationNum)}초)`;
+                    return `⚠ ${applied}초 × ${cutCount}시퀀스 = ${expectedTotal}초 (목표 ${durationNum}초와 차이 ${Math.abs(expectedTotal - durationNum)}초)`;
                   }
-                  return `${applied}초 × ${cutCount}장면 = ${expectedTotal}초`;
+                  return `${applied}초 × ${cutCount}시퀀스 = ${expectedTotal}초`;
                 })()}
               </p>
             )}
@@ -1570,8 +1570,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
           if (hasManualOverride && storyText.trim().length >= 20) {
             const manualParts: string[] = [];
-            if (!isAutoCut && typeof cutCount === "number") manualParts.push(`장면 수: ${cutCount}`);
-            if (!isAutoDur) manualParts.push(`장면당 초: ${cutDuration}초`);
+            if (!isAutoCut && typeof cutCount === "number") manualParts.push(`시퀀스 수: ${cutCount}`);
+            if (!isAutoDur) manualParts.push(`시퀀스당 초: ${cutDuration}초`);
             const totalSec = typeof cutCount === "number" && cutDuration > 0
               ? cutCount * Math.min(DURATION_MAX, Math.max(DURATION_MIN, cutDuration))
               : null;
@@ -1598,7 +1598,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             return (
               <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <p className="font-semibold" style={{ color: "#15803d" }}>
-                  생성 계획: 약 {plan.cutCount}장면 × {plan.cutDuration}초 ≈ {plan.totalSec}초
+                  생성 계획: 약 {plan.cutCount}시퀀스 × {plan.cutDuration}초 ≈ {plan.totalSec}초
                 </p>
                 <p style={{ color: "#166534" }}>
                   스토리 기반 추정 · 밀도 보정으로 최종 컷 수가 변경될 수 있음

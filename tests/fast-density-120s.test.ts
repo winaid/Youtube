@@ -67,8 +67,8 @@ describe("B. 120초 segment-aware density", () => {
     expect(range).toEqual({ min: 32, max: 48 });
   });
 
-  it("6) recommendMinimumCutCount(120) = 8 × 4 = 32", () => {
-    expect(recommendMinimumCutCount(120)).toBe(32);
+  it("6) recommendMinimumCutCount(120) = ceil(120/15) = 8 sequences", () => {
+    expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
   it("7) 60초 → 4 segments → {16, 24}", () => {

@@ -1,11 +1,16 @@
 /**
- * sequence-density.ts — 15초 상한 제품용 컷 밀도 보정 유틸
+ * sequence-density.ts — 15초 상한 제품용 시퀀스 밀도 보정 유틸
  *
- * 역할:
- *   - 총 길이 대비 컷 수가 너무 적은 경우 가장 긴 컷부터 분할
- *   - scene-like / sequence-like 컷을 우선 분할
- *   - groupId 자동 생성 금지
- *   - 원본 텍스트 필드 최대 보존
+ * 3-Layer 모델:
+ *   Layer 1: 총 요청 런타임 (e.g. 48s) — 배치/컨테이너 예산
+ *   Layer 2: 시퀀스 (8–15s) — Kling 1회 생성 단위
+ *   Layer 3: 시퀀스 내 멀티샷 (최대 6) — multi-shot-planner가 관리
+ *
+ * 이 파일은 Layer 1 → Layer 2 분할만 담당한다.
+ * Layer 3(내부 샷)은 multi-shot-planner.ts가 담당.
+ *
+ * 핵심 제약: 시퀀스는 SEQUENCE_MIN_DURATION(8s) 미만으로 분할 불가.
+ * groupId 자동 생성 금지. 원본 텍스트 필드 최대 보존.
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -13,24 +18,29 @@
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 숏폼 리텐션 친화적 밀도 정책.
+ * 시퀀스 최소 길이.
+ * densifyCuts는 시퀀스를 이 길이 미만으로 분할하지 않는다.
+ * 내부 샷 분할은 multi-shot-planner가 담당.
+ */
+export const SEQUENCE_MIN_DURATION = 8;
+
+/**
+ * 시퀀스 밀도 정책 — 총 런타임 대비 최소 시퀀스 수.
  *
- * 8초 이상에서 최소 2컷을 보장하여
- * "12초에 1샷" 같은 정적 결과물을 방지한다.
- * 빠른 편집이 필요하면 editingDensity="dense" 사용.
+ * 각 시퀀스는 Kling 1회 생성 단위(8–15s).
+ * 시퀀스 내부의 샷 수는 multi-shot-planner가 관리.
  *
- * heuristic 기준:
- *   3–5s:  1–2 shots
- *   6–8s:  2–3 shots
- *   9–12s: 3–4 shots
- *   13–15s: 4–6 shots
+ * heuristic 기준 (시퀀스 수, 내부 샷이 아님):
+ *   8–15s:  1 시퀀스
+ *   16–30s: 2 시퀀스
+ *   31–45s: 3 시퀀스
+ *   46–60s: 4 시퀀스
  */
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 5, minCuts: 1 },
-  { maxSec: 8, minCuts: 2 },
-  { maxSec: 12, minCuts: 3 },
-  { maxSec: 15, minCuts: 4 },
-  { maxSec: Infinity, minCuts: 4 },
+  { maxSec: 8, minCuts: 1 },
+  { maxSec: 15, minCuts: 1 },
+  { maxSec: Infinity, minCuts: 1 },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -49,13 +59,18 @@ export const KLING_SEGMENT_CAP = 15;
 export const CUT_COUNT_MAX = 30;
 
 /**
- * Runtime → Recommended Shot Count Range.
+ * 시퀀스당 런타임 → 시퀀스 내부 내러티브 밀도 권장 범위.
  *
- * 숏폼 비디오 리텐션 기준:
+ * 이 값은 총 런타임을 시퀀스로 분할할 때의 시퀀스 수가 아니라,
+ * "이 길이의 시퀀스는 내부적으로 몇 개의 서사 비트/샷을 가져야 하는가"의 가이드.
+ * multi-shot-planner와 연동되어 Layer 3 샷 수 결정에 사용.
+ *
+ *   8–12s:  3–4 internal shots
+ *   13–15s: 4–6 internal shots
+ *
+ * 8s 미만 시퀀스는 특수 케이스 (의도적 원테이크 또는 짧은 컷):
  *   3–5s:  1–2 shots
- *   6–8s:  2–3 shots
- *   9–12s: 3–4 shots
- *   13–15s: 4–6 shots
+ *   6–7s:  2–3 shots
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
@@ -76,9 +91,10 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
 }
 
 /**
- * 총 길이(초) → 권장 컷 수 범위 반환.
+ * 총 런타임(초) → 권장 시퀀스 수 범위 반환.
  * 15초 초과 시 segment 단위로 분할하여 합산.
- * 예: 120초 = 8 segments → 8 × (3~5) = 24~40
+ * 예: 48초 = 4 segments → 시퀀스 4개 (각 8–15초, 내부 3–6 멀티샷)
+ * 예: 120초 = 8 segments → 시퀀스 8개
  */
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
   if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
@@ -397,26 +413,24 @@ export function resolveSegmentPlan(opts: {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 총 길이(초) 기준으로 권장 최소 컷 수를 반환한다.
- * 15초 초과 시 segment 단위로 분할하여 합산.
+ * 총 런타임(초) → 최소 시퀀스 수 반환.
+ *
+ * 3-Layer 모델: 이 함수는 Layer 2 시퀀스 수를 결정.
+ * 15초 초과 시 segment 단위로 분할: ceil(total / 15).
+ * 각 시퀀스 내부의 샷 수(Layer 3)는 multi-shot-planner가 결정.
+ *
+ * 48초 → ceil(48/15) = 4 시퀀스 (각 12초)
+ * 120초 → ceil(120/15) = 8 시퀀스 (각 15초)
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
   if (totalDurationSec <= KLING_SEGMENT_CAP) {
-    for (const rule of DENSITY_POLICY) {
-      if (totalDurationSec <= rule.maxSec) return rule.minCuts;
-    }
+    // 단일 segment 내에서는 1 시퀀스.
+    // 내부 샷 분할은 multi-shot-planner가 담당.
     return 1;
   }
-  // segment-aware
-  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
-  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
-  const fullSegMin = recommendMinimumCutCount(KLING_SEGMENT_CAP); // = 5
-  let total = fullSegMin * fullSegments;
-  if (remainder > 0) {
-    total += recommendMinimumCutCount(remainder);
-  }
-  return total;
+  // segment-aware: 총 런타임을 15초 segment로 분할
+  return Math.ceil(totalDurationSec / KLING_SEGMENT_CAP);
 }
 
 /**
@@ -433,13 +447,17 @@ export function needsDensityBoost(
 }
 
 /**
- * 컷 밀도가 부족하면 가장 긴 컷부터 분할하여 최소 컷 수를 맞춘다.
+ * 시퀀스 밀도 보정 — 가장 긴 시퀀스부터 분할하되, SEQUENCE_MIN_DURATION 미만으로는 분할 불가.
+ *
+ * 3-Layer 모델에서 Layer 1→2 분할만 담당:
+ *   - 총 런타임 → 시퀀스(8–15s 생성 단위) 분할
+ *   - 시퀀스 내부 샷(Layer 3)은 multi-shot-planner가 관리
  *
  * 분할 규칙:
- * - scene-like / sequence-like인 컷을 우선 분할 대상으로 선택
- * - 이미 cut-like(< 4초)인 컷은 가급적 유지
- * - 원본 텍스트 필드 보존 (sceneDescription 등)
- * - groupId 자동 생성 안 함
+ * - scene-like / sequence-like인 시퀀스를 우선 분할 대상으로 선택
+ * - 분할 후 양쪽 모두 SEQUENCE_MIN_DURATION(8s) 이상이어야 분할 수행
+ * - 8s 미만 시퀀스는 내부 멀티샷으로 리듬을 만들되, 시퀀스 자체를 쪼개지 않음
+ * - 원본 텍스트 필드 보존
  * - cutNumber는 최종 배열 순서에 맞게 재정렬
  */
 export function densifyCuts<T extends { durationSec: number; structureType?: string; durationClass?: string }>(
@@ -461,23 +479,21 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
     // 분할 대상 선택: scene-like/sequence-like 우선, 그 안에서 가장 긴 것
     const scoredIndices = working.map((c, i) => {
       const isLongClass = c.durationClass === "scene-like" || c.durationClass === "sequence-like";
-      // 점수: durationClass가 긴 카테고리이면 우선순위 높음, duration이 길수록 높음
       const priority = (isLongClass ? 10000 : 0) + (c.durationSec || 0);
       return { index: i, priority, duration: c.durationSec || 0 };
     });
 
-    // 가장 높은 우선순위(= 가장 분할 적합한) 컷 선택
     scoredIndices.sort((a, b) => b.priority - a.priority);
     const target = scoredIndices[0];
 
-    // 분할 불가: 2초 이하면 더 쪼갤 수 없음
-    if (target.duration <= 2) break;
-
-    // 컷을 2등분
-    const original = working[target.index];
+    // 분할 후 양쪽 모두 SEQUENCE_MIN_DURATION 이상인지 확인.
+    // 불가능하면 중단 — 시퀀스를 마이크로 컷으로 쪼개지 않음.
+    // 내부 리듬은 multi-shot-planner가 담당.
     const halfDuration = Math.round(target.duration / 2);
     const remainDuration = target.duration - halfDuration;
+    if (halfDuration < SEQUENCE_MIN_DURATION || remainDuration < SEQUENCE_MIN_DURATION) break;
 
+    const original = working[target.index];
     const firstHalf = { ...original, durationSec: halfDuration } as T;
     const secondHalf = { ...original, durationSec: remainDuration } as T;
 
@@ -487,7 +503,6 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
     delete (secondHalf as Record<string, unknown>).durationClass;
     delete (secondHalf as Record<string, unknown>).structureType;
 
-    // 원본 위치에 2개로 교체
     working = [
       ...working.slice(0, target.index),
       firstHalf,

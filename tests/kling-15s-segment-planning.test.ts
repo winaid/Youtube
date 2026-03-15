@@ -35,24 +35,24 @@ describe("A. KLING_SEGMENT_CAP", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. segment-aware recommendMinimumCutCount", () => {
-  it("2) 15초 = 4 (단일 segment, density policy)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(4);
+  it("2) 15초 = 1 (단일 segment, new policy)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
-  it("3) 30초 = 8 (2 segments × 4)", () => {
-    expect(recommendMinimumCutCount(30)).toBe(8);
+  it("3) 30초 = 2 (ceil(30/15))", () => {
+    expect(recommendMinimumCutCount(30)).toBe(2);
   });
 
-  it("4) 120초 = 32 (8 segments × 4)", () => {
-    expect(recommendMinimumCutCount(120)).toBe(32);
+  it("4) 120초 = 8 (ceil(120/15))", () => {
+    expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
-  it("5) 20초 = 5 (15초 segment(4) + 5초 remainder(1))", () => {
-    expect(recommendMinimumCutCount(20)).toBe(5);
+  it("5) 20초 = 2 (ceil(20/15))", () => {
+    expect(recommendMinimumCutCount(20)).toBe(2);
   });
 
-  it("6) 25초 = 7 (15초(4) + 10초(3))", () => {
-    expect(recommendMinimumCutCount(25)).toBe(7);
+  it("6) 25초 = 2 (ceil(25/15))", () => {
+    expect(recommendMinimumCutCount(25)).toBe(2);
   });
 });
 
@@ -136,17 +136,17 @@ describe("F. persona + segment-aware", () => {
     expect(result.cutCount).toBe(6);
   });
 
-  it("17) symmetrical-formalist + 15초 range → lower bias = density min", () => {
+  it("17) symmetrical-formalist + 15초 range → lower bias = range.min", () => {
     const ep = EDITORIAL_PERSONA_PRESETS["symmetrical-formalist"];
     const bias = personaCutCountBias(ep);
     expect(bias).toBe("lower");
-    const range = recommendCutCountRange(15);
+    const range = recommendCutCountRange(15); // {4, 6}
     const result = resolveCutCount({
       preferredRange: range,
       totalDurationSec: 15,
       personaBias: bias,
     });
-    // lower = effectiveMin = max(4, densityMin=4) = 4
+    // lower = effectiveMin = max(4, densityMin=1) = 4
     expect(result.cutCount).toBe(4);
   });
 });
@@ -163,12 +163,12 @@ describe("G. regression checks", () => {
     expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
-  it("19) ≤15초 density minimum matches new policy", () => {
+  it("19) ≤15초 density minimum = 1 (3-layer: single sequence)", () => {
     expect(recommendMinimumCutCount(4)).toBe(1);
-    expect(recommendMinimumCutCount(7)).toBe(2);
-    expect(recommendMinimumCutCount(9)).toBe(3);
-    expect(recommendMinimumCutCount(12)).toBe(3);
-    expect(recommendMinimumCutCount(15)).toBe(4);
+    expect(recommendMinimumCutCount(7)).toBe(1);
+    expect(recommendMinimumCutCount(9)).toBe(1);
+    expect(recommendMinimumCutCount(12)).toBe(1);
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
   it("20) exact cutCount가 여전히 최우선", () => {

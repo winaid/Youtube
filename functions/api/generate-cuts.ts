@@ -463,7 +463,7 @@ async function step1Outlines(
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 ${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
-조건: ${secPerCut}초/컷, 총 ${cutCount}컷.
+조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 Kling 1회 생성 단위(8–15초). 시퀀스 내부 멀티샷은 별도 처리.
 
 ## 시나리오
 ${storyExcerpt}
@@ -476,7 +476,7 @@ characterSeeds (최대 3명):
 - appearance: 영어 ≤40 words (성별/나이/헤어/의상/피부톤만)
 - appearanceKo: ≤25자
 
-outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마이크로 씬"):
+outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시퀀스):
 
 ## ⚠️ 핵심 원칙: "즉시 인식 가능성" (Instant Readability)
 시청자가 장면을 보고 바로 이해해야 합니다:
@@ -510,13 +510,13 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 - situationCue: 영어 ≤8 words — 현재 상황을 즉시 보여주는 증거 (예: "empty waiting room, no patients", "long queue outside the door")
 - emotionalAnchor: 영어 ≤8 words — 감정/갈등이 집약되는 시각 요소 (예: "doctor alone slumping at desk", "hand crumpling printed notice")
 
-## ⚠️ 컷 밀도 규칙 (single-cut 방지)
-- 총 길이 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 cuts를 작성하라
-- 12초 초과인데 1컷으로 뭉개면 실패. 최소 3컷으로 분할하라
-- 9~12초면 최소 3컷, 5~9초면 최소 2컷으로 나눌 것
-- 같은 장면을 길게 이어쓰지 말고, shot/camera/beat가 다른 편집 단위로 나눌 것
-- ❌ 나쁜 예: 15초를 1개 outline으로 작성
-- ✅ 좋은 예: 15초를 4~5초짜리 3~4개 outline으로 분할
+## ⚠️ 시퀀스 밀도 규칙
+- 총 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 시퀀스(outlines)를 작성하라
+- 각 시퀀스는 ${secPerCut}초짜리 Kling 1회 생성 단위
+- 시퀀스 내부의 멀티샷(2~6개)은 별도 처리 — 여기서는 시퀀스 단위 아웃라인만 작성
+- 같은 장면을 길게 이어쓰지 말고, 시퀀스마다 다른 location/situation/emotion 조합을 구성
+- ❌ 나쁜 예: 48초를 3~4개로 뭉개서 12초+ 시퀀스 생성
+- ✅ 좋은 예: 48초를 ${cutCount}개 × ${secPerCut}초 시퀀스로 분할
 
 JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
@@ -569,13 +569,13 @@ JSON만 출력:
           : "";
         const compactPrompt = `당신은 시나리오 분석가입니다. JSON만 출력하세요.
 ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/해설자 금지." : "일반 영상."}
-감독: ${directorNameKo}. 조건: ${secPerCut}초/컷, 총 ${cutCount}컷.${compactEditorial ? `\n편집 기조: ${compactEditorial}` : ""}
+감독: ${directorNameKo}. 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스.${compactEditorial ? `\n편집 기조: ${compactEditorial}` : ""}
 
 시나리오: ${storyExcerpt}
 
 characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
 outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w)}]
-⚠️ 12초 초과면 1컷 금지, 최소 3컷 분할. 9~12초면 최소 3컷.
+⚠️ 총 런타임 12초 초과면 1시퀀스 금지, 최소 2시퀀스로 분할. 각 시퀀스 ${secPerCut}초.
 
 JSON만: {"characterSeeds":[...],"outlines":[...]}`;
 
@@ -785,7 +785,7 @@ async function step23DetailBatch(
 
   const prompt = `당신은 아래 연출 철학을 완전히 내면화한 촬영 감독입니다.
 스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
-${secPerCut}초/씬 | 화면비: ${aspectRatio}
+${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
 
 ## ⚠️ 핵심 원칙: ${secPerCut}초 = "짧은 시퀀스(sequence)"이다 (단일 샷이 아님!)
 - 각 ${secPerCut}초 단위는 여러 시각 비트가 모여 하나의 의미를 전달하는 시퀀스이다.
@@ -1217,7 +1217,7 @@ async function repairMissingOutlines(
     .map(o => `CUT${o.cutNumber}:${o.shotType}/${o.purpose}/"${o.sceneKo}"`)
     .join("; ");
 
-  const prompt = `JSON만 출력. 감독:${directorNameKo}. ${secPerCut}초/컷.
+  const prompt = `JSON만 출력. 감독:${directorNameKo}. ${secPerCut}초/시퀀스.
 기존 컷: ${contextSummary}
 시나리오: ${storyExcerpt.slice(0, 300)}
 
@@ -1300,7 +1300,7 @@ function buildUltraCompactStep1Prompt(
   editorialSummary?: string,
 ): string {
   const storySnippet = storyText.slice(0, 400);
-  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/컷 × ${cutCount}컷. 12초초과→최소3컷,9~12초→최소3컷,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 12초초과→최소3컷,9~12초→최소3컷,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
 시나리오: ${storySnippet}
 
 {"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
@@ -1385,8 +1385,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       currentSegmentIndex: 0, // generate-cuts는 항상 첫 segment planning
     });
 
-    // generate-cuts 1회 호출 = 전체 프로젝트의 모든 컷을 한 번에 생성
-    // cutDecision.cutCount가 전체 프로젝트의 컷 수 (segmentPlan.currentSegmentTargetCuts는 첫 15초 segment 분량만이므로 사용 금지)
+    // generate-cuts 1회 호출 = 전체 프로젝트의 모든 시퀀스를 한 번에 생성.
+    // 각 시퀀스(cut)는 8–15초 Kling 1회 생성 단위. 내부 멀티샷은 multi-shot-planner가 관리.
+    // 3-Layer: 총 런타임 → 시퀀스(여기서 cutCount) → 시퀀스 내 멀티샷(CutCard 레벨)
     const cutDecision = resolveCutCount({
       exactCutCount: rawCutCount > 0 ? rawCutCount : undefined,
       preferredRange: parsedRange,

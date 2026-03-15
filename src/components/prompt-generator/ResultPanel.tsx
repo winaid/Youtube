@@ -32,7 +32,7 @@ interface ResultPanelProps {
   directorName?: string;
   region?: string;
   animationMode?: string;
-  /** 부모가 소유하는 장면당 초 */
+  /** 부모가 소유하는 시퀀스당 초 */
   secondsPerScene?: number;
   /** VideoSettingsPanel에서 duration 변경 시 부모에 통지 */
   onSecondsPerSceneChange?: (v: number) => void;
@@ -317,16 +317,19 @@ export default function ResultPanel({
     directorPersona: result.directorPersonaPrompt,
     characterSeeds: result.characterSeeds,
     continuityRules: result.continuityRules,
-    totalDuration: (() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? DURATION_FALLBACK), 0); return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`; })(),
+    // Layer 1: 총 런타임
+    totalRuntime: (() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? DURATION_FALLBACK), 0); return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`; })(),
+    sequenceCount: result.cuts.length,
     runtimeBudget: {
       totalSec: budgetResult.totalRuntimeSec,
       budgetSec: BATCH_BUDGET_SECONDS,
       withinBudget: budgetResult.withinBudget,
       usage: `${Math.round(budgetResult.usageRatio * 100)}%`,
     },
-    cuts: result.cuts.map((cut) => ({
-      cut: cut.cutNumber,
-      duration: `${cut.durationSec}s`,
+    // Layer 2: 시퀀스 (각 8–15초 Kling 생성 단위)
+    sequences: result.cuts.map((cut) => ({
+      sequence: cut.cutNumber,
+      sequenceDuration: `${cut.durationSec}s`,
       method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND",
       scene: cut.sceneDescription,
       camera: cut.cameraDirection,
@@ -335,8 +338,8 @@ export default function ResultPanel({
       extendPrompt: cut.extendPrompt,
       charactersInScene: cut.charactersInScene,
       intentionalOneTake: cut.intentionalOneTake ?? false,
-      // 멀티샷 구조 — 실제 Kling payload 반영
-      multiShot: cut.multiShot && cut.multiShot.length > 0
+      // Layer 3: 시퀀스 내부 멀티샷 (최대 6개)
+      internalShots: cut.multiShot && cut.multiShot.length > 0
         ? cut.multiShot.map(s => ({
             index: s.index,
             prompt: s.prompt,
@@ -344,6 +347,7 @@ export default function ResultPanel({
             role: s.role ?? null,
           }))
         : null,
+      internalShotCount: cut.multiShot?.length ?? 0,
     })),
   };
 

@@ -116,14 +116,14 @@ describe("C. resolveCutCount priority chain", () => {
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("13) exact cutCount ≥ density minimum → exact wins (density min=4 for 15s)", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 4
-    expect(densityMin).toBe(4);
+  it("13) exact cutCount ≥ density minimum → exact wins (density min=1 for 15s)", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 1 (single sequence)
+    expect(densityMin).toBe(1);
     const result = resolveCutCount({
       exactCutCount: 5,
       totalDurationSec: 15,
     });
-    // With new policy, densityMin=4 for 15s. exactCutCount=5 >= 4, so exact wins.
+    // 3-layer model: densityMin=1 for 15s (single sequence). exactCutCount=5 >= 1, so exact wins.
     expect(result.cutCount).toBe(5);
     expect(result.source).toBe("exact_cutCount");
   });
@@ -134,9 +134,9 @@ describe("C. resolveCutCount priority chain", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. range vs density minimum conflict", () => {
-  it("14) range.min ≥ density minimum (both 4 for 15s) → range used as-is", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 4
-    expect(densityMin).toBe(4);
+  it("14) range.min ≥ density minimum (density min=1 for 15s) → range used as-is", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 1 (single sequence)
+    expect(densityMin).toBe(1);
     const result = resolveCutCount({
       preferredRange: { min: 4, max: 6 },
       totalDurationSec: 15,

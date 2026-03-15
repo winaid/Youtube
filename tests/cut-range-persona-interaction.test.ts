@@ -156,11 +156,11 @@ describe("E. editorial persona regression check", () => {
     expect(ep.motionBias).toBe("minimal");
   });
 
-  it("13) density policy = short-form retention (≤5s:1, ≤8s:2, ≤12s:3, ≤15s:4)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(4);
-    expect(recommendMinimumCutCount(12)).toBe(3);
-    expect(recommendMinimumCutCount(9)).toBe(3);
-    expect(recommendMinimumCutCount(7)).toBe(2);
+  it("13) density policy = 3-layer sequence model (≤15s: 1 sequence, >15s: ceil(total/15))", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
+    expect(recommendMinimumCutCount(12)).toBe(1);
+    expect(recommendMinimumCutCount(9)).toBe(1);
+    expect(recommendMinimumCutCount(7)).toBe(1);
     expect(recommendMinimumCutCount(4)).toBe(1);
   });
 });

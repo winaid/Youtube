@@ -1,10 +1,14 @@
 /**
- * _sequence-density.ts — 컷 밀도 보정 (서버 함수용)
+ * _sequence-density.ts — 시퀀스 밀도 보정 (서버 함수용)
+ *
+ * 3-Layer 모델:
+ *   Layer 1: 총 요청 런타임 (e.g. 48s) — 배치/컨테이너 예산
+ *   Layer 2: 시퀀스 (8–15s) — Kling 1회 생성 단위
+ *   Layer 3: 시퀀스 내 멀티샷 (최대 6) — multi-shot-planner가 관리
  *
  * 클라이언트는 @/lib/sequence-density.ts 사용.
  * 서버 함수(Cloudflare Pages Functions)는 이 파일에서 import.
- *
- * 로직은 src/lib/sequence-density.ts와 동일.
+ * 로직은 src/lib/sequence-density.ts와 동일 유지 필수.
  */
 
 /**
@@ -13,24 +17,16 @@
 export const KLING_SEGMENT_CAP = 15;
 
 /**
- * 숏폼 리텐션 친화적 밀도 정책.
- *
- * 8초 이상에서 최소 2컷을 보장하여
- * "12초에 1샷" 같은 정적 결과물을 방지한다.
- * 빠른 편집이 필요하면 editingDensity="dense" 사용.
- *
- * heuristic 기준:
- *   3–5s:  1–2 shots
- *   6–8s:  2–3 shots
- *   9–12s: 3–4 shots
- *   13–15s: 4–6 shots
+ * 시퀀스 밀도 정책 — 총 런타임 대비 최소 시퀀스 수.
+ * 각 시퀀스는 Kling 1회 생성 단위(8–15s).
+ * 시퀀스 내부 샷 수는 multi-shot-planner가 관리.
+ * 로직은 src/lib/sequence-density.ts와 동일 유지 필수.
  */
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 5, minCuts: 1 },
-  { maxSec: 8, minCuts: 2 },
-  { maxSec: 12, minCuts: 3 },
-  { maxSec: 15, minCuts: 4 },
-  { maxSec: Infinity, minCuts: 4 },
+  { maxSec: 8, minCuts: 1 },
+  { maxSec: 15, minCuts: 1 },
+  { maxSec: Infinity, minCuts: 1 },
 ];
 
 /**
@@ -44,13 +40,8 @@ export const CUT_COUNT_MAX = 30;
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Runtime → Recommended Shot Count Range.
- *
- * 숏폼 비디오 리텐션 기준:
- *   3–5s:  1–2 shots
- *   6–8s:  2–3 shots
- *   9–12s: 3–4 shots
- *   13–15s: 4–6 shots
+ * 시퀀스당 런타임 → 내부 밀도 권장 범위.
+ * multi-shot-planner와 연동되어 Layer 3 샷 수 결정에 사용.
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
@@ -335,23 +326,19 @@ export function resolveSegmentPlan(opts: {
   };
 }
 
+/**
+ * 총 런타임(초) → 최소 시퀀스 수 반환.
+ * 3-Layer 모델: Layer 2 시퀀스 수를 결정.
+ * 15초 초과 시 segment 단위로 분할: ceil(total / 15).
+ * 시퀀스 내부 샷(Layer 3)은 multi-shot-planner가 결정.
+ */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
   if (totalDurationSec <= KLING_SEGMENT_CAP) {
-    for (const rule of DENSITY_POLICY) {
-      if (totalDurationSec <= rule.maxSec) return rule.minCuts;
-    }
     return 1;
   }
-  // segment-aware
-  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
-  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
-  const fullSegMin = recommendMinimumCutCount(KLING_SEGMENT_CAP);
-  let total = fullSegMin * fullSegments;
-  if (remainder > 0) {
-    total += recommendMinimumCutCount(remainder);
-  }
-  return total;
+  // segment-aware: 총 런타임을 15초 segment로 분할
+  return Math.ceil(totalDurationSec / KLING_SEGMENT_CAP);
 }
 
 export function needsDensityBoost(

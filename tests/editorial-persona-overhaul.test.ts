@@ -188,41 +188,41 @@ describe("auto duration — editorial pace integration", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("multi-cut montage density", () => {
-  it("8s input → 2 cut minimum (short-form retention policy)", () => {
-    expect(recommendMinimumCutCount(8)).toBe(2);
+  it("8s input → 1 sequence minimum (3-layer model: single sequence)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(1);
   });
 
-  it("10s input → 3 cut minimum (short-form retention policy)", () => {
-    expect(recommendMinimumCutCount(10)).toBe(3);
+  it("10s input → 1 sequence minimum (3-layer model: single sequence)", () => {
+    expect(recommendMinimumCutCount(10)).toBe(1);
   });
 
-  it("12s input → 3 cut minimum (short-form retention policy)", () => {
-    expect(recommendMinimumCutCount(12)).toBe(3);
+  it("12s input → 1 sequence minimum (3-layer model: single sequence)", () => {
+    expect(recommendMinimumCutCount(12)).toBe(1);
   });
 
-  it("15s input → 4 cut minimum (short-form retention policy)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(4);
+  it("15s input → 1 sequence minimum (3-layer model: single sequence)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
-  it("single 8s cut needs density boost (short-form retention policy, minCuts=2)", () => {
-    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(true);
+  it("single 8s cut does NOT need density boost (3-layer model, minCuts=1)", () => {
+    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(false);
   });
 
-  it("densifyCuts: single 12s cut → split to 3 cuts (short-form retention policy)", () => {
+  it("densifyCuts: single 12s cut → stays 1 cut (not split, 6s < SEQUENCE_MIN_DURATION)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 12 }]);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(1);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(12);
   });
 
-  it("densifyCuts: single 15s cut → split to 4 cuts (short-form retention policy)", () => {
+  it("densifyCuts: single 15s cut → stays 1 cut (not split, 7s < SEQUENCE_MIN_DURATION)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 15 }]);
-    expect(result.length).toBe(4);
+    expect(result.length).toBe(1);
   });
 
-  it("single 8s cut is split to 2 cuts (short-form retention policy)", () => {
+  it("single 8s cut stays 1 cut (not split, 4s < SEQUENCE_MIN_DURATION)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 8 }]);
-    expect(result.length).toBe(2);
+    expect(result.length).toBe(1);
   });
 });
 
@@ -773,12 +773,12 @@ describe("regression — auto duration unchanged", () => {
   });
 });
 
-describe("regression — multi-cut density policy (short-form retention)", () => {
-  it("8s → 2 cut minimum (per-segment minimum is now 2)", () => {
-    expect(recommendMinimumCutCount(8)).toBe(2);
+describe("regression — multi-cut density policy (3-layer sequence model)", () => {
+  it("8s → 1 sequence minimum (single sequence, internal shots via multi-shot-planner)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(1);
   });
-  it("15s → 4 cut minimum (per-segment minimum is now 4)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(4);
+  it("15s → 1 sequence minimum (single sequence, internal shots via multi-shot-planner)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 });
 

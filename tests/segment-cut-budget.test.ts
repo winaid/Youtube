@@ -19,9 +19,9 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. segment densityMinimum", () => {
-  it("1) 15초 segment → densityMinimum = 4 (고밀도 정책)", () => {
+  it("1) 15초 segment → densityMinimum = 1 (3-layer 모델)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
-    expect(plan.segments[0].densityMinimum).toBe(4);
+    expect(plan.segments[0].densityMinimum).toBe(1);
   });
 
   it("2) 5초 remainder segment → densityMinimum = 1", () => {

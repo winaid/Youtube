@@ -8,10 +8,10 @@
 /** 기본 fallback 값. 개별 파일에서 리터럴 8을 쓰지 말 것. */
 export const DURATION_FALLBACK = 8;
 
-/** 최소 허용 장면당 초 */
+/** 최소 허용 시퀀스당 초 (3s는 특수 케이스: 의도적 원테이크 또는 짧은 인서트) */
 export const DURATION_MIN = 3;
 
-/** 최대 허용 장면당 초 */
+/** 최대 허용 시퀀스당 초 (Kling segment 상한) */
 export const DURATION_MAX = 15;
 
 /**

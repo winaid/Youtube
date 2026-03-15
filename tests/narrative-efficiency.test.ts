@@ -101,20 +101,20 @@ describe("B. 120초 서사형 — 효율적 컷 구조", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. recommendMinimumCutCount 새 정책", () => {
-  it("15초 → minimum 4", () => {
-    expect(recommendMinimumCutCount(15)).toBe(4);
+  it("15초 → minimum 1", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
-  it("210초 → minimum 56 (14 세그먼트 × 4)", () => {
-    expect(recommendMinimumCutCount(210)).toBe(56);
+  it("210초 → minimum 14 (ceil(210 / 15))", () => {
+    expect(recommendMinimumCutCount(210)).toBe(14);
   });
 
-  it("120초 → minimum 32 (8 세그먼트 × 4)", () => {
-    expect(recommendMinimumCutCount(120)).toBe(32);
+  it("120초 → minimum 8 (ceil(120 / 15))", () => {
+    expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
-  it("300초 → minimum 80 (20 세그먼트 × 4)", () => {
-    expect(recommendMinimumCutCount(300)).toBe(80);
+  it("300초 → minimum 20 (ceil(300 / 15))", () => {
+    expect(recommendMinimumCutCount(300)).toBe(20);
   });
 });
 

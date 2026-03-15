@@ -380,43 +380,43 @@ import { buildSequencePlanFromCuts, validateSequencePlan } from "../functions/ap
 // 8.5. Server-side densifyCuts — deterministic fallback density enforcement
 // ═══════════════════════════════════════════════════════════════════
 
-describe("server-side densifyCuts — deterministic fallback density", () => {
-  it("should split 15s single deterministic cut to meet minimum of 4", () => {
+describe("server-side densifyCuts — 3-layer sequence model", () => {
+  it("should NOT split 15s single cut (7s < SEQUENCE_MIN_DURATION=8)", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 15, shotType: "WS" }];
     const result = densifyCuts(deterministicCuts);
-    expect(result.length).toBe(4);
+    expect(result.length).toBe(1);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(15);
   });
 
-  it("should densify deterministic fallback with 5 cuts at 8s each (segment-aware)", () => {
+  it("should NOT split deterministic fallback with 5 cuts at 8s each (3-layer: 40s = 3 sequences, already 5 cuts >= 3)", () => {
     const deterministicCuts = Array.from({ length: 5 }, (_, i) => ({
       cutNumber: i + 1,
       durationSec: 8,
       shotType: "WS",
     }));
     const result = densifyCuts(deterministicCuts);
-    // 5 cuts at 8s = 40s total. Segment-aware: 15s×2(min 4 each) + 10s(min 3) = 11 min
-    // densifyCuts will split to meet this minimum
-    expect(result.length).toBeGreaterThanOrEqual(11);
+    // 5 cuts at 8s = 40s total. 3-layer: ceil(40/15) = 3 sequences. 5 >= 3, no split needed.
+    expect(result.length).toBe(5);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(40); // total duration preserved
   });
 
-  it("should split 12s single cut to meet minimum of 3, classify with correct pipeline", () => {
+  it("should NOT split 12s single cut (6s < SEQUENCE_MIN_DURATION=8), classify with correct pipeline", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 12 }];
     const densified = densifyCuts(deterministicCuts);
     const classified = classifyCuts(densified);
-    expect(classified.length).toBe(3);
+    expect(classified.length).toBe(1);
     for (const c of classified) {
       expect(c.structureType).toBe("cut");
       expect(c.durationClass).toBeDefined();
     }
   });
 
-  it("should preserve shotType after density split", () => {
+  it("should preserve shotType (no split for 10s single cut, 5s < SEQUENCE_MIN_DURATION=8)", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 10, shotType: "MS" }];
     const result = densifyCuts(deterministicCuts);
+    expect(result.length).toBe(1);
     for (const c of result) {
       expect(c.shotType).toBe("MS");
     }
@@ -449,21 +449,21 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     return { cuts: finalizedCuts, sequencePlan, sequenceValidation };
   }
 
-  it("15s single cut → density split to 4 cuts, cuts와 sequencePlan shot 수 일치", () => {
+  it("15s single cut → NO density split (3-layer: 1 sequence, 7s < SEQUENCE_MIN_DURATION)", () => {
     const resp = simulateFallbackResponse(1, 15);
-    expect(resp.cuts.length).toBe(4);
+    expect(resp.cuts.length).toBe(1);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
-  it("12s single cut → density split to 3 cuts, cuts와 sequencePlan shot 수 일치", () => {
+  it("12s single cut → NO density split (3-layer: 1 sequence, 6s < SEQUENCE_MIN_DURATION)", () => {
     const resp = simulateFallbackResponse(1, 12);
-    expect(resp.cuts.length).toBe(3);
+    expect(resp.cuts.length).toBe(1);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
-  it("8s single cut → density split to 2 cuts, cuts와 sequencePlan shot 수 일치", () => {
+  it("8s single cut → NO density split (3-layer: 1 sequence, 4s < SEQUENCE_MIN_DURATION)", () => {
     const resp = simulateFallbackResponse(1, 8);
-    expect(resp.cuts.length).toBe(2);
+    expect(resp.cuts.length).toBe(1);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
@@ -473,10 +473,10 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     expect(resp.sequencePlan.shots.length).toBe(1);
   });
 
-  it("5 cuts x 8s → segment-aware densify 적용, sequencePlan shot 수 일치", () => {
+  it("5 cuts x 8s → 3-layer: 40s = 3 sequences, already 5 cuts >= 3, no split", () => {
     const resp = simulateFallbackResponse(5, 8);
-    // 40초 segment-aware: 더 많은 컷으로 분할될 수 있음
-    expect(resp.cuts.length).toBeGreaterThanOrEqual(5);
+    // 40s total, ceil(40/15) = 3 sequences. 5 cuts >= 3, no densification needed.
+    expect(resp.cuts.length).toBe(5);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
@@ -492,8 +492,9 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     expect(resp.sequenceValidation.summary.errors).toBe(0);
   });
 
-  it("densify 후 classify 메타가 있는 cuts로 sequencePlan 생성 가능", () => {
+  it("classify 메타가 있는 cuts로 sequencePlan 생성 가능 (no split for 10s)", () => {
     const resp = simulateFallbackResponse(1, 10);
+    expect(resp.cuts.length).toBe(1); // 10s single cut: no split (5s < 8s min)
     for (const cut of resp.cuts) {
       expect(cut.structureType).toBeDefined();
       expect(cut.durationClass).toBeDefined();

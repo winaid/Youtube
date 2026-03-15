@@ -137,12 +137,12 @@ describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 4~6 (고밀�
     expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(6);
   });
 
-  it("recommendMinimumCutCount(15) = 4", () => {
-    expect(recommendMinimumCutCount(15)).toBe(4);
+  it("recommendMinimumCutCount(15) = 1", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
-  it("recommendMinimumCutCount(12) = 3", () => {
-    expect(recommendMinimumCutCount(12)).toBe(3);
+  it("recommendMinimumCutCount(12) = 1", () => {
+    expect(recommendMinimumCutCount(12)).toBe(1);
   });
 
   it("60초 project → multi-segment, 총 targetCuts ≥ 16", () => {
