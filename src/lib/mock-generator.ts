@@ -301,9 +301,9 @@ export async function generatePrompt(
     const pacingMode: PacingMode = "balanced";
     const rhythmInputs = rawCuts.map((c, i) => ({
       cutNumber: c.cutNumber ?? i + 1,
-      purpose: (c as Record<string, unknown>).purpose as string | undefined,
-      shotType: (c as Record<string, unknown>).shotType as string | undefined,
-      shotCategory: (c as Record<string, unknown>).shotCategory as string | undefined,
+      purpose: (c as unknown as Record<string, unknown>).purpose as string | undefined,
+      shotType: (c as unknown as Record<string, unknown>).shotType as string | undefined,
+      shotCategory: (c as unknown as Record<string, unknown>).shotCategory as string | undefined,
       durationSec: c.durationSec,
     }));
     const rhythmResult = distributeRhythm(rhythmInputs, pacingMode);
