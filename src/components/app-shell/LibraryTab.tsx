@@ -32,7 +32,7 @@ export default function LibraryTab({
       <div className="flex gap-1 p-1 rounded-lg" style={{ background: "#f1f1f4" }}>
         {[
           { key: "videos" as LibrarySection, label: "생성 영상" },
-          { key: "sequences" as LibrarySection, label: "시퀀스 히스토리" },
+          { key: "sequences" as LibrarySection, label: "프로젝트 히스토리" },
           { key: "sessions" as LibrarySection, label: "세션 기록" },
         ].map(tab => (
           <button
@@ -55,7 +55,7 @@ export default function LibraryTab({
           <CardHeader className="pb-3">
             <CardTitle className="text-base">생성 영상</CardTitle>
             <p className="text-xs" style={{ color: "#999" }}>
-              생성 완료된 영상이 자동으로 기록됩니다. 개별 컷 단위로 조회·재생할 수 있습니다.
+              생성 완료된 영상이 자동으로 기록됩니다. 세그먼트 단위로 조회·재생할 수 있습니다.
             </p>
           </CardHeader>
           <CardContent>
@@ -67,9 +67,9 @@ export default function LibraryTab({
       {section === "sequences" && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">시퀀스 히스토리</CardTitle>
+            <CardTitle className="text-base">프로젝트 히스토리</CardTitle>
             <p className="text-xs" style={{ color: "#999" }}>
-              이전에 설계한 시퀀스를 불러와 바로 사용할 수 있습니다. 재분석 없이 즉시 복원됩니다.
+              이전에 설계한 프로젝트를 불러와 바로 사용할 수 있습니다. 재분석 없이 즉시 복원됩니다.
             </p>
           </CardHeader>
           <CardContent>

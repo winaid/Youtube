@@ -122,8 +122,30 @@ export default function BuildTab({
     );
   }
 
+  const totalProjectRuntime = result.cuts.reduce((s, c) => s + c.durationSec, 0);
+
   return (
     <div className="space-y-6">
+      {/* ── Project Summary ── */}
+      <div className="flex items-center gap-4 px-4 py-3 rounded-lg border text-xs" style={{ background: "#f8f9ff" }}>
+        <div>
+          <span style={{ color: "#666" }}>프로젝트</span>{" "}
+          <span className="font-bold">{result.totalCuts}개 세그먼트</span>
+        </div>
+        <div>
+          <span style={{ color: "#666" }}>총 런타임</span>{" "}
+          <span className="font-bold">{totalProjectRuntime}s</span>
+        </div>
+        <div>
+          <span style={{ color: "#666" }}>생성 단위</span>{" "}
+          <span className="font-medium">3-15s/seg</span>
+        </div>
+        <div>
+          <span style={{ color: "#666" }}>연결</span>{" "}
+          <span className="font-medium">Extend chain</span>
+        </div>
+      </div>
+
       {/* ── Model & Workflow Selection ── */}
       <Card>
         <CardHeader className="pb-3">
@@ -209,7 +231,7 @@ export default function BuildTab({
                 const warnings = allIssues.filter(i => i.severity === "warning");
                 return (
                   <div key={cutNumber} className="flex items-start gap-3 p-2 rounded border">
-                    <span className="text-xs font-bold min-w-[40px]">컷 {cutNumber}</span>
+                    <span className="text-xs font-bold min-w-[40px]">Seg {cutNumber}</span>
                     <div className="flex-1 space-y-1">
                       {errors.length === 0 && warnings.length === 0 && (
                         <span className="text-[10px]" style={{ color: "#22c55e" }}>검증 통과</span>

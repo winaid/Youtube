@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
+import { recommendMode, type ModeRecommendation } from "@/lib/mode-recommendation";
+import { isLongScript } from "@/lib/script-segmenter";
 import PlanTab from "./PlanTab";
 import BuildTab from "./BuildTab";
 import GenerateTab from "./GenerateTab";
@@ -21,11 +23,11 @@ export type AppTab = "plan" | "build" | "generate" | "library" | "extras";
 export type AppMode = "studio" | "batch";
 
 const TAB_CONFIG: { key: AppTab; label: string; sublabel: string; icon: string }[] = [
-  { key: "plan",     label: "Plan",     sublabel: "시퀀스 설계",  icon: "📐" },
-  { key: "build",    label: "Build",    sublabel: "검증 & 미리보기", icon: "🔧" },
-  { key: "generate", label: "Generate", sublabel: "생성 & 추적",  icon: "▶" },
-  { key: "library",  label: "Library",  sublabel: "히스토리",     icon: "📁" },
-  { key: "extras",   label: "Extras",   sublabel: "부가 도구",    icon: "⚙" },
+  { key: "plan",     label: "Plan",     sublabel: "스크립트 → 세그먼트", icon: "📐" },
+  { key: "build",    label: "Build",    sublabel: "검증 & 페이로드",     icon: "🔧" },
+  { key: "generate", label: "Generate", sublabel: "생성 & 추적",        icon: "▶" },
+  { key: "library",  label: "Library",  sublabel: "프로젝트 기록",       icon: "📁" },
+  { key: "extras",   label: "Extras",   sublabel: "부가 도구",          icon: "⚙" },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -35,12 +37,49 @@ const TAB_CONFIG: { key: AppTab; label: string; sublabel: string; icon: string }
 export default function AppShell() {
   const [activeTab, setActiveTab] = useState<AppTab>("plan");
   const [mode, setMode] = useState<AppMode>("studio");
+  const [modeManuallySet, setModeManuallySet] = useState(false);
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
   const [secondsPerScene, setSecondsPerScene] = useState<number>(0);
   const [batchEntries, setBatchEntries] = useState<ClipBudgetEntry[]>([]);
+  const [targetRuntime, setTargetRuntime] = useState<number>(60);
+  const [scriptText, setScriptText] = useState("");
+
+  const modeRec = useMemo<ModeRecommendation>(() => {
+    const charCount = scriptText.replace(/\s+/g, "").length;
+    const estSegments = Math.max(1, Math.ceil(targetRuntime / 8));
+    return recommendMode({
+      scriptLength: charCount,
+      targetRuntimeSec: targetRuntime,
+      estimatedSegmentCount: estSegments,
+      hasContinuationChaining: estSegments > 1,
+    });
+  }, [scriptText, targetRuntime]);
+
+  useEffect(() => {
+    if (!modeManuallySet) {
+      setMode(modeRec.mode);
+    }
+  }, [modeRec.mode, modeManuallySet]);
+
+  const handleModeSwitch = useCallback((newMode: AppMode) => {
+    setMode(newMode);
+    setModeManuallySet(true);
+  }, []);
+
+  const projectBudgetEntries = useMemo<ClipBudgetEntry[]>(() => {
+    if (!result) return batchEntries;
+    const projectEntry: ClipBudgetEntry = {
+      clipId: "current-project",
+      label: result.projectTitle || "현재 프로젝트",
+      shotCount: result.totalCuts,
+      totalDurationSec: result.cuts.reduce((s, c) => s + c.durationSec, 0),
+      priority: "high",
+    };
+    return [projectEntry, ...batchEntries.filter(e => e.clipId !== "current-project")];
+  }, [result, batchEntries]);
 
   const handleGenerate = useCallback(async (input: PromptInput) => {
     setStatus("loading");
@@ -61,22 +100,11 @@ export default function AppShell() {
         animationMode: input.animationMode,
         cutCount: output.totalCuts,
       });
-
-      if (mode === "batch" && output.cuts.length > 0) {
-        const entry: ClipBudgetEntry = {
-          clipId: `clip-${Date.now()}`,
-          label: output.projectTitle || "새 클립",
-          shotCount: output.totalCuts,
-          totalDurationSec: output.cuts.reduce((s, c) => s + c.durationSec, 0),
-          priority: "normal",
-        };
-        setBatchEntries(prev => [...prev, entry]);
-      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "시퀀스 생성에 실패했습니다.");
+      setError(err instanceof Error ? err.message : "프로젝트 생성에 실패했습니다.");
       setStatus("error");
     }
-  }, [mode]);
+  }, []);
 
   const handleRestoreHistory = useCallback((input: PromptInput, output: PromptOutput) => {
     setLastInput(input);
@@ -86,13 +114,8 @@ export default function AppShell() {
     setActiveTab("plan");
   }, []);
 
-  const handleAdvanceToBuild = useCallback(() => {
-    setActiveTab("build");
-  }, []);
-
-  const handleAdvanceToGenerate = useCallback(() => {
-    setActiveTab("generate");
-  }, []);
+  const handleAdvanceToBuild = useCallback(() => setActiveTab("build"), []);
+  const handleAdvanceToGenerate = useCallback(() => setActiveTab("generate"), []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -108,32 +131,39 @@ export default function AppShell() {
                 Kling O3
               </span>
               <span className="text-[10px] hidden md:inline" style={{ color: "#aaa" }}>
-                Segmented Cinematic Production System
+                Script → Segments → Video Assembly
               </span>
             </div>
 
-            {/* ── Mode Toggle ── */}
-            <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "#f1f1f4" }}>
-              <button
-                onClick={() => setMode("studio")}
-                className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                style={mode === "studio"
-                  ? { background: "white", color: "#1a1a2e", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
-                  : { color: "#888" }
-                }
-              >
-                Studio
-              </button>
-              <button
-                onClick={() => setMode("batch")}
-                className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                style={mode === "batch"
-                  ? { background: "white", color: "#1a1a2e", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
-                  : { color: "#888" }
-                }
-              >
-                Batch
-              </button>
+            {/* ── Mode Toggle with Recommendation ── */}
+            <div className="flex items-center gap-2">
+              {!modeManuallySet && (
+                <span className="text-[9px] hidden sm:inline px-1.5 py-0.5 rounded" style={{ background: "#f0fdf4", color: "#16a34a" }}>
+                  추천: {modeRec.mode === "batch" ? "Batch" : "Studio"} — {modeRec.reason}
+                </span>
+              )}
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: "#f1f1f4" }}>
+                <button
+                  onClick={() => handleModeSwitch("studio")}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                  style={mode === "studio"
+                    ? { background: "white", color: "#1a1a2e", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
+                    : { color: "#888" }
+                  }
+                >
+                  Studio
+                </button>
+                <button
+                  onClick={() => handleModeSwitch("batch")}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                  style={mode === "batch"
+                    ? { background: "white", color: "#1a1a2e", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
+                    : { color: "#888" }
+                  }
+                >
+                  Batch
+                </button>
+              </div>
             </div>
           </div>
 
@@ -160,9 +190,9 @@ export default function AppShell() {
         </div>
       </header>
 
-      {/* ── Runtime Budget Bar ── */}
-      {(mode === "batch" || batchEntries.length > 0) && (
-        <RuntimeBudgetBar entries={batchEntries} onUpdateEntries={setBatchEntries} />
+      {/* ── Runtime Budget Bar — always visible when project exists ── */}
+      {projectBudgetEntries.length > 0 && (
+        <RuntimeBudgetBar entries={projectBudgetEntries} onUpdateEntries={setBatchEntries} />
       )}
 
       {/* ── Main Content ── */}
@@ -182,6 +212,8 @@ export default function AppShell() {
               onAdvanceToBuild={handleAdvanceToBuild}
               batchEntries={batchEntries}
               onUpdateBatchEntries={setBatchEntries}
+              onScriptChange={setScriptText}
+              onTargetRuntimeChange={setTargetRuntime}
             />
           )}
           {activeTab === "build" && (
@@ -205,15 +237,14 @@ export default function AppShell() {
             />
           )}
           {activeTab === "library" && (
-            <LibraryTab
-              onRestoreHistory={handleRestoreHistory}
-            />
+            <LibraryTab onRestoreHistory={handleRestoreHistory} />
           )}
           {activeTab === "extras" && (
             <ExtrasTab
               result={result}
               onUpdateResult={setResult}
               onUseAsScenario={(text) => {
+                setScriptText(text);
                 setLastInput(prev => prev ? { ...prev, storyText: text } : null);
                 setActiveTab("plan");
               }}
@@ -225,7 +256,7 @@ export default function AppShell() {
       {/* ── Footer ── */}
       <footer className="border-t py-3 text-center">
         <p className="text-xs" style={{ color: "#999" }}>
-          CineForge — Kling O3 Segmented Cinematic Production System · 3-15s 생성 단위 · 최대 5분 프로젝트
+          CineForge — Long Script → 3-15s Segments → Kling O3 Video Assembly · Up to 5 min
         </p>
       </footer>
     </div>

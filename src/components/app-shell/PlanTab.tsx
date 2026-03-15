@@ -64,6 +64,8 @@ interface PlanTabProps {
   onAdvanceToBuild: () => void;
   batchEntries: ClipBudgetEntry[];
   onUpdateBatchEntries: (entries: ClipBudgetEntry[]) => void;
+  onScriptChange?: (text: string) => void;
+  onTargetRuntimeChange?: (sec: number) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -83,6 +85,8 @@ export default function PlanTab({
   onAdvanceToBuild,
   batchEntries,
   onUpdateBatchEntries,
+  onScriptChange,
+  onTargetRuntimeChange,
 }: PlanTabProps) {
   const [storyText, setStoryText] = useState(lastInput?.storyText ?? "");
   const [targetRuntime, setTargetRuntime] = useState<number>(60);
@@ -239,7 +243,7 @@ export default function PlanTab({
             <Textarea
               id="story"
               value={storyText}
-              onChange={e => setStoryText(e.target.value)}
+              onChange={e => { setStoryText(e.target.value); onScriptChange?.(e.target.value); }}
               placeholder={`전체 나레이션, 스토리 초안, 또는 장문 스크립트를 입력하세요.
 
 예시:
@@ -281,6 +285,7 @@ export default function PlanTab({
                     const v = Number(e.target.value);
                     setTargetRuntime(v);
                     onSecondsPerSceneChange(Math.min(v, SEGMENT_MAX_DURATION));
+                    onTargetRuntimeChange?.(v);
                   }}
                   className="flex-1"
                 />
@@ -293,6 +298,7 @@ export default function PlanTab({
                     onClick={() => {
                       setTargetRuntime(p.value);
                       onSecondsPerSceneChange(Math.min(p.value, SEGMENT_MAX_DURATION));
+                      onTargetRuntimeChange?.(p.value);
                     }}
                     className="text-[10px] px-2 py-1 rounded border transition-colors"
                     style={targetRuntime === p.value
@@ -339,24 +345,26 @@ export default function PlanTab({
             </div>
           </div>
 
-          {/* Auto-segmentation preview */}
-          {autoSegmentPlan && storyText.trim() && !segmentPlan && (
+          {/* Auto-segmentation preview — always shown when script exists */}
+          {autoSegmentPlan && storyText.trim() && !result && (
             <div className="p-3 rounded-lg border" style={{ background: "#f8f9ff", borderColor: "#787fff30" }}>
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <p className="text-xs font-medium" style={{ color: "#555" }}>
-                    자동 세그먼트 분석 미리보기
+                    세그먼트 분할 미리보기
                   </p>
                   <p className="text-[10px]" style={{ color: "#999" }}>
                     {autoSegmentPlan.totalSegments}개 세그먼트 · 예상 {formatDuration(autoSegmentPlan.totalEstimatedDurationSec)} · 타겟 {formatDuration(targetRuntime)}
                   </p>
                 </div>
-                <Button size="sm" onClick={handleAnalyzeScript} style={{ background: "#787fff" }}>
-                  세그먼트 확정
-                </Button>
+                {!segmentPlan && (
+                  <Button size="sm" variant="outline" onClick={handleAnalyzeScript} className="text-xs">
+                    세그먼트 편집
+                  </Button>
+                )}
               </div>
               <div className="flex gap-0.5 h-4 rounded overflow-hidden">
-                {autoSegmentPlan.segments.map((seg, i) => (
+                {(segmentPlan ? editedSegments : autoSegmentPlan.segments).map((seg, i) => (
                   <div
                     key={i}
                     className="h-full flex items-center justify-center text-[8px] font-bold text-white"
@@ -374,17 +382,22 @@ export default function PlanTab({
             </div>
           )}
 
-          {/* Generate / Analyze button */}
-          {!segmentPlan ? (
+          {/* Primary CTA — always visible, generates project structure */}
+          {!result && (
             <Button
               onClick={handleGenerateAll}
               disabled={!storyText.trim() || status === "loading"}
-              className="w-full"
+              className="w-full h-11 text-sm"
               style={{ background: "#787fff" }}
             >
-              {status === "loading" ? "시퀀스 생성 중..." : scriptIsLong ? "세그먼트 분할 후 시퀀스 생성" : "시퀀스 생성"}
+              {status === "loading"
+                ? "프로젝트 구조 생성 중..."
+                : autoSegmentPlan && autoSegmentPlan.totalSegments > 1
+                  ? `${autoSegmentPlan.totalSegments}개 세그먼트 프로젝트 생성`
+                  : "프로젝트 구조 생성"
+              }
             </Button>
-          ) : null}
+          )}
 
           {error && (
             <div className="text-sm p-3 rounded-lg" style={{ background: "#fef2f2", color: "#dc2626" }}>
@@ -394,8 +407,8 @@ export default function PlanTab({
         </CardContent>
       </Card>
 
-      {/* ── Step 2: Segmentation Plan ── */}
-      {segmentPlan && editedSegments.length > 0 && !result && (
+      {/* ── Step 2: Segmentation Plan (optional editing) ── */}
+      {segmentPlan && editedSegments.length > 0 && !result && status !== "loading" && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -490,11 +503,10 @@ export default function PlanTab({
 
             <Button
               onClick={handleGenerateAll}
-              disabled={status === "loading"}
               className="w-full"
               style={{ background: "#787fff" }}
             >
-              {status === "loading" ? "시퀀스 생성 중..." : `${editedSegments.length}개 세그먼트 → 시퀀스 생성`}
+              {`${editedSegments.length}개 세그먼트 → 프로젝트 생성`}
             </Button>
           </CardContent>
         </Card>

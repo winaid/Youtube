@@ -58,8 +58,27 @@ export default function GenerateTab({
     );
   }
 
+  const totalProjectRuntime = result.cuts.reduce((s, c) => s + c.durationSec, 0);
+  const completedRuntime = completedClips.reduce((s, c) => s + c.durationSec, 0);
+
   return (
     <div className="space-y-6">
+      {/* ── Project Progress Summary ── */}
+      <div className="flex items-center gap-4 px-4 py-3 rounded-lg border text-xs" style={{ background: "#f8f9ff" }}>
+        <div>
+          <span style={{ color: "#666" }}>프로젝트</span>{" "}
+          <span className="font-bold">{clips.length}개 세그먼트</span>
+        </div>
+        <div>
+          <span style={{ color: "#666" }}>생성됨</span>{" "}
+          <span className="font-bold" style={{ color: "#22c55e" }}>{completedRuntime}s / {totalProjectRuntime}s</span>
+        </div>
+        <div>
+          <span style={{ color: "#666" }}>완료율</span>{" "}
+          <span className="font-bold">{clips.length > 0 ? Math.round((completedClips.length / clips.length) * 100) : 0}%</span>
+        </div>
+      </div>
+
       {/* ── Generation Controls ── */}
       <Card>
         <CardHeader className="pb-3">

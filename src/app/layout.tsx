@@ -11,9 +11,9 @@ const geistSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "CineForge — Kling O3 Cinematic Production",
+  title: "CineForge — Long Script to Cinematic Video",
   description:
-    "Kling O3 기반 세그먼트 시네마틱 프로덕션 시스템 — 장문 스크립트를 3-15초 생성 단위로 분할, 최대 5분 영상 조립",
+    "장문 스크립트를 3-15초 Kling O3 세그먼트로 분할하고, extend 체이닝으로 최대 5분 시네마틱 영상을 조립하는 프로덕션 시스템",
 };
 
 export default function RootLayout({
