@@ -216,7 +216,7 @@ export function distributeRhythm(
     // budget이 min clamp보다 작으면, min을 축소
     effectiveClamps.min = Math.max(1, Math.floor(totalBudget / cuts.length));
   }
-  let clampedDurations = rawDurations.map(d =>
+  const clampedDurations = rawDurations.map(d =>
     Math.round(Math.max(effectiveClamps.min, Math.min(effectiveClamps.max, d))),
   );
 
