@@ -3,9 +3,10 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   PromptInput, PromptOutput, GeneratorStatus, Region, AnimationMode,
-  Duration, AspectRatio, Cut, ShotRole,
+  Duration, AspectRatio, Cut, ShotRole, DirectorPersona,
   SHOT_ROLE_META, SHOT_ROLES,
 } from "@/types";
+import DirectorStylePanel from "./DirectorStylePanel";
 import { DURATION_MIN, DURATION_MAX } from "@/lib/duration-reconciliation";
 import { getRecommendedShotRange } from "@/lib/multishot-validation";
 import {
@@ -97,6 +98,8 @@ export default function PlanTab({
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(lastInput?.aspectRatio ?? "16:9");
   const [segmentPlan, setSegmentPlan] = useState<SegmentationPlan | null>(null);
   const [editedSegments, setEditedSegments] = useState<ScriptSegment[]>([]);
+  const [directorId, setDirectorId] = useState<string>(lastInput?.directorPersona ?? "neutral");
+  const [customDirector, setCustomDirector] = useState<DirectorPersona | undefined>(lastInput?.customDirector);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -120,6 +123,11 @@ export default function PlanTab({
   }, [initialScript, onInitialScriptConsumed, onScriptChange]);
 
   const scriptIsLong = useMemo(() => isLongScript(storyText), [storyText]);
+
+  const handleDirectorChange = useCallback((id: string, custom?: DirectorPersona) => {
+    setDirectorId(id);
+    if (custom) setCustomDirector(custom);
+  }, []);
 
   const autoSegmentPlan = useMemo(() => {
     if (!storyText.trim()) return null;
@@ -154,12 +162,13 @@ export default function PlanTab({
       if (!storyText.trim()) return;
       const input: PromptInput = {
         storyText: storyText.trim(),
-        directorPersona: "neutral",
+        directorPersona: directorId,
         region: "한국" as Region,
         animationMode: "cinematic-realism" as AnimationMode,
         duration: targetRuntime as Duration,
         aspectRatio,
         cutDuration: Math.min(targetRuntime, SEGMENT_MAX_DURATION),
+        customDirector,
       };
       onGenerate(input);
       return;
@@ -176,16 +185,17 @@ export default function PlanTab({
 
     const input: PromptInput = {
       storyText: fullScript,
-      directorPersona: "neutral",
+      directorPersona: directorId,
       region: "한국" as Region,
       animationMode: "cinematic-realism" as AnimationMode,
       duration: targetRuntime as Duration,
       aspectRatio,
       cutDuration: avgSegDuration,
       cutCount: editedSegments.length,
+      customDirector,
     };
     onGenerate(input);
-  }, [editedSegments, storyText, targetRuntime, aspectRatio, onGenerate]);
+  }, [editedSegments, storyText, targetRuntime, aspectRatio, directorId, customDirector, onGenerate]);
 
   const handleUpdateCut = useCallback((cutNumber: number, updates: Partial<Cut>) => {
     if (!result) return;
@@ -289,7 +299,25 @@ export default function PlanTab({
             </div>
           </div>
 
-          {/* Target Runtime + Settings */}
+        </CardContent>
+      </Card>
+
+      {/* ── Step 2: Director / Style Direction ── */}
+      <DirectorStylePanel
+        storyText={storyText}
+        selectedDirectorId={directorId}
+        onDirectorChange={handleDirectorChange}
+      />
+
+      {/* ── Step 3: Runtime & Segmentation ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#22c55e" }}>3</span>
+            런타임 & 세그먼트 설계
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Total Target Runtime */}
             <div className="space-y-2 md:col-span-2">
@@ -427,12 +455,12 @@ export default function PlanTab({
         </CardContent>
       </Card>
 
-      {/* ── Step 2: Segmentation Plan (optional editing) ── */}
+      {/* ── Step 4: Segmentation Plan (optional editing) ── */}
       {segmentPlan && editedSegments.length > 0 && !result && status !== "loading" && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#f59e0b" }}>2</span>
+              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#f59e0b" }}>4</span>
               세그먼트 플랜
               <Badge variant="outline" className="ml-auto text-xs">
                 {editedSegments.length}개 세그먼트 · {formatDuration(segmentTotalRuntime)}
@@ -538,10 +566,10 @@ export default function PlanTab({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#22c55e" }}>
-                  {segmentPlan ? "3" : "2"}
+                <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#8b5cf6" }}>
+                  {segmentPlan ? "5" : "4"}
                 </span>
-                시퀀스 디자인
+                프로젝트 시퀀스
                 <Badge variant="outline" className="ml-auto text-xs">
                   {result.totalCuts}개 세그먼트 · {formatDuration(totalPlannedRuntime)}
                 </Badge>
