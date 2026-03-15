@@ -1,15 +1,20 @@
 /**
  * shot-splitting.ts — Multi-shot sequence enforcement
  *
- * 단일 shot summary를 진짜 sequence(2~3 shots)로 분리.
- * "A → B → C" progression을 감지하고 자동으로 shot 분할.
+ * 단일 shot summary를 진짜 sequence(2~6 shots)로 분리.
+ * "A → B → C → D → E → F" progression을 감지하고 자동으로 shot 분할.
+ * O3 모델 기준 최대 6샷, v3 fallback 시 3샷.
  *
  * grep: detectShotProgression, splitSingleShotSequence,
  *       enforceMinimumShotCount, isSingleShotException,
- *       rebalanceShotTimings, validateSequenceDensity
+ *       rebalanceShotTimings, validateSequenceDensity,
+ *       MAX_SPLIT_SHOTS
  */
 
 import type { TemporalBeat } from "@/types";
+
+/** shot splitting이 생성할 수 있는 최대 샷 수 (O3 capability 기준) */
+export const MAX_SPLIT_SHOTS = 6;
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -72,7 +77,7 @@ export function detectShotProgression(
         hasProgression: true,
         segments,
         progressionType: "arrow",
-        suggestedShotCount: Math.min(segments.length, 3),
+        suggestedShotCount: Math.min(segments.length, MAX_SPLIT_SHOTS),
       };
     }
   }
@@ -85,7 +90,7 @@ export function detectShotProgression(
         hasProgression: true,
         segments,
         progressionType: "temporal",
-        suggestedShotCount: Math.min(segments.length, 3),
+        suggestedShotCount: Math.min(segments.length, MAX_SPLIT_SHOTS),
       };
     }
   }
@@ -161,24 +166,39 @@ const SCENE_SPLIT_TEMPLATES: Record<string, SplitTemplate> = {
       { role: "establishing", framingHint: "WS", motionHint: "slow pan", focusTemplate: "wide establishing view of {env} with scale and atmosphere" },
       { role: "emphasis", framingHint: "MS", motionHint: "slow push-in", focusTemplate: "closer emphasis on key environmental detail and situation evidence" },
       { role: "reveal", framingHint: "WS", motionHint: "slow pull-back", focusTemplate: "final vista revealing strongest visual anchor" },
+      { role: "detail", framingHint: "CU", motionHint: "static", focusTemplate: "tight detail on environmental texture or element" },
+      { role: "transition", framingHint: "MS", motionHint: "slow tilt", focusTemplate: "transitional perspective shift within environment" },
+      { role: "payoff", framingHint: "WS", motionHint: "slow crane up", focusTemplate: "grand payoff vista with full environmental scale" },
     ],
   },
   "character-driven": {
     shots: [
       { role: "establishing", framingHint: "MS", motionHint: "steady", focusTemplate: "character introduction in context" },
       { role: "emphasis", framingHint: "MCU", motionHint: "subtle push-in", focusTemplate: "character action and emotional beat" },
+      { role: "reveal", framingHint: "CU", motionHint: "slow push-in", focusTemplate: "close-up emotional reveal and reaction" },
+      { role: "detail", framingHint: "ECU", motionHint: "static", focusTemplate: "extreme close-up on expression or gesture detail" },
+      { role: "context", framingHint: "MS", motionHint: "tracking", focusTemplate: "character in motion within environment" },
+      { role: "payoff", framingHint: "WS", motionHint: "slow pull-back", focusTemplate: "character payoff in wider context" },
     ],
   },
   crowd: {
     shots: [
       { role: "establishing", framingHint: "WS", motionHint: "slow crane", focusTemplate: "wide crowd establish with scale" },
       { role: "emphasis", framingHint: "MS", motionHint: "tracking", focusTemplate: "crowd movement pattern and energy" },
+      { role: "reveal", framingHint: "MCU", motionHint: "handheld", focusTemplate: "individual faces and reactions within crowd" },
+      { role: "detail", framingHint: "CU", motionHint: "static", focusTemplate: "close-up detail on crowd element or artifact" },
+      { role: "context", framingHint: "MS", motionHint: "pan", focusTemplate: "lateral sweep across crowd diversity" },
+      { role: "payoff", framingHint: "WS", motionHint: "crane up", focusTemplate: "aerial payoff revealing full crowd scale" },
     ],
   },
   "map-graphic": {
     shots: [
       { role: "establishing", framingHint: "WS", motionHint: "static", focusTemplate: "full map surface establish" },
       { role: "emphasis", framingHint: "MS", motionHint: "slow push-in", focusTemplate: "regional emphasis and color spread" },
+      { role: "reveal", framingHint: "CU", motionHint: "slow push-in", focusTemplate: "detailed region focus with data overlay" },
+      { role: "detail", framingHint: "ECU", motionHint: "static", focusTemplate: "extreme close-up on critical data point" },
+      { role: "transition", framingHint: "MS", motionHint: "slow pan", focusTemplate: "pan across regions showing comparison" },
+      { role: "payoff", framingHint: "WS", motionHint: "slow pull-back", focusTemplate: "final pull-back revealing complete picture" },
     ],
   },
 };
@@ -188,8 +208,9 @@ const SCENE_SPLIT_TEMPLATES: Record<string, SplitTemplate> = {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 단일 shot을 2~3 shots로 분리.
+ * 단일 shot을 2~6 shots로 분리.
  * progression segments + scene template 기반.
+ * O3 모델 기준 최대 6샷, 실제 분할 수는 progression과 template에 따라 결정.
  *
  * grep: splitSingleShotSequence
  */
@@ -295,9 +316,11 @@ export function rebalanceShotTimings(
     return [{ startSec: 0, endSec: totalDurationSec }];
   }
 
-  // Slightly longer first shot (establishing), equal rest
+  // First shot gets a larger share (establishing), rest equal.
+  // 2-3 shots: 40% first, rest equal
+  // 4+ shots: 30% first, rest equal (더 많은 샷에서는 첫 샷 비중 감소)
   const result: Array<{ startSec: number; endSec: number }> = [];
-  const firstShotRatio = 0.4;
+  const firstShotRatio = shotCount <= 3 ? 0.4 : 0.3;
   const remainingRatio = (1 - firstShotRatio) / (shotCount - 1);
 
   let currentSec = 0;

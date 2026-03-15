@@ -14,6 +14,11 @@
 import { describe, it, expect } from "vitest";
 import { estimateProjectDuration } from "@/lib/story-duration-estimator";
 import {
+  getMaxShots as getMax,
+  normalizeMultiShots,
+  KLING_DEFAULT_TEXT_MODEL as O3_MODEL,
+} from "@/lib/kling-capability";
+import {
   resolveSegmentPlan,
   resolveCutCount,
   recommendMinimumCutCount,
@@ -163,46 +168,51 @@ describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 1~2 (서사�
 // 4. 짧은 컷 multiShot 억제
 // ═══════════════════════════════════════════════════════════════════
 
-describe("테스트 4: multiShot clamp — 짧은 컷에서 억제", () => {
-  // useVideoGeneration.ts lines 1327-1334 로직을 단위 검증
-  function clampMultiShot(
-    durationSec: number,
-    multiShot: Array<{ index: number; prompt: string; duration: string }>,
-  ): Array<{ index: number; prompt: string; duration: string }> {
-    if (durationSec <= 3) return []; // 3초 이하: multiShot 금지
-    const maxShots = durationSec <= 5 ? 2 : 3;
-    return multiShot.slice(0, maxShots);
-  }
+describe("테스트 4: multiShot clamp — 짧은 컷에서 억제 (O3 capability 기반)", () => {
+  const O3 = O3_MODEL;
 
   const sampleMultiShot = [
     { index: 1, prompt: "wide shot", duration: "3" },
     { index: 2, prompt: "medium shot", duration: "3" },
     { index: 3, prompt: "close up", duration: "3" },
+    { index: 4, prompt: "detail shot", duration: "3" },
+    { index: 5, prompt: "context shot", duration: "3" },
+    { index: 6, prompt: "payoff shot", duration: "3" },
   ];
 
   it("3초 이하 → multiShot 0개 (완전 비활성)", () => {
-    expect(clampMultiShot(2, sampleMultiShot)).toHaveLength(0);
-    expect(clampMultiShot(3, sampleMultiShot)).toHaveLength(0);
+    expect(getMax(O3, 2)).toBe(0);
+    expect(getMax(O3, 3)).toBe(0);
   });
 
-  it("4~5초 → multiShot 최대 2개", () => {
-    expect(clampMultiShot(4, sampleMultiShot)).toHaveLength(2);
-    expect(clampMultiShot(5, sampleMultiShot)).toHaveLength(2);
+  it("4~5초 → O3 최대 2개", () => {
+    expect(getMax(O3, 4)).toBe(2);
+    expect(getMax(O3, 5)).toBe(2);
   });
 
-  it("6초 이상 → multiShot 최대 3개", () => {
-    expect(clampMultiShot(6, sampleMultiShot)).toHaveLength(3);
-    expect(clampMultiShot(9, sampleMultiShot)).toHaveLength(3);
-    expect(clampMultiShot(15, sampleMultiShot)).toHaveLength(3);
+  it("6~7초 → O3 최대 3개", () => {
+    expect(getMax(O3, 6)).toBe(3);
+    expect(getMax(O3, 7)).toBe(3);
   });
 
-  it("multiShot이 빈 배열이면 빈 배열 유지", () => {
-    expect(clampMultiShot(10, [])).toHaveLength(0);
+  it("8~10초 → O3 최대 4개", () => {
+    expect(getMax(O3, 8)).toBe(4);
   });
 
-  it("multiShot이 1개뿐이면 1개만 반환 (4초)", () => {
-    const single = [sampleMultiShot[0]];
-    expect(clampMultiShot(4, single)).toHaveLength(1);
+  it("12~15초 → O3 최대 6개", () => {
+    expect(getMax(O3, 12)).toBe(6);
+    expect(getMax(O3, 15)).toBe(6);
+  });
+
+  it("normalizeMultiShots 빈 배열 → 빈 배열", () => {
+    expect(normalizeMultiShots(O3, [], 10)).toHaveLength(0);
+  });
+
+  it("normalizeMultiShots 6개 → 4개 clamp (8초)", () => {
+    const result = normalizeMultiShots(O3, sampleMultiShot, 8);
+    expect(result).toHaveLength(4);
+    // index 재정렬 확인
+    expect(result.map((s: { index: number }) => s.index)).toEqual([1, 2, 3, 4]);
   });
 });
 

@@ -20,6 +20,7 @@ import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
+import { getMaxShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-capability";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -935,32 +936,55 @@ ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade
 예: empty reception desk, dusty floor reflection, worn dental chair silhouette, flickering fluorescent tube, half-open blinds, faded wall paint, cracked tile floor, condensation on window, peeling wallpaper strip, rusted pipe along wall
 메타 정보(REVEALED/WITHHELD)를 늘리지 말고 실제 화면 디테일을 늘려라.
 
-## MULTI-SHOT 규칙 (secPerCut 기반 조건부 — 독립 컷 우선)
-${secPerCut <= 3
-    ? `### multiShot 비활성 (secPerCut=${secPerCut}초 ≤ 3초)
+## MULTI-SHOT 규칙 (secPerCut 기반 조건부 — 독립 컷 우선, O3 모델 기준 최대 6샷)
+${(() => {
+    const maxShots = getMaxShots(KLING_DEFAULT_TEXT_MODEL, secPerCut);
+    if (maxShots <= 0) {
+      return `### multiShot 비활성 (secPerCut=${secPerCut}초 ≤ 3초)
 - ${secPerCut}초는 하나의 독립 컷이다. multiShot 배열을 생성하지 마라.
 - 하나의 연속된 카메라 무빙과 하나의 핵심 비트로 구성.
-- "multiShot" 필드는 출력하지 말 것.`
-    : secPerCut <= 5
-    ? `### multiShot 제한 (secPerCut=${secPerCut}초, 최대 2개)
-- ${secPerCut}초에서는 multiShot을 최대 2개까지만 허용한다.
+- "multiShot" 필드는 출력하지 말 것.`;
+    }
+    if (maxShots <= 2) {
+      return `### multiShot 제한 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+- ${secPerCut}초에서는 multiShot을 최대 ${maxShots}개까지만 허용한다.
 - 가능하면 multiShot 없이 단일 연속 shot으로 구성하라.
-- 꼭 필요한 경우에만 2개의 서브샷 (location→emotion)으로 구성.
-- duration 합산 = ${secPerCut} (정수만).`
-    : `### multiShot 허용 (secPerCut=${secPerCut}초, 최대 3개)
-- ${secPerCut}초에서는 2~3개 서브샷을 허용한다.
-- 서브샷 1 = BEAT1 LOCATION: 장소 정체성 즉시 인식 — shot size: WS/LS (≤80 words)
-- 서브샷 2 = BEAT2 SITUATION: 상황의 시각적 증거 — shot size: MS/MCU (≤80 words)
-- 서브샷 3 (선택) = BEAT3 EMOTION: 감정/갈등 앵커 — shot size: CU/ECU (≤80 words)
-- duration 합산 = ${secPerCut} (정수만).
-- 서브샷마다 반드시 다른 shot size + 앵글 사용.`}
+- 꼭 필요한 경우에만 ${maxShots}개의 서브샷 (location→emotion)으로 구성.
+- duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.`;
+    }
+    const shotRoles = [
+      "BEAT1 LOCATION: 장소 정체성 즉시 인식 — shot size: WS/LS",
+      "BEAT2 SITUATION: 상황의 시각적 증거 — shot size: MS/MCU",
+      "BEAT3 EMOTION: 감정/갈등 앵커 — shot size: CU/ECU",
+      "BEAT4 DETAIL: 핵심 디테일 클로즈업 — shot size: CU/ECU",
+      "BEAT5 CONTEXT: 맥락 전환 — shot size: MS",
+      "BEAT6 PAYOFF: 최종 임팩트 — shot size: WS/CU",
+    ];
+    const roles = shotRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} = ${r} (≤80 words)`).join("\n");
+    return `### multiShot 허용 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+- ${secPerCut}초에서는 2~${maxShots}개 서브샷을 허용한다.
+${roles}
+- duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
+- 서브샷마다 반드시 다른 shot size + 앵글 사용.`;
+  })()}
 
 JSON 배열로만 출력 (마크다운 없이):
-${secPerCut <= 3
-    ? `[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."}]`
-    : secPerCut <= 5
-    ? `[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 2)}"},{"index":2,"prompt":"...","duration":"${secPerCut - Math.ceil(secPerCut / 2)}"}]}]`
-    : `[{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"...","multiShot":[{"index":1,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":2,"prompt":"...","duration":"${Math.ceil(secPerCut / 3)}"},{"index":3,"prompt":"...","duration":"${secPerCut - 2 * Math.ceil(secPerCut / 3)}"}]}]`}`;
+${(() => {
+    const maxShots = getMaxShots(KLING_DEFAULT_TEXT_MODEL, secPerCut);
+    const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."`;
+    if (maxShots <= 0) return `[${base}}]`;
+    // 예시 multiShot: 균등 분배
+    const shotDur = Math.max(2, Math.floor(secPerCut / Math.min(maxShots, 3)));
+    const exampleShots = [];
+    let remaining = secPerCut;
+    const exampleCount = Math.min(maxShots, 3); // 예시는 3개까지만
+    for (let i = 1; i <= exampleCount; i++) {
+      const d = i === exampleCount ? remaining : shotDur;
+      exampleShots.push(`{"index":${i},"prompt":"...","duration":"${d}"}`);
+      remaining -= shotDur;
+    }
+    return `[${base},"multiShot":[${exampleShots.join(",")}]}]`;
+  })()}`;
 
   // 배치 크기에 비례한 토큰 예산: 컷당 ≈1200 tokens, 최소 8192, 최대 16384
   const estimatedDetailTokens = batchOutlines.length * 1200 + 500;

@@ -69,6 +69,10 @@ import {
   cleanupOldJobs,
   type VideoJobRecord,
 } from "@/lib/video-job-store";
+import {
+  getMaxShots,
+  KLING_DEFAULT_TEXT_MODEL,
+} from "@/lib/kling-capability";
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
@@ -1338,7 +1342,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),
         legacyPromptLen: legacyPrompt.length,
         legacyPromptPrefix: legacyPrompt.slice(0, 120),
-        model: "kling-v3",
+        model: KLING_DEFAULT_TEXT_MODEL,
       });
 
       // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
@@ -1381,13 +1385,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,
-        // multiShot: secPerCut 기반 clamp — 짧은 독립 컷에서는 비활성화
+        // multiShot: capability 기반 clamp — 모델별 maxShots + duration 기반 자연스러운 상한
         ...((() => {
           if (engine !== "kling" || !cut.multiShot || cut.multiShot.length === 0) return {};
           const dur = cfg.durationSeconds ?? cut.durationSec ?? 5;
-          if (dur <= 3) return {}; // 3초 이하: multiShot 금지
-          const maxShots = dur <= 5 ? 2 : 3;
-          return { multiShot: cut.multiShot.slice(0, maxShots) };
+          const model = KLING_DEFAULT_TEXT_MODEL;
+          const maxShotCount = getMaxShots(model, dur);
+          if (maxShotCount <= 0) return {};
+          // index 재정렬 보장
+          const clamped = cut.multiShot.slice(0, maxShotCount).map((s, i) => ({
+            ...s,
+            index: i + 1,
+          }));
+          return { multiShot: clamped };
         })()),
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),

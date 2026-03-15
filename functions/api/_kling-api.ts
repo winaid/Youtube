@@ -12,18 +12,25 @@
  *   EvoLink에 native video-extend 없음.
  *   이전 컷 lastFrameBase64 → image 파라미터로 전달해 image-to-video로 대체.
  *
- * Models (중앙 상수 — KLING_MODELS):
- *   kling-v3-text-to-video      — 텍스트→영상 (기본, 안정적)
- *   kling-v3-image-to-video     — 이미지→영상 (first/last frame)
+ * Models:
+ *   O3 = 기본 모델 (6샷, minShotDuration 2초)
+ *   v3 = 레거시 fallback (3샷, minShotDuration 3초)
+ *   모델 상수와 capability는 _kling-capability.ts에서 중앙 관리
  */
 
-// ── 모델 상수 (중앙 관리) ────────────────────────────────────────────────────
-export const KLING_MODELS = {
-  TEXT_TO_VIDEO: "kling-v3-text-to-video",
-  IMAGE_TO_VIDEO: "kling-v3-image-to-video",
-} as const;
-
-export type KlingModelId = (typeof KLING_MODELS)[keyof typeof KLING_MODELS];
+// ── 모델 상수 (capability 모듈에서 import) ─────────────────────────────────
+export {
+  KLING_MODELS,
+  KLING_DEFAULT_MODEL,
+  KLING_DEFAULT_TEXT_MODEL,
+  KLING_DEFAULT_IMAGE_MODEL,
+  type KlingModelId,
+  getCapability,
+  getMaxShots,
+  normalizeMultiShots,
+  resolveModel,
+  resolveModelWithFallback,
+} from "./_kling-capability";
 
 // ── 에러 분류 ────────────────────────────────────────────────────────────────
 export class KlingModelAccessDeniedError extends Error {
@@ -116,7 +123,7 @@ export async function klingGenerate(
   req: KlingGenerateRequest,
 ): Promise<{ taskId: string; sentDuration: number }> {
   const headers = klingHeaders(env);
-  const model = req.model ?? (req.image ? KLING_MODELS.IMAGE_TO_VIDEO : KLING_MODELS.TEXT_TO_VIDEO);
+  const model = resolveModel(req.model, !!req.image);
 
   // 요청 직전 실제 사용 모델 로깅
   console.log("[_kling-api] klingGenerate model selected", {
@@ -146,23 +153,19 @@ export async function klingGenerate(
   if (req.quality) body.quality = req.quality;
   if (req.image)      body.image      = req.image;
   if (req.image_tail) body.image_tail = req.image_tail;
-  // Multi-shot: secPerCut 기반 clamp — 짧은 컷에서는 비활성화
-  // 규칙: duration<=3 → 금지, duration<=5 → 최대 2개, duration>5 → 최대 3개
+  // Multi-shot: capability 기반 clamp — 모델별 maxShots + duration 기반 자연스러운 상한
   const effectiveDuration = (body.duration as number) ?? 5;
-  const multiShotMaxCount = effectiveDuration <= 3 ? 0 : effectiveDuration <= 5 ? 2 : 3;
-  if (req.multiShot && req.multiShot.length > 0 && multiShotMaxCount > 0) {
-    const clampedShots = req.multiShot.slice(0, multiShotMaxCount);
-    body.model_params = {
-      multi_shot: true,
-      shot_type: "customize",
-      multi_prompt: clampedShots.map((s) => ({
-        index: s.index,
-        prompt: s.prompt,
-        duration: String(s.duration),
-      })),
-    };
-    if (req.multiShot.length > multiShotMaxCount) {
-      console.warn(`[_kling-api] multiShot clamped: ${req.multiShot.length} → ${multiShotMaxCount} (duration=${effectiveDuration}s)`);
+  if (req.multiShot && req.multiShot.length > 0) {
+    const normalized = normalizeMultiShots(model, req.multiShot, effectiveDuration);
+    if (normalized.length > 0) {
+      body.model_params = {
+        multi_shot: true,
+        shot_type: "customize",
+        multi_prompt: normalized,
+      };
+      if (req.multiShot.length > normalized.length) {
+        console.warn(`[_kling-api] multiShot clamped: ${req.multiShot.length} → ${normalized.length} (model=${model}, duration=${effectiveDuration}s)`);
+      }
     }
   }
 
