@@ -756,24 +756,30 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
     setViewport(fitViewport(state.nodes, rect.width, rect.height));
   }, [state.nodes]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+  // Wheel zoom — native listener with { passive: false } to allow preventDefault
+  // (React onWheel is passive in modern browsers, causing console warnings)
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
 
-    // 마우스 위치 기준 줌
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
 
-    setViewport(v => {
-      const oldZoom = v.zoom;
-      const newZoom = clampZoom(oldZoom - e.deltaY * 0.001);
-      // 마우스 위치를 기준으로 줌
-      const scale = newZoom / oldZoom;
-      const panX = mouseX / newZoom - (mouseX / oldZoom - v.panX) ;
-      const panY = mouseY / newZoom - (mouseY / oldZoom - v.panY);
-      return { zoom: newZoom, panX: panX, panY: panY };
-    });
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      setViewport(v => {
+        const oldZoom = v.zoom;
+        const newZoom = clampZoom(oldZoom - e.deltaY * 0.001);
+        const panX = mouseX / newZoom - (mouseX / oldZoom - v.panX);
+        const panY = mouseY / newZoom - (mouseY / oldZoom - v.panY);
+        return { zoom: newZoom, panX, panY };
+      });
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
   }, []);
 
   // ── Drag handlers ──
@@ -1035,7 +1041,6 @@ export default function NodeCanvas({ onSendToTimeline, importableOutput, onExpor
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onClick={handleCanvasClick}
-        onWheel={handleWheel}
         onKeyDown={handleKeyDown}
         tabIndex={0}
       >
