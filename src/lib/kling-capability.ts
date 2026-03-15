@@ -1,20 +1,50 @@
 /**
- * kling-capability.ts — Kling 모델별 capability 정의 (중앙 정책)
+ * kling-capability.ts — Kling O3 모델 패밀리 capability 정의 (중앙 정책)
  *
  * 핵심 목적:
- *   1. 모델별 maxShots, minShotDuration, maxDuration 등을 한 곳에서 관리
- *   2. 서버(_kling-api.ts)와 클라이언트(useVideoGeneration.ts)가 동일 정책 공유
- *   3. duration 기반 "실질적 최대 샷 수" 계산 — 무조건 6샷이 아닌, 자연스러운 상한
- *   4. 모델 fallback 체인 지원
+ *   1. 5개 O3 모델의 capability를 한 곳에서 관리
+ *   2. WorkflowType 기반 모델 선택 — text/image/reference/edit/element
+ *   3. 서버(_kling-capability.ts)와 클라이언트가 동일 정책 공유
+ *   4. duration 기반 "실질적 최대 샷 수" 계산
+ *   5. 모델 fallback 체인 지원
  *
- * 설계 원칙:
- *   - O3가 기본 모델 (main path)
- *   - v3는 하위 호환 fallback 경로
- *   - getMaxShots()는 capability + runtime 현실성을 함께 반영
+ * 모델 패밀리:
+ *   - kling-o3-text-to-video        (텍스트 → 영상, 메인 생성 경로)
+ *   - kling-o3-image-to-video       (이미지 → 영상, 스토리보드/Scene Extension)
+ *   - kling-o3-reference-to-video   (레퍼런스 기반 생성, 일관성 워크플로우)
+ *   - kling-o3-video-edit           (영상 편집/수정)
+ *   - kling-custom-element          (캐릭터/주체 일관성 에셋 생성)
  *
- * grep: KlingModelCapability, getCapability, getMaxShots,
- *       resolveModelWithFallback, KLING_DEFAULT_MODEL
+ * grep: KlingModelCapability, WorkflowType, getCapability, getMaxShots,
+ *       resolveModelForWorkflow, KLING_MODEL_REGISTRY
  */
+
+// ═══════════════════════════════════════════════════════════════════
+// Workflow Types
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * WorkflowType — 제품의 핵심 생성 경로 분류.
+ * 각 워크플로우는 하나의 기본 모델에 매핑된다.
+ *
+ * - text-to-video:      스토리 → 컷 분할 → 프롬프트 생성 → 영상 (메인 경로)
+ * - image-to-video:     스토리보드/참조 이미지 → 영상 (Scene Extension, firstFrame 기반)
+ * - reference-to-video: 레퍼런스 이미지/영상 기반 일관성 생성 (스타일/캐릭터 일관성)
+ * - video-edit:         기존 영상 수정 (리터칭, 부분 재생성, 스타일 변환)
+ * - custom-element:     캐릭터/주체 에셋 등록 (Kling Custom Element API)
+ */
+export type WorkflowType =
+  | "text-to-video"
+  | "image-to-video"
+  | "reference-to-video"
+  | "video-edit"
+  | "custom-element";
+
+/** 입력 모드 — 모델이 요구하는 primary input 타입 */
+export type InputMode = "text" | "image" | "reference" | "video" | "image_refer" | "video_refer";
+
+/** 출력 모드 — 모델이 생성하는 output 타입 */
+export type OutputMode = "video" | "element_asset";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -25,6 +55,8 @@ export interface KlingModelCapability {
   modelId: string;
   /** 사람이 읽을 수 있는 모델명 */
   displayName: string;
+  /** 이 모델의 워크플로우 역할 */
+  workflowRole: WorkflowType;
   /** multi-shot 최대 샷 수 (모델 하드 리밋) */
   maxShots: number;
   /** 개별 샷 최소 duration (초) */
@@ -35,81 +67,178 @@ export interface KlingModelCapability {
   minDuration: number;
   /** multi-shot 지원 여부 */
   supportsMultiShot: boolean;
-  /** image-to-video 지원 여부 */
-  supportsImageToVideo: boolean;
-  /** custom element (element_list) 지원 여부 */
-  supportsElements: boolean;
   /** sound 파라미터 지원 여부 */
   supportsSound: boolean;
+  /** custom element (element_list) 지원 여부 */
+  supportsElements: boolean;
+  /** reference input (레퍼런스 이미지/영상) 지원 여부 */
+  supportsReferenceInput: boolean;
+  /** video edit (기존 영상 수정) 지원 여부 */
+  supportsVideoEdit: boolean;
+  /** primary input 모드 */
+  inputMode: InputMode;
+  /** output 모드 */
+  outputMode: OutputMode;
   /** fallback 모델 ID (이 모델 접근 불가 시 대체) */
   fallbackModelId: string | null;
+
+  // ── 하위 호환 필드 (기존 코드 호환) ──
+  /** @deprecated supportsReferenceInput || inputMode === "image" 사용. */
+  supportsImageToVideo: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Model Registry
+// Model Registry — O3 모델 패밀리 (5개) + v3 레거시 fallback
 // ═══════════════════════════════════════════════════════════════════
 
 /**
  * 모델 capability 레지스트리.
  *
- * O3 = 기본 모델 (6샷, minShotDuration 2초)
- * v3 = 레거시 fallback (3샷, minShotDuration 3초)
+ * O3 모델 패밀리 (5개):
+ *   text-to-video      — 텍스트 프롬프트 → 영상
+ *   image-to-video     — 이미지 + 프롬프트 → 영상
+ *   reference-to-video — 레퍼런스 기반 일관성 생성
+ *   video-edit         — 기존 영상 수정
+ *   custom-element     — 캐릭터/주체 에셋 생성
+ *
+ * v3 = 레거시 fallback (text/image만 지원)
  */
 export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
-  // ── O3 계열 (기본) ──
+  // ── O3 모델 패밀리 ──────────────────────────────────────────────
+
   "kling-o3-text-to-video": {
     modelId: "kling-o3-text-to-video",
     displayName: "Kling O3 (Text)",
+    workflowRole: "text-to-video",
     maxShots: 6,
     minShotDuration: 2,
     maxDuration: 15,
     minDuration: 3,
     supportsMultiShot: true,
-    supportsImageToVideo: false,
-    supportsElements: true,
     supportsSound: true,
+    supportsElements: true,
+    supportsReferenceInput: false,
+    supportsVideoEdit: false,
+    inputMode: "text",
+    outputMode: "video",
     fallbackModelId: "kling-v3-text-to-video",
+    supportsImageToVideo: false,
   },
+
   "kling-o3-image-to-video": {
     modelId: "kling-o3-image-to-video",
     displayName: "Kling O3 (Image)",
+    workflowRole: "image-to-video",
     maxShots: 6,
     minShotDuration: 2,
     maxDuration: 15,
     minDuration: 3,
     supportsMultiShot: true,
-    supportsImageToVideo: true,
-    supportsElements: true,
     supportsSound: true,
+    supportsElements: true,
+    supportsReferenceInput: false,
+    supportsVideoEdit: false,
+    inputMode: "image",
+    outputMode: "video",
     fallbackModelId: "kling-v3-image-to-video",
+    supportsImageToVideo: true,
   },
 
-  // ── v3 계열 (레거시 fallback) ──
+  "kling-o3-reference-to-video": {
+    modelId: "kling-o3-reference-to-video",
+    displayName: "Kling O3 (Reference)",
+    workflowRole: "reference-to-video",
+    maxShots: 6,
+    minShotDuration: 2,
+    maxDuration: 15,
+    minDuration: 3,
+    supportsMultiShot: true,
+    supportsSound: true,
+    supportsElements: true,
+    supportsReferenceInput: true,
+    supportsVideoEdit: false,
+    inputMode: "reference",
+    outputMode: "video",
+    fallbackModelId: "kling-o3-image-to-video",
+    supportsImageToVideo: false,
+  },
+
+  "kling-o3-video-edit": {
+    modelId: "kling-o3-video-edit",
+    displayName: "Kling O3 (Edit)",
+    workflowRole: "video-edit",
+    maxShots: 0,
+    minShotDuration: 0,
+    maxDuration: 15,
+    minDuration: 3,
+    supportsMultiShot: false,
+    supportsSound: true,
+    supportsElements: false,
+    supportsReferenceInput: false,
+    supportsVideoEdit: true,
+    inputMode: "video",
+    outputMode: "video",
+    fallbackModelId: null,
+    supportsImageToVideo: false,
+  },
+
+  "kling-custom-element": {
+    modelId: "kling-custom-element",
+    displayName: "Kling Custom Element",
+    workflowRole: "custom-element",
+    maxShots: 0,
+    minShotDuration: 0,
+    maxDuration: 0,
+    minDuration: 0,
+    supportsMultiShot: false,
+    supportsSound: false,
+    supportsElements: false,
+    supportsReferenceInput: false,
+    supportsVideoEdit: false,
+    inputMode: "image_refer",
+    outputMode: "element_asset",
+    fallbackModelId: null,
+    supportsImageToVideo: false,
+  },
+
+  // ── v3 레거시 fallback ──────────────────────────────────────────
+
   "kling-v3-text-to-video": {
     modelId: "kling-v3-text-to-video",
     displayName: "Kling v3 (Text)",
+    workflowRole: "text-to-video",
     maxShots: 3,
     minShotDuration: 3,
     maxDuration: 15,
     minDuration: 3,
     supportsMultiShot: true,
-    supportsImageToVideo: false,
-    supportsElements: true,
     supportsSound: true,
+    supportsElements: true,
+    supportsReferenceInput: false,
+    supportsVideoEdit: false,
+    inputMode: "text",
+    outputMode: "video",
     fallbackModelId: null,
+    supportsImageToVideo: false,
   },
+
   "kling-v3-image-to-video": {
     modelId: "kling-v3-image-to-video",
     displayName: "Kling v3 (Image)",
+    workflowRole: "image-to-video",
     maxShots: 3,
     minShotDuration: 3,
     maxDuration: 15,
     minDuration: 3,
     supportsMultiShot: true,
-    supportsImageToVideo: true,
-    supportsElements: true,
     supportsSound: true,
+    supportsElements: true,
+    supportsReferenceInput: false,
+    supportsVideoEdit: false,
+    inputMode: "image",
+    outputMode: "video",
     fallbackModelId: null,
+    supportsImageToVideo: true,
   },
 };
 
@@ -123,19 +252,61 @@ export const KLING_DEFAULT_TEXT_MODEL = "kling-o3-text-to-video";
 /** 기본 image-to-video 모델 (O3) */
 export const KLING_DEFAULT_IMAGE_MODEL = "kling-o3-image-to-video";
 
+/** 기본 reference-to-video 모델 (O3) */
+export const KLING_DEFAULT_REFERENCE_MODEL = "kling-o3-reference-to-video";
+
+/** 기본 video-edit 모델 (O3) */
+export const KLING_DEFAULT_EDIT_MODEL = "kling-o3-video-edit";
+
+/** 기본 custom-element 모델 */
+export const KLING_ELEMENT_MODEL = "kling-custom-element";
+
 /** 기본 모델 (O3 text-to-video) */
 export const KLING_DEFAULT_MODEL = KLING_DEFAULT_TEXT_MODEL;
 
 /**
- * KLING_MODELS 호환 상수 — 기존 import를 유지하면서 O3로 전환.
- * _kling-api.ts의 KLING_MODELS를 이 모듈로 대체.
+ * KLING_MODELS — 모든 O3 모델 상수 (워크플로우별 매핑).
  */
 export const KLING_MODELS = {
   TEXT_TO_VIDEO: KLING_DEFAULT_TEXT_MODEL,
   IMAGE_TO_VIDEO: KLING_DEFAULT_IMAGE_MODEL,
+  REFERENCE_TO_VIDEO: KLING_DEFAULT_REFERENCE_MODEL,
+  VIDEO_EDIT: KLING_DEFAULT_EDIT_MODEL,
+  CUSTOM_ELEMENT: KLING_ELEMENT_MODEL,
 } as const;
 
 export type KlingModelId = (typeof KLING_MODELS)[keyof typeof KLING_MODELS];
+
+// ═══════════════════════════════════════════════════════════════════
+// Workflow ↔ Model Mapping
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * WorkflowType → 기본 모델 ID 매핑.
+ * 각 워크플로우의 메인 경로에서 사용할 모델을 정의한다.
+ */
+export const WORKFLOW_MODEL_MAP: Record<WorkflowType, string> = {
+  "text-to-video":      KLING_MODELS.TEXT_TO_VIDEO,
+  "image-to-video":     KLING_MODELS.IMAGE_TO_VIDEO,
+  "reference-to-video": KLING_MODELS.REFERENCE_TO_VIDEO,
+  "video-edit":         KLING_MODELS.VIDEO_EDIT,
+  "custom-element":     KLING_MODELS.CUSTOM_ELEMENT,
+};
+
+/**
+ * 워크플로우 타입으로 기본 모델을 선택한다.
+ */
+export function getModelForWorkflow(workflow: WorkflowType): string {
+  return WORKFLOW_MODEL_MAP[workflow];
+}
+
+/**
+ * 모델 ID로 해당 워크플로우 타입을 역조회한다.
+ */
+export function getWorkflowForModel(modelId: string): WorkflowType {
+  const cap = KLING_MODEL_REGISTRY[modelId];
+  return cap?.workflowRole ?? "text-to-video";
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Capability Lookup
@@ -166,9 +337,6 @@ export function getCapability(modelId: string): KlingModelCapability {
  *   - duration > 10초: maxShots (모델 하드 리밋)
  *
  * 추가 제약: floor(duration / minShotDuration)을 초과할 수 없음
- *
- * @param modelId — 모델 식별자
- * @param durationSec — 영상 총 duration (초)
  */
 export function getMaxShots(modelId: string, durationSec: number): number {
   const cap = getCapability(modelId);
@@ -251,14 +419,43 @@ export function normalizeMultiShots(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 요청된 모델이 없거나, 이미지 존재 여부에 따라 적절한 모델을 선택한다.
+ * 워크플로우 타입 + 컨텍스트에 기반하여 최적 모델을 선택한다.
  *
- * @param requestedModel — 사용자/시스템이 요청한 모델 (undefined면 기본값)
- * @param hasImage — 이미지가 포함된 요청인지
+ * 우선순위:
+ *   1. 명시적 모델 지정 → 그대로 사용
+ *   2. 명시적 워크플로우 지정 → WORKFLOW_MODEL_MAP 조회
+ *   3. 컨텍스트 기반 자동 판단:
+ *      - sourceVideo 있음 → video-edit
+ *      - referenceImages 있음 → reference-to-video
+ *      - image 있음 → image-to-video
+ *      - 그 외 → text-to-video
+ */
+export function resolveModelForWorkflow(opts: {
+  requestedModel?: string;
+  workflow?: WorkflowType;
+  hasImage?: boolean;
+  hasReferenceImages?: boolean;
+  hasSourceVideo?: boolean;
+}): string {
+  // 1. 명시적 모델 지정
+  if (opts.requestedModel) return opts.requestedModel;
+
+  // 2. 명시적 워크플로우 지정
+  if (opts.workflow) return getModelForWorkflow(opts.workflow);
+
+  // 3. 컨텍스트 기반 자동 판단
+  if (opts.hasSourceVideo) return KLING_MODELS.VIDEO_EDIT;
+  if (opts.hasReferenceImages) return KLING_MODELS.REFERENCE_TO_VIDEO;
+  if (opts.hasImage) return KLING_MODELS.IMAGE_TO_VIDEO;
+  return KLING_MODELS.TEXT_TO_VIDEO;
+}
+
+/**
+ * 기존 resolveModel과 하위 호환 — hasImage 기반 text/image 선택.
+ * 새 코드에서는 resolveModelForWorkflow를 사용할 것.
  */
 export function resolveModel(requestedModel: string | undefined, hasImage: boolean): string {
-  if (requestedModel) return requestedModel;
-  return hasImage ? KLING_DEFAULT_IMAGE_MODEL : KLING_DEFAULT_TEXT_MODEL;
+  return resolveModelForWorkflow({ requestedModel, hasImage });
 }
 
 /**
@@ -287,4 +484,22 @@ export function isO3Model(modelId: string): boolean {
  */
 export function isV3Model(modelId: string): boolean {
   return modelId.includes("-v3-");
+}
+
+/**
+ * 모델이 영상 생성 가능한 모델인지 판정한다.
+ * (custom-element는 에셋 생성 전용이므로 false)
+ */
+export function isVideoGenerationModel(modelId: string): boolean {
+  const cap = getCapability(modelId);
+  return cap.outputMode === "video";
+}
+
+/**
+ * 특정 워크플로우를 지원하는 모든 모델 ID를 반환한다.
+ */
+export function getModelsForWorkflow(workflow: WorkflowType): string[] {
+  return Object.values(KLING_MODEL_REGISTRY)
+    .filter(cap => cap.workflowRole === workflow)
+    .map(cap => cap.modelId);
 }

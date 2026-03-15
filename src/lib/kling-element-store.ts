@@ -17,8 +17,9 @@ import type { KlingElementAsset, KlingElementStatus, KlingElementSourceType } fr
 // Payload Builder (문서 스펙 기준 — 순수 함수, 테스트 가능)
 // ═══════════════════════════════════════════════════════════════════
 
-/** Kling Custom Element 모델명 (문서 스펙) */
-export const KLING_ELEMENT_MODEL = "kling-custom-element" as const;
+/** Kling Custom Element 모델명 — kling-capability.ts에서 중앙 관리 */
+import { KLING_ELEMENT_MODEL } from "@/lib/kling-capability";
+export { KLING_ELEMENT_MODEL };
 
 /**
  * 문서 스펙 기준 create element payload 조립.

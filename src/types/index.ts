@@ -378,6 +378,17 @@ export interface StoryAIPersona {
 export type VideoEngine = "kling" | "auto";
 export type VideoMode   = "generate" | "extend";
 
+/**
+ * WorkflowType — Kling O3 모델 패밀리 기반 생성 워크플로우 분류.
+ * kling-capability.ts의 WorkflowType과 동일한 값 집합.
+ */
+export type VideoWorkflowType =
+  | "text-to-video"
+  | "image-to-video"
+  | "reference-to-video"
+  | "video-edit"
+  | "custom-element";
+
 // ===== JSON-first 구조화된 시퀀스 문서 =====
 
 /** 시퀀스 밀도 메타데이터 — valid=true 조건의 근거 */
@@ -564,6 +575,8 @@ export type AssetStatus =
 export interface VideoGenerationConfig {
   engine: VideoEngine; // 사용할 엔진 (kling | auto)
   videoMode: VideoMode;        // generate: 독립 생성 | extend: 이전 영상 이어서
+  /** 워크플로우 타입 — 모델 자동 선택의 근거. 미지정 시 컨텍스트에서 자동 판단. */
+  workflowType?: VideoWorkflowType;
   mode: "fast";
   durationSeconds: ClipDuration;
   resolution: VideoResolution;

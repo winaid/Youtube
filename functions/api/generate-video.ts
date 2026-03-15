@@ -15,6 +15,7 @@ import {
   toKlingAspectRatio,
   KlingModelAccessDeniedError,
   KLING_MODELS,
+  resolveModelForWorkflow,
   type KlingEnv,
   type KlingMultiShot,
 } from "./_kling-api";
@@ -585,6 +586,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let taskId: string;
     let modeUsed: "generate" | "extend";
     let sentDuration: number = duration;
+    // 실제 사용 모델 추적 — 하드코딩 제거
+    let modelUsed: string;
 
     try {
       if (videoMode === "extend" && validLast) {
@@ -600,6 +603,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         taskId = result.taskId;
         sentDuration = result.sentDuration;
         modeUsed = "extend";
+        modelUsed = KLING_MODELS.IMAGE_TO_VIDEO; // extend = image-to-video
       } else {
         if (!validFirst && videoMode === "extend" && !sourceVideo) {
           console.error("[Kling] extend 요청이지만 유효한 image/sourceVideo 없음");
@@ -630,6 +634,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         taskId = result.taskId;
         sentDuration = result.sentDuration;
         modeUsed = "generate";
+        // 실제 사용 모델: 이미지가 있으면 image-to-video, 없으면 text-to-video
+        modelUsed = resolveModelForWorkflow({
+          hasImage: !!validFirst,
+          hasReferenceImages: false,
+          hasSourceVideo: false,
+        });
       }
     } catch (klingErr) {
       // 403 model_access_denied — 재시도 불가, 명확한 에러 분류
@@ -674,7 +684,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       taskId,
       engine: "kling",
       modeUsed,
-      modelUsed: KLING_MODELS.TEXT_TO_VIDEO,
+      modelUsed,
       sourceVideo: sourceVideo || undefined,
       status: "RUNNING",
       durationMeta: {

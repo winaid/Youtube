@@ -18,19 +18,44 @@
  *   모델 상수와 capability는 _kling-capability.ts에서 중앙 관리
  */
 
-// ── 모델 상수 (capability 모듈에서 import) ─────────────────────────────────
+// ── 모델 상수 (capability 모듈에서 import → 로컬 사용 + re-export) ──────────
+import {
+  KLING_MODELS,
+  KLING_DEFAULT_MODEL,
+  KLING_DEFAULT_TEXT_MODEL,
+  KLING_DEFAULT_IMAGE_MODEL,
+  KLING_DEFAULT_REFERENCE_MODEL,
+  KLING_DEFAULT_EDIT_MODEL,
+  KLING_ELEMENT_MODEL,
+  getCapability,
+  getMaxShots,
+  normalizeMultiShots,
+  resolveModel,
+  resolveModelForWorkflow,
+  resolveModelWithFallback,
+  getModelForWorkflow,
+  getWorkflowForModel,
+  isVideoGenerationModel,
+} from "./_kling-capability";
+export type { KlingModelId, WorkflowType } from "./_kling-capability";
 export {
   KLING_MODELS,
   KLING_DEFAULT_MODEL,
   KLING_DEFAULT_TEXT_MODEL,
   KLING_DEFAULT_IMAGE_MODEL,
-  type KlingModelId,
+  KLING_DEFAULT_REFERENCE_MODEL,
+  KLING_DEFAULT_EDIT_MODEL,
+  KLING_ELEMENT_MODEL,
   getCapability,
   getMaxShots,
   normalizeMultiShots,
   resolveModel,
+  resolveModelForWorkflow,
   resolveModelWithFallback,
-} from "./_kling-capability";
+  getModelForWorkflow,
+  getWorkflowForModel,
+  isVideoGenerationModel,
+};
 
 // ── 에러 분류 ────────────────────────────────────────────────────────────────
 export class KlingModelAccessDeniedError extends Error {
@@ -400,9 +425,6 @@ export function buildCreateElementPayload(
     model_params: modelParams,
   };
 }
-
-/** Kling Custom Element 모델명 (문서 스펙 기준) */
-export const KLING_ELEMENT_MODEL = "kling-custom-element" as const;
 
 /**
  * Kling Custom Element 생성 요청.

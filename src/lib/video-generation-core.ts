@@ -24,6 +24,8 @@ export interface VideoSubmitParams {
   negativePrompt?: string;
   engine?: "kling" | "auto";
   videoMode?: "generate" | "extend";
+  /** 워크플로우 타입 — 서버에서 모델 자동 선택에 사용 */
+  workflowType?: import("@/types").VideoWorkflowType;
   cutNumber?: number;
   generateAudio?: boolean;
   /** JSON-first source of truth */
@@ -35,6 +37,8 @@ export interface VideoSubmitParams {
   multiShot?: unknown[];
   /** source video for extend */
   sourceVideo?: string;
+  /** reference images for reference-to-video workflow */
+  referenceImages?: string[];
   /** Kling Custom Element — charactersInScene 기반 element_id 목록 */
   element_list?: Array<{ element_id: string }>;
   /** hook-specific 추가 필드 (mode, resolution, seed 등) — body에 그대로 spread */
@@ -210,6 +214,8 @@ export async function submitVideoGeneration(
   if (params.extendPromptJson) body.extendPromptJson = params.extendPromptJson;
   if (params.multiShot) body.multiShot = params.multiShot;
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
+  if (params.workflowType) body.workflowType = params.workflowType;
+  if (params.referenceImages && params.referenceImages.length > 0) body.referenceImages = params.referenceImages;
   if (params.element_list && params.element_list.length > 0) body.element_list = params.element_list;
 
   // hook-specific 추가 필드 passthrough
