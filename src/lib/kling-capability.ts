@@ -497,6 +497,14 @@ export function isVideoGenerationModel(modelId: string): boolean {
 }
 
 /**
+ * 모델이 멀티샷을 지원하는지 + 특정 duration에서 멀티샷이 활성화되는지 판정.
+ * getMaxShots > 1 이면 true.
+ */
+export function isMultiShotEligible(modelId: string, durationSec: number): boolean {
+  return getMaxShots(modelId, durationSec) >= 2;
+}
+
+/**
  * 특정 워크플로우를 지원하는 모든 모델 ID를 반환한다.
  */
 export function getModelsForWorkflow(workflow: WorkflowType): string[] {

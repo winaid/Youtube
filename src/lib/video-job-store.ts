@@ -87,6 +87,12 @@ export interface JobRequestSummary {
   videoMode?: "generate" | "extend";
   /** 프롬프트 미리보기 (UI용, 80자 이하) */
   promptPreview: string;
+  /** 멀티샷 메타데이터 — 복구/재시도 시 멀티샷 계획 보존 */
+  multiShotCount?: number;
+  /** 멀티샷 role 시퀀스 요약 (복구 시 re-plan 참조용) */
+  multiShotRoles?: string[];
+  /** 생성 모드 */
+  generationMode?: "studio" | "batch";
 }
 
 // ═══════════════════════════════════════════════════════════════════

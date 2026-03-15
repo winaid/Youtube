@@ -7,8 +7,10 @@
  * 이 모듈은 순수 함수와 async 함수만 포함하며, React 의존성이 없다.
  */
 
-import type { DurationMeta } from "@/types";
+import type { DurationMeta, MultiShotPrompt } from "@/types";
 import { DURATION_FALLBACK } from "@/lib/duration-reconciliation";
+import { repairMissingMultiShot } from "@/lib/multi-shot-planner";
+import type { GenerationMode, PlannerSceneType } from "@/lib/multi-shot-planner";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -43,6 +45,12 @@ export interface VideoSubmitParams {
   element_list?: Array<{ element_id: string }>;
   /** hook-specific 추가 필드 (mode, resolution, seed 등) — body에 그대로 spread */
   extraFields?: Record<string, unknown>;
+  /** 생성 모드 — 멀티샷 auto-repair 정책에 영향 */
+  generationMode?: GenerationMode;
+  /** 씬 타입 — 멀티샷 강제 정책 판정용 */
+  sceneType?: string;
+  /** 의도적 원테이크 */
+  intentionalOneTake?: boolean;
 }
 
 /** generate-video API 응답 */
@@ -187,8 +195,52 @@ export function getAdaptivePollInterval(attempt: number): number {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * 멀티샷 payload를 준비한다.
+ *
+ * submission 직전 방어 — multiShot이 없거나 부족한 경우 자동 복구.
+ * 이 함수를 거치면 강제 멀티샷 정책에 맞는 payload가 보장된다.
+ *
+ * @returns 복구된 multiShot 배열 (빈 배열이면 단일샷 OK)
+ */
+export function prepareMultiShotPayload(params: {
+  existingMultiShot?: MultiShotPrompt[];
+  durationSec?: number;
+  sceneType?: string;
+  basePrompt?: string;
+  modelId?: string;
+  intentionalOneTake?: boolean;
+  mode?: GenerationMode;
+}): MultiShotPrompt[] {
+  const {
+    existingMultiShot,
+    durationSec,
+    sceneType,
+    basePrompt,
+    modelId,
+    intentionalOneTake,
+    mode,
+  } = params;
+
+  // 모델/duration 없으면 repair 불가
+  if (!modelId || !durationSec) return existingMultiShot ?? [];
+
+  return repairMissingMultiShot({
+    existingMultiShot,
+    durationSec,
+    sceneType: sceneType as PlannerSceneType,
+    basePrompt: basePrompt ?? "",
+    modelId,
+    intentionalOneTake,
+    mode,
+  });
+}
+
+/**
  * /api/generate-video에 생성 요청을 제출한다.
  * 캔버스와 기존 useVideoGeneration 양쪽에서 사용.
+ *
+ * 멀티샷 auto-repair: 강제 멀티샷 정책에 해당하는데 multiShot이 없으면
+ * prepareMultiShotPayload로 자동 생성 후 전송.
  */
 export async function submitVideoGeneration(
   params: VideoSubmitParams,
@@ -212,7 +264,19 @@ export async function submitVideoGeneration(
   if (params.structuredSequence) body.structuredSequence = params.structuredSequence;
   if (params.videoPromptJson) body.videoPromptJson = params.videoPromptJson;
   if (params.extendPromptJson) body.extendPromptJson = params.extendPromptJson;
-  if (params.multiShot) body.multiShot = params.multiShot;
+  // 멀티샷 auto-repair — 강제 정책 해당 시 자동 생성
+  const repairedMultiShot = prepareMultiShotPayload({
+    existingMultiShot: params.multiShot as MultiShotPrompt[] | undefined,
+    durationSec: params.durationSeconds,
+    sceneType: params.sceneType,
+    basePrompt: params.prompt,
+    modelId: params.engine === "kling" ? undefined : undefined, // model은 서버에서 결정
+    intentionalOneTake: params.intentionalOneTake,
+    mode: params.generationMode,
+  });
+  if (repairedMultiShot.length > 0) body.multiShot = repairedMultiShot;
+  else if (params.multiShot) body.multiShot = params.multiShot;
+
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
   if (params.workflowType) body.workflowType = params.workflowType;
   if (params.referenceImages && params.referenceImages.length > 0) body.referenceImages = params.referenceImages;

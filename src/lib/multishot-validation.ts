@@ -20,6 +20,8 @@
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
 import { getMaxShots, getCapability } from "@/lib/kling-capability";
+import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
+import type { GenerationMode } from "@/lib/multi-shot-planner";
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants
@@ -415,6 +417,139 @@ export function resizeShot(
   if (remaining !== 0) return null;
 
   return updated;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Mode-Aware Validation
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Studio Mode용 엄격한 검증.
+ * 멀티샷 누락 시 blocking error로 처리.
+ *
+ * @param modelId - Kling 모델 ID
+ * @param shots - 현재 멀티샷 배열 (없을 수 있음)
+ * @param totalDurationSec - 클립 전체 duration
+ * @param sceneType - 씬 분류 (force-multishot 판정용)
+ * @param intentionalOneTake - 의도적 원테이크 여부
+ */
+export function validateStudioMode(
+  modelId: string,
+  shots: MultiShotPrompt[] | undefined,
+  totalDurationSec: number,
+  sceneType?: string,
+  intentionalOneTake?: boolean,
+): MultiShotValidationResult {
+  const shotIssues: ShotIssue[] = [];
+  const aggregateIssues: AggregateIssue[] = [];
+
+  // 멀티샷 누락 검사 (강제 멀티샷 정책 해당 시)
+  if ((!shots || shots.length < 2) && !intentionalOneTake) {
+    if (shouldForceMultiShot(sceneType ?? "default", totalDurationSec, modelId)) {
+      aggregateIssues.push({
+        severity: "error",
+        message: `${totalDurationSec}초 ${sceneType ?? ""} — 멀티샷 필수. 단일 샷으로 제출 불가. 의도적 원테이크라면 명시 설정 필요.`,
+      });
+    }
+  }
+
+  // 기존 멀티샷이 있으면 standard validation도 수행
+  if (shots && shots.length > 0) {
+    const standard = validateMultiShots(modelId, shots, totalDurationSec);
+    shotIssues.push(...standard.shotIssues);
+    aggregateIssues.push(...standard.aggregateIssues);
+
+    // Studio 추가: role 진행 검사 (3샷 이상에서 reveal/payoff 없으면 경고)
+    if (shots.length >= 3) {
+      const roles = shots.map(s => s.role).filter(Boolean);
+      const hasPeak = roles.includes("peak");
+      const hasResolve = roles.includes("resolve");
+      if (!hasPeak && !hasResolve) {
+        aggregateIssues.push({
+          severity: "warning",
+          message: `${shots.length}샷인데 peak/resolve 없음 — 리텐션을 위해 reveal/payoff role 추가 권장`,
+        });
+      }
+    }
+
+    // Studio 추가: 반복 프롬프트 검사
+    if (shots.length >= 2) {
+      const prompts = shots.map(s => s.prompt.trim().toLowerCase()).filter(p => p.length > 0);
+      const uniquePrompts = new Set(prompts);
+      if (prompts.length >= 2 && uniquePrompts.size === 1) {
+        aggregateIssues.push({
+          severity: "warning",
+          message: "모든 샷의 프롬프트가 동일 — 샷별 차별화 필요 (정보 변화 없음)",
+        });
+      }
+    }
+  }
+
+  const hasError = shotIssues.some(i => i.severity === "error") ||
+    aggregateIssues.some(i => i.severity === "error");
+
+  return { valid: !hasError, shotIssues, aggregateIssues };
+}
+
+/**
+ * Batch Mode용 느슨한 검증.
+ * 치명적 오류만 blocking, 나머지는 warning.
+ * auto-repair 가능 항목은 warning으로 내려놓음.
+ */
+export function validateBatchMode(
+  modelId: string,
+  shots: MultiShotPrompt[] | undefined,
+  totalDurationSec: number,
+): MultiShotValidationResult {
+  const shotIssues: ShotIssue[] = [];
+  const aggregateIssues: AggregateIssue[] = [];
+
+  // Batch에서는 멀티샷 누락을 blocking하지 않음 (auto-repair가 처리)
+  if (!shots || shots.length === 0) {
+    // auto-repair가 처리할 것이므로 warning만
+    if (totalDurationSec >= 6) {
+      aggregateIssues.push({
+        severity: "warning",
+        message: `${totalDurationSec}초 — 멀티샷 자동 생성 예정`,
+      });
+    }
+    return { valid: true, shotIssues, aggregateIssues };
+  }
+
+  // 기존 멀티샷이 있으면 기본 검증 수행 (error는 error 유지)
+  const standard = validateMultiShots(modelId, shots, totalDurationSec);
+
+  // Batch에서는 빈 prompt를 warning으로 내림 (auto-repair 대상)
+  for (const issue of standard.shotIssues) {
+    if (issue.field === "prompt" && issue.severity === "error" && issue.message.includes("비어있습니다")) {
+      shotIssues.push({ ...issue, severity: "warning" });
+    } else {
+      shotIssues.push(issue);
+    }
+  }
+
+  aggregateIssues.push(...standard.aggregateIssues);
+
+  const hasError = shotIssues.some(i => i.severity === "error") ||
+    aggregateIssues.some(i => i.severity === "error");
+
+  return { valid: !hasError, shotIssues, aggregateIssues };
+}
+
+/**
+ * 모드별 검증 디스패치.
+ */
+export function validateByMode(
+  mode: GenerationMode,
+  modelId: string,
+  shots: MultiShotPrompt[] | undefined,
+  totalDurationSec: number,
+  opts?: { sceneType?: string; intentionalOneTake?: boolean },
+): MultiShotValidationResult {
+  if (mode === "studio") {
+    return validateStudioMode(modelId, shots, totalDurationSec, opts?.sceneType, opts?.intentionalOneTake);
+  }
+  return validateBatchMode(modelId, shots, totalDurationSec);
 }
 
 /**

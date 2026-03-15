@@ -10,6 +10,8 @@
 
 import { resolveSceneType, getSceneTypeRule } from "@/lib/scene-type-rules";
 import { checkShotDensity } from "@/lib/multishot-validation";
+import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
+import type { GenerationMode } from "@/lib/multi-shot-planner";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Validation Rules
@@ -51,6 +53,10 @@ export interface ValidatePayloadInput {
   multiShots?: Array<{ index: number; prompt: string; duration: string; role?: string }>;
   /** Kling 모델 ID (multiShot 검증 시 필요) */
   modelId?: string;
+  /** 생성 모드 — Studio(엄격) vs Batch(느슨) */
+  mode?: GenerationMode;
+  /** 의도적 원테이크 여부 */
+  intentionalOneTake?: boolean;
 }
 
 // ── 중점 검사 단어 ────────────────────────────────────────────────
@@ -422,6 +428,27 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
         rule: "shot_density_low",
         severity: densityCheck.severity,
         message: densityCheck.message,
+      });
+    }
+  }
+
+  // ── Rule 17: Forced multi-shot enforcement ────────────────
+  if (input.durationSec && input.modelId && !input.intentionalOneTake) {
+    const forced = shouldForceMultiShot(
+      input.shotCategory ?? "default",
+      input.durationSec,
+      input.modelId,
+    );
+    const hasMultiShot = input.multiShots && input.multiShots.length >= 2;
+
+    if (forced && !hasMultiShot) {
+      const isStudio = input.mode === "studio";
+      issues.push({
+        rule: "forced_multishot_missing",
+        severity: isStudio ? "error" : "warning",
+        message: isStudio
+          ? `${input.durationSec}초 ${input.shotCategory ?? ""} — 멀티샷 필수 (Studio Mode). 의도적 원테이크라면 명시 설정 필요.`
+          : `${input.durationSec}초 ${input.shotCategory ?? ""} — 멀티샷 자동 생성됨 (Batch Mode)`,
       });
     }
   }
