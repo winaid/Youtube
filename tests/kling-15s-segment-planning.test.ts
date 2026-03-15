@@ -35,26 +35,24 @@ describe("A. KLING_SEGMENT_CAP", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. segment-aware recommendMinimumCutCount", () => {
-  it("2) 15초 = 5 (단일 segment)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(5);
+  it("2) 15초 = 1 (단일 segment, Kling native 15s)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
-  it("3) 30초 = 10 (2 segments × 5)", () => {
-    expect(recommendMinimumCutCount(30)).toBe(10);
+  it("3) 30초 = 2 (2 segments × 1)", () => {
+    expect(recommendMinimumCutCount(30)).toBe(2);
   });
 
-  it("4) 120초 = 40 (8 segments × 5)", () => {
-    expect(recommendMinimumCutCount(120)).toBe(40);
+  it("4) 120초 = 8 (8 segments × 1)", () => {
+    expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
-  it("5) 20초 = 7 (15초 segment(5) + 5초 remainder(2))", () => {
-    // 5초: maxSec=7 → minCuts=2
-    expect(recommendMinimumCutCount(20)).toBe(7);
+  it("5) 20초 = 2 (15초 segment(1) + 5초 remainder(1))", () => {
+    expect(recommendMinimumCutCount(20)).toBe(2);
   });
 
-  it("6) 25초 = 9 (15초(5) + 10초(4))", () => {
-    // 10초: maxSec=12 → minCuts=4
-    expect(recommendMinimumCutCount(25)).toBe(9);
+  it("6) 25초 = 2 (15초(1) + 10초(1))", () => {
+    expect(recommendMinimumCutCount(25)).toBe(2);
   });
 });
 
@@ -63,20 +61,20 @@ describe("B. segment-aware recommendMinimumCutCount", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. segment-aware recommendCutCountRange", () => {
-  it("7) 15초 → {3, 5} (단일 segment)", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 3, max: 5 });
+  it("7) 15초 → {1, 2} (단일 segment)", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 1, max: 2 });
   });
 
-  it("8) 30초 → {6, 10} (2 × {3,5})", () => {
-    expect(recommendCutCountRange(30)).toEqual({ min: 6, max: 10 });
+  it("8) 30초 → {2, 4} (2 × {1,2})", () => {
+    expect(recommendCutCountRange(30)).toEqual({ min: 2, max: 4 });
   });
 
-  it("9) 120초 → {24, 40} (8 × {3,5})", () => {
-    expect(recommendCutCountRange(120)).toEqual({ min: 24, max: 40 });
+  it("9) 120초 → {8, 16} (8 × {1,2})", () => {
+    expect(recommendCutCountRange(120)).toEqual({ min: 8, max: 16 });
   });
 
-  it("10) 20초 → {4, 7} (15초{3,5} + 5초{1,2})", () => {
-    expect(recommendCutCountRange(20)).toEqual({ min: 4, max: 7 });
+  it("10) 20초 → {2, 3} (15초{1,2} + 5초{1,1})", () => {
+    expect(recommendCutCountRange(20)).toEqual({ min: 2, max: 3 });
   });
 });
 
@@ -86,17 +84,17 @@ describe("C. segment-aware recommendCutCountRange", () => {
 
 describe("D. density preset segment interaction", () => {
   it("11) dense(120초) → 상단 확장", () => {
-    const base = recommendCutCountRange(120); // {24, 40}
+    const base = recommendCutCountRange(120); // {8, 16}
     const dense = densityPresetToRange("dense", 120);
-    expect(dense.min).toBe(base.max); // 40
-    expect(dense.max).toBe(base.max + 2); // 42
+    expect(dense.min).toBe(base.max); // 16
+    expect(dense.max).toBe(base.max + 2); // 18
   });
 
   it("12) sparse(120초) → 하단 축소", () => {
-    const base = recommendCutCountRange(120); // {24, 40}
+    const base = recommendCutCountRange(120); // {8, 16}
     const sparse = densityPresetToRange("sparse", 120);
-    expect(sparse.min).toBe(Math.max(1, base.min - 1)); // 23
-    expect(sparse.max).toBe(base.min); // 24
+    expect(sparse.min).toBe(Math.max(1, base.min - 1)); // 7
+    expect(sparse.max).toBe(base.min); // 8
   });
 });
 
@@ -125,7 +123,7 @@ describe("E. segment planning metadata", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("F. persona + segment-aware", () => {
-  it("16) propulsive-action + 15초 range → upper bias = 5컷", () => {
+  it("16) propulsive-action + 15초 range → upper bias = 2컷", () => {
     const ep = EDITORIAL_PERSONA_PRESETS["propulsive-action"];
     const bias = personaCutCountBias(ep);
     expect(bias).toBe("upper");
@@ -135,7 +133,7 @@ describe("F. persona + segment-aware", () => {
       totalDurationSec: 15,
       personaBias: bias,
     });
-    expect(result.cutCount).toBe(5);
+    expect(result.cutCount).toBe(2);
   });
 
   it("17) symmetrical-formalist + 15초 range → lower bias = density min", () => {
@@ -148,8 +146,8 @@ describe("F. persona + segment-aware", () => {
       totalDurationSec: 15,
       personaBias: bias,
     });
-    // lower = effectiveMin = max(3, densityMin=5) = 5
-    expect(result.cutCount).toBe(5);
+    // lower = effectiveMin = max(1, densityMin=1) = 1
+    expect(result.cutCount).toBe(1);
   });
 });
 
@@ -158,25 +156,25 @@ describe("F. persona + segment-aware", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("G. regression checks", () => {
-  it("18) ≤15초 범위 기본값 유지", () => {
-    expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 2 });
-    expect(recommendCutCountRange(8)).toEqual({ min: 2, max: 3 });
-    expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
-    expect(recommendCutCountRange(15)).toEqual({ min: 3, max: 5 });
+  it("18) ≤15초 범위 기본값 유지 (new policy)", () => {
+    expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 1 });
+    expect(recommendCutCountRange(8)).toEqual({ min: 1, max: 2 });
+    expect(recommendCutCountRange(12)).toEqual({ min: 1, max: 2 });
+    expect(recommendCutCountRange(15)).toEqual({ min: 1, max: 2 });
   });
 
-  it("19) ≤15초 density minimum 유지", () => {
+  it("19) ≤15초 density minimum = 1 for all (Kling native 15s)", () => {
     expect(recommendMinimumCutCount(4)).toBe(1);
-    expect(recommendMinimumCutCount(7)).toBe(2);
-    expect(recommendMinimumCutCount(9)).toBe(3);
-    expect(recommendMinimumCutCount(12)).toBe(4);
-    expect(recommendMinimumCutCount(15)).toBe(5);
+    expect(recommendMinimumCutCount(7)).toBe(1);
+    expect(recommendMinimumCutCount(9)).toBe(1);
+    expect(recommendMinimumCutCount(12)).toBe(1);
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
   it("20) exact cutCount가 여전히 최우선", () => {
     const result = resolveCutCount({
       exactCutCount: 7,
-      preferredRange: { min: 3, max: 5 },
+      preferredRange: { min: 1, max: 2 },
       totalDurationSec: 15,
     });
     expect(result.cutCount).toBe(7);

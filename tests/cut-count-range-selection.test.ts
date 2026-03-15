@@ -6,7 +6,7 @@
  * - densityPresetToRange 프리셋→범위 변환
  * - resolveCutCount 우선순위 (exact > range > density > fallback)
  * - density minimum이 hard floor로 작동
- * - 15s → 3~5 cuts 기본값
+ * - 15s → 1~2 cuts 기본값 (new density policy)
  */
 
 import { describe, it, expect } from "vitest";
@@ -32,26 +32,26 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. recommendCutCountRange", () => {
-  it("1) 15s → { min: 3, max: 5 }", () => {
+  it("1) 15s → { min: 1, max: 2 }", () => {
     const r = recommendCutCountRange(15);
-    expect(r).toEqual({ min: 3, max: 5 });
+    expect(r).toEqual({ min: 1, max: 2 });
   });
 
-  it("2) 5s → { min: 1, max: 2 }", () => {
-    expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 2 });
+  it("2) 5s → { min: 1, max: 1 }", () => {
+    expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 1 });
   });
 
-  it("3) 8s → { min: 2, max: 3 }", () => {
-    expect(recommendCutCountRange(8)).toEqual({ min: 2, max: 3 });
+  it("3) 8s → { min: 1, max: 2 }", () => {
+    expect(recommendCutCountRange(8)).toEqual({ min: 1, max: 2 });
   });
 
-  it("4) 12s → { min: 3, max: 4 }", () => {
-    expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
+  it("4) 12s → { min: 1, max: 2 }", () => {
+    expect(recommendCutCountRange(12)).toEqual({ min: 1, max: 2 });
   });
 
   it("5) 20s → segment-aware (15s segment + 5s remainder)", () => {
-    // 15s → {3,5}, 5s → {1,2} → total = {4,7}
-    expect(recommendCutCountRange(20)).toEqual({ min: 4, max: 7 });
+    // 15s → {1,2}, 5s → {1,1} → total = {2,3}
+    expect(recommendCutCountRange(20)).toEqual({ min: 2, max: 3 });
   });
 
   it("6) 0 or negative → { min: 1, max: 2 }", () => {
@@ -116,14 +116,16 @@ describe("C. resolveCutCount priority chain", () => {
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("13) exact cutCount가 density minimum보다 작으면 density minimum 승리", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 5
+  it("13) exact cutCount >= density minimum이면 exact 그대로 사용", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 1 (new policy)
     const result = resolveCutCount({
       exactCutCount: 2,
       totalDurationSec: 15,
     });
-    expect(result.cutCount).toBe(densityMin);
-    expect(result.notes.some(n => n.includes("density minimum"))).toBe(true);
+    // exactCutCount(2) >= densityMin(1), so exact value is used as-is
+    expect(result.cutCount).toBe(2);
+    expect(result.source).toBe("exact_cutCount");
+    expect(result.notes.some(n => n.includes("density minimum"))).toBe(false);
   });
 });
 
@@ -132,16 +134,17 @@ describe("C. resolveCutCount priority chain", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. range vs density minimum conflict", () => {
-  it("14) range.min < density minimum → density minimum으로 올림", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 5
+  it("14) range.min >= density minimum → density minimum 개입 없음", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 1 (new policy)
     const result = resolveCutCount({
       preferredRange: { min: 1, max: 3 },
       totalDurationSec: 15,
       personaBias: "neutral",
     });
-    // density minimum(5)이 range max(3)보다 크므로 effectiveMin = effectiveMax = 5
+    // densityMin(1) == range.min(1), so no raising occurs and range is used as-is
     expect(result.cutCount).toBeGreaterThanOrEqual(densityMin);
-    expect(result.notes.some(n => n.includes("density minimum"))).toBe(true);
+    expect(result.cutCount).toBeLessThanOrEqual(3);
+    expect(result.notes.some(n => n.includes("density minimum"))).toBe(false);
   });
 
   it("15) range.min >= density minimum → range 그대로 사용", () => {

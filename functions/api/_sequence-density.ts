@@ -13,17 +13,17 @@
 export const KLING_SEGMENT_CAP = 15;
 
 /**
- * 멀티컷 몽타주 우선 밀도 정책.
- * 8-12s → 3-4 cuts, 12-15s → 4-5 cuts.
- * 단일 긴 숏보다 짧은 컷 × 여러 개를 기본값으로 설정.
+ * 서사/설명형 콘텐츠 친화적 밀도 정책.
+ * Kling VIDEO 3.0은 15초 네이티브 생성을 지원하므로
+ * per-segment minimum은 1컷. 실제 컷 수는 계획층이 결정.
+ * 빠른 편집(fast-edit)이 필요하면 editingDensity="dense" 사용.
  */
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 4, minCuts: 1 },
-  { maxSec: 7, minCuts: 2 },
-  { maxSec: 9, minCuts: 3 },
-  { maxSec: 12, minCuts: 4 },
-  { maxSec: 15, minCuts: 5 },
-  { maxSec: Infinity, minCuts: 5 },
+  { maxSec: 7, minCuts: 1 },
+  { maxSec: 12, minCuts: 1 },
+  { maxSec: 15, minCuts: 1 },
+  { maxSec: Infinity, minCuts: 1 },
 ];
 
 /**
@@ -37,10 +37,10 @@ export const CUT_COUNT_MAX = 30;
 // ═══════════════════════════════════════════════════════════════════
 
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
-  { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 8,  min: 2, max: 3 },
-  { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 3, max: 5 },
+  { maxSec: 5,  min: 1, max: 1 },
+  { maxSec: 8,  min: 1, max: 2 },
+  { maxSec: 12, min: 1, max: 2 },
+  { maxSec: 15, min: 1, max: 2 },
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {
@@ -48,7 +48,7 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
   for (const preset of RANGE_PRESETS) {
     if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
   }
-  return { min: 3, max: 5 };
+  return { min: 1, max: 2 };
 }
 
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
@@ -325,7 +325,7 @@ export function recommendMinimumCutCount(totalDurationSec: number): number {
     for (const rule of DENSITY_POLICY) {
       if (totalDurationSec <= rule.maxSec) return rule.minCuts;
     }
-    return 5;
+    return 1;
   }
   // segment-aware
   const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);

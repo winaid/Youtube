@@ -4,12 +4,12 @@
  * 테스트 범주:
  * 1. recommendMinimumCutCount 정책 숫자
  * 2. needsDensityBoost 판정
- * 3. densifyCuts — 15초/1컷 → 3컷 이상
- * 4. densifyCuts — 12초/1컷 → 3컷 이상
- * 5. densifyCuts — 8초/1컷 → 2컷 이상
+ * 3. densifyCuts — 15초/1컷 → 그대로 유지 (Kling VIDEO 3.0 native 15s)
+ * 4. densifyCuts — 12초/1컷 → 그대로 유지
+ * 5. densifyCuts — 8초/1컷 → 그대로 유지
  * 6. densifyCuts — 4초/1컷 → 그대로 유지
- * 7. densifyCuts — 15초/이미 3컷 → 과도한 분할 없음
- * 8. scene-like/sequence-like 우선 분할
+ * 7. densifyCuts — 15초/이미 1컷 → 분할 없음
+ * 8. scene-like/sequence-like 우선 분할 (multi-segment 시나리오)
  * 9. 원본 필드 보존
  * 10. groupId 자동 생성 안 됨
  * 11. densify 후 classify 결합
@@ -33,40 +33,31 @@ describe("recommendMinimumCutCount", () => {
     expect(recommendMinimumCutCount(4)).toBe(1);
   });
 
-  it("should return 2 for 5-7 seconds", () => {
-    expect(recommendMinimumCutCount(5)).toBe(2);
-    expect(recommendMinimumCutCount(7)).toBe(2);
+  it("should return 1 for 5-7 seconds (Kling 15s native)", () => {
+    expect(recommendMinimumCutCount(5)).toBe(1);
+    expect(recommendMinimumCutCount(7)).toBe(1);
   });
 
-  it("should return 3 for 8-9 seconds", () => {
-    expect(recommendMinimumCutCount(8)).toBe(3);
-    expect(recommendMinimumCutCount(9)).toBe(3);
+  it("should return 1 for 8-9 seconds (Kling 15s native)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(1);
+    expect(recommendMinimumCutCount(9)).toBe(1);
   });
 
-  it("should return 4 for 10-12 seconds", () => {
-    expect(recommendMinimumCutCount(10)).toBe(4);
-    expect(recommendMinimumCutCount(12)).toBe(4);
+  it("should return 1 for 10-12 seconds (Kling 15s native)", () => {
+    expect(recommendMinimumCutCount(10)).toBe(1);
+    expect(recommendMinimumCutCount(12)).toBe(1);
   });
 
-  it("should return 5 for 13-15 seconds", () => {
-    expect(recommendMinimumCutCount(13)).toBe(5);
-    expect(recommendMinimumCutCount(15)).toBe(5);
+  it("should return 1 for 13-15 seconds (Kling 15s native)", () => {
+    expect(recommendMinimumCutCount(13)).toBe(1);
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
   it("should return segment-aware minimum for > 15 seconds", () => {
-    // 20s = 15s(min 5) + 5s(min 1) = 6 min total... wait
-    // Actually: 20s = 1 full segment of 15s (min 5) + 5s remainder (min 1) = 6
-    // But 20 / 15 = floor 1, remainder 5 → 5 + 1 = 6... let's check
-    // Wait: floor(20/15) = 1, remainder = 5 → 5*1 + recommendMinimumCutCount(5) = 5 + 1 = 6
-    // Hmm, actually for 20s: fullSegs = floor(20/15) = 1, remainder = 5
-    // fullSegMin(15) = 5, recommendMin(5) = 1 → total = 5 + 1 = 6
-    // But the actual return is 7? Let me re-check...
-    // Actually DENSITY_POLICY for 7: maxSec=7, minCuts=2. So 5s falls under maxSec=7 → minCuts=2? No.
-    // 5s: first rule maxSec=4 (no, 5>4), second rule maxSec=7 (yes, 5<=7) → minCuts=2
-    // So 20s = 5 + 2 = 7
-    expect(recommendMinimumCutCount(20)).toBe(7);
-    // 30s = floor(30/15)=2, remainder=0 → 5*2 = 10
-    expect(recommendMinimumCutCount(30)).toBe(10);
+    // 20s = 1 full segment of 15s (min 1) + 5s remainder (min 1) = 2
+    expect(recommendMinimumCutCount(20)).toBe(2);
+    // 30s = floor(30/15)=2, remainder=0 → 1*2 = 2
+    expect(recommendMinimumCutCount(30)).toBe(2);
   });
 
   it("should return 1 for invalid input", () => {
@@ -80,28 +71,28 @@ describe("recommendMinimumCutCount", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("needsDensityBoost", () => {
-  it("should return true for 15s single cut", () => {
-    expect(needsDensityBoost([{ durationSec: 15 }])).toBe(true);
+  it("should return false for 15s single cut (1 cut ≥ minimum 1)", () => {
+    expect(needsDensityBoost([{ durationSec: 15 }])).toBe(false);
   });
 
-  it("should return true for 12s single cut", () => {
-    expect(needsDensityBoost([{ durationSec: 12 }])).toBe(true);
+  it("should return false for 12s single cut (1 cut ≥ minimum 1)", () => {
+    expect(needsDensityBoost([{ durationSec: 12 }])).toBe(false);
   });
 
-  it("should return true for 8s single cut", () => {
-    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(true);
+  it("should return false for 8s single cut (1 cut ≥ minimum 1)", () => {
+    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(false);
   });
 
   it("should return false for 4s single cut", () => {
     expect(needsDensityBoost([{ durationSec: 4 }])).toBe(false);
   });
 
-  it("should return true for 15s with 3 cuts (new policy: 5 needed)", () => {
+  it("should return false for 15s with 3 cuts (3 ≥ minimum 1)", () => {
     expect(needsDensityBoost([
       { durationSec: 5 },
       { durationSec: 5 },
       { durationSec: 5 },
-    ])).toBe(true);
+    ])).toBe(false);
   });
 
   it("should return false for 15s with 5 cuts", () => {
@@ -120,20 +111,18 @@ describe("needsDensityBoost", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 3. densifyCuts — 15초/1컷 → 3컷 이상
+// 3. densifyCuts — 15초/1컷 → 분할 없음 (Kling VIDEO 3.0 native 15s)
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — 15s single cut", () => {
-  it("should split 15s single cut into 5+ cuts (new policy)", () => {
+  it("should NOT split 15s single cut (Kling native 15s, min=1)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 15, sceneDescription: "테스트 장면" }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(5);
-    // 총 duration 보존
-    const totalDuration = result.reduce((s, c) => s + c.durationSec, 0);
-    expect(totalDuration).toBe(15);
+    expect(result.length).toBe(1);
+    expect(result[0].durationSec).toBe(15);
   });
 
-  it("should preserve original text fields after split", () => {
+  it("should preserve original text fields (no split needed)", () => {
     const cuts = [{
       cutNumber: 1,
       durationSec: 15,
@@ -144,42 +133,38 @@ describe("densifyCuts — 15s single cut", () => {
       imagePrompt: "original image",
     }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(5);
-    for (const cut of result) {
-      expect(cut.sceneDescription).toBe("원본 장면 설명");
-      expect(cut.cameraDirection).toBe("slow push-in");
-      expect(cut.moodLighting).toBe("golden hour");
-      expect(cut.videoPrompt).toBe("original prompt");
-      expect(cut.imagePrompt).toBe("original image");
-    }
+    expect(result.length).toBe(1);
+    expect(result[0].sceneDescription).toBe("원본 장면 설명");
+    expect(result[0].cameraDirection).toBe("slow push-in");
+    expect(result[0].moodLighting).toBe("golden hour");
+    expect(result[0].videoPrompt).toBe("original prompt");
+    expect(result[0].imagePrompt).toBe("original image");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 4. densifyCuts — 12초/1컷 → 3컷 이상
+// 4. densifyCuts — 12초/1컷 → 분할 없음
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — 12s single cut", () => {
-  it("should split 12s single cut into 4+ cuts (new policy)", () => {
+  it("should NOT split 12s single cut (Kling native 15s, min=1)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 12 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(4);
-    const totalDuration = result.reduce((s, c) => s + c.durationSec, 0);
-    expect(totalDuration).toBe(12);
+    expect(result.length).toBe(1);
+    expect(result[0].durationSec).toBe(12);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 5. densifyCuts — 8초/1컷 → 2컷 이상
+// 5. densifyCuts — 8초/1컷 → 분할 없음
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — 8s single cut", () => {
-  it("should split 8s single cut into 3+ cuts (new policy)", () => {
+  it("should NOT split 8s single cut (Kling native 15s, min=1)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 8 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(3);
-    const totalDuration = result.reduce((s, c) => s + c.durationSec, 0);
-    expect(totalDuration).toBe(8);
+    expect(result.length).toBe(1);
+    expect(result[0].durationSec).toBe(8);
   });
 });
 
@@ -197,11 +182,11 @@ describe("densifyCuts — 4s single cut", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 7. densifyCuts — 15초/이미 3컷 → 과도한 분할 없음
+// 7. densifyCuts — 15초/이미 1컷 → 분할 없음
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — already sufficient cuts", () => {
-  it("should NOT split 15s with 5 cuts", () => {
+  it("should NOT split 15s with 5 cuts (already well above min=1)", () => {
     const cuts = [
       { cutNumber: 1, durationSec: 3 },
       { cutNumber: 2, durationSec: 3 },
@@ -213,7 +198,7 @@ describe("densifyCuts — already sufficient cuts", () => {
     expect(result.length).toBe(5);
   });
 
-  it("should split 15s with 4 cuts (need 5)", () => {
+  it("should NOT split 15s with 4 cuts (4 ≥ min=1)", () => {
     const cuts = [
       { cutNumber: 1, durationSec: 4 },
       { cutNumber: 2, durationSec: 4 },
@@ -221,38 +206,37 @@ describe("densifyCuts — already sufficient cuts", () => {
       { cutNumber: 4, durationSec: 3 },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(5);
+    expect(result.length).toBe(4);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
 // 8. scene-like / sequence-like 우선 분할
+//    (With new policy min=1 per segment, single-segment cuts never
+//     need splitting. These tests are kept for parity verification.)
 // ═══════════════════════════════════════════════════════════════════
 
-describe("densifyCuts — prioritize long-class cuts", () => {
-  it("should split sequence-like cut before cut-like", () => {
-    // 총 10초, 2컷: 3초(cut-like) + 7초. 최소 3컷 필요.
-    // 7초 컷이 분할되어야 함 (durationClass 없지만 더 길므로)
+describe("densifyCuts — no splitting for single-segment cuts", () => {
+  it("should NOT split 10s total with 2 cuts (2 ≥ min=1)", () => {
     const cuts = [
       { cutNumber: 1, durationSec: 3 },
       { cutNumber: 2, durationSec: 7, durationClass: "sequence-like" as const },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(3);
-    // 첫 번째 컷(3초)은 그대로 유지
+    expect(result.length).toBe(2);
     expect(result[0].durationSec).toBe(3);
+    expect(result[1].durationSec).toBe(7);
   });
 
-  it("should prefer scene-like over cut-like for splitting", () => {
-    // 총 11초, 2컷 → 최소 3컷 필요
+  it("should NOT split 11s total with 2 cuts (2 ≥ min=1)", () => {
     const cuts = [
       { cutNumber: 1, durationSec: 3, durationClass: "cut-like" as const },
       { cutNumber: 2, durationSec: 8, durationClass: "scene-like" as const },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(3);
-    // 3초 컷은 유지, 8초 컷이 분할됨
+    expect(result.length).toBe(2);
     expect(result[0].durationSec).toBe(3);
+    expect(result[1].durationSec).toBe(8);
   });
 });
 
@@ -261,7 +245,7 @@ describe("densifyCuts — prioritize long-class cuts", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — field preservation", () => {
-  it("should preserve subjectAction, shotCategory, characterRole", () => {
+  it("should preserve subjectAction, shotCategory, characterRole (no split, min=1)", () => {
     const cuts = [{
       cutNumber: 1,
       durationSec: 10,
@@ -271,19 +255,18 @@ describe("densifyCuts — field preservation", () => {
       videoPromptJson: { shotSize: "MS" },
     }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBeGreaterThanOrEqual(4);
-    for (const cut of result) {
-      expect(cut.subjectAction).toBe("walks forward");
-      expect(cut.shotCategory).toBe("character-driven");
-      expect(cut.characterRole).toBe("protagonist");
-      expect(cut.videoPromptJson).toEqual({ shotSize: "MS" });
-    }
+    expect(result.length).toBe(1);
+    expect(result[0].subjectAction).toBe("walks forward");
+    expect(result[0].shotCategory).toBe("character-driven");
+    expect(result[0].characterRole).toBe("protagonist");
+    expect(result[0].videoPromptJson).toEqual({ shotSize: "MS" });
   });
 
-  it("should renumber cutNumber sequentially", () => {
+  it("should preserve cutNumber when no split occurs", () => {
     const cuts = [{ cutNumber: 1, durationSec: 15 }];
     const result = densifyCuts(cuts);
-    result.forEach((c, i) => expect(c.cutNumber).toBe(i + 1));
+    expect(result.length).toBe(1);
+    expect(result[0].cutNumber).toBe(1);
   });
 });
 
@@ -292,7 +275,7 @@ describe("densifyCuts — field preservation", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — no groupId generation", () => {
-  it("should NOT add groupId to split cuts", () => {
+  it("should NOT add groupId (no split occurs)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 15 }];
     const result = densifyCuts(cuts);
     for (const cut of result) {
@@ -306,28 +289,26 @@ describe("densifyCuts — no groupId generation", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts + classifyCuts pipeline", () => {
-  it("should produce cuts with structureType and durationClass after pipeline", () => {
+  it("should produce 1 cut with structureType and durationClass after pipeline (no split)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 15 }];
     const densified = densifyCuts(cuts);
     const classified = classifyCuts(densified);
 
-    expect(classified.length).toBeGreaterThanOrEqual(5);
+    expect(classified.length).toBe(1);
     for (const cut of classified) {
       expect(cut.structureType).toBeDefined();
       expect(cut.durationClass).toBeDefined();
     }
   });
 
-  it("should classify split cuts correctly by their new duration", () => {
+  it("should classify unsplit 12s cut correctly", () => {
     const cuts = [{ cutNumber: 1, durationSec: 12 }];
     const densified = densifyCuts(cuts);
     const classified = classifyCuts(densified);
 
-    // 12초를 4등분하면 각 3초 → cut-like
-    for (const cut of classified) {
-      expect(cut.durationSec).toBeLessThan(12);
-      expect(["cut-like", "scene-like", "sequence-like"]).toContain(cut.durationClass);
-    }
+    expect(classified.length).toBe(1);
+    expect(classified[0].durationSec).toBe(12);
+    expect(["cut-like", "scene-like", "sequence-like"]).toContain(classified[0].durationClass);
   });
 });
 
@@ -341,10 +322,9 @@ describe("densifyCuts — edge cases", () => {
   });
 
   it("should handle very short cut (2s) without splitting", () => {
-    // 6초 총 → 최소 2컷 필요, 하지만 2초짜리는 쪼갤 수 없음
     const cuts = [{ cutNumber: 1, durationSec: 2 }, { cutNumber: 2, durationSec: 4 }];
     const result = densifyCuts(cuts);
-    // 총 6초, 이미 2컷이므로 분할 불필요
+    // 총 6초, 이미 2컷이고 min=1이므로 분할 불필요
     expect(result.length).toBe(2);
   });
 
@@ -473,7 +453,6 @@ describe("client ↔ server parity — densifyCuts", () => {
   });
 
   it("2초 이하 컷 분할 중단 parity", () => {
-    // 총 7초, 2컷 필요. 1초+6초 → 6초만 분할 대상
     const cuts = [
       { cutNumber: 1, durationSec: 1 },
       { cutNumber: 2, durationSec: 6 },

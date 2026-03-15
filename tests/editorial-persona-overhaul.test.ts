@@ -188,44 +188,41 @@ describe("auto duration — editorial pace integration", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("multi-cut montage density", () => {
-  it("8s input → 3 cuts minimum", () => {
-    expect(recommendMinimumCutCount(8)).toBe(3);
+  it("8s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(1);
   });
 
-  it("10s input → 4 cuts minimum", () => {
-    expect(recommendMinimumCutCount(10)).toBe(4);
+  it("10s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
+    expect(recommendMinimumCutCount(10)).toBe(1);
   });
 
-  it("12s input → 4 cuts minimum", () => {
-    expect(recommendMinimumCutCount(12)).toBe(4);
+  it("12s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
+    expect(recommendMinimumCutCount(12)).toBe(1);
   });
 
-  it("15s input → 5 cuts minimum", () => {
-    expect(recommendMinimumCutCount(15)).toBe(5);
+  it("15s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 
-  it("single 8s cut needs density boost (3 needed)", () => {
-    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(true);
+  it("single 8s cut does NOT need density boost (narrative-friendly policy)", () => {
+    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(false);
   });
 
-  it("densifyCuts: 12s → 4+ cuts", () => {
+  it("densifyCuts: single 12s cut → no split, returns 1 cut (narrative-friendly policy)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 12 }]);
-    expect(result.length).toBeGreaterThanOrEqual(4);
+    expect(result.length).toBe(1);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(12);
   });
 
-  it("densifyCuts: 15s → 5+ cuts", () => {
+  it("densifyCuts: single 15s cut → no split, returns 1 cut (narrative-friendly policy)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 15 }]);
-    expect(result.length).toBeGreaterThanOrEqual(5);
+    expect(result.length).toBe(1);
   });
 
-  it("prefer 3-5s cuts over single 8s", () => {
+  it("single 8s cut is accepted as-is (no forced splitting)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 8 }]);
-    expect(result.length).toBeGreaterThanOrEqual(3);
-    for (const cut of result) {
-      expect(cut.durationSec).toBeLessThanOrEqual(5);
-    }
+    expect(result.length).toBe(1);
   });
 });
 
@@ -776,12 +773,12 @@ describe("regression — auto duration unchanged", () => {
   });
 });
 
-describe("regression — multi-cut density unchanged", () => {
-  it("8s → 3+ cuts", () => {
-    expect(recommendMinimumCutCount(8)).toBe(3);
+describe("regression — multi-cut density policy (narrative-friendly)", () => {
+  it("8s → 1 cut minimum (per-segment minimum is now 1)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(1);
   });
-  it("15s → 5+ cuts", () => {
-    expect(recommendMinimumCutCount(15)).toBe(5);
+  it("15s → 1 cut minimum (per-segment minimum is now 1)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(1);
   });
 });
 

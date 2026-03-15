@@ -61,24 +61,24 @@ describe("B. 120초 segment-aware density", () => {
     expect(Math.ceil(120 / KLING_SEGMENT_CAP)).toBe(8);
   });
 
-  it("5) recommendCutCountRange(120) = 8 × range(15) = {24, 40}", () => {
+  it("5) recommendCutCountRange(120) = 8 × range(15) = {8, 16}", () => {
     const range = recommendCutCountRange(120);
-    // 8 full segments of 15s → 8 × {3, 5} = {24, 40}
-    expect(range).toEqual({ min: 24, max: 40 });
+    // 8 full segments of 15s → 8 × {1, 2} = {8, 16}
+    expect(range).toEqual({ min: 8, max: 16 });
   });
 
-  it("6) recommendMinimumCutCount(120) = 8 × 5 = 40", () => {
-    expect(recommendMinimumCutCount(120)).toBe(40);
+  it("6) recommendMinimumCutCount(120) = 8 × 1 = 8", () => {
+    expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
-  it("7) 60초 → 4 segments → {12, 20}", () => {
+  it("7) 60초 → 4 segments → {4, 8}", () => {
     const range = recommendCutCountRange(60);
-    expect(range).toEqual({ min: 12, max: 20 });
+    expect(range).toEqual({ min: 4, max: 8 });
   });
 
-  it("8) 90초 → 6 segments (15×6=90) → {18, 30}", () => {
+  it("8) 90초 → 6 segments (15×6=90) → {6, 12}", () => {
     const range = recommendCutCountRange(90);
-    expect(range).toEqual({ min: 18, max: 30 });
+    expect(range).toEqual({ min: 6, max: 12 });
   });
 });
 
@@ -107,17 +107,11 @@ describe("C. resolveCutCount with totalDurationSec=120", () => {
       totalDurationSec: 120,
       personaBias: "upper",
     });
-    // densityPresetToRange("dense", 120) = {max+2, max+2} of recommendCutCountRange(120)
-    // recommendCutCountRange(120) = {24, 40} → dense = {40, 42}
-    // upper bias → 42, but clamped to 15... wait
-    // Hmm, resolveCutCount clamps to 15. This is per-call, but for 120s this needs rethinking.
-    // Actually the server does segment-aware outside resolveCutCount, so individual resolveCutCount
-    // for the full 120s will still clamp. The segment-aware logic in generate-cuts handles this.
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("11) 15초 기본 추천이 여전히 3~5컷으로 유지", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 3, max: 5 });
+  it("11) 15초 기본 추천이 {1, 2}로 유지", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 1, max: 2 });
   });
 
   it("12) fast density면 상단, sparse면 하단", () => {
@@ -142,7 +136,7 @@ describe("D. server/client segment-aware parity", () => {
 
   it("15) resolveCutCount parity for 120s + preferred range", () => {
     const opts = {
-      preferredRange: { min: 24, max: 40 },
+      preferredRange: { min: 8, max: 16 },
       totalDurationSec: 120,
       personaBias: "neutral" as const,
     };

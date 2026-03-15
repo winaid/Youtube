@@ -77,25 +77,25 @@ describe("multiShot clamp policy", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("fast density — 독립 컷 수 우선", () => {
-  it("6초 segment에서 최소 2컷 (독립 클립 2개)", () => {
-    expect(recommendMinimumCutCount(6)).toBeGreaterThanOrEqual(2);
+  it("6초 segment에서 최소 1컷 (≤15s 구간 최소값 1)", () => {
+    expect(recommendMinimumCutCount(6)).toBeGreaterThanOrEqual(1);
   });
 
-  it("8초 segment에서 최소 3컷 (독립 클립 3개)", () => {
-    expect(recommendMinimumCutCount(8)).toBeGreaterThanOrEqual(3);
+  it("8초 segment에서 최소 1컷 (≤15s 구간 최소값 1)", () => {
+    expect(recommendMinimumCutCount(8)).toBeGreaterThanOrEqual(1);
   });
 
-  it("12초 segment에서 최소 4컷", () => {
-    expect(recommendMinimumCutCount(12)).toBeGreaterThanOrEqual(4);
+  it("12초 segment에서 최소 1컷 (≤15s 구간 최소값 1)", () => {
+    expect(recommendMinimumCutCount(12)).toBeGreaterThanOrEqual(1);
   });
 
-  it("15초 segment에서 최소 5컷", () => {
-    expect(recommendMinimumCutCount(15)).toBeGreaterThanOrEqual(5);
+  it("15초 segment에서 최소 1컷 (≤15s 구간 최소값 1)", () => {
+    expect(recommendMinimumCutCount(15)).toBeGreaterThanOrEqual(1);
   });
 
-  it("15초에서 cut range max >= 5", () => {
+  it("15초에서 cut range max >= 2", () => {
     const range = recommendCutCountRange(15);
-    expect(range.max).toBeGreaterThanOrEqual(5);
+    expect(range.max).toBeGreaterThanOrEqual(2);
   });
 });
 

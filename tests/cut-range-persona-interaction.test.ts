@@ -113,12 +113,12 @@ describe("C. same range + different persona → different cut counts", () => {
 // D. 15s → 3~5 기본 추천값
 // ═══════════════════════════════════════════════════════════════════
 
-describe("D. 15s → 3~5 default recommendation", () => {
-  it("8) 15s 기본 추천이 { min: 3, max: 5 }", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 3, max: 5 });
+describe("D. 15s → 1~2 default recommendation", () => {
+  it("8) 15s 기본 추천이 { min: 1, max: 2 }", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 1, max: 2 });
   });
 
-  it("9) 15s + 기본 persona → 3~5 범위 내 컷 수", () => {
+  it("9) 15s + 기본 persona → 1~2 범위 내 컷 수", () => {
     const range = recommendCutCountRange(15);
     const bias = personaCutCountBias(DEFAULT_EDITORIAL_PERSONA);
     const result = resolveCutCount({
@@ -126,8 +126,8 @@ describe("D. 15s → 3~5 default recommendation", () => {
       totalDurationSec: 15,
       personaBias: bias,
     });
-    expect(result.cutCount).toBeGreaterThanOrEqual(3);
-    expect(result.cutCount).toBeLessThanOrEqual(5);
+    expect(result.cutCount).toBeGreaterThanOrEqual(1);
+    expect(result.cutCount).toBeLessThanOrEqual(2);
   });
 });
 
@@ -159,10 +159,10 @@ describe("E. editorial persona regression check", () => {
   });
 
   it("13) density policy가 여전히 작동 (recommendMinimumCutCount)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(5);
-    expect(recommendMinimumCutCount(12)).toBe(4);
-    expect(recommendMinimumCutCount(9)).toBe(3);
-    expect(recommendMinimumCutCount(7)).toBe(2);
+    expect(recommendMinimumCutCount(15)).toBe(1);
+    expect(recommendMinimumCutCount(12)).toBe(1);
+    expect(recommendMinimumCutCount(9)).toBe(1);
+    expect(recommendMinimumCutCount(7)).toBe(1);
     expect(recommendMinimumCutCount(4)).toBe(1);
   });
 });

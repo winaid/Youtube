@@ -4,7 +4,7 @@
  * 검증 항목 (7개):
  *   1. 긴 storyText + auto → project total 60초 이상 (15초 아님)
  *   2. current segment ≤ 15초 유지
- *   3. fast density → currentSegmentTargetCuts 3~5+
+ *   3. density policy → currentSegmentTargetCuts 1~2 (서사형 저밀도 정책)
  *   4. 짧은 컷 multiShot 억제
  *   5. 다수 clip 생성 구조
  *   6. stitch capability 감지 체인
@@ -120,42 +120,42 @@ describe("테스트 2: current segment ≤ 15초 유지", () => {
 // 3. fast density → currentSegmentTargetCuts 3~5+
 // ═══════════════════════════════════════════════════════════════════
 
-describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 3~5+", () => {
-  it("15초 segment, neutral bias → targetCuts 3~5", () => {
+describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 1~2 (서사형 저밀도 정책)", () => {
+  it("15초 segment, neutral bias → targetCuts 1~2", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15, personaBias: "neutral" });
-    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(3);
-    expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(5);
+    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(1);
+    expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(2);
   });
 
-  it("15초 segment, upper bias → targetCuts 5", () => {
+  it("15초 segment, upper bias → targetCuts 2", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15, personaBias: "upper" });
-    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(4);
+    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(2);
   });
 
-  it("recommendMinimumCutCount(15) ≥ 5", () => {
-    expect(recommendMinimumCutCount(15)).toBeGreaterThanOrEqual(5);
+  it("recommendMinimumCutCount(15) ≥ 1", () => {
+    expect(recommendMinimumCutCount(15)).toBeGreaterThanOrEqual(1);
   });
 
-  it("recommendMinimumCutCount(12) ≥ 4", () => {
-    expect(recommendMinimumCutCount(12)).toBeGreaterThanOrEqual(4);
+  it("recommendMinimumCutCount(12) ≥ 1", () => {
+    expect(recommendMinimumCutCount(12)).toBeGreaterThanOrEqual(1);
   });
 
-  it("60초 project → multi-segment, 총 targetCuts ≫ 1", () => {
+  it("60초 project → multi-segment, 총 targetCuts ≥ 8", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 60 });
     expect(plan.segmentCount).toBeGreaterThanOrEqual(4);
-    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(12);
+    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(8);
   });
 
-  it("resolveCutCount(totalDurationSec=15, neutral) → cutCount 3~5", () => {
+  it("resolveCutCount(totalDurationSec=15, neutral) → cutCount 1~2", () => {
     const result = resolveCutCount({ totalDurationSec: 15, personaBias: "neutral" });
-    expect(result.cutCount).toBeGreaterThanOrEqual(3);
-    expect(result.cutCount).toBeLessThanOrEqual(5);
+    expect(result.cutCount).toBeGreaterThanOrEqual(1);
+    expect(result.cutCount).toBeLessThanOrEqual(2);
   });
 
-  it("recommendCutCountRange(15) → min ≥ 3, max ≥ 3", () => {
+  it("recommendCutCountRange(15) → min ≥ 1, max ≥ 1", () => {
     const range = recommendCutCountRange(15);
-    expect(range.min).toBeGreaterThanOrEqual(3);
-    expect(range.max).toBeGreaterThanOrEqual(3);
+    expect(range.min).toBeGreaterThanOrEqual(1);
+    expect(range.max).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -435,7 +435,7 @@ describe("대표 시퀀스 1회 — end-to-end 메타 검증", () => {
     expect(segmentPlan.segmentCount).toBeGreaterThanOrEqual(
       Math.ceil(projectTotal / KLING_SEGMENT_CAP)
     );
-    expect(segmentPlan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(3);
+    expect(segmentPlan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(1);
 
     // Step 3: per-cut duration
     const autoDur = computeAutoDuration({
