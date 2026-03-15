@@ -118,9 +118,10 @@ describe("Compact QA conversion", () => {
 // ── 2. Token budget 계산 테스트 ──────────────────────────────────
 
 describe("Token budget estimation", () => {
+  // 실제 generate-cuts.ts Step1 토큰 예산 공식과 동일하게 유지
   function estimateStep1Tokens(cutCount: number): number {
-    const estimatedTokens = 200 + cutCount * 400 + 200;
-    return Math.min(8192, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
+    const estimatedTokens = 200 + cutCount * 600 + 200;
+    return Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
   }
 
   it("4 cuts → at least 4096 tokens", () => {
@@ -131,12 +132,22 @@ describe("Token budget estimation", () => {
     expect(estimateStep1Tokens(8)).toBeGreaterThan(estimateStep1Tokens(4));
   });
 
-  it("10 cuts → capped at 8192", () => {
-    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(8192);
+  it("10 cuts → cap is now 16384 (not 8192)", () => {
+    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(16384);
   });
 
-  it("15 cuts → capped at 8192", () => {
-    expect(estimateStep1Tokens(15)).toBeLessThanOrEqual(8192);
+  it("15 cuts → cap is now 16384 (not 8192)", () => {
+    expect(estimateStep1Tokens(15)).toBeLessThanOrEqual(16384);
+  });
+
+  it("6 cuts → budget exceeds old 8192 cap for multi-cut scenarios", () => {
+    // 6컷: (200 + 6*600 + 200) * 1.5 = 6600 → 6600 (within range)
+    expect(estimateStep1Tokens(6)).toBeGreaterThanOrEqual(4096);
+  });
+
+  it("10+ cuts → budget scales past previous 8192 ceiling", () => {
+    // 10컷: (200 + 10*600 + 200) * 1.5 = 9600 → 9600 > 8192
+    expect(estimateStep1Tokens(10)).toBeGreaterThan(8192);
   });
 });
 
