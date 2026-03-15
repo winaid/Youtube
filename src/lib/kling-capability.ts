@@ -163,6 +163,7 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsImageToVideo: false,
   },
 
+  // NOTE: video-edit은 capability 등록만 완료. UI/서버 실행 경로 미연결 (scaffolded).
   "kling-o3-video-edit": {
     modelId: "kling-o3-video-edit",
     displayName: "Kling O3 (Edit)",

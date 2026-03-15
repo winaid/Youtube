@@ -407,6 +407,8 @@ interface GenerateVideoRequest {
   videoMode?: "generate" | "extend";
   sourceVideo?: string;
   cutNumber?: number;
+  /** 워크플로우 타입 — 모델 자동 선택에 사용. 미지정 시 컨텍스트 기반 판단. */
+  workflowType?: "text-to-video" | "image-to-video" | "reference-to-video" | "video-edit" | "custom-element";
   // ── JSON-first source of truth (최우선) ───────────────────────────────────
   structuredSequence?: StructuredSequencePayload;
   // ── JSON 프롬프트 (structuredSequence 없으면 fallback) ─────────────────────
@@ -422,6 +424,8 @@ interface GenerateVideoRequest {
   generateAudio?: boolean; // true = sound "on", false = sound "off"
   // ── Custom Element (캐릭터 일관성) ──────────────────────────────────────
   element_list?: Array<{ element_id: string }>;
+  // ── Reference Images (reference-to-video 워크플로우용) ──────────────────
+  referenceImages?: string[];
   // ── Legacy fields (무시됨) ──────────────────────────────────────────
   mode?: string;
   resolution?: string;
@@ -429,7 +433,6 @@ interface GenerateVideoRequest {
   seed?: number;
   sampleCount?: number;
   previousVideoUri?: string;
-  referenceImages?: string[];
 }
 
 // ── base64 data URI 접두사 제거 ────────────────────────────────────────────
@@ -586,8 +589,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let taskId: string;
     let modeUsed: "generate" | "extend";
     let sentDuration: number = duration;
-    // 실제 사용 모델 추적 — 하드코딩 제거
-    let modelUsed: string;
+
+    // ── 워크플로우 기반 모델 선택 ──────────────────────────────────────────
+    // workflowType이 명시적이면 그것을 존중, 아니면 컨텍스트에서 자동 판단
+    const hasRefImages = req.referenceImages && req.referenceImages.length > 0 &&
+      req.referenceImages.some(img => img.length > 100);
+    const modelUsed = resolveModelForWorkflow({
+      workflow: req.workflowType,
+      hasImage: !!validFirst || !!validLast,
+      hasReferenceImages: !!hasRefImages,
+      hasSourceVideo: false, // video-edit은 별도 경로로 분리 예정
+    });
+
+    console.log("[Kling] 모델 선택", {
+      workflowType: req.workflowType ?? "(auto)",
+      modelUsed,
+      hasImage: !!validFirst,
+      hasRefImages: !!hasRefImages,
+    });
 
     try {
       if (videoMode === "extend" && validLast) {
@@ -603,7 +622,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         taskId = result.taskId;
         sentDuration = result.sentDuration;
         modeUsed = "extend";
-        modelUsed = KLING_MODELS.IMAGE_TO_VIDEO; // extend = image-to-video
       } else {
         if (!validFirst && videoMode === "extend" && !sourceVideo) {
           console.error("[Kling] extend 요청이지만 유효한 image/sourceVideo 없음");
@@ -619,8 +637,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         console.log("[Kling] GENERATE mode", {
           hasImage: !!validFirst,
           hasImageTail: !!validLast,
+          model: modelUsed,
         });
         const result = await klingGenerate(context.env, {
+          model:           modelUsed,
           prompt:          finalPromptForProvider,
           negative_prompt: klingNegativePrompt,
           aspect_ratio:    aspectRatio,
@@ -634,12 +654,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         taskId = result.taskId;
         sentDuration = result.sentDuration;
         modeUsed = "generate";
-        // 실제 사용 모델: 이미지가 있으면 image-to-video, 없으면 text-to-video
-        modelUsed = resolveModelForWorkflow({
-          hasImage: !!validFirst,
-          hasReferenceImages: false,
-          hasSourceVideo: false,
-        });
       }
     } catch (klingErr) {
       // 403 model_access_denied — 재시도 불가, 명확한 에러 분류

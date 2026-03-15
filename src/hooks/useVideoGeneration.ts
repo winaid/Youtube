@@ -72,6 +72,7 @@ import {
 import {
   getMaxShots,
   KLING_DEFAULT_TEXT_MODEL,
+  resolveModelForWorkflow,
 } from "@/lib/kling-capability";
 
 interface UseVideoGenerationOptions {
@@ -1349,6 +1350,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       // 2-API 아키텍처: Kling = 유일한 생성 엔진
       const engine = "kling" as const;
 
+      // ── 워크플로우 기반 effective model 결정 (clamp 정책에 사용) ──────────
+      const effectiveModel = resolveModelForWorkflow({
+        workflow: cfg.workflowType,
+        hasImage: !!firstFrameBase64 || !!(storyboardImages?.[cutNumber]),
+      });
+
       // CUT 1은 이전 영상/프레임이 존재하지 않으므로 extend 절대 금지
       const videoMode = cutNumber === 1 ? "generate" : (cfg.videoMode ?? "extend");
 
@@ -1378,6 +1385,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         cutNumber,
         engine,
         videoMode,
+        workflowType: cfg.workflowType,
         sourceVideo: safeSourceVideo,
         negativePrompt: negativePrompt || undefined,
         firstFrameBase64: safeFirstFrame,
@@ -1385,12 +1393,11 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,
-        // multiShot: capability 기반 clamp — 모델별 maxShots + duration 기반 자연스러운 상한
+        // multiShot: capability 기반 clamp — effective model의 maxShots + duration 기반 상한
         ...((() => {
           if (engine !== "kling" || !cut.multiShot || cut.multiShot.length === 0) return {};
           const dur = cfg.durationSeconds ?? cut.durationSec ?? 5;
-          const model = KLING_DEFAULT_TEXT_MODEL;
-          const maxShotCount = getMaxShots(model, dur);
+          const maxShotCount = getMaxShots(effectiveModel, dur);
           if (maxShotCount <= 0) return {};
           // index 재정렬 보장
           const clamped = cut.multiShot.slice(0, maxShotCount).map((s, i) => ({
