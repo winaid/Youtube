@@ -307,11 +307,6 @@ export async function pollVideoTask(
       await sleep(waitMs);
     }
 
-    // job store: polling 진행 업데이트 (매 10회마다 — 성능)
-    if (options.jobId && jobStore && attempt % 10 === 0 && attempt > 0) {
-      jobStore.updatePollProgress(options.jobId, attempt);
-    }
-
     // HTTP request
     let res: Response;
     try {
@@ -411,9 +406,16 @@ export async function pollVideoTask(
       return result;
     }
 
-    // RUNNING — job store에 processing 마킹 (첫 RUNNING 응답 시)
-    if (options.jobId && jobStore && attempt === 0) {
-      jobStore.markProcessing(options.jobId, data.status || "processing");
+    // RUNNING — job store에 processing 마킹 + provider status 갱신
+    if (options.jobId && jobStore) {
+      const job = jobStore.getJob(options.jobId);
+      if (job && job.status !== "processing") {
+        // 첫 RUNNING 응답 → submitted에서 processing으로 전환
+        jobStore.markProcessing(options.jobId, data.status || "processing");
+      } else if (job && attempt % 10 === 0 && attempt > 0) {
+        // 주기적 provider status 갱신
+        jobStore.updatePollProgress(options.jobId, attempt, data.status || undefined);
+      }
     }
 
     // RUNNING — notify progress and continue
