@@ -1231,6 +1231,13 @@ export interface AssembleFromJSONResult {
     truncated: boolean;
     isMapScene: boolean;
     isEnvironmentScene: boolean;
+    /** 멀티샷 구조 요약 (Cut에 multiShot이 있으면 반영) */
+    multiShotSummary?: {
+      shotCount: number;
+      roles: (string | undefined)[];
+      durations: string[];
+      isForced: boolean;
+    };
   };
 }
 
@@ -1703,6 +1710,19 @@ export function assembleFromJSON(input: {
       truncated: finalPayload.debug.truncated,
       isMapScene: normalizedDoc.scene.shotCategory === "map-graphic",
       isEnvironmentScene: normalizedDoc.scene.shotCategory === "environment",
+      // 멀티샷 구조 요약 — Cut에 multiShot이 있으면 반영
+      ...(input.cut.multiShot && input.cut.multiShot.length >= 2 ? {
+        multiShotSummary: {
+          shotCount: input.cut.multiShot.length,
+          roles: input.cut.multiShot.map(s => s.role),
+          durations: input.cut.multiShot.map(s => s.duration),
+          isForced: (normalizedDoc.scene.shotCategory === "environment" ||
+            normalizedDoc.scene.shotCategory === "cinematic_sequence" ||
+            normalizedDoc.scene.shotCategory === "character-driven" ||
+            normalizedDoc.scene.shotCategory === "battle") &&
+            structuredSequence.durationSec >= 6,
+        },
+      } : {}),
     },
   };
 }

@@ -1393,19 +1393,28 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,
-        // multiShot: capability 기반 clamp — effective model의 maxShots + duration 기반 상한
+        // multiShot: capability 기반 clamp + auto-repair
         ...((() => {
-          if (engine !== "kling" || !cut.multiShot || cut.multiShot.length === 0) return {};
           const dur = cfg.durationSeconds ?? cut.durationSec ?? 5;
-          const maxShotCount = getMaxShots(effectiveModel, dur);
-          if (maxShotCount <= 0) return {};
-          // index 재정렬 보장
-          const clamped = cut.multiShot.slice(0, maxShotCount).map((s, i) => ({
-            ...s,
-            index: i + 1,
-          }));
-          return { multiShot: clamped };
+          if (engine !== "kling") return {};
+
+          // 기존 멀티샷이 있으면 clamp
+          if (cut.multiShot && cut.multiShot.length > 0) {
+            const maxShotCount = getMaxShots(effectiveModel, dur);
+            if (maxShotCount <= 0) return {};
+            const clamped = cut.multiShot.slice(0, maxShotCount).map((s, i) => ({
+              ...s,
+              index: i + 1,
+            }));
+            return { multiShot: clamped };
+          }
+          // 멀티샷 없는 경우 — 서버에서 auto-repair하므로 클라이언트에서는 pass
+          return {};
         })()),
+        // 생성 모드 + 의도적 원테이크 전달 (서버 정책 시행용)
+        generationMode: cfg.generationMode ?? "batch",
+        sceneType: cut.shotCategory,
+        intentionalOneTake: cut.intentionalOneTake,
         ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
         // Custom Element: charactersInScene 기반 element_list 자동 주입

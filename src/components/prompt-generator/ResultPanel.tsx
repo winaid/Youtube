@@ -4,6 +4,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset } from "@/types";
 import { resolveModelForWorkflow } from "@/lib/kling-capability";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
+import { checkBatchBudget, BATCH_BUDGET_SECONDS } from "@/lib/batch-runtime-budget";
+import type { BatchClipInfo } from "@/lib/batch-runtime-budget";
 import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts } from "@/lib/sequence-density";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -297,40 +299,51 @@ export default function ResultPanel({
     onUpdateResult({ ...result, cuts: newCuts });
   };
 
-  const getEffectiveMode = (_cut?: unknown) => "fast" as const;
+  const genMode = videoGen.config.generationMode ?? "batch";
   const fastCuts = result.cuts;
+
+  // 런타임 예산 계산
+  const batchClips: BatchClipInfo[] = result.cuts.map(c => ({
+    id: c.cutNumber,
+    durationSec: c.durationSec ?? DURATION_FALLBACK,
+    shotCount: c.multiShot?.length,
+  }));
+  const budgetResult = checkBatchBudget(batchClips);
 
   const exportJson = {
     project: result.projectTitle,
+    generationMode: genMode,
     globalStyle: result.globalStylePrompt,
     directorPersona: result.directorPersonaPrompt,
     characterSeeds: result.characterSeeds,
     continuityRules: result.continuityRules,
     totalDuration: (() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? DURATION_FALLBACK), 0); return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`; })(),
-    extendStrategy: {
-      description: "장면 1은 Video Prompt로 최초 생성. 장면 2부터는 이전 클립의 마지막 프레임을 참조 이미지로 사용하여 Extend Prompt로 연장.",
-      steps: result.cuts.map((cut) => ({
-        cut: cut.cutNumber,
-        method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND_FROM_PREVIOUS",
-        prompt: cut.cutNumber === 1 ? cut.videoPrompt : cut.extendPrompt,
-        videoMode: getEffectiveMode(cut),
-        charactersInScene: cut.charactersInScene,
-      })),
+    runtimeBudget: {
+      totalSec: budgetResult.totalRuntimeSec,
+      budgetSec: BATCH_BUDGET_SECONDS,
+      withinBudget: budgetResult.withinBudget,
+      usage: `${Math.round(budgetResult.usageRatio * 100)}%`,
     },
     cuts: result.cuts.map((cut) => ({
       cut: cut.cutNumber,
       duration: `${cut.durationSec}s`,
       method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND",
-      videoMode: "fast",
       scene: cut.sceneDescription,
       camera: cut.cameraDirection,
       lighting: cut.moodLighting,
-      imagePrompt: cut.imagePrompt,
       videoPrompt: cut.videoPrompt,
       extendPrompt: cut.extendPrompt,
-      transition: cut.transitionHint,
-      characterConsistency: cut.characterConsistency,
       charactersInScene: cut.charactersInScene,
+      intentionalOneTake: cut.intentionalOneTake ?? false,
+      // 멀티샷 구조 — 실제 Kling payload 반영
+      multiShot: cut.multiShot && cut.multiShot.length > 0
+        ? cut.multiShot.map(s => ({
+            index: s.index,
+            prompt: s.prompt,
+            duration: s.duration,
+            role: s.role ?? null,
+          }))
+        : null,
     })),
   };
 
@@ -507,6 +520,34 @@ export default function ResultPanel({
                 </>
               );
             })()}
+            {/* 생성 모드 토글 */}
+            <Badge
+              style={{
+                background: genMode === "studio" ? "#7c3aed" : "#059669",
+                color: "white",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                videoGen.updateConfig({ generationMode: genMode === "studio" ? "batch" : "studio" });
+              }}
+            >
+              {genMode === "studio" ? "Studio Mode" : "Batch Mode"}
+            </Badge>
+            {/* 런타임 예산 */}
+            <Badge
+              variant="outline"
+              style={{
+                borderColor: budgetResult.severity === "over_budget" ? "#ef4444"
+                  : budgetResult.severity === "warning" ? "#f59e0b"
+                  : "#22c55e60",
+                color: budgetResult.severity === "over_budget" ? "#ef4444"
+                  : budgetResult.severity === "warning" ? "#b45309"
+                  : undefined,
+              }}
+            >
+              {budgetResult.totalRuntimeSec}s / {BATCH_BUDGET_SECONDS}s 예산
+              {budgetResult.severity === "over_budget" && ` (+${budgetResult.overBudgetSec}s 초과)`}
+            </Badge>
             <Badge variant="outline" style={{ borderColor: "#e09900" }}>
               캐릭터 {result.characterSeeds.length}명 시드 고정
             </Badge>
@@ -516,6 +557,26 @@ export default function ResultPanel({
               </Badge>
             )}
           </div>
+
+          {/* 런타임 예산 초과 경고 */}
+          {budgetResult.severity !== "ok" && budgetResult.suggestions.length > 0 && (
+            <div
+              className="rounded-lg px-3 py-2 text-[11px] space-y-1"
+              style={{
+                background: budgetResult.severity === "over_budget" ? "#fef2f2" : "#fffbeb",
+                border: `1px solid ${budgetResult.severity === "over_budget" ? "#fecaca" : "#fde68a"}`,
+              }}
+            >
+              <p style={{ color: budgetResult.severity === "over_budget" ? "#dc2626" : "#b45309", fontWeight: 600 }}>
+                {budgetResult.message}
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5" style={{ color: "#6b7280" }}>
+                {budgetResult.suggestions.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* 인라인 감독 변경 재생성 */}
           {onUpdateResult && (

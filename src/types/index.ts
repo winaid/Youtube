@@ -326,6 +326,8 @@ export interface Cut {
   characterConsistency: string;
   charactersInScene: string[];
   multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (duration 기반 — getMaxShots 정책 참조)
+  /** 의도적 원테이크 — true이면 강제 멀티샷 정책을 명시적으로 무시 */
+  intentionalOneTake?: boolean;
   // 씬 타입 분류
   shotCategory?: string;    // character-driven | environment | object-detail | map-graphic | transition-atmosphere
   characterRole?: string;   // protagonist | background | silhouette | partial | absent
@@ -628,6 +630,8 @@ export interface VideoGenerationConfig {
   animationMode?: string;
   // Cinematography: 선택된 촬영 용어들
   cinematography: CinematographySelection;
+  /** 생성 모드 — Studio(신중 검토) vs Batch(빠른 대량 생성). 기본 "batch". */
+  generationMode?: "studio" | "batch";
 }
 
 // ===== 시네마토그래피 용어 =====

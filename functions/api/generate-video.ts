@@ -16,6 +16,9 @@ import {
   KlingModelAccessDeniedError,
   KLING_MODELS,
   resolveModelForWorkflow,
+  getMaxShots,
+  getCapability,
+  normalizeMultiShots,
   type KlingEnv,
   type KlingMultiShot,
 } from "./_kling-api";
@@ -422,6 +425,10 @@ interface GenerateVideoRequest {
   lastFrameBase64?: string;
   multiShot?: KlingMultiShot[];
   generateAudio?: boolean; // true = sound "on", false = sound "off"
+  /** 생성 모드 — Studio(엄격 검증) vs Batch(auto-repair) */
+  generationMode?: "studio" | "batch";
+  /** 의도적 원테이크 — 강제 멀티샷 정책 무시 */
+  intentionalOneTake?: boolean;
   // ── Custom Element (캐릭터 일관성) ──────────────────────────────────────
   element_list?: Array<{ element_id: string }>;
   // ── Reference Images (reference-to-video 워크플로우용) ──────────────────
@@ -607,6 +614,63 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       hasImage: !!validFirst,
       hasRefImages: !!hasRefImages,
     });
+
+    // ── 서버 멀티샷 정책 시행 ──────────────────────────────────────────────
+    const serverMaxShots = getMaxShots(modelUsed, normalizedDuration);
+    const hasMultiShotPayload = req.multiShot && req.multiShot.length >= 2;
+    const isStudioMode = req.generationMode === "studio";
+    const isIntentionalOneTake = req.intentionalOneTake === true;
+
+    // 강제 멀티샷 판정: 9초 이상이거나, 씬 타입 + 6초 이상
+    const FORCE_SCENE_TYPES = new Set([
+      "cinematic_sequence", "environment", "character-driven", "battle", "montage",
+    ]);
+    const sceneCategory = req.structuredSequence?.shotCategory ?? "";
+    const shouldForce = serverMaxShots >= 2 && !isIntentionalOneTake && (
+      normalizedDuration >= 9 ||
+      (normalizedDuration >= 6 && FORCE_SCENE_TYPES.has(sceneCategory))
+    );
+
+    if (shouldForce && !hasMultiShotPayload) {
+      if (isStudioMode) {
+        // Studio Mode: 블로킹 — 멀티샷 없는 긴 시네마틱 클립 거부
+        return Response.json(
+          {
+            error: `Studio Mode: ${normalizedDuration}초 ${sceneCategory || "clip"} — 멀티샷 필수. 의도적 원테이크라면 intentionalOneTake=true 설정 필요.`,
+            code: "forced_multishot_missing",
+            retryable: false,
+          },
+          { status: 400 },
+        );
+      } else {
+        // Batch Mode: auto-repair — 기본 멀티샷 자동 생성
+        const autoShotCount = normalizedDuration <= 5 ? 2
+          : normalizedDuration <= 8 ? 3
+          : normalizedDuration <= 12 ? 4
+          : Math.min(5, serverMaxShots);
+        const minShotDur = getCapability(modelUsed).minShotDuration;
+        const baseDur = Math.floor(normalizedDuration / autoShotCount);
+        const remainder = normalizedDuration - baseDur * autoShotCount;
+        const repairedShots: KlingMultiShot[] = Array.from({ length: autoShotCount }, (_, i) => ({
+          index: i + 1,
+          prompt: finalPromptForProvider || "",
+          duration: String(i === autoShotCount - 1 ? baseDur + remainder : baseDur),
+        }));
+        req.multiShot = repairedShots;
+        console.log("[Kling] Batch auto-repair: 멀티샷 자동 생성", {
+          shotCount: autoShotCount,
+          durations: repairedShots.map(s => s.duration),
+        });
+      }
+    }
+
+    // 멀티샷 서버 클램프 (모델 capability 초과 방지)
+    if (req.multiShot && req.multiShot.length > 0 && serverMaxShots > 0) {
+      req.multiShot = normalizeMultiShots(modelUsed, req.multiShot, normalizedDuration);
+    } else if (req.multiShot && serverMaxShots <= 0) {
+      // 모델이 멀티샷 미지원 → 제거
+      req.multiShot = undefined;
+    }
 
     try {
       if (videoMode === "extend" && validLast) {

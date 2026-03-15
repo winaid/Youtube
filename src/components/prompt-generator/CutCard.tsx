@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
 import { getMaxShots } from "@/lib/kling-capability";
 import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
+import { shouldForceMultiShot, buildDefaultMultiShot } from "@/lib/multi-shot-planner";
+import type { PlannerSceneType } from "@/lib/multi-shot-planner";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -411,35 +413,95 @@ export default function CutCard({
         {/* 장면 설명 */}
         <p className="text-sm">{cut.sceneDescription}</p>
 
-        {/* 멀티샷 인라인 에디터 + 진입점 */}
+        {/* 멀티샷 기본 에디터 — eligible 클립은 자동 초기화 */}
         {modelId && onUpdate && (() => {
           const maxShots = getMaxShots(modelId, cut.durationSec);
           const hasMultiShot = cut.multiShot && cut.multiShot.length > 0;
+          const sceneType = (cut.shotCategory ?? "default") as PlannerSceneType;
+          const forced = shouldForceMultiShot(sceneType, cut.durationSec, modelId);
+
+          // 이미 멀티샷이 있으면 에디터 표시
           if (hasMultiShot) {
-            return <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />;
+            return (
+              <div className="space-y-1">
+                <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />
+                {/* 의도적 원테이크 전환 — 강제 멀티샷 클립에서도 예외 허용 */}
+                {forced && (
+                  <button
+                    onClick={() => onUpdate({ ...cut, multiShot: [], intentionalOneTake: true })}
+                    className="text-[9px] px-2 py-0.5 rounded transition-colors"
+                    style={{ color: "#6b7280", border: "1px solid #e5e7eb" }}
+                  >
+                    의도적 원테이크로 전환
+                  </button>
+                )}
+              </div>
+            );
           }
+
+          // 의도적 원테이크 상태
+          if (cut.intentionalOneTake) {
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[9px]" style={{ borderColor: "#6b7280", color: "#6b7280" }}>
+                    의도적 원테이크
+                  </Badge>
+                  <button
+                    onClick={() => {
+                      const initial = buildDefaultMultiShot({
+                        durationSec: cut.durationSec,
+                        sceneType,
+                        basePrompt: cut.sceneDescription || "",
+                        modelId,
+                      });
+                      onUpdate({ ...cut, multiShot: initial, intentionalOneTake: undefined });
+                    }}
+                    className="text-[9px] px-2 py-0.5 rounded transition-colors"
+                    style={{ color: "#e85d04", border: "1px solid #e85d0420" }}
+                  >
+                    멀티샷으로 전환
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // 강제 멀티샷 또는 eligible — 자동 초기화
+          if (forced || maxShots >= 2) {
+            const autoShots = buildDefaultMultiShot({
+              durationSec: cut.durationSec,
+              sceneType,
+              basePrompt: cut.sceneDescription || "",
+              modelId,
+            });
+            if (autoShots.length >= 2) {
+              // 자동으로 멀티샷 초기화 (useEffect 대신 즉시 실행)
+              // 단, 렌더 중 setState 방지를 위해 requestAnimationFrame 사용
+              requestAnimationFrame(() => onUpdate({ ...cut, multiShot: autoShots }));
+              return (
+                <div className="text-[9px] py-2" style={{ color: "#6b7280" }}>
+                  {forced ? "멀티샷 필수" : "멀티샷 추천"} — {autoShots.length}샷 자동 생성 중...
+                </div>
+              );
+            }
+          }
+
+          // maxShots > 0이지만 자동 생성 대상 아닌 경우 — 수동 시작 버튼
           if (maxShots > 0) {
-            const densityWarn = checkShotDensity(cut.durationSec, 1);
             const rec = getRecommendedShotRange(cut.durationSec);
             const defaultShots = Math.min(rec.min, maxShots);
             return (
-              <div className="space-y-1">
-                {densityWarn && (
-                  <p className="text-[9px]" style={{ color: "#f59e0b" }}>
-                    {densityWarn.message}
-                  </p>
-                )}
-                <button
-                  onClick={() => {
-                    const initial = distributeEvenly(modelId, Math.max(2, defaultShots), cut.durationSec);
-                    onUpdate({ ...cut, multiShot: initial });
-                  }}
-                  className="text-[10px] px-2 py-1 rounded-md transition-colors"
-                  style={{ background: "#e85d0410", color: "#e85d04", border: "1px solid #e85d0420" }}
-                >
-                  멀티샷 시작 ({rec.min}–{rec.max}샷 권장, 최대 {maxShots})
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  const initial = distributeEvenly(modelId, Math.max(2, defaultShots), cut.durationSec);
+                  onUpdate({ ...cut, multiShot: initial });
+                }}
+                className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                style={{ background: "#e85d0410", color: "#e85d04", border: "1px solid #e85d0420" }}
+              >
+                멀티샷 시작 ({rec.min}–{rec.max}샷 권장)
+              </button>
             );
           }
           return null;
