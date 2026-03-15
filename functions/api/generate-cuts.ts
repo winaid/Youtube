@@ -304,11 +304,11 @@ interface CutOutline {
   locationCue: string;     // English ≤8w — 보자마자 "어디인지" 알 수 있는 핵심 시각 단서 (예: "dental chair and overhead lamp", "empty restaurant dining hall")
   situationCue: string;    // English ≤8w — 보자마자 "무슨 상황인지" 알 수 있는 단서 (예: "no patients, lights on but empty", "long line outside door")
   emotionalAnchor: string; // English ≤8w — 감정/갈등이 집약되는 시각 요소 (예: "doctor slumps alone at desk", "crumpled rejection letter on floor")
-  // ── Scene progression (8초 안의 내부 비트) ──────────────
-  sceneBeat1: string;      // English ≤12w — 0s~2s: LOCATION — 장소를 즉시 인식시키는 시각 요소
-  sceneBeat2: string;      // English ≤12w — 2s~5s: SITUATION — 현재 상태/문제를 보여주는 증거
-  sceneBeat3: string;      // English ≤12w — 5s~8s: EMOTION — 감정/갈등이 집약되는 순간
-  endHook: string;         // English ≤10w — 다음 씬으로 이어지는 시각적 고리
+  // ── Scene progression — Step1에서는 optional, Step2/3에서 locationCue/situationCue/emotionalAnchor 기반으로 자동 생성 ──
+  sceneBeat1?: string;     // English ≤12w — LOCATION beat (Step1에서 생략 가능)
+  sceneBeat2?: string;     // English ≤12w — SITUATION beat (Step1에서 생략 가능)
+  sceneBeat3?: string;     // English ≤12w — EMOTION beat (Step1에서 생략 가능)
+  endHook?: string;        // English ≤10w — 다음 씬으로 이어지는 시각적 고리 (Step1에서 생략 가능)
 }
 
 interface MultiShotItem {
@@ -475,10 +475,6 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 - locationCue: 영어 ≤8 words — 장소를 즉시 인식시키는 핵심 시각 오브젝트 (예: "dental chair and overhead lamp", "restaurant kitchen with steel counters")
 - situationCue: 영어 ≤8 words — 현재 상황을 즉시 보여주는 증거 (예: "empty waiting room, no patients", "long queue outside the door")
 - emotionalAnchor: 영어 ≤8 words — 감정/갈등이 집약되는 시각 요소 (예: "doctor alone slumping at desk", "hand crumpling printed notice")
-- sceneBeat1: 영어 ≤12 words — ${beatTimings(secPerCut).b1}: LOCATION — 장소를 즉시 인식시키는 시각 요소 (locationCue가 화면에 보여야 함)
-- sceneBeat2: 영어 ≤12 words — ${beatTimings(secPerCut).b2}: SITUATION — 현재 상태/문제를 보여주는 증거 (situationCue가 드러나야 함)
-- sceneBeat3: 영어 ≤12 words — ${beatTimings(secPerCut).b3}: EMOTION — 감정/갈등이 집약되는 순간 (emotionalAnchor가 등장)
-- endHook: 영어 ≤10 words — 관객이 다음 씬을 기대하게 만드는 시각적 고리
 
 ## ⚠️ 컷 밀도 규칙 (single-cut 방지)
 - 총 길이 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 cuts를 작성하라
@@ -492,10 +488,10 @@ JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
 
   // ── Token budget: 컷 수에 비례하여 maxOutputTokens 산정 ──
-  // 각 outline ≈ 500-600 tokens (JSON 필드 16개 × 키+값), characterSeeds ≈ 200, overhead ≈ 200
+  // 경량화된 outline ≈ 350-400 tokens (14개 필드, sceneBeat1/2/3+endHook 제거)
+  // characterSeeds ≈ 200, JSON overhead ≈ 200
   // 안전 마진 1.5배 → 최소 4096, 최대 16384
-  // Step2/3에서 이미 16384를 사용하므로 Step1도 동일 상한 허용.
-  const estimatedTokens = 200 + cutCount * 600 + 200;
+  const estimatedTokens = 200 + cutCount * 400 + 200;
   const step1MaxTokens = Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
   console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens}`);
 
@@ -544,7 +540,7 @@ ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/�
 시나리오: ${storyExcerpt}
 
 characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
-outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w),sceneBeat1(≤10w),sceneBeat2(≤10w),sceneBeat3(≤10w),endHook(≤8w)}]
+outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w)}]
 ⚠️ 12초 초과면 1컷 금지, 최소 3컷 분할. 9~12초면 최소 3컷.
 
 JSON만: {"characterSeeds":[...],"outlines":[...]}`;
@@ -646,9 +642,10 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
           locationCue: String(o.locationCue ?? "identifiable location elements"),
           situationCue: String(o.situationCue ?? "visible situation evidence"),
           emotionalAnchor: String(o.emotionalAnchor ?? "emotional focal point"),
-          sceneBeat1: String(o.sceneBeat1 ?? "location-identifying objects and space"),
-          sceneBeat2: String(o.sceneBeat2 ?? "situation evidence becomes visible"),
-          sceneBeat3: String(o.sceneBeat3 ?? "emotional anchor enters or is revealed"),
+          // sceneBeat/endHook: Step1에서 생략 가능 — cue 기반 자동 합성
+          sceneBeat1: String(o.sceneBeat1 ?? o.locationCue ?? "location-identifying objects and space"),
+          sceneBeat2: String(o.sceneBeat2 ?? o.situationCue ?? "situation evidence becomes visible"),
+          sceneBeat3: String(o.sceneBeat3 ?? o.emotionalAnchor ?? "emotional anchor enters or is revealed"),
           endHook: String(o.endHook ?? "visual tension toward next scene"),
         };
       })
@@ -661,6 +658,15 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
       outlines[i].shotType = shotCycle[(shotCycle.indexOf(outlines[i].shotType) + 1) % shotCycle.length];
       console.warn(`[cuts:step1] shotType 중복 감지 → CUT${outlines[i].cutNumber} 강제 변경: ${outlines[i].shotType}`);
     }
+  }
+
+  // ── Missing-cut 복구: partial recovery로 일부만 받은 경우 ──
+  if (outlines.length > 0 && outlines.length < cutCount) {
+    console.info(`[cuts:step1] outlines ${outlines.length}/${cutCount} — attempting missing-cut repair`);
+    const repairedOutlines = await repairMissingOutlines(
+      env, outlines, cutCount, directorNameKo, secPerCut, storyExcerpt,
+    );
+    return { characterSeeds, outlines: repairedOutlines };
   }
 
   return { characterSeeds, outlines };
@@ -1122,6 +1128,104 @@ function buildDeterministicCuts(
   return cuts;
 }
 
+// ─── Missing-cut 복구 ────────────────────────────────────────────────────────
+/**
+ * partial recovery로 일부 outline만 받은 경우, 누락된 컷만 재요청.
+ * 전체 재생성보다 훨씬 적은 토큰으로 복구 가능.
+ */
+async function repairMissingOutlines(
+  env: GeminiEnv,
+  existingOutlines: CutOutline[],
+  totalCutCount: number,
+  directorNameKo: string,
+  secPerCut: number,
+  storyExcerpt: string,
+): Promise<CutOutline[]> {
+  const existingNums = new Set(existingOutlines.map(o => o.cutNumber));
+  const missingNums: number[] = [];
+  for (let i = 1; i <= totalCutCount; i++) {
+    if (!existingNums.has(i)) missingNums.push(i);
+  }
+  if (missingNums.length === 0) return existingOutlines;
+
+  console.info(`[cuts:step1:repair] missing cuts: [${missingNums.join(",")}] (${missingNums.length}/${totalCutCount})`);
+
+  // 기존 컷 컨텍스트 축약
+  const contextSummary = existingOutlines
+    .map(o => `CUT${o.cutNumber}:${o.shotType}/${o.purpose}/"${o.sceneKo}"`)
+    .join("; ");
+
+  const prompt = `JSON만 출력. 감독:${directorNameKo}. ${secPerCut}초/컷.
+기존 컷: ${contextSummary}
+시나리오: ${storyExcerpt.slice(0, 300)}
+
+누락된 컷 번호 [${missingNums.join(",")}]의 outlines만 생성:
+[{"cutNumber":${missingNums[0]},"sceneKo":"≤25자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤8w","subjectAction":"≤10w","transitionHint":"≤8자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤6w","situationCue":"≤6w","emotionalAnchor":"≤6w"}]`;
+
+  const maxTokens = Math.min(8192, Math.max(2048, missingNums.length * 400));
+  const result = await streamingGenerate(env, MODEL_OUTLINE, {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
+  }, { timeoutMs: 20_000 });
+
+  if (result.error || result.timedOut || !result.text) {
+    console.warn(`[cuts:step1:repair] repair failed: ${result.error?.slice(0, 200) ?? "timeout"}`);
+    return existingOutlines;
+  }
+
+  const repaired = safeParseArr(result.text);
+  if (!repaired || repaired.length === 0) {
+    console.warn(`[cuts:step1:repair] repair parse failed. responseLen=${result.text.length}`);
+    return existingOutlines;
+  }
+
+  console.info(`[cuts:step1:repair] repaired ${repaired.length} cuts`);
+
+  // 기존 + 보충 합산 후 cutNumber 기준 정렬
+  const shotCycle = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+  const validCategories: ShotCategory[] = ["character-driven", "environment", "object-detail", "map-graphic", "transition-atmosphere"];
+  const validRoles: CharacterRole[] = ["protagonist", "background", "silhouette", "partial", "absent"];
+
+  const repairedOutlines: CutOutline[] = (repaired as Array<Partial<CutOutline>>).map((o, i) => {
+    const rawCategory = String(o.shotCategory ?? "character-driven");
+    const rawRole = String(o.characterRole ?? "protagonist");
+    return {
+      cutNumber: Number(o.cutNumber ?? missingNums[i] ?? existingOutlines.length + i + 1),
+      sceneKo: String(o.sceneKo ?? `장면 ${o.cutNumber ?? i + 1}`).slice(0, 40),
+      emotion: String(o.emotion ?? "neutral"),
+      emotionalDelta: String(o.emotionalDelta ?? "neutral→neutral"),
+      purpose: String(o.purpose ?? "develop"),
+      shotType: String(o.shotType ?? shotCycle[i % shotCycle.length]),
+      cameraMovement: String(o.cameraMovement ?? "slow push-in"),
+      subjectAction: String(o.subjectAction ?? `action in scene ${o.cutNumber ?? i + 1}`),
+      transitionHint: String(o.transitionHint ?? "디졸브").slice(0, 20),
+      shotCategory: (validCategories.includes(rawCategory as ShotCategory) ? rawCategory : "character-driven") as ShotCategory,
+      characterRole: (validRoles.includes(rawRole as CharacterRole) ? rawRole : "protagonist") as CharacterRole,
+      locationCue: String(o.locationCue ?? "identifiable location elements"),
+      situationCue: String(o.situationCue ?? "visible situation evidence"),
+      emotionalAnchor: String(o.emotionalAnchor ?? "emotional focal point"),
+      sceneBeat1: String(o.sceneBeat1 ?? o.locationCue ?? "location-identifying objects"),
+      sceneBeat2: String(o.sceneBeat2 ?? o.situationCue ?? "situation evidence visible"),
+      sceneBeat3: String(o.sceneBeat3 ?? o.emotionalAnchor ?? "emotional anchor revealed"),
+      endHook: String(o.endHook ?? "visual tension toward next scene"),
+    };
+  });
+
+  const merged = [...existingOutlines, ...repairedOutlines];
+  merged.sort((a, b) => a.cutNumber - b.cutNumber);
+
+  // 중복 cutNumber 제거 (기존 우선)
+  const seen = new Set<number>();
+  const deduped = merged.filter(o => {
+    if (seen.has(o.cutNumber)) return false;
+    seen.add(o.cutNumber);
+    return true;
+  });
+
+  console.info(`[cuts:step1:repair] merged result: ${deduped.length}/${totalCutCount} cuts`);
+  return deduped;
+}
+
 /**
  * Ultra-compact step1 프롬프트 — 토큰 최소화.
  * compact retry 실패 시 마지막 시도.
@@ -1138,7 +1242,7 @@ function buildUltraCompactStep1Prompt(
 시나리오: ${storySnippet}
 
 {"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
-"outlines":[{"cutNumber":1,"sceneKo":"≤20자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w","sceneBeat1":"≤8w","sceneBeat2":"≤8w","sceneBeat3":"≤8w","endHook":"≤6w"}]}`;
+"outlines":[{"cutNumber":1,"sceneKo":"≤20자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w"}]}`;
 }
 
 // ─── 메인 핸들러 ──────────────────────────────────────────────────────────────
@@ -1429,9 +1533,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                 locationCue: String(o.locationCue ?? "location elements"),
                 situationCue: String(o.situationCue ?? "situation evidence"),
                 emotionalAnchor: String(o.emotionalAnchor ?? "emotional point"),
-                sceneBeat1: String(o.sceneBeat1 ?? "location establishing"),
-                sceneBeat2: String(o.sceneBeat2 ?? "situation visible"),
-                sceneBeat3: String(o.sceneBeat3 ?? "emotion revealed"),
+                // sceneBeat/endHook: cue 기반 자동 합성 (ultra-compact에서는 대부분 생략됨)
+                sceneBeat1: String(o.sceneBeat1 ?? o.locationCue ?? "location establishing"),
+                sceneBeat2: String(o.sceneBeat2 ?? o.situationCue ?? "situation visible"),
+                sceneBeat3: String(o.sceneBeat3 ?? o.emotionalAnchor ?? "emotion revealed"),
                 endHook: String(o.endHook ?? "visual tension"),
               }));
               // Jump to post-step1 processing (outlines already set)

@@ -119,8 +119,9 @@ describe("Compact QA conversion", () => {
 
 describe("Token budget estimation", () => {
   // 실제 generate-cuts.ts Step1 토큰 예산 공식과 동일하게 유지
+  // Phase 2B: Step1 스키마 경량화로 per-outline 400 토큰 (14개 필드, beat/hook 제거)
   function estimateStep1Tokens(cutCount: number): number {
-    const estimatedTokens = 200 + cutCount * 600 + 200;
+    const estimatedTokens = 200 + cutCount * 400 + 200;
     return Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
   }
 
@@ -140,14 +141,15 @@ describe("Token budget estimation", () => {
     expect(estimateStep1Tokens(15)).toBeLessThanOrEqual(16384);
   });
 
-  it("6 cuts → budget exceeds old 8192 cap for multi-cut scenarios", () => {
-    // 6컷: (200 + 6*600 + 200) * 1.5 = 6600 → 6600 (within range)
+  it("6 cuts → slim schema needs less tokens per outline", () => {
+    // 6컷: (200 + 6*400 + 200) * 1.5 = 4200 → within 4096-16384
     expect(estimateStep1Tokens(6)).toBeGreaterThanOrEqual(4096);
   });
 
-  it("10+ cuts → budget scales past previous 8192 ceiling", () => {
-    // 10컷: (200 + 10*600 + 200) * 1.5 = 9600 → 9600 > 8192
-    expect(estimateStep1Tokens(10)).toBeGreaterThan(8192);
+  it("10+ cuts → budget still has headroom within 16384 cap", () => {
+    // 10컷: (200 + 10*400 + 200) * 1.5 = 6600 → comfortable within cap
+    expect(estimateStep1Tokens(10)).toBeLessThanOrEqual(16384);
+    expect(estimateStep1Tokens(10)).toBeGreaterThanOrEqual(4096);
   });
 });
 
