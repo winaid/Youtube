@@ -11,9 +11,9 @@ const geistSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "AI 영상 프롬프트 생성기",
+  title: "CineForge — Kling O3 Shortform Production",
   description:
-    "감독 페르소나 기반 AI 영상 장면 리스트 & 프롬프트 자동 생성 도구",
+    "Kling O3 기반 숏폼 시네마틱 프로덕션 시스템 — 멀티샷 리텐션 최적화 영상 설계 & 생성",
 };
 
 export default function RootLayout({
