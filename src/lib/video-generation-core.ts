@@ -270,7 +270,9 @@ export async function submitVideoGeneration(
     durationSec: params.durationSeconds,
     sceneType: params.sceneType,
     basePrompt: params.prompt,
-    modelId: params.engine === "kling" ? undefined : undefined, // model은 서버에서 결정
+    // modelId 미전달: 최종 model은 서버에서 resolveModelForWorkflow()로 결정.
+    // client repair는 existingMultiShot 보존만 수행하고, 강제 생성은 서버에 위임.
+    modelId: undefined,
     intentionalOneTake: params.intentionalOneTake,
     mode: params.generationMode,
   });

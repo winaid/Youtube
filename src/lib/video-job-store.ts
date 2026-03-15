@@ -93,6 +93,8 @@ export interface JobRequestSummary {
   multiShotRoles?: string[];
   /** 생성 모드 */
   generationMode?: "studio" | "batch";
+  /** 의도적 원테이크 여부 */
+  intentionalOneTake?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -214,6 +214,32 @@ export default function VideoGenerationPanel({
                       <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                         {job.requestSummary.promptPreview}
                       </p>
+                      {/* 멀티샷 / 모드 메타데이터 */}
+                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                        {job.requestSummary.generationMode && (
+                          <Badge className="text-[8px] px-1 py-0" style={{
+                            background: job.requestSummary.generationMode === "studio" ? "#7c3aed20" : "#05966920",
+                            color: job.requestSummary.generationMode === "studio" ? "#7c3aed" : "#059669",
+                          }}>
+                            {job.requestSummary.generationMode === "studio" ? "Studio" : "Batch"}
+                          </Badge>
+                        )}
+                        {(job.requestSummary.multiShotCount ?? 0) > 0 && (
+                          <Badge className="text-[8px] px-1 py-0" style={{ background: "#e85d0415", color: "#e85d04" }}>
+                            {job.requestSummary.multiShotCount}샷
+                          </Badge>
+                        )}
+                        {job.requestSummary.multiShotRoles && job.requestSummary.multiShotRoles.length > 0 && (
+                          <span className="text-[8px] text-muted-foreground">
+                            {job.requestSummary.multiShotRoles.join(" → ")}
+                          </span>
+                        )}
+                        {job.requestSummary.intentionalOneTake && (
+                          <Badge className="text-[8px] px-1 py-0" style={{ background: "#6b728020", color: "#6b7280" }}>
+                            원테이크
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-[10px]" style={{ color: "#92400e" }}>
                         {JOB_STATUS_DESCRIPTIONS[job.status]}
                       </p>
@@ -619,7 +645,7 @@ export default function VideoGenerationPanel({
                         {(clip.fallbackRenderedPrompt || clip.finalPrompt) && (
                           <details className="ml-1">
                             <summary className="text-[9px] cursor-pointer text-muted-foreground">
-                              provider payload preview (string fallback)
+                              렌더링된 프롬프트 (디버그용 — 실제 API는 structuredSequence + multiShot[] 전송)
                               <span className="text-[8px] ml-1">({(clip.fallbackRenderedPrompt || clip.finalPrompt || "").split(/\s+/).length}w)</span>
                             </summary>
                             <pre className="bg-gray-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#666", maxHeight: 160, overflowY: "auto" }}>
