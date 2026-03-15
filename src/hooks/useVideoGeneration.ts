@@ -333,27 +333,6 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     cleanupOldJobs();
   }, []);
 
-  // 미완료 작업 polling 재개
-  const resumeJob = useCallback((job: VideoJobRecord) => {
-    if (!job.taskId) return;
-    // recoverableJobs 목록에서 제거
-    setRecoverableJobs(prev => prev.filter(j => j.jobId !== job.jobId));
-    // 해당 cutNumber의 clip을 polling 상태로 전환
-    updateClip(job.cutNumber, {
-      status: "polling",
-      operationName: job.operationName || job.taskId,
-    });
-    startPolling(
-      job.cutNumber,
-      job.operationName || job.taskId,
-      (job.engine as "kling") || "kling",
-      job.taskId,
-      false,
-      undefined,
-      job.jobId,
-    );
-  }, [updateClip, startPolling]);
-
   const updateClip = useCallback((cutNumber: number, update: Partial<VideoClip>) => {
     setState((prev) => ({
       ...prev,
@@ -887,6 +866,27 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       pollTimers.current.delete(cutNumber);
     }
   }, [updateClip, onSeedDetected, cuts]);
+
+  // 미완료 작업 polling 재개
+  const resumeJob = useCallback((job: VideoJobRecord) => {
+    if (!job.taskId) return;
+    // recoverableJobs 목록에서 제거
+    setRecoverableJobs(prev => prev.filter(j => j.jobId !== job.jobId));
+    // 해당 cutNumber의 clip을 polling 상태로 전환
+    updateClip(job.cutNumber, {
+      status: "polling",
+      operationName: job.operationName || job.taskId,
+    });
+    startPolling(
+      job.cutNumber,
+      job.operationName || job.taskId,
+      (job.engine as "kling") || "kling",
+      job.taskId,
+      false,
+      undefined,
+      job.jobId,
+    );
+  }, [updateClip, startPolling]);
 
   // Auto-retry effect: when a clip becomes "idle" with retryCount > 0, auto-generate
   useEffect(() => {
