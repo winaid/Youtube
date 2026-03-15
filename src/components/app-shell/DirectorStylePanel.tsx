@@ -209,7 +209,7 @@ export default function DirectorStylePanel({
           스타일 디렉션
         </CardTitle>
         <p className="text-[11px] mt-1" style={{ color: "#888" }}>
-          감독/페르소나 스타일이 세그먼트의 시네마틱 리듬, 샷 디자인, 시각 언어를 결정합니다.
+          선택된 감독/페르소나가 세그먼트 페이싱, 샷 역할 분포, 프레이밍 바이어스, 전환 밀도, 리빌 타이밍, 프롬프트 톤을 결정합니다.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -362,6 +362,31 @@ export default function DirectorStylePanel({
           </div>
         )}
 
+        {/* ── Neutral state: encourage selection ── */}
+        {selectedDirectorId === "neutral" && (
+          <div className="p-3 rounded-lg border border-dashed" style={{ borderColor: "#f59e0b80", background: "#fffbeb" }}>
+            <p className="text-xs font-medium" style={{ color: "#92400e" }}>
+              감독/페르소나를 선택하면 프로젝트의 시네마틱 톤이 달라집니다
+            </p>
+            <p className="text-[10px] mt-1" style={{ color: "#a16207" }}>
+              현재 &quot;기본 (중립)&quot; — 세그먼트 페이싱, 샷 구성, 프레이밍, 전환 밀도가 범용 기본값으로 생성됩니다.
+              감독을 선택하면 해당 스타일의 리듬, 시각 언어, 리빌 타이밍이 세그먼트 설계에 반영됩니다.
+            </p>
+            {storyText.trim() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7 mt-2"
+                style={{ borderColor: "#f59e0b", color: "#92400e" }}
+                onClick={handleRecommend}
+                disabled={isRecommending}
+              >
+                {isRecommending ? "분석 중..." : "이 스크립트에 맞는 감독 추천받기"}
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* ── Selected Director Preview ── */}
         {selectedDirector && selectedDirectorId !== "neutral" && (
           <div className="p-3 rounded-lg border" style={{ background: "#fafafa" }}>
@@ -390,19 +415,52 @@ export default function DirectorStylePanel({
               </div>
             )}
 
-            {/* Editorial Persona Summary */}
-            {editorialSummary && (
+            {/* Editorial Persona — what this director affects */}
+            {editorialPersona && (
               <div className="pt-2 border-t">
-                <p className="text-[10px] font-medium mb-1" style={{ color: "#787fff" }}>편집 스타일 영향</p>
-                <p className="text-[10px]" style={{ color: "#666" }}>{editorialSummary}</p>
-                {editorialPersona && (
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    <Badge variant="outline" className="text-[9px]">컷 페이스: {editorialPersona.preferredCutPace[0]}-{editorialPersona.preferredCutPace[1]}s</Badge>
-                    <Badge variant="outline" className="text-[9px]">커버리지: {editorialPersona.preferredCoverage}</Badge>
-                    <Badge variant="outline" className="text-[9px]">모션: {editorialPersona.motionBias}</Badge>
-                    <Badge variant="outline" className="text-[9px]">전환: {editorialPersona.transitionBias}</Badge>
-                  </div>
+                <p className="text-[10px] font-medium mb-1" style={{ color: "#787fff" }}>이 스타일이 세그먼트 설계에 미치는 영향</p>
+                {editorialSummary && (
+                  <p className="text-[10px] mb-1.5" style={{ color: "#666" }}>{editorialSummary}</p>
                 )}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]" style={{ color: "#555" }}>
+                  <div>
+                    <span style={{ color: "#999" }}>세그먼트 페이싱:</span>{" "}
+                    {editorialPersona.preferredCutPace[0]}-{editorialPersona.preferredCutPace[1]}s/컷
+                  </div>
+                  <div>
+                    <span style={{ color: "#999" }}>샷 커버리지:</span>{" "}
+                    {editorialPersona.preferredCoverage === "wide-dominant" ? "와이드 중심" :
+                     editorialPersona.preferredCoverage === "close-dominant" ? "클로즈업 중심" :
+                     editorialPersona.preferredCoverage === "extreme-contrast" ? "극단적 대비" : "균형"}
+                  </div>
+                  <div>
+                    <span style={{ color: "#999" }}>카메라 모션:</span>{" "}
+                    {editorialPersona.motionBias === "static" ? "고정" :
+                     editorialPersona.motionBias === "minimal" ? "최소" :
+                     editorialPersona.motionBias === "dynamic" ? "역동적" :
+                     editorialPersona.motionBias === "frenetic" ? "격렬" : "보통"}
+                  </div>
+                  <div>
+                    <span style={{ color: "#999" }}>전환 스타일:</span>{" "}
+                    {editorialPersona.transitionBias === "hard-cut" ? "하드컷" :
+                     editorialPersona.transitionBias === "dissolve" ? "디졸브" :
+                     editorialPersona.transitionBias === "match-cut" ? "매치컷" :
+                     editorialPersona.transitionBias === "jump-cut" ? "점프컷" : "혼합"}
+                  </div>
+                  <div>
+                    <span style={{ color: "#999" }}>인서트 빈도:</span>{" "}
+                    {editorialPersona.insertBias === "none" ? "없음" :
+                     editorialPersona.insertBias === "low" ? "낮음" :
+                     editorialPersona.insertBias === "high" ? "높음" : "보통"}
+                  </div>
+                  <div>
+                    <span style={{ color: "#999" }}>구도 성향:</span>{" "}
+                    {editorialPersona.compositionBias === "centered" ? "중앙 집중" :
+                     editorialPersona.compositionBias === "symmetrical" ? "대칭" :
+                     editorialPersona.compositionBias === "dutch-angle" ? "더치 앵글" :
+                     editorialPersona.compositionBias === "rule-of-thirds" ? "삼분할" : "혼합"}
+                  </div>
+                </div>
               </div>
             )}
           </div>
