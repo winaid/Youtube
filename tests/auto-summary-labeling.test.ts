@@ -37,12 +37,13 @@ describe("auto summary labeling", () => {
     expect(summary.isAutoMode).toBe(true);
   });
 
-  it("auto 모드에서 자동/실제 계획 총 길이 중심 문구가 나옴", () => {
+  it("auto 모드에서 컷 수·평균·총 길이 중심 문구가 나옴", () => {
     const summary = buildDurationSummary({ cuts: autoCuts, requestedSecondsPerScene: 0 });
-    expect(summary.headline).toContain("자동 편집 리듬");
-    expect(summary.headline).toContain(`${autoCuts.length}장면`);
+    expect(summary.headline).toContain(`${autoCuts.length}컷`);
     const actualTotal = autoCuts.reduce((s, c) => s + c.durationSec, 0);
-    expect(summary.headline).toContain(`${actualTotal}초`);
+    expect(summary.headline).toContain(`총 ${actualTotal}초`);
+    // 평균 duration이 표시됨
+    expect(summary.headline).toMatch(/평균\s+[\d.]+초/);
   });
 
   it("auto 모드에서 durationBasis가 보조 정보에 포함됨", () => {

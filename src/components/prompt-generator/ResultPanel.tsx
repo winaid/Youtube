@@ -477,13 +477,18 @@ export default function ResultPanel({
           </p>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge style={{ background: "#787fff", color: "white" }}>총 {result.totalCuts}장면</Badge>
-            <Badge style={{ background: "#22c55e", color: "white" }}>Fast: {fastCuts.length}장면</Badge>
             {(() => {
               const summary = buildDurationSummary({ cuts: result.cuts, requestedSecondsPerScene: secondsPerScene });
               const t = summary.actualTotalDurationSeconds;
+              const avgSec = result.cuts.length > 0
+                ? Math.round(t / result.cuts.length * 10) / 10
+                : 0;
               return (
                 <>
+                  <Badge style={{ background: "#787fff", color: "white" }}>최종 {result.cuts.length}컷</Badge>
+                  <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
+                    평균 {avgSec}초/컷
+                  </Badge>
                   <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
                     {`총 ${t}초 (${Math.floor(t / 60)}분 ${t % 60}초)`}
                   </Badge>

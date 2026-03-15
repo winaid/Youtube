@@ -152,6 +152,7 @@ export default function PromptGenerator() {
               onPrefillConsumed={() => setPrefillScenario("")}
               secondsPerScene={secondsPerScene}
               onSecondsPerSceneChange={setSecondsPerScene}
+              hasResult={result !== null}
             />
           </div>
           <div className="min-w-0">

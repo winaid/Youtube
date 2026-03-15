@@ -319,11 +319,14 @@ export function buildDurationSummary(input: DurationSummaryInput): DurationSumma
 
   if (isAutoMode) {
     // 자동 모드: 곱셈 수식 금지, actual 기준만 표시
-    headline = `자동 편집 리듬으로 ${actualSceneCount}장면 구성, 총 ${actualTotalDurationSeconds}초`;
+    const avgSec = actualSceneCount > 0
+      ? Math.round(actualTotalDurationSeconds / actualSceneCount * 10) / 10
+      : 0;
+    headline = `${actualSceneCount}컷 · 평균 ${avgSec}초 · 총 ${actualTotalDurationSeconds}초`;
     const basisLabel = durationBasis
       ? ` (${durationBasis})`
       : "";
-    detail = `장면 길이 자동 보정${basisLabel}`;
+    detail = `자동 편집 리듬 + 밀도 보정 적용${basisLabel}`;
   } else {
     // 명시 모드
     const requestedTotal = requestedSecondsPerScene * actualSceneCount;

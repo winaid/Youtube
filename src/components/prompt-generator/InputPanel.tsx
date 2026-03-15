@@ -45,6 +45,8 @@ interface InputPanelProps {
   secondsPerScene: number;
   /** 장면당 초 변경 콜백 */
   onSecondsPerSceneChange: (v: number) => void;
+  /** 결과가 이미 생성되었는지 여부 — 사전 계획 요약 표시 제어 */
+  hasResult?: boolean;
 }
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
@@ -249,7 +251,7 @@ function persistCustomDirectors(dirs: DirectorPersona[]) {
   } catch { /* storage full */ }
 }
 
-export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -1588,14 +1590,18 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           }
 
           if (allAuto && storyText.trim().length >= 20) {
+            // 결과가 이미 생성된 경우, 사전 계획 요약은 숨김.
+            // 최종 결과(ResultPanel)의 실제 값이 source of truth.
+            if (hasResult) return null;
+
             const plan = estimateAutoEditPlan(storyText);
             return (
               <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <p className="font-semibold" style={{ color: "#15803d" }}>
-                  전체 자동: {plan.cutCount}장면 × {plan.cutDuration}초 = 약 {plan.cutCount * plan.cutDuration}초
+                  생성 계획: 약 {plan.cutCount}장면 × {plan.cutDuration}초 ≈ {plan.totalSec}초
                 </p>
                 <p style={{ color: "#166534" }}>
-                  프로젝트 추정 총 {plan.totalSec}초 · 스토리 기반 최적 편집 리듬 자동 적용
+                  스토리 기반 추정 · 밀도 보정으로 최종 컷 수가 변경될 수 있음
                 </p>
               </div>
             );
