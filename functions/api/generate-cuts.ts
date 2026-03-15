@@ -5,9 +5,9 @@
  * Step2+3: 배치별 시각 프롬프트 (전체 시퀀스 컨텍스트 + anti-repetition 강제)
  *
  * 토큰 예산:
- *   Step1: maxTokens=4096  (아웃라인 전체 — 경량 프롬프트)
- *   Step2: maxTokens=8192  (컷 1~N/2 상세)
- *   Step3: maxTokens=8192  (컷 N/2+1~N 상세) — Step2와 병렬
+ *   Step1: maxTokens=4096~16384  (아웃라인 전체 — 컷 수 비례, 상한 16384)
+ *   Step2: maxTokens=8192~16384  (컷 1~N/2 상세)
+ *   Step3: maxTokens=8192~16384  (컷 N/2+1~N 상세) — Step2와 병렬
  */
 import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
@@ -356,6 +356,16 @@ function safeParseArr(text: string): unknown[] | null {
   return null;
 }
 
+// ─── Beat 타이밍 헬퍼 (duration-aware) ─────────────────────────────────────
+// 기존: secPerCut >= 8 이분법 → 10~15초 구간에서 Beat3가 "5s~8s"로 고정되던 문제 수정.
+// 수정: 4단계 구간별 비트 분배로 전체 duration을 커버.
+function beatTimings(sec: number): { b1: string; b2: string; b3: string } {
+  if (sec <= 5)  return { b1: "0s~1s",  b2: "1s~3s",  b3: `3s~${sec}s` };
+  if (sec <= 8)  return { b1: "0s~2s",  b2: "2s~5s",  b3: `5s~${sec}s` };
+  if (sec <= 12) return { b1: "0s~3s",  b2: "3s~7s",  b3: `7s~${sec}s` };
+  return               { b1: "0s~4s",  b2: "4s~9s",  b3: `9s~${sec}s` };
+}
+
 // ─── STEP 1: 캐릭터 시드 + 컷 아웃라인 ──────────────────────────────────────
 
 async function step1Outlines(
@@ -465,9 +475,9 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 "마�
 - locationCue: 영어 ≤8 words — 장소를 즉시 인식시키는 핵심 시각 오브젝트 (예: "dental chair and overhead lamp", "restaurant kitchen with steel counters")
 - situationCue: 영어 ≤8 words — 현재 상황을 즉시 보여주는 증거 (예: "empty waiting room, no patients", "long queue outside the door")
 - emotionalAnchor: 영어 ≤8 words — 감정/갈등이 집약되는 시각 요소 (예: "doctor alone slumping at desk", "hand crumpling printed notice")
-- sceneBeat1: 영어 ≤12 words — ${secPerCut >= 8 ? "0s~2s" : "0s~1s"}: LOCATION — 장소를 즉시 인식시키는 시각 요소 (locationCue가 화면에 보여야 함)
-- sceneBeat2: 영어 ≤12 words — ${secPerCut >= 8 ? "2s~5s" : "1s~3s"}: SITUATION — 현재 상태/문제를 보여주는 증거 (situationCue가 드러나야 함)
-- sceneBeat3: 영어 ≤12 words — ${secPerCut >= 8 ? "5s~8s" : "3s~" + secPerCut + "s"}: EMOTION — 감정/갈등이 집약되는 순간 (emotionalAnchor가 등장)
+- sceneBeat1: 영어 ≤12 words — ${beatTimings(secPerCut).b1}: LOCATION — 장소를 즉시 인식시키는 시각 요소 (locationCue가 화면에 보여야 함)
+- sceneBeat2: 영어 ≤12 words — ${beatTimings(secPerCut).b2}: SITUATION — 현재 상태/문제를 보여주는 증거 (situationCue가 드러나야 함)
+- sceneBeat3: 영어 ≤12 words — ${beatTimings(secPerCut).b3}: EMOTION — 감정/갈등이 집약되는 순간 (emotionalAnchor가 등장)
 - endHook: 영어 ≤10 words — 관객이 다음 씬을 기대하게 만드는 시각적 고리
 
 ## ⚠️ 컷 밀도 규칙 (single-cut 방지)
@@ -482,10 +492,11 @@ JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
 
   // ── Token budget: 컷 수에 비례하여 maxOutputTokens 산정 ──
-  // 각 outline ≈ 300-400 tokens, characterSeeds ≈ 200 tokens, JSON overhead ≈ 200
-  // 안전 마진 1.5배 → 최소 4096, 최대 8192
-  const estimatedTokens = 200 + cutCount * 400 + 200;
-  const step1MaxTokens = Math.min(8192, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
+  // 각 outline ≈ 500-600 tokens (JSON 필드 16개 × 키+값), characterSeeds ≈ 200, overhead ≈ 200
+  // 안전 마진 1.5배 → 최소 4096, 최대 16384
+  // Step2/3에서 이미 16384를 사용하므로 Step1도 동일 상한 허용.
+  const estimatedTokens = 200 + cutCount * 600 + 200;
+  const step1MaxTokens = Math.min(16384, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
   console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens}`);
 
   let result = await streamingGenerate(env, MODEL_OUTLINE, {
@@ -507,13 +518,13 @@ JSON만 출력:
       parseMode = "partial_recovery";
       console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${(partial.outlines as unknown[]).length}/${cutCount} parseMode=${parseMode}`);
     } else {
-      // (1) maxOutputTokens를 8192로 올려서 재시도
-      if (step1MaxTokens < 8192) {
-        console.warn(`[cuts:step1] RETRY with higher maxTokens=8192 (was ${step1MaxTokens})`);
+      // (1) maxOutputTokens를 16384로 올려서 재시도
+      if (step1MaxTokens < 16384) {
+        console.warn(`[cuts:step1] RETRY with higher maxTokens=16384 (was ${step1MaxTokens})`);
         parseMode = "higher_tokens_retry";
         result = await streamingGenerate(env, MODEL_OUTLINE, {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 8192, responseMimeType: "application/json" },
+          generationConfig: { temperature: 0.4, maxOutputTokens: 16384, responseMimeType: "application/json" },
         });
         console.info(`[cuts:step1] higher_tokens_retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
       }
@@ -540,7 +551,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
 
         result = await streamingGenerate(env, MODEL_OUTLINE, {
           contents: [{ role: "user", parts: [{ text: compactPrompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" },
+          generationConfig: { temperature: 0.3, maxOutputTokens: 16384, responseMimeType: "application/json" },
         });
         console.info(`[cuts:step1] compact_retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
 
@@ -551,7 +562,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
             parseMode = "partial_recovery";
             console.info(`[cuts:step1] compact partial recovery: ${(lastPartial.outlines as unknown[]).length} outlines`);
           } else {
-            throw new Error(`step1 truncated after compact retry: output ${result.text.length}chars, maxTokens=8192. cutCount=${cutCount}개가 너무 많거나 스토리가 너무 깁니다.`);
+            throw new Error(`step1 truncated after compact retry: output ${result.text.length}chars, maxTokens=16384. cutCount=${cutCount}개가 너무 많거나 스토리가 너무 깁니다.`);
           }
         }
       }
@@ -567,7 +578,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
       const ultraPrompt = buildUltraCompactStep1Prompt(storyText, directorNameKo, cutCount, secPerCut, ultraEditorial ? `[편집: ${ultraEditorial}]` : undefined);
       const ultraResult = await streamingGenerate(env, MODEL_OUTLINE, {
         contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
+        generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" },
       }, { timeoutMs: 30_000 });
 
       if (!ultraResult.error && !ultraResult.timedOut && ultraResult.text) {
@@ -720,9 +731,9 @@ async function step23DetailBatch(
   WHAT (상황 단서): ${o.situationCue}
   WHO/EMOTION (감정 앵커): ${o.emotionalAnchor}
   ── SCENE BEATS: location → situation → emotion ──
-  BEAT1 LOCATION (${secPerCut >= 8 ? "0s-2s" : "0s-1s"}): ${o.sceneBeat1}  — 장소가 즉시 인식되어야 함
-  BEAT2 SITUATION (${secPerCut >= 8 ? "2s-5s" : "1s-3s"}): ${o.sceneBeat2}  — 상황/문제의 시각적 증거
-  BEAT3 EMOTION (${secPerCut >= 8 ? "5s-" + secPerCut + "s" : "3s-" + secPerCut + "s"}): ${o.sceneBeat3}  — 감정/갈등 집약
+  BEAT1 LOCATION (${beatTimings(secPerCut).b1}): ${o.sceneBeat1}  — 장소가 즉시 인식되어야 함
+  BEAT2 SITUATION (${beatTimings(secPerCut).b2}): ${o.sceneBeat2}  — 상황/문제의 시각적 증거
+  BEAT3 EMOTION (${beatTimings(secPerCut).b3}): ${o.sceneBeat3}  — 감정/갈등 집약
   END HOOK: ${o.endHook}
   ── CONTEXT ──
   Previous: ${prevDesc}
@@ -1383,7 +1394,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           );
           const retryResult = await streamingGenerate(context.env, MODEL_OUTLINE, {
             contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" },
           }, { timeoutMs: 30_000 });
 
           if (!retryResult.error && !retryResult.timedOut) {

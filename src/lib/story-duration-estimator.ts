@@ -152,7 +152,7 @@ export interface AutoEditPlan {
  *   - 문장 수 ≤ 15 → 중간 콘텐츠: 5~6초/컷, 8~12컷
  *   - 문장 수 > 15  → 긴 콘텐츠: 4~5초/컷, 12~15컷 (segment 분할 대상)
  *   - 컷 수 × 장면당 초 ≈ totalSec 유지
- *   - cutDuration: 3~8초 범위 (멀티컷 편집 최적 영역)
+ *   - cutDuration: 3~15초 범위 (Kling VIDEO 3.0 최대 15초 지원)
  */
 export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
   const est = estimateProjectDuration(storyText);
@@ -180,8 +180,10 @@ export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
   const cutCount = Math.min(30, Math.max(4, rawCutCount));
 
   // cutDuration 재조정: cutCount × cutDuration ≈ totalSec
+  // Kling VIDEO 3.0은 최대 15초를 지원하므로 상한을 15초로 설정.
+  // 기존 Math.min(8, ...)은 auto 모드에서 8초 이상 추천을 차단했음.
   const adjustedDuration = Math.round(totalSec / cutCount);
-  cutDuration = Math.min(8, Math.max(3, adjustedDuration));
+  cutDuration = Math.min(15, Math.max(3, adjustedDuration));
 
   return {
     totalSec,
