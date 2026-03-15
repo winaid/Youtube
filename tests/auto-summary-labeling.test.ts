@@ -42,8 +42,12 @@ describe("auto summary labeling", () => {
     expect(summary.headline).toContain(`${autoCuts.length}컷`);
     const actualTotal = autoCuts.reduce((s, c) => s + c.durationSec, 0);
     expect(summary.headline).toContain(`총 ${actualTotal}초`);
-    // 평균 duration이 표시됨
-    expect(summary.headline).toMatch(/평균\s+[\d.]+초/);
+    // 리듬 대비가 있으면 범위 형식, 없으면 평균 형식
+    if (summary.hasRhythmContrast) {
+      expect(summary.headline).toMatch(/\d+~\d+초/);
+    } else {
+      expect(summary.headline).toMatch(/평균\s+[\d.]+초/);
+    }
   });
 
   it("auto 모드에서 durationBasis가 보조 정보에 포함됨", () => {

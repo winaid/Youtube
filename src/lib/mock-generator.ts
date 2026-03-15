@@ -5,6 +5,8 @@ import { classifyCuts } from "@/lib/structure-classification";
 import { densifyCuts, KLING_SEGMENT_CAP } from "@/lib/sequence-density";
 import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
+import { distributeRhythm } from "@/lib/rhythm-distribution";
+import type { PacingMode } from "@/lib/rhythm-distribution";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -292,8 +294,27 @@ export async function generatePrompt(
     : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
   const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, sequencePlan, sequenceValidation } = cutsResult;
 
+  // ── rhythm distribution: 서버 응답에 rhythmProfile이 없으면 클라이언트 측 분배 적용 ──
+  const needsClientRhythm = !cutsResult.sequencePlan || usedFallback;
+  let rhythmAppliedCuts = rawCuts;
+  if (needsClientRhythm && rawCuts.length > 0) {
+    const pacingMode: PacingMode = "balanced";
+    const rhythmInputs = rawCuts.map((c, i) => ({
+      cutNumber: c.cutNumber ?? i + 1,
+      purpose: (c as Record<string, unknown>).purpose as string | undefined,
+      shotType: (c as Record<string, unknown>).shotType as string | undefined,
+      shotCategory: (c as Record<string, unknown>).shotCategory as string | undefined,
+      durationSec: c.durationSec,
+    }));
+    const rhythmResult = distributeRhythm(rhythmInputs, pacingMode);
+    rhythmAppliedCuts = rawCuts.map((c, i) => ({
+      ...c,
+      durationSec: rhythmResult.cuts[i]?.durationSec ?? c.durationSec,
+    }));
+  }
+
   // density 보정 후 구조 보조 메타 자동 부여
-  const cuts = classifyCuts(densifyCuts(rawCuts));
+  const cuts = classifyCuts(densifyCuts(rhythmAppliedCuts));
 
   const catalogStyle = getStyleById(input.animationMode);
   const videoStyle = catalogStyle

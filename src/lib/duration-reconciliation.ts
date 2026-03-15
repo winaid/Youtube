@@ -301,6 +301,10 @@ export interface DurationSummaryResult {
   headline: string;
   /** 보조 정보 텍스트 (requested vs actual) */
   detail: string;
+  /** duration 범위 (최소~최대) */
+  durationRange?: { min: number; max: number };
+  /** 리듬 대비 있는지 여부 */
+  hasRhythmContrast?: boolean;
 }
 
 /**
@@ -317,16 +321,29 @@ export function buildDurationSummary(input: DurationSummaryInput): DurationSumma
   let headline: string;
   let detail: string;
 
+  // duration 범위 계산
+  const durations = cuts.map(c => c.durationSec ?? DURATION_FALLBACK);
+  const minDur = durations.length > 0 ? Math.min(...durations) : 0;
+  const maxDur = durations.length > 0 ? Math.max(...durations) : 0;
+  const hasRhythmContrast = maxDur - minDur >= 2;
+
   if (isAutoMode) {
     // 자동 모드: 곱셈 수식 금지, actual 기준만 표시
     const avgSec = actualSceneCount > 0
       ? Math.round(actualTotalDurationSeconds / actualSceneCount * 10) / 10
       : 0;
-    headline = `${actualSceneCount}컷 · 평균 ${avgSec}초 · 총 ${actualTotalDurationSeconds}초`;
+    // 리듬 대비가 있으면 범위 표시, 없으면 평균만 표시
+    if (hasRhythmContrast) {
+      headline = `${actualSceneCount}컷 · ${minDur}~${maxDur}초 · 총 ${actualTotalDurationSeconds}초`;
+    } else {
+      headline = `${actualSceneCount}컷 · 평균 ${avgSec}초 · 총 ${actualTotalDurationSeconds}초`;
+    }
     const basisLabel = durationBasis
       ? ` (${durationBasis})`
       : "";
-    detail = `자동 편집 리듬 + 밀도 보정 적용${basisLabel}`;
+    detail = hasRhythmContrast
+      ? `리듬 분배 적용 · 평균 ${avgSec}초${basisLabel}`
+      : `자동 편집 리듬 + 밀도 보정 적용${basisLabel}`;
   } else {
     // 명시 모드
     const requestedTotal = requestedSecondsPerScene * actualSceneCount;
@@ -341,5 +358,13 @@ export function buildDurationSummary(input: DurationSummaryInput): DurationSumma
     }
   }
 
-  return { actualSceneCount, actualTotalDurationSeconds, isAutoMode, headline, detail };
+  return {
+    actualSceneCount,
+    actualTotalDurationSeconds,
+    isAutoMode,
+    headline,
+    detail,
+    durationRange: durations.length > 0 ? { min: minDur, max: maxDur } : undefined,
+    hasRhythmContrast,
+  };
 }

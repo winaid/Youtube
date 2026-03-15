@@ -18,6 +18,8 @@ import { computeServerAutoDuration } from "./_duration-constants";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate, buildCompactEditorialSummary } from "./_editorial-persona";
 import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
+import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
+import type { PacingMode } from "./_rhythm-distribution";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1124,6 +1126,7 @@ function buildDeterministicCuts(
     return {
       cutNumber,
       durationSec: secPerCut,
+      purpose,
       sceneDescription: `장면 ${cutNumber}`,
       shotType,
       subjectAction,
@@ -1870,6 +1873,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return {
         cutNumber:     outline.cutNumber,
         durationSec:   secPerCut,
+        purpose:       outline.purpose,
         sceneDescription: outline.sceneKo,
         shotType:      outline.shotType,
         subjectAction: outline.subjectAction,
@@ -1897,8 +1901,48 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       };
     });
 
+    // ═══ rhythm distribution — 역할 기반 duration 재분배 ═══════════
+    // uniform secPerCut → purpose/shotType/shotCategory 기반 가변 분배
+    const pacingMode: PacingMode = (() => {
+      // parsedRange의 크기로 사용자 의도를 유추
+      if (parsedRange) {
+        const rangeSize = parsedRange.max - parsedRange.min;
+        if (rangeSize <= 1 && parsedRange.max >= 20) return "fast";
+        if (rangeSize <= 1 && parsedRange.min <= 5) return "cinematic";
+      }
+      // contentMode 기반 보정
+      const contentMode = detectContentMode(String(storyText));
+      if (contentMode === "dramatized_reenactment") return "cinematic";
+      // editorial persona의 motionBias 활용
+      if (pBias === "upper") return "fast";
+      if (pBias === "lower") return "cinematic";
+      return "balanced";
+    })();
+
+    const rhythmInputCuts = cuts.map(c => ({
+      cutNumber: c.cutNumber,
+      purpose: (c as Record<string, unknown>).purpose as string | undefined
+        ?? outlines.find(o => o.cutNumber === c.cutNumber)?.purpose,
+      shotType: c.shotType,
+      shotCategory: c.shotCategory,
+      durationSec: c.durationSec,
+    }));
+
+    const rhythmResult = distributeRhythm(rhythmInputCuts, pacingMode);
+
+    // 리듬 분배된 duration을 원래 cuts에 적용
+    const rhythmCuts = cuts.map((c, i) => ({
+      ...c,
+      durationSec: rhythmResult.cuts[i]?.durationSec ?? c.durationSec,
+    }));
+
+    console.log("[generate-cuts] rhythm distribution applied", {
+      pacingMode,
+      profile: rhythmResult.profile,
+    });
+
     // ═══ density 보정 + classify → finalizedCuts ═══════════════════
-    const finalizedCuts = classifyCuts(densifyCuts(cuts));
+    const finalizedCuts = classifyCuts(densifyCuts(rhythmCuts));
 
     // ═══ 시퀀스 플랜 구축 + 검증 ═══════════════════════════════════
     // finalizedCuts 기준으로 SequencePlan 생성 (cuts와 sequencePlan 정합성 보장)
@@ -1924,6 +1968,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sequencePlan,
       sequenceValidation,
       secPerCut,
+      rhythmProfile: rhythmResult.profile,
       cutCountDecisionBasis: {
         finalCutCount: targetCuts,
         source: cutDecision.source,
