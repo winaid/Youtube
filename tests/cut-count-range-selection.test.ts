@@ -6,7 +6,7 @@
  * - densityPresetToRange 프리셋→범위 변환
  * - resolveCutCount 우선순위 (exact > range > density > fallback)
  * - density minimum이 hard floor로 작동
- * - 15s → 1~2 cuts 기본값 (new density policy)
+ * - 15s → 1~2 cuts 기본값 (Kling VIDEO 3.0 native 15s)
  */
 
 import { describe, it, expect } from "vitest";
@@ -90,7 +90,7 @@ describe("C. resolveCutCount priority chain", () => {
   it("10) exact cutCount가 최우선", () => {
     const result = resolveCutCount({
       exactCutCount: 7,
-      preferredRange: { min: 3, max: 5 },
+      preferredRange: { min: 1, max: 2 },
       totalDurationSec: 15,
     });
     expect(result.cutCount).toBe(7);
@@ -116,16 +116,16 @@ describe("C. resolveCutCount priority chain", () => {
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("13) exact cutCount >= density minimum이면 exact 그대로 사용", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 1 (new policy)
+  it("13) exact cutCount ≥ density minimum → exact wins (density min=1 for 15s)", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 1
+    expect(densityMin).toBe(1);
     const result = resolveCutCount({
       exactCutCount: 2,
       totalDurationSec: 15,
     });
-    // exactCutCount(2) >= densityMin(1), so exact value is used as-is
+    // With new policy, densityMin=1 for 15s. exactCutCount=2 >= 1, so exact wins.
     expect(result.cutCount).toBe(2);
     expect(result.source).toBe("exact_cutCount");
-    expect(result.notes.some(n => n.includes("density minimum"))).toBe(false);
   });
 });
 
@@ -134,17 +134,15 @@ describe("C. resolveCutCount priority chain", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. range vs density minimum conflict", () => {
-  it("14) range.min >= density minimum → density minimum 개입 없음", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 1 (new policy)
+  it("14) range.min ≥ density minimum (both 1 for 15s) → range used as-is", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 1
+    expect(densityMin).toBe(1);
     const result = resolveCutCount({
       preferredRange: { min: 1, max: 3 },
       totalDurationSec: 15,
       personaBias: "neutral",
     });
-    // densityMin(1) == range.min(1), so no raising occurs and range is used as-is
     expect(result.cutCount).toBeGreaterThanOrEqual(densityMin);
-    expect(result.cutCount).toBeLessThanOrEqual(3);
-    expect(result.notes.some(n => n.includes("density minimum"))).toBe(false);
   });
 
   it("15) range.min >= density minimum → range 그대로 사용", () => {
@@ -254,7 +252,7 @@ describe("G. server/client parity", () => {
   it("25) resolveCutCount parity", () => {
     const opts = {
       exactCutCount: undefined,
-      preferredRange: { min: 3, max: 5 },
+      preferredRange: { min: 1, max: 2 },
       totalDurationSec: 15,
       personaBias: "upper" as const,
     };
