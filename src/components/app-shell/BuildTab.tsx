@@ -93,11 +93,15 @@ export default function BuildTab({
     return {
       model: selectedModel,
       workflow: selectedWorkflow,
-      totalCuts: result.totalCuts,
-      cuts: result.cuts.map(cut => ({
+      totalSegments: result.totalCuts,
+      totalRuntimeSec: result.cuts.reduce((s, c) => s + c.durationSec, 0),
+      generationUnitConstraint: "3-15s per segment",
+      continuationChain: result.cuts.map((cut, i) => ({
+        segmentIndex: i + 1,
         cutNumber: cut.cutNumber,
         durationSec: cut.durationSec,
         shotCount: cut.multiShot?.length ?? 1,
+        extendFromPrev: i > 0,
         shots: cut.multiShot?.map(s => ({
           role: s.role,
           duration: s.duration,
@@ -111,8 +115,8 @@ export default function BuildTab({
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center space-y-2">
-          <p className="text-sm" style={{ color: "#999" }}>시퀀스가 없습니다</p>
-          <p className="text-xs" style={{ color: "#ccc" }}>Plan 탭에서 먼저 시퀀스를 생성하세요.</p>
+          <p className="text-sm" style={{ color: "#999" }}>프로젝트가 없습니다</p>
+          <p className="text-xs" style={{ color: "#ccc" }}>Plan 탭에서 스크립트를 입력하고 시퀀스를 생성하세요.</p>
         </div>
       </div>
     );
@@ -173,7 +177,7 @@ export default function BuildTab({
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: allValid ? "#22c55e" : "#ef4444" }}>2</span>
-            시퀀스 검증
+            세그먼트 검증
             <div className="ml-auto flex gap-2">
               {totalErrors > 0 && (
                 <Badge className="text-[10px]" style={{ background: "#fef2f2", color: "#dc2626" }}>
@@ -232,8 +236,8 @@ export default function BuildTab({
             <div className="text-center py-4">
               {allValid ? (
                 <div className="space-y-1">
-                  <p className="text-sm font-medium" style={{ color: "#22c55e" }}>배치 검증 통과</p>
-                  <p className="text-xs" style={{ color: "#999" }}>{result.totalCuts}개 컷 · 에러 없음</p>
+                  <p className="text-sm font-medium" style={{ color: "#22c55e" }}>전체 검증 통과</p>
+                  <p className="text-xs" style={{ color: "#999" }}>{result.totalCuts}개 세그먼트 · 에러 없음</p>
                 </div>
               ) : (
                 <div className="space-y-1">

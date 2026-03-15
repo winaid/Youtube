@@ -41,18 +41,18 @@ export default function RuntimeBudgetBar({
           {/* Left: Stats */}
           <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-1.5">
-              <span style={{ color: "#666" }}>배치 예산</span>
+              <span style={{ color: "#666" }}>프로젝트 예산</span>
               <span className="font-bold" style={{ color: colors.text }}>
                 {Math.round(summary.totalPlannedSec)}s / {budgetLimitSec}s
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span style={{ color: "#666" }}>클립</span>
+              <span style={{ color: "#666" }}>세그먼트</span>
               <span className="font-medium">{summary.totalClips}개</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span style={{ color: "#666" }}>평균</span>
-              <span className="font-medium">{summary.averageSecPerClip}s/clip</span>
+              <span className="font-medium">{summary.averageSecPerClip}s/seg</span>
             </div>
           </div>
 

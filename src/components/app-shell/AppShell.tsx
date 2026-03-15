@@ -108,7 +108,7 @@ export default function AppShell() {
                 Kling O3
               </span>
               <span className="text-[10px] hidden md:inline" style={{ color: "#aaa" }}>
-                Shortform Cinematic Production
+                Segmented Cinematic Production System
               </span>
             </div>
 
@@ -160,8 +160,8 @@ export default function AppShell() {
         </div>
       </header>
 
-      {/* ── Runtime Budget Bar (Batch Mode) ── */}
-      {mode === "batch" && (
+      {/* ── Runtime Budget Bar ── */}
+      {(mode === "batch" || batchEntries.length > 0) && (
         <RuntimeBudgetBar entries={batchEntries} onUpdateEntries={setBatchEntries} />
       )}
 
@@ -225,7 +225,7 @@ export default function AppShell() {
       {/* ── Footer ── */}
       <footer className="border-t py-3 text-center">
         <p className="text-xs" style={{ color: "#999" }}>
-          CineForge — Kling O3 Shortform Cinematic Production System
+          CineForge — Kling O3 Segmented Cinematic Production System · 3-15s 생성 단위 · 최대 5분 프로젝트
         </p>
       </footer>
     </div>

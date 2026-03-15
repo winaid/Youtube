@@ -51,8 +51,8 @@ export default function GenerateTab({
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center space-y-2">
-          <p className="text-sm" style={{ color: "#999" }}>시퀀스가 없습니다</p>
-          <p className="text-xs" style={{ color: "#ccc" }}>Plan 탭에서 먼저 시퀀스를 생성하세요.</p>
+          <p className="text-sm" style={{ color: "#999" }}>프로젝트가 없습니다</p>
+          <p className="text-xs" style={{ color: "#ccc" }}>Plan 탭에서 스크립트를 입력하고 시퀀스를 생성하세요.</p>
         </div>
       </div>
     );
@@ -102,7 +102,7 @@ export default function GenerateTab({
                 disabled={isAutoMode || idleClips.length === 0}
                 style={{ background: "#787fff" }}
               >
-                순차 생성 시작
+                순차 생성 (extend chain)
               </Button>
             )}
             {failedClips.length > 0 && (
@@ -189,7 +189,7 @@ export default function GenerateTab({
                 }[clip.status];
                 return (
                   <div key={clip.cutNumber} className="flex items-center gap-3 py-1.5 px-3 rounded border text-xs">
-                    <span className="font-bold w-12">컷 {clip.cutNumber}</span>
+                    <span className="font-bold w-14">Seg {clip.cutNumber}</span>
                     <span style={{ color: "#999" }}>{clip.durationSec}s</span>
                     <div className="flex-1" />
                     <span className="font-medium" style={{ color: statusColor }}>
@@ -232,8 +232,11 @@ export default function GenerateTab({
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold">컷 {clip.cutNumber}</span>
+                        <span className="text-sm font-bold">Seg {clip.cutNumber}</span>
                         <span className="text-[10px]" style={{ color: "#999" }}>{clip.durationSec}s</span>
+                        {clip.cutNumber > 1 && (
+                          <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "#dbeafe", color: "#2563eb" }}>extend</span>
+                        )}
                       </div>
                       <Badge
                         className="text-[10px]"

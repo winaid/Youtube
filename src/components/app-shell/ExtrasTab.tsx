@@ -96,9 +96,9 @@ export default function ExtrasTab({
           <CardContent className="space-y-4">
             <div className="space-y-3">
               <div>
-                <h3 className="text-sm font-medium mb-1">Kling O3 Shortform Cinematic Production System</h3>
+                <h3 className="text-sm font-medium mb-1">Kling O3 Segmented Cinematic Production System</h3>
                 <p className="text-xs" style={{ color: "#666" }}>
-                  3~15초 리텐션 최적화 멀티샷 영상을 설계하고 생성하는 프로덕션 워크플로우 시스템입니다.
+                  장문 스크립트를 3-15초 생성 단위(세그먼트)로 분할하고, extend/continuation 체이닝으로 최대 5분 영상을 조립하는 프로덕션 시스템입니다.
                 </p>
               </div>
 
@@ -123,10 +123,11 @@ export default function ExtrasTab({
               <div>
                 <h4 className="text-xs font-medium mb-1">핵심 개념</h4>
                 <ul className="text-xs space-y-1" style={{ color: "#666" }}>
-                  <li>• <strong>시퀀스</strong> — 의미 있는 멀티샷 영상 계획</li>
+                  <li>• <strong>세그먼트</strong> — 3-15초 Kling 생성 단위. 장문 스크립트를 자동 분할</li>
+                  <li>• <strong>Extend 체이닝</strong> — 세그먼트 간 연속성 유지하며 영상 연결</li>
                   <li>• <strong>샷 역할</strong> — 도입/전개/절정/마무리/삽입/전환</li>
-                  <li>• <strong>런타임 예산</strong> — 배치 전체 생성 시간 관리</li>
-                  <li>• <strong>Studio 모드</strong> — 정밀 검토와 정제</li>
+                  <li>• <strong>런타임 예산</strong> — 프로젝트 전체 생성 시간 관리 (최대 300초)</li>
+                  <li>• <strong>Studio 모드</strong> — 세그먼트별 정밀 검토와 정제</li>
                   <li>• <strong>Batch 모드</strong> — 빠른 대량 생성</li>
                 </ul>
               </div>
