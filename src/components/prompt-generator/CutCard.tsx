@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
 import { getMaxShots } from "@/lib/kling-capability";
-import { distributeEvenly } from "@/lib/multishot-validation";
+import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -419,17 +419,27 @@ export default function CutCard({
             return <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />;
           }
           if (maxShots > 0) {
+            const densityWarn = checkShotDensity(cut.durationSec, 1);
+            const rec = getRecommendedShotRange(cut.durationSec);
+            const defaultShots = Math.min(rec.min, maxShots);
             return (
-              <button
-                onClick={() => {
-                  const initial = distributeEvenly(modelId, 2, cut.durationSec);
-                  onUpdate({ ...cut, multiShot: initial });
-                }}
-                className="text-[10px] px-2 py-1 rounded-md transition-colors"
-                style={{ background: "#e85d0410", color: "#e85d04", border: "1px solid #e85d0420" }}
-              >
-                멀티샷 시작 ({maxShots}샷 가능)
-              </button>
+              <div className="space-y-1">
+                {densityWarn && (
+                  <p className="text-[9px]" style={{ color: "#f59e0b" }}>
+                    {densityWarn.message}
+                  </p>
+                )}
+                <button
+                  onClick={() => {
+                    const initial = distributeEvenly(modelId, Math.max(2, defaultShots), cut.durationSec);
+                    onUpdate({ ...cut, multiShot: initial });
+                  }}
+                  className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                  style={{ background: "#e85d0410", color: "#e85d04", border: "1px solid #e85d0420" }}
+                >
+                  멀티샷 시작 ({rec.min}–{rec.max}샷 권장, 최대 {maxShots})
+                </button>
+              </div>
             );
           }
           return null;

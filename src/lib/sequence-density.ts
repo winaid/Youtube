@@ -13,25 +13,24 @@
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 서사/설명형 콘텐츠 친화적 밀도 정책.
+ * 숏폼 리텐션 친화적 밀도 정책.
  *
- * Kling VIDEO 3.0은 한 번에 최대 15초를 네이티브 생성할 수 있으므로,
- * 15초 세그먼트에 5컷 minimum은 기술적으로 불필요하다.
- * 이전 정책(15초→5컷)은 숏폼 몽타주에 최적화되어 있어
- * 긴 서사/설명형 영상이 불필요하게 ~3초 평균으로 분쇄되었다.
+ * 8초 이상에서 최소 2컷을 보장하여
+ * "12초에 1샷" 같은 정적 결과물을 방지한다.
+ * 빠른 편집이 필요하면 editingDensity="dense" 사용.
  *
- * 새 정책: 각 세그먼트의 minimum은 1컷.
- * 실제 컷 수는 estimateAutoEditPlan(계획층)이 결정하며,
- * densifyCuts는 퇴화 케이스(컷 수 ≤ 0)만 교정하는 안전망 역할.
- *
- * 빠른 편집(fast-edit)이 필요하면 editingDensity="dense" 프리셋 사용.
+ * heuristic 기준:
+ *   3–5s:  1–2 shots
+ *   6–8s:  2–3 shots
+ *   9–12s: 3–4 shots
+ *   13–15s: 4–6 shots
  */
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
-  { maxSec: 4, minCuts: 1 },
-  { maxSec: 7, minCuts: 1 },
-  { maxSec: 12, minCuts: 1 },
-  { maxSec: 15, minCuts: 1 },
-  { maxSec: Infinity, minCuts: 1 },
+  { maxSec: 5, minCuts: 1 },
+  { maxSec: 8, minCuts: 2 },
+  { maxSec: 12, minCuts: 3 },
+  { maxSec: 15, minCuts: 4 },
+  { maxSec: Infinity, minCuts: 4 },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -50,19 +49,19 @@ export const KLING_SEGMENT_CAP = 15;
 export const CUT_COUNT_MAX = 30;
 
 /**
- * 총 길이(초) 기준 권장 컷 수 범위.
- * 15초 이하: 단일 segment 기준 프리셋.
- * 15초 초과: segment 단위로 분할 후 합산.
+ * Runtime → Recommended Shot Count Range.
  *
- * Kling VIDEO 3.0이 15초를 네이티브 지원하므로,
- * 서사/설명형 콘텐츠에서는 1컷=최대 15초가 유효하다.
- * dense 프리셋으로 빠른 편집을 원하면 상단 범위 사용.
+ * 숏폼 비디오 리텐션 기준:
+ *   3–5s:  1–2 shots
+ *   6–8s:  2–3 shots
+ *   9–12s: 3–4 shots
+ *   13–15s: 4–6 shots
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
-  { maxSec: 5,  min: 1, max: 1 },
-  { maxSec: 8,  min: 1, max: 2 },
-  { maxSec: 12, min: 1, max: 2 },
-  { maxSec: 15, min: 1, max: 2 },
+  { maxSec: 5,  min: 1, max: 2 },
+  { maxSec: 8,  min: 2, max: 3 },
+  { maxSec: 12, min: 3, max: 4 },
+  { maxSec: 15, min: 4, max: 6 },
 ];
 
 /**

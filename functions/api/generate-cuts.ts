@@ -960,10 +960,11 @@ ${(() => {
 - "multiShot" 필드는 출력하지 말 것.`;
     }
     if (maxShots <= 2) {
-      return `### multiShot 제한 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
-- ${secPerCut}초에서는 multiShot을 최대 ${maxShots}개까지만 허용한다.
-- 가능하면 multiShot 없이 단일 연속 shot으로 구성하라.
-- 꼭 필요한 경우에만 ${maxShots}개의 서브샷 (location→emotion)으로 구성.
+      return `### multiShot 권장 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+- ${secPerCut}초에서는 multiShot을 최대 ${maxShots}개까지 허용한다.
+- 리텐션을 위해 ${maxShots}개 서브샷 사용을 기본 권장한다.
+- 단일 long-take가 서사적으로 더 강력한 경우에만 multiShot 없이 구성.
+- 각 서브샷에 "role" 필드를 포함하라: "establish"|"develop"|"peak"|"resolve"|"insert"|"transition"
 - duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.`;
     }
     const shotRoles = [

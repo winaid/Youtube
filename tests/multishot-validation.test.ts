@@ -365,3 +365,56 @@ describe("autoAssignRoles", () => {
     expect(result[2].role).toBe("peak"); // 유지
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Shot Density (Runtime Heuristics)
+// ═══════════════════════════════════════════════════════════════════
+
+import { checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
+
+describe("getRecommendedShotRange", () => {
+  it("3–5s → 1–2", () => {
+    expect(getRecommendedShotRange(5)).toEqual({ min: 1, max: 2 });
+  });
+  it("6–8s → 2–3", () => {
+    expect(getRecommendedShotRange(8)).toEqual({ min: 2, max: 3 });
+  });
+  it("9–12s → 3–4", () => {
+    expect(getRecommendedShotRange(12)).toEqual({ min: 3, max: 4 });
+  });
+  it("13–15s → 4–6", () => {
+    expect(getRecommendedShotRange(15)).toEqual({ min: 4, max: 6 });
+  });
+});
+
+describe("checkShotDensity", () => {
+  it("12s + 1 shot → warning", () => {
+    const result = checkShotDensity(12, 1);
+    expect(result).not.toBeNull();
+    expect(result!.severity).toBe("warning");
+    expect(result!.message).toContain("3–4샷 권장");
+  });
+
+  it("12s + 3 shots → OK", () => {
+    expect(checkShotDensity(12, 3)).toBeNull();
+  });
+
+  it("5s + 1 shot → OK (짧은 영상)", () => {
+    expect(checkShotDensity(5, 1)).toBeNull();
+  });
+
+  it("8s + 1 shot → warning", () => {
+    const result = checkShotDensity(8, 1);
+    expect(result).not.toBeNull();
+    expect(result!.message).toContain("2–3샷 권장");
+  });
+
+  it("15s + 4 shots → OK", () => {
+    expect(checkShotDensity(15, 4)).toBeNull();
+  });
+
+  it("15s + 2 shots → warning", () => {
+    const result = checkShotDensity(15, 2);
+    expect(result).not.toBeNull();
+  });
+});

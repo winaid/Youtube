@@ -381,10 +381,10 @@ import { buildSequencePlanFromCuts, validateSequencePlan } from "../functions/ap
 // ═══════════════════════════════════════════════════════════════════
 
 describe("server-side densifyCuts — deterministic fallback density", () => {
-  it("should NOT split 15s single deterministic cut (per-segment minimum is 1)", () => {
+  it("should split 15s single deterministic cut to meet minimum of 4", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 15, shotType: "WS" }];
     const result = densifyCuts(deterministicCuts);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(4);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(15);
   });
@@ -396,18 +396,18 @@ describe("server-side densifyCuts — deterministic fallback density", () => {
       shotType: "WS",
     }));
     const result = densifyCuts(deterministicCuts);
-    // 5 cuts at 8s = 40s total. Segment-aware: 15s×2(min 10) + 10s(min 4) = 14 min
+    // 5 cuts at 8s = 40s total. Segment-aware: 15s×2(min 4 each) + 10s(min 3) = 11 min
     // densifyCuts will split to meet this minimum
-    expect(result.length).toBeGreaterThanOrEqual(5);
+    expect(result.length).toBeGreaterThanOrEqual(11);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(40); // total duration preserved
   });
 
-  it("should NOT split 12s single cut (per-segment minimum is 1), classify with correct pipeline", () => {
+  it("should split 12s single cut to meet minimum of 3, classify with correct pipeline", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 12 }];
     const densified = densifyCuts(deterministicCuts);
     const classified = classifyCuts(densified);
-    expect(classified.length).toBe(1);
+    expect(classified.length).toBe(3);
     for (const c of classified) {
       expect(c.structureType).toBe("cut");
       expect(c.durationClass).toBeDefined();
@@ -449,21 +449,21 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     return { cuts: finalizedCuts, sequencePlan, sequenceValidation };
   }
 
-  it("15s single cut → 분할 없음(minimum=1), cuts와 sequencePlan shot 수 일치", () => {
+  it("15s single cut → density split to 4 cuts, cuts와 sequencePlan shot 수 일치", () => {
     const resp = simulateFallbackResponse(1, 15);
-    expect(resp.cuts.length).toBe(1);
+    expect(resp.cuts.length).toBe(4);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
-  it("12s single cut → 분할 없음(minimum=1), cuts와 sequencePlan shot 수 일치", () => {
+  it("12s single cut → density split to 3 cuts, cuts와 sequencePlan shot 수 일치", () => {
     const resp = simulateFallbackResponse(1, 12);
-    expect(resp.cuts.length).toBe(1);
+    expect(resp.cuts.length).toBe(3);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
-  it("8s single cut → 분할 없음(minimum=1), cuts와 sequencePlan shot 수 일치", () => {
+  it("8s single cut → density split to 2 cuts, cuts와 sequencePlan shot 수 일치", () => {
     const resp = simulateFallbackResponse(1, 8);
-    expect(resp.cuts.length).toBe(1);
+    expect(resp.cuts.length).toBe(2);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 

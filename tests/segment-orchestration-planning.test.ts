@@ -54,11 +54,11 @@ describe("A. segment 분해 기본", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. per-segment cut budget", () => {
-  it("5) 15초 segment → cutRange {1, 2}", () => {
+  it("5) 15초 segment → cutRange {4, 6}", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
     const seg = plan.segments[0];
-    expect(seg.cutRange.min).toBeGreaterThanOrEqual(1);
-    expect(seg.cutRange.max).toBeLessThanOrEqual(2);
+    expect(seg.cutRange.min).toBeGreaterThanOrEqual(4);
+    expect(seg.cutRange.max).toBeLessThanOrEqual(6);
   });
 
   it("6) 120초 → totalTargetCuts = sum of all segment targets", () => {
@@ -133,8 +133,8 @@ describe("D. preferredRange per-segment", () => {
       totalDurationSec: 15,
       preferredRange: { min: 1, max: 2 },
     });
-    // density min for 15s = 1 (new policy), preferredRange.min=1 matches density min → no raising needed
-    expect(plan.segments[0].cutRange.min).toBeGreaterThanOrEqual(1);
+    // density min for 15s = 4 (short-form retention policy), preferredRange.min=1 < 4 → raised to 4
+    expect(plan.segments[0].cutRange.min).toBeGreaterThanOrEqual(4);
   });
 });
 

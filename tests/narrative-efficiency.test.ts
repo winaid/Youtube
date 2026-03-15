@@ -34,14 +34,14 @@ const SHORT_EXPLAINER = Array.from({ length: 8 }, (_, i) =>
 // A. 긴 프로젝트(~210초)에서 3초 수렴이 발생하지 않음
 // ═══════════════════════════════════════════════════════════════════
 
-describe("A. 210초 역사 설명형 — 3초 수렴 방지", () => {
+describe("A. 210초 역사 설명형 — 고밀도 정책 적용", () => {
   it("계획 단계에서 컷 수가 30 이하", () => {
     const plan = estimateAutoEditPlan(HISTORICAL_EXPLAINER);
     expect(plan.cutCount).toBeLessThanOrEqual(30);
     expect(plan.cutDuration).toBeGreaterThanOrEqual(5);
   });
 
-  it("densifyCuts가 계획 컷 수를 과도하게 늘리지 않음", () => {
+  it("densifyCuts가 고밀도 정책에 맞게 컷 수를 늘림", () => {
     const plan = estimateAutoEditPlan(HISTORICAL_EXPLAINER);
     const rawCuts = Array.from({ length: plan.cutCount }, (_, i) => ({
       cutNumber: i + 1,
@@ -49,15 +49,13 @@ describe("A. 210초 역사 설명형 — 3초 수렴 방지", () => {
     }));
     const totalSec = rawCuts.reduce((s, c) => s + c.durationSec, 0);
     const densified = densifyCuts(rawCuts, totalSec);
+    const minCuts = recommendMinimumCutCount(totalSec);
 
-    // 핵심: densifyCuts가 컷 수를 대폭 늘리지 않아야 함
-    expect(densified.length).toBe(rawCuts.length);
-    // 평균 duration이 5초 이상 유지
-    const avgSec = totalSec / densified.length;
-    expect(avgSec).toBeGreaterThanOrEqual(5);
+    // 새 정책: densifyCuts가 최소 컷 수까지 분할
+    expect(densified.length).toBeGreaterThanOrEqual(minCuts);
   });
 
-  it("최종 평균 컷 길이가 3초대로 붕괴하지 않음", () => {
+  it("최종 평균 컷 길이가 3초 이상 유지", () => {
     const plan = estimateAutoEditPlan(HISTORICAL_EXPLAINER);
     const rawCuts = Array.from({ length: plan.cutCount }, (_, i) => ({
       cutNumber: i + 1,
@@ -67,9 +65,8 @@ describe("A. 210초 역사 설명형 — 3초 수렴 방지", () => {
     const densified = densifyCuts(rawCuts, totalSec);
     const avgSec = totalSec / densified.length;
 
-    // 이전 정책: 210초 → 70컷 → 평균 3초 (BAD)
-    // 새 정책: 210초 → ~30컷 → 평균 ~7초 (GOOD)
-    expect(avgSec).toBeGreaterThan(4);
+    // 새 고밀도 정책: 210초 → ~56컷 → 평균 ~3.75초
+    expect(avgSec).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -84,7 +81,7 @@ describe("B. 120초 서사형 — 효율적 컷 구조", () => {
     expect(plan.cutCount).toBeLessThanOrEqual(30);
   });
 
-  it("densifyCuts가 컷 수를 보존", () => {
+  it("densifyCuts가 고밀도 정책에 맞게 컷 수를 조정", () => {
     const plan = estimateAutoEditPlan(NARRATIVE_STORY);
     const rawCuts = Array.from({ length: plan.cutCount }, (_, i) => ({
       cutNumber: i + 1,
@@ -92,9 +89,10 @@ describe("B. 120초 서사형 — 효율적 컷 구조", () => {
     }));
     const totalSec = rawCuts.reduce((s, c) => s + c.durationSec, 0);
     const densified = densifyCuts(rawCuts, totalSec);
+    const minCuts = recommendMinimumCutCount(totalSec);
 
-    // 새 정책: densifyCuts가 분할하지 않아야 함
-    expect(densified.length).toBe(rawCuts.length);
+    // 새 정책: densifyCuts가 최소 컷 수까지 분할
+    expect(densified.length).toBeGreaterThanOrEqual(minCuts);
   });
 });
 
@@ -103,24 +101,20 @@ describe("B. 120초 서사형 — 효율적 컷 구조", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. recommendMinimumCutCount 새 정책", () => {
-  it("15초 → minimum 1 (Kling 네이티브 15초 지원)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
+  it("15초 → minimum 4", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
   });
 
-  it("210초 → minimum 14 (세그먼트당 1컷)", () => {
-    // 이전: 14 × 5 = 70 (과도)
-    // 새로: 14 × 1 = 14 (합리적)
-    expect(recommendMinimumCutCount(210)).toBe(14);
+  it("210초 → minimum 56 (14 세그먼트 × 4)", () => {
+    expect(recommendMinimumCutCount(210)).toBe(56);
   });
 
-  it("120초 → minimum 8 (8 세그먼트 × 1)", () => {
-    // 이전: 8 × 5 = 40
-    // 새로: 8 × 1 = 8
-    expect(recommendMinimumCutCount(120)).toBe(8);
+  it("120초 → minimum 32 (8 세그먼트 × 4)", () => {
+    expect(recommendMinimumCutCount(120)).toBe(32);
   });
 
-  it("300초 → minimum 20 (20 세그먼트 × 1)", () => {
-    expect(recommendMinimumCutCount(300)).toBe(20);
+  it("300초 → minimum 80 (20 세그먼트 × 4)", () => {
+    expect(recommendMinimumCutCount(300)).toBe(80);
   });
 });
 
@@ -129,20 +123,18 @@ describe("C. recommendMinimumCutCount 새 정책", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. recommendCutCountRange 서사 친화적 범위", () => {
-  it("15초 → {1, 2}", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 1, max: 2 });
+  it("15초 → {4, 6}", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
-  it("120초 → {8, 16}", () => {
-    // 이전: {24, 40}
-    // 새로: 8 × {1, 2} = {8, 16}
-    expect(recommendCutCountRange(120)).toEqual({ min: 8, max: 16 });
+  it("120초 → {32, 48}", () => {
+    // 8 × {4, 6} = {32, 48}
+    expect(recommendCutCountRange(120)).toEqual({ min: 32, max: 48 });
   });
 
-  it("210초 → {14, 28}", () => {
-    // 이전: {42, 70}
-    // 새로: 14 × {1, 2} = {14, 28}
-    expect(recommendCutCountRange(210)).toEqual({ min: 14, max: 28 });
+  it("210초 → {56, 84}", () => {
+    // 14 × {4, 6} = {56, 84}
+    expect(recommendCutCountRange(210)).toEqual({ min: 56, max: 84 });
   });
 });
 
@@ -151,7 +143,7 @@ describe("D. recommendCutCountRange 서사 친화적 범위", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("E. 생성 효율성", () => {
-  it("210초 프로젝트: 이전 70회 → 새로 ~30회 생성으로 비용 57% 절감", () => {
+  it("210초 프로젝트: 고밀도 정책에 따라 최소 컷 수 충족", () => {
     const plan = estimateAutoEditPlan(HISTORICAL_EXPLAINER);
     const rawCuts = Array.from({ length: plan.cutCount }, (_, i) => ({
       cutNumber: i + 1,
@@ -159,10 +151,10 @@ describe("E. 생성 효율성", () => {
     }));
     const totalSec = rawCuts.reduce((s, c) => s + c.durationSec, 0);
     const densified = densifyCuts(rawCuts, totalSec);
+    const minCuts = recommendMinimumCutCount(totalSec);
 
-    // 이전: 70 생성 필요
-    // 새로: ~30 생성 필요
-    expect(densified.length).toBeLessThan(40);
+    // 새 고밀도 정책: densifyCuts가 최소 컷 수까지 분할
+    expect(densified.length).toBeGreaterThanOrEqual(minCuts);
   });
 
   it("개별 컷 duration이 Kling 최대(15초) 이내", () => {
@@ -176,7 +168,8 @@ describe("E. 생성 효율성", () => {
 
     for (const cut of densified) {
       expect(cut.durationSec).toBeLessThanOrEqual(15);
-      expect(cut.durationSec).toBeGreaterThanOrEqual(3);
+      // 고밀도 정책: densifyCuts가 2초까지 분할 가능 (2초 이하는 분할 중단)
+      expect(cut.durationSec).toBeGreaterThanOrEqual(2);
     }
   });
 });
@@ -194,14 +187,14 @@ describe("F. dense 프리셋으로 빠른 편집 선택 가능", () => {
     expect(dense.min).toBeGreaterThanOrEqual(normal.max);
   });
 
-  it("dense(120초) → 16~18컷 추천", () => {
+  it("dense(120초) → 48~50컷 추천", () => {
     const dense = densityPresetToRange("dense", 120);
-    expect(dense.min).toBeGreaterThanOrEqual(16);
+    expect(dense.min).toBeGreaterThanOrEqual(48);
   });
 
-  it("sparse(120초) → 7~8컷 추천", () => {
+  it("sparse(120초) → 31~32컷 추천", () => {
     const sparse = densityPresetToRange("sparse", 120);
-    expect(sparse.min).toBeGreaterThanOrEqual(7);
-    expect(sparse.max).toBeLessThanOrEqual(8);
+    expect(sparse.min).toBeGreaterThanOrEqual(31);
+    expect(sparse.max).toBeLessThanOrEqual(32);
   });
 });

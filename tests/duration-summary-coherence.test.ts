@@ -64,9 +64,18 @@ describe("duration summary coherence after density expansion", () => {
     expect(summary.headline).toContain(`${densified.length}컷`);
     expect(summary.headline).toContain(`총 ${totalSec}초`);
 
-    // 평균 duration이 정합적
-    const avgSec = Math.round(totalSec / densified.length * 10) / 10;
-    expect(summary.headline).toContain(`평균 ${avgSec}초`);
+    // 밀도 보정 후 컷 길이가 다양해지면 범위(min~max) 표시, 균일하면 평균 표시
+    const durations = densified.map(c => c.durationSec);
+    const minDur = Math.min(...durations);
+    const maxDur = Math.max(...durations);
+    if (minDur !== maxDur) {
+      // 리듬 대비가 있으면 범위 표시
+      expect(summary.headline).toContain(`${minDur}~${maxDur}초`);
+    } else {
+      // 균일하면 평균 표시
+      const avgSec = Math.round(totalSec / densified.length * 10) / 10;
+      expect(summary.headline).toContain(`평균 ${avgSec}초`);
+    }
   });
 
   it("사전 계획 요약과 최종 요약이 같은 곱셈 수식을 사용하지 않음", () => {

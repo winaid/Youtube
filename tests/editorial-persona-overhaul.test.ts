@@ -188,41 +188,41 @@ describe("auto duration — editorial pace integration", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("multi-cut montage density", () => {
-  it("8s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
-    expect(recommendMinimumCutCount(8)).toBe(1);
+  it("8s input → 2 cut minimum (short-form retention policy)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(2);
   });
 
-  it("10s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
-    expect(recommendMinimumCutCount(10)).toBe(1);
+  it("10s input → 3 cut minimum (short-form retention policy)", () => {
+    expect(recommendMinimumCutCount(10)).toBe(3);
   });
 
-  it("12s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
-    expect(recommendMinimumCutCount(12)).toBe(1);
+  it("12s input → 3 cut minimum (short-form retention policy)", () => {
+    expect(recommendMinimumCutCount(12)).toBe(3);
   });
 
-  it("15s input → 1 cut minimum (narrative-friendly, single segment ≤15s)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
+  it("15s input → 4 cut minimum (short-form retention policy)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
   });
 
-  it("single 8s cut does NOT need density boost (narrative-friendly policy)", () => {
-    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(false);
+  it("single 8s cut needs density boost (short-form retention policy, minCuts=2)", () => {
+    expect(needsDensityBoost([{ durationSec: 8 }])).toBe(true);
   });
 
-  it("densifyCuts: single 12s cut → no split, returns 1 cut (narrative-friendly policy)", () => {
+  it("densifyCuts: single 12s cut → split to 3 cuts (short-form retention policy)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 12 }]);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(3);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(12);
   });
 
-  it("densifyCuts: single 15s cut → no split, returns 1 cut (narrative-friendly policy)", () => {
+  it("densifyCuts: single 15s cut → split to 4 cuts (short-form retention policy)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 15 }]);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(4);
   });
 
-  it("single 8s cut is accepted as-is (no forced splitting)", () => {
+  it("single 8s cut is split to 2 cuts (short-form retention policy)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 8 }]);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(2);
   });
 });
 
@@ -773,12 +773,12 @@ describe("regression — auto duration unchanged", () => {
   });
 });
 
-describe("regression — multi-cut density policy (narrative-friendly)", () => {
-  it("8s → 1 cut minimum (per-segment minimum is now 1)", () => {
-    expect(recommendMinimumCutCount(8)).toBe(1);
+describe("regression — multi-cut density policy (short-form retention)", () => {
+  it("8s → 2 cut minimum (per-segment minimum is now 2)", () => {
+    expect(recommendMinimumCutCount(8)).toBe(2);
   });
-  it("15s → 1 cut minimum (per-segment minimum is now 1)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
+  it("15s → 4 cut minimum (per-segment minimum is now 4)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
   });
 });
 

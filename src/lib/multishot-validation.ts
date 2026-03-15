@@ -39,6 +39,57 @@ export const PROMPT_WARN_LENGTH = 450;
 export const PROMPT_MAX_LENGTH = 512;
 
 // ═══════════════════════════════════════════════════════════════════
+// Runtime Heuristic Defaults
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Runtime → Recommended shot count range.
+ * 숏폼 비디오 리텐션 기준.
+ * recommendation이며 hard cap이 아님.
+ */
+export const RUNTIME_SHOT_HEURISTICS: { maxSec: number; min: number; max: number; label: string }[] = [
+  { maxSec: 5,  min: 1, max: 2, label: "3–5s" },
+  { maxSec: 8,  min: 2, max: 3, label: "6–8s" },
+  { maxSec: 12, min: 3, max: 4, label: "9–12s" },
+  { maxSec: 15, min: 4, max: 6, label: "13–15s" },
+];
+
+/**
+ * runtime 기준 권장 shot 수 범위를 반환.
+ */
+export function getRecommendedShotRange(durationSec: number): { min: number; max: number } {
+  for (const h of RUNTIME_SHOT_HEURISTICS) {
+    if (durationSec <= h.maxSec) return { min: h.min, max: h.max };
+  }
+  return { min: 4, max: 6 };
+}
+
+/**
+ * "runtime에 비해 shot이 부족한가?" 체크.
+ *
+ * @returns null이면 문제없음, 아니면 경고/에러 메시지와 권장 범위
+ */
+export function checkShotDensity(
+  totalDurationSec: number,
+  shotCount: number,
+): { severity: "warning" | "error"; message: string; recommended: { min: number; max: number } } | null {
+  if (totalDurationSec < 8) return null; // 짧은 영상은 1샷 허용
+
+  const rec = getRecommendedShotRange(totalDurationSec);
+
+  if (shotCount < rec.min) {
+    const isExtreme = shotCount <= 1 && totalDurationSec >= 8;
+    return {
+      severity: isExtreme ? "warning" : "warning",
+      message: `${totalDurationSec}초에 ${shotCount}샷 — 리텐션을 위해 ${rec.min}–${rec.max}샷 권장. 단일 long-take가 의도적이라면 무시 가능.`,
+      recommended: rec,
+    };
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Validation Types
 // ═══════════════════════════════════════════════════════════════════
 
@@ -178,6 +229,15 @@ export function validateMultiShots(
         message: `모든 샷이 같은 역할 (${roles[0]}) — 다양화 권장`,
       });
     }
+  }
+
+  // ── shot density (runtime 대비 shot 부족) 경고 ──
+  const densityCheck = checkShotDensity(totalDurationSec, shots.length);
+  if (densityCheck) {
+    aggregateIssues.push({
+      severity: densityCheck.severity,
+      message: densityCheck.message,
+    });
   }
 
   const hasError = shotIssues.some((i) => i.severity === "error") ||

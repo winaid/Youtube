@@ -111,12 +111,12 @@ describe("C. same range + different persona → different cut counts", () => {
 // D. 15s → 1~2 기본 추천값
 // ═══════════════════════════════════════════════════════════════════
 
-describe("D. 15s → 1~2 default recommendation", () => {
-  it("8) 15s 기본 추천이 { min: 1, max: 2 }", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 1, max: 2 });
+describe("D. 15s → 4~6 default recommendation", () => {
+  it("8) 15s 기본 추천이 { min: 4, max: 6 }", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
-  it("9) 15s + 기본 persona → 1~2 범위 내 컷 수", () => {
+  it("9) 15s + 기본 persona → 4~6 범위 내 컷 수", () => {
     const range = recommendCutCountRange(15);
     const bias = personaCutCountBias(DEFAULT_EDITORIAL_PERSONA);
     const result = resolveCutCount({
@@ -124,8 +124,8 @@ describe("D. 15s → 1~2 default recommendation", () => {
       totalDurationSec: 15,
       personaBias: bias,
     });
-    expect(result.cutCount).toBeGreaterThanOrEqual(1);
-    expect(result.cutCount).toBeLessThanOrEqual(2);
+    expect(result.cutCount).toBeGreaterThanOrEqual(4);
+    expect(result.cutCount).toBeLessThanOrEqual(6);
   });
 });
 
@@ -156,11 +156,11 @@ describe("E. editorial persona regression check", () => {
     expect(ep.motionBias).toBe("minimal");
   });
 
-  it("13) density policy = 1 for all durations ≤ 15s (Kling native 15s)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
-    expect(recommendMinimumCutCount(12)).toBe(1);
-    expect(recommendMinimumCutCount(9)).toBe(1);
-    expect(recommendMinimumCutCount(7)).toBe(1);
+  it("13) density policy = short-form retention (≤5s:1, ≤8s:2, ≤12s:3, ≤15s:4)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
+    expect(recommendMinimumCutCount(12)).toBe(3);
+    expect(recommendMinimumCutCount(9)).toBe(3);
+    expect(recommendMinimumCutCount(7)).toBe(2);
     expect(recommendMinimumCutCount(4)).toBe(1);
   });
 });

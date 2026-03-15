@@ -62,9 +62,9 @@ describe("B. total vs current segment target 분리", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. perSegmentCutRange", () => {
-  it("6) density fallback → perSegmentCutRange = singleSegmentRange(15) = {1, 2}", () => {
+  it("6) density fallback → perSegmentCutRange = singleSegmentRange(15) = {4, 6}", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    expect(plan.perSegmentCutRange).toEqual({ min: 1, max: 2 });
+    expect(plan.perSegmentCutRange).toEqual({ min: 4, max: 6 });
   });
 
   it("7) preferredRange 지정 → perSegmentCutRange = preferredRange", () => {
@@ -77,8 +77,8 @@ describe("C. perSegmentCutRange", () => {
 
   it("8) totalCutRange는 전체 시퀀스 기준", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    // 120초 = 8 segments × {1,2} = {8, 16}
-    expect(plan.totalCutRange).toEqual({ min: 8, max: 16 });
+    // 120초 = 8 segments × {4,6} = {32, 48}
+    expect(plan.totalCutRange).toEqual({ min: 32, max: 48 });
   });
 });
 

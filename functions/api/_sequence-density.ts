@@ -13,17 +13,24 @@
 export const KLING_SEGMENT_CAP = 15;
 
 /**
- * 서사/설명형 콘텐츠 친화적 밀도 정책.
- * Kling VIDEO 3.0은 15초 네이티브 생성을 지원하므로
- * per-segment minimum은 1컷. 실제 컷 수는 계획층이 결정.
- * 빠른 편집(fast-edit)이 필요하면 editingDensity="dense" 사용.
+ * 숏폼 리텐션 친화적 밀도 정책.
+ *
+ * 8초 이상에서 최소 2컷을 보장하여
+ * "12초에 1샷" 같은 정적 결과물을 방지한다.
+ * 빠른 편집이 필요하면 editingDensity="dense" 사용.
+ *
+ * heuristic 기준:
+ *   3–5s:  1–2 shots
+ *   6–8s:  2–3 shots
+ *   9–12s: 3–4 shots
+ *   13–15s: 4–6 shots
  */
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
-  { maxSec: 4, minCuts: 1 },
-  { maxSec: 7, minCuts: 1 },
-  { maxSec: 12, minCuts: 1 },
-  { maxSec: 15, minCuts: 1 },
-  { maxSec: Infinity, minCuts: 1 },
+  { maxSec: 5, minCuts: 1 },
+  { maxSec: 8, minCuts: 2 },
+  { maxSec: 12, minCuts: 3 },
+  { maxSec: 15, minCuts: 4 },
+  { maxSec: Infinity, minCuts: 4 },
 ];
 
 /**
@@ -36,11 +43,20 @@ export const CUT_COUNT_MAX = 30;
 // Duration → Recommended Cut Count Range Presets
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Runtime → Recommended Shot Count Range.
+ *
+ * 숏폼 비디오 리텐션 기준:
+ *   3–5s:  1–2 shots
+ *   6–8s:  2–3 shots
+ *   9–12s: 3–4 shots
+ *   13–15s: 4–6 shots
+ */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
-  { maxSec: 5,  min: 1, max: 1 },
-  { maxSec: 8,  min: 1, max: 2 },
-  { maxSec: 12, min: 1, max: 2 },
-  { maxSec: 15, min: 1, max: 2 },
+  { maxSec: 5,  min: 1, max: 2 },
+  { maxSec: 8,  min: 2, max: 3 },
+  { maxSec: 12, min: 3, max: 4 },
+  { maxSec: 15, min: 4, max: 6 },
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {

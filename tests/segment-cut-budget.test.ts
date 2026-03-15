@@ -19,9 +19,9 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. segment densityMinimum", () => {
-  it("1) 15초 segment → densityMinimum = 1 (Kling native 15s)", () => {
+  it("1) 15초 segment → densityMinimum = 4 (고밀도 정책)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
-    expect(plan.segments[0].densityMinimum).toBe(1);
+    expect(plan.segments[0].densityMinimum).toBe(4);
   });
 
   it("2) 5초 remainder segment → densityMinimum = 1", () => {
@@ -56,9 +56,9 @@ describe("B. remainder segment budget", () => {
   it("5) 25초 remainder(10초) cutRange는 singleSegmentRange(10) 기반", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 25 });
     const rem = plan.segments[1];
-    // 10초 → RANGE_PRESETS: maxSec=12 → {1, 2}
-    expect(rem.cutRange.min).toBeGreaterThanOrEqual(1);
-    expect(rem.cutRange.max).toBeLessThanOrEqual(2);
+    // 10초 → RANGE_PRESETS: maxSec=12 → {3, 4}, densityMinimum=3
+    expect(rem.cutRange.min).toBeGreaterThanOrEqual(3);
+    expect(rem.cutRange.max).toBeLessThanOrEqual(4);
   });
 
   it("6) 90초 = 정확히 6 segments, remainder 없음", () => {

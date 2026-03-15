@@ -9,6 +9,7 @@
  */
 
 import { resolveSceneType, getSceneTypeRule } from "@/lib/scene-type-rules";
+import { checkShotDensity } from "@/lib/multishot-validation";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Validation Rules
@@ -409,6 +410,19 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
           message: `MultiShot: 모든 샷이 같은 역할 (${roles[0]}) — 다양화 권장`,
         });
       }
+    }
+  }
+
+  // ── Rule 16: Shot density vs runtime (숏폼 리텐션 경고) ────
+  if (input.durationSec) {
+    const shotCount = input.multiShots?.length ?? 1;
+    const densityCheck = checkShotDensity(input.durationSec, shotCount);
+    if (densityCheck) {
+      issues.push({
+        rule: "shot_density_low",
+        severity: densityCheck.severity,
+        message: densityCheck.message,
+      });
     }
   }
 
