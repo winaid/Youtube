@@ -36,6 +36,12 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
 export const KLING_SEGMENT_CAP = 15;
 
 /**
+ * 최대 허용 컷 수. 5분(300초) 영상까지 지원하기 위해 30컷 상한.
+ * 모든 resolveCutCount 경로에서 이 상수를 사용.
+ */
+export const CUT_COUNT_MAX = 30;
+
+/**
  * 총 길이(초) 기준 권장 컷 수 범위.
  * 15초 이하: 단일 segment 기준 프리셋.
  * 15초 초과: segment 단위로 분할 후 합산.
@@ -150,7 +156,7 @@ export function resolveCutCount(opts: {
       notes.push(`exact cutCount(${exactCutCount}) < density minimum(${densityMin}), using density minimum`);
       return { cutCount: densityMin, source: "exact_cutCount", densityMinimum: densityMin, notes };
     }
-    return { cutCount: Math.min(exactCutCount, 30), source: "exact_cutCount", densityMinimum: densityMin, notes };
+    return { cutCount: Math.min(exactCutCount, CUT_COUNT_MAX), source: "exact_cutCount", densityMinimum: densityMin, notes };
   }
 
   // 2. preferred range
@@ -177,7 +183,7 @@ export function resolveCutCount(opts: {
     }
 
     return {
-      cutCount: Math.min(selected, 30),
+      cutCount: Math.min(selected, CUT_COUNT_MAX),
       source: "preferred_range",
       densityMinimum: densityMin,
       notes,
@@ -197,7 +203,7 @@ export function resolveCutCount(opts: {
   fallbackCount = Math.max(fallbackCount, densityMin);
 
   return {
-    cutCount: Math.min(fallbackCount, 30),
+    cutCount: Math.min(fallbackCount, CUT_COUNT_MAX),
     source: "fallback",
     densityMinimum: densityMin,
     notes: ["no exact cutCount or preferred range provided, using density policy"],

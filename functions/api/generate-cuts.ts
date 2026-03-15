@@ -17,7 +17,7 @@ import { densifyCuts } from "./_sequence-density";
 import { computeServerAutoDuration } from "./_duration-constants";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate, buildCompactEditorialSummary } from "./_editorial-persona";
 import type { EditorialPersona } from "./_editorial-persona";
-import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan } from "./_sequence-density";
+import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1216,7 +1216,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       totalDurationSec: effectiveTotalForDensity,
       personaBias: pBias,
     });
-    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), 30);
+    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), CUT_COUNT_MAX);
 
     console.log("[generate-cuts] duration params", {
       rawCutDuration: cutDuration, secPerCut, targetCuts,

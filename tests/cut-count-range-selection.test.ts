@@ -16,6 +16,7 @@ import {
   resolveCutCount,
   personaCutCountBias,
   recommendMinimumCutCount,
+  CUT_COUNT_MAX,
 } from "@/lib/sequence-density";
 
 // server parity
@@ -259,24 +260,24 @@ describe("G. server/client parity", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// H. max 15 clamp
+// H. clamp to CUT_COUNT_MAX
 // ═══════════════════════════════════════════════════════════════════
 
-describe("H. clamp to max 15", () => {
-  it("26) exact cutCount > 15 → clamped to 15", () => {
+describe("H. clamp to CUT_COUNT_MAX", () => {
+  it("26) exact cutCount > CUT_COUNT_MAX → clamped to CUT_COUNT_MAX", () => {
     const result = resolveCutCount({
-      exactCutCount: 20,
+      exactCutCount: CUT_COUNT_MAX + 10,
       totalDurationSec: 60,
     });
-    expect(result.cutCount).toBeLessThanOrEqual(15);
+    expect(result.cutCount).toBeLessThanOrEqual(CUT_COUNT_MAX);
   });
 
-  it("27) range max > 15 → result clamped to 15", () => {
+  it("27) range max > CUT_COUNT_MAX → result clamped to CUT_COUNT_MAX", () => {
     const result = resolveCutCount({
-      preferredRange: { min: 10, max: 20 },
+      preferredRange: { min: 10, max: CUT_COUNT_MAX + 10 },
       totalDurationSec: 60,
       personaBias: "upper",
     });
-    expect(result.cutCount).toBeLessThanOrEqual(15);
+    expect(result.cutCount).toBeLessThanOrEqual(CUT_COUNT_MAX);
   });
 });
