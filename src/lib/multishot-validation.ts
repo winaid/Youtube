@@ -260,6 +260,24 @@ export function validateMultiShots(
         }
       }
     }
+
+    // ── 프로그레션 품질 심층 검증 (semantic similarity, framing, escalation) ──
+    const progressionIssues = validateProgressionQuality(shots);
+    for (const pi of progressionIssues) {
+      if (pi.shotIndex !== undefined) {
+        shotIssues.push({
+          shotIndex: pi.shotIndex,
+          field: "prompt",
+          severity: pi.severity,
+          message: pi.message,
+        });
+      } else {
+        aggregateIssues.push({
+          severity: pi.severity,
+          message: pi.message,
+        });
+      }
+    }
   }
 
   // ── shot density (runtime 대비 shot 부족) 경고 ──
@@ -579,6 +597,168 @@ export function validateByMode(
     return validateStudioMode(modelId, shots, totalDurationSec, opts?.sceneType, opts?.intentionalOneTake);
   }
   return validateBatchMode(modelId, shots, totalDurationSec);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Progression Quality Validation
+// ═══════════════════════════════════════════════════════════════════
+
+/** Framing terms for detecting shot size in prompt text */
+const FRAMING_WIDE = /\b(wide[\s-]?shot|WS|LS|establishing|aerial|panoram|full[\s-]?shot)\b/i;
+const FRAMING_MEDIUM = /\b(medium[\s-]?shot|MS|MCU|MLS|mid[\s-]?shot|waist[\s-]?shot)\b/i;
+const FRAMING_CLOSE = /\b(close[\s-]?up|CU|ECU|macro|detail[\s-]?shot|extreme[\s-]?close)\b/i;
+
+/** Extract framing category from prompt text */
+function extractFramingCategory(prompt: string): "wide" | "medium" | "close" | "unknown" {
+  const hasWide = FRAMING_WIDE.test(prompt);
+  const hasClose = FRAMING_CLOSE.test(prompt);
+  const hasMedium = FRAMING_MEDIUM.test(prompt);
+  if (hasClose) return "close";
+  if (hasWide) return "wide";
+  if (hasMedium) return "medium";
+  return "unknown";
+}
+
+/** Simple word-set overlap ratio (Jaccard-like) for detecting near-duplicate prompts */
+function wordOverlapRatio(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 2));
+  const wordsB = new Set(b.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 2));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let intersection = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) intersection++;
+  }
+  const union = new Set([...wordsA, ...wordsB]).size;
+  return union > 0 ? intersection / union : 0;
+}
+
+/** Action verbs — detect whether prompts describe different actions */
+const ACTION_VERBS = /\b(walks?|runs?|turns?|looks?|grabs?|pushes?|pulls?|opens?|closes?|sits?|stands?|lifts?|drops?|reaches?|leans?|steps?|moves?|falls?|rises?|enters?|exits?|slides?|grips?|gestures?|points?|nods?|shakes?|trembles?|reveals?|pans?|tracks?|dollys?|zooms?|tilts?|cranes?)\b/gi;
+
+function extractActions(prompt: string): string[] {
+  const matches = prompt.match(ACTION_VERBS);
+  return matches ? [...new Set(matches.map(m => m.toLowerCase()))] : [];
+}
+
+interface ProgressionIssue {
+  shotIndex?: number; // undefined = aggregate
+  severity: ValidationSeverity;
+  message: string;
+}
+
+/**
+ * Deep progression quality validation.
+ *
+ * Checks beyond exact-match:
+ * 1. High word overlap between adjacent shots (near-duplicate detection)
+ * 2. Framing diversity (adjacent shots should differ in framing)
+ * 3. Action differentiation (adjacent shots should describe different actions)
+ * 4. Escalation presence (sequence should not stay flat)
+ * 5. Payoff presence (last shot should describe closure/reveal/impact)
+ */
+export function validateProgressionQuality(
+  shots: MultiShotPrompt[],
+): ProgressionIssue[] {
+  const issues: ProgressionIssue[] = [];
+  if (shots.length < 2) return issues;
+
+  const prompts = shots.map(s => s.prompt.trim());
+  const nonEmpty = prompts.filter(p => p.length > 0);
+  if (nonEmpty.length < 2) return issues;
+
+  // ── 1. Near-duplicate detection (high word overlap) ──
+  for (let i = 1; i < prompts.length; i++) {
+    if (prompts[i].length === 0 || prompts[i - 1].length === 0) continue;
+    const overlap = wordOverlapRatio(prompts[i], prompts[i - 1]);
+    if (overlap > 0.75) {
+      issues.push({
+        shotIndex: shots[i].index,
+        severity: "warning",
+        message: `이전 샷과 ${Math.round(overlap * 100)}% 유사 — 다른 프레이밍/액션/피사체를 묘사하세요`,
+      });
+    }
+  }
+
+  // ── 2. Framing diversity ──
+  const framings = prompts.map(extractFramingCategory);
+  const knownFramings = framings.filter(f => f !== "unknown");
+  if (knownFramings.length >= 2) {
+    // Adjacent identical framing
+    for (let i = 1; i < framings.length; i++) {
+      if (framings[i] !== "unknown" && framings[i] === framings[i - 1]) {
+        issues.push({
+          shotIndex: shots[i].index,
+          severity: "warning",
+          message: `인접 샷이 같은 프레이밍 (${framings[i]}) — shot size 변화로 시각적 리듬 필요`,
+        });
+      }
+    }
+    // All same framing (flat sequence)
+    const uniqueFramings = new Set(knownFramings);
+    if (uniqueFramings.size === 1 && shots.length >= 3) {
+      issues.push({
+        severity: "warning",
+        message: `모든 샷이 같은 프레이밍 (${knownFramings[0]}) — wide→medium→close 같은 시각적 진행 필요`,
+      });
+    }
+  }
+
+  // ── 3. Action differentiation ──
+  for (let i = 1; i < prompts.length; i++) {
+    if (prompts[i].length === 0 || prompts[i - 1].length === 0) continue;
+    const actionsA = extractActions(prompts[i - 1]);
+    const actionsB = extractActions(prompts[i]);
+    if (actionsA.length > 0 && actionsB.length > 0) {
+      const shared = actionsA.filter(a => actionsB.includes(a));
+      if (shared.length === actionsA.length && shared.length === actionsB.length && actionsA.length > 0) {
+        issues.push({
+          shotIndex: shots[i].index,
+          severity: "warning",
+          message: `인접 샷에서 같은 행동 반복 (${shared.join(", ")}) — 각 샷은 다른 행동/변화를 보여줘야 합니다`,
+        });
+      }
+    }
+  }
+
+  // ── 4. Escalation check — sequence should not stay flat ──
+  // Use role metadata: establish < develop < insert < peak is the expected escalation
+  const INTENSITY_ORDER: Record<string, number> = {
+    establish: 1, transition: 2, develop: 3, insert: 4, peak: 5, resolve: 3,
+  };
+  const roles = shots.map((s, i) => s.role ?? inferShotRole(i, shots.length));
+  const intensities = roles.map(r => INTENSITY_ORDER[r] ?? 2);
+  // Check if there's any escalation (at least one shot higher than first)
+  if (shots.length >= 3) {
+    const maxIntensity = Math.max(...intensities.slice(1, -1)); // exclude first and last
+    if (maxIntensity <= intensities[0]) {
+      issues.push({
+        severity: "warning",
+        message: "시퀀스에 에스컬레이션 없음 — 중간 샷의 강도가 도입보다 높아야 합니다",
+      });
+    }
+  }
+
+  // ── 5. Payoff check — last shot should describe closure/payoff ──
+  if (shots.length >= 3) {
+    const lastPrompt = prompts[prompts.length - 1].toLowerCase();
+    const lastRole = roles[roles.length - 1];
+    // If last role is "resolve" or similar, check that prompt has payoff indicators
+    const PAYOFF_INDICATORS = /\b(reveal|payoff|closure|release|final|impact|reaction|resolve|result|outcome|pull[\s-]?back|exhale|drops?|release|settl|breath|relief)\b/i;
+    if (lastRole === "resolve" && lastPrompt.length > 20 && !PAYOFF_INDICATORS.test(lastPrompt)) {
+      // Soft check — only warn if last prompt looks like a generic description
+      const lastFraming = extractFramingCategory(lastPrompt);
+      const prevFraming = prompts.length >= 2 ? extractFramingCategory(prompts[prompts.length - 2]) : "unknown";
+      if (lastFraming === prevFraming && lastFraming !== "unknown") {
+        issues.push({
+          shotIndex: shots[shots.length - 1].index,
+          severity: "warning",
+          message: "마지막 샷에 페이오프 부족 — 시각적 해소(pull-back, reaction, reveal)가 필요합니다",
+        });
+      }
+    }
+  }
+
+  return issues;
 }
 
 /**

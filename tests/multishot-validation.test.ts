@@ -29,13 +29,26 @@ const MODEL = KLING_DEFAULT_TEXT_MODEL; // kling-o3-text-to-video
 // Helper
 // ═══════════════════════════════════════════════════════════════════
 
+/** Helper with distinct framing and roles for valid progression */
+const SAMPLE_PROMPTS = [
+  "Wide shot establishing the space and environment with atmospheric detail",
+  "Medium shot revealing character action and new narrative information",
+  "Close-up on emotional peak with dramatic intensity and tension",
+  "Wide shot pulling back for visual payoff and resolution release",
+  "Extreme close-up insert on critical detail for tension escalation",
+  "Medium shot transitioning to new angle and perspective shift",
+];
+const SAMPLE_ROLES: Array<"establish" | "develop" | "peak" | "resolve" | "insert" | "transition"> =
+  ["establish", "develop", "peak", "resolve", "insert", "transition"];
+
 function makeShots(count: number, totalDuration: number): MultiShotPrompt[] {
   const dur = Math.floor(totalDuration / count);
   const remainder = totalDuration - dur * count;
   return Array.from({ length: count }, (_, i) => ({
     index: i + 1,
-    prompt: `Shot ${i + 1} prompt`,
+    prompt: SAMPLE_PROMPTS[i % SAMPLE_PROMPTS.length],
     duration: String(i === count - 1 ? dur + remainder : dur),
+    role: SAMPLE_ROLES[i % SAMPLE_ROLES.length],
   }));
 }
 

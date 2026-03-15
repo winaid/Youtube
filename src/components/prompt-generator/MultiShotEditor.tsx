@@ -25,6 +25,29 @@ import {
   type MultiShotValidationResult,
 } from "@/lib/multishot-validation";
 
+// ── Shot change indicator — shows what changed from previous shot ──
+function describeShotChange(prev: MultiShotPrompt, current: MultiShotPrompt, prevRole: ShotRole, currentRole: ShotRole): string | null {
+  const changes: string[] = [];
+  if (prevRole !== currentRole) {
+    const prevMeta = SHOT_ROLE_META[prevRole];
+    const currentMeta = SHOT_ROLE_META[currentRole];
+    if (prevMeta.shotSize !== currentMeta.shotSize) {
+      changes.push(`${prevMeta.shotSize} → ${currentMeta.shotSize}`);
+    }
+  }
+  // Detect framing terms in prompt text
+  const WIDE_RE = /\b(wide|WS|LS|establishing|aerial)\b/i;
+  const MED_RE = /\b(medium|MS|MCU|MLS|mid[\s-]?shot)\b/i;
+  const CLOSE_RE = /\b(close[\s-]?up|CU|ECU|macro|detail)\b/i;
+  const prevFrame = WIDE_RE.test(prev.prompt) ? "wide" : CLOSE_RE.test(prev.prompt) ? "close" : MED_RE.test(prev.prompt) ? "medium" : null;
+  const curFrame = WIDE_RE.test(current.prompt) ? "wide" : CLOSE_RE.test(current.prompt) ? "close" : MED_RE.test(current.prompt) ? "medium" : null;
+  if (prevFrame && curFrame && prevFrame !== curFrame) {
+    changes.push(`${prevFrame} → ${curFrame}`);
+  }
+  if (changes.length === 0) return null;
+  return changes.join(" · ");
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Props
 // ═══════════════════════════════════════════════════════════════════
@@ -162,6 +185,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
         {shots.map((shot) => {
           const role = shot.role ?? inferShotRole(shot.index - 1, shots.length);
           const meta = SHOT_ROLE_META[role];
+          // Compute change from previous shot
+          const prevShot = shots.find(s => s.index === shot.index - 1);
+          const prevRole = prevShot ? (prevShot.role ?? inferShotRole(prevShot.index - 1, shots.length)) : null;
+          const changeHint = prevShot && prevRole ? describeShotChange(prevShot, shot, prevRole, role) : null;
           const shotErrors = validation.shotIssues.filter(
             (i) => i.shotIndex === shot.index && i.severity === "error",
           );
@@ -209,6 +236,13 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* Change indicator from previous shot */}
+                {changeHint && (
+                  <span className="text-[8px] px-1 py-0.5 rounded" style={{ color: "#059669", background: "#05966910" }}>
+                    {changeHint}
+                  </span>
+                )}
 
                 {/* Progression hint */}
                 <span className="text-[9px] hidden sm:inline" style={{ color: `${meta.color}99` }}>

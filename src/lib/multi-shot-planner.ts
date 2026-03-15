@@ -225,13 +225,55 @@ export function planRecommendedShotCount(
 }
 
 /**
+ * Scene type별 대안 role 패턴.
+ *
+ * 기본 RETENTION_ROLE_PATTERNS는 cinematic escalation 패턴이지만,
+ * 모든 시퀀스가 같은 리듬을 갖지 않도록 scene type에 따라 변형을 제공.
+ *
+ * 예: environment는 reveal→expand→detail 리듬, comedy는 setup→setup→punchline.
+ */
+const SCENE_TYPE_ROLE_VARIANTS: Partial<Record<PlannerSceneType, Record<number, ShotRole[]>>> = {
+  environment: {
+    2: ["establish", "resolve"],
+    3: ["establish", "insert", "resolve"],      // wide → detail → vista payoff
+    4: ["establish", "develop", "insert", "resolve"],
+    5: ["establish", "transition", "develop", "insert", "resolve"],
+  },
+  "character-driven": {
+    3: ["establish", "peak", "resolve"],         // context → emotion → reaction
+    4: ["establish", "develop", "peak", "resolve"],
+    5: ["establish", "develop", "insert", "peak", "resolve"],
+  },
+  battle: {
+    3: ["establish", "peak", "resolve"],         // scale → chaos → aftermath
+    4: ["establish", "develop", "peak", "resolve"],
+    5: ["establish", "develop", "peak", "insert", "resolve"],  // insert after peak = aftermath detail
+  },
+  montage: {
+    3: ["develop", "develop", "resolve"],        // rapid beats → payoff
+    4: ["develop", "insert", "develop", "resolve"],
+    5: ["develop", "insert", "develop", "insert", "resolve"],
+  },
+};
+
+/**
  * retention 기반 role 시퀀스 배정.
  *
  * @param shotCount - 샷 수
+ * @param sceneType - optional scene type for role pattern variation
  * @returns ShotRole 배열
  */
-export function planShotRoles(shotCount: number): ShotRole[] {
+export function planShotRoles(shotCount: number, sceneType?: PlannerSceneType): ShotRole[] {
   if (shotCount <= 0) return [];
+
+  // Scene type별 변형이 있으면 사용
+  if (sceneType && sceneType !== "default") {
+    const variants = SCENE_TYPE_ROLE_VARIANTS[sceneType];
+    if (variants && variants[shotCount]) {
+      return [...variants[shotCount]];
+    }
+  }
+
   if (shotCount <= 6) return [...(RETENTION_ROLE_PATTERNS[shotCount] ?? RETENTION_ROLE_PATTERNS[1])];
 
   // 6샷 초과: 기본 패턴 + 중간에 develop/insert 반복
@@ -323,7 +365,7 @@ export function buildDefaultMultiShot(opts: {
   }
 
   const effectiveCount = Math.max(2, shotCount);
-  const roles = planShotRoles(effectiveCount);
+  const roles = planShotRoles(effectiveCount, sceneType);
   const durations = distributeDurations(roles, durationSec, cap.minShotDuration);
 
   return roles.map((role, i) => ({
@@ -337,11 +379,15 @@ export function buildDefaultMultiShot(opts: {
 /**
  * 프로그레션 기반 샷 프롬프트 생성.
  *
- * basePrompt가 있으면 그것을 기반으로 role directive를 suffix로 붙이고,
- * basePrompt가 없으면 directive만 반환.
+ * 핵심 변경: basePrompt를 그대로 복사하지 않고, role에 따라 구조적으로 다른 프롬프트를 생성.
+ *   - establish: 공간/위치 중심 — 인물 디테일 최소화
+ *   - develop: 행동/정보 중심 — 새로운 시각 정보 강조
+ *   - peak: 감정/텐션 최고점 — 극적 프레이밍 강제
+ *   - resolve: 해소/결과 — 변화된 상태 묘사
+ *   - insert: 디테일 점프 — 스케일 급변
+ *   - transition: 시점 전환 — 앵글/위치 변경
  *
- * 이렇게 하면 모든 샷이 같은 텍스트를 공유하지 않고
- * 각각의 시각적 역할이 prompt 수준에서 명시된다.
+ * 이렇게 하면 fallback/auto-repair 시에도 각 샷이 구조적으로 다른 프레임을 묘사한다.
  */
 function buildProgressionPrompt(
   basePrompt: string,
@@ -357,8 +403,37 @@ function buildProgressionPrompt(
     return `[Shot ${index + 1}/${total} — ${role}] ${directive.visualDirective}`;
   }
 
-  // basePrompt + role-specific visual direction
-  return `${basePrompt.trim()} [${directive.shotSize}] ${directive.visualDirective}`;
+  const base = basePrompt.trim();
+
+  // Role-specific prompt restructuring — each role produces a structurally different prompt
+  switch (role) {
+    case "establish":
+      // Wide context — strip character close-up language, emphasize space
+      return `${directive.shotSize} shot. ${base}. ${directive.visualDirective} Focus on spatial context and atmosphere, not character detail.`;
+
+    case "transition":
+      // Angle shift — emphasize camera repositioning
+      return `${directive.shotSize} shot from a new angle. ${base}. ${directive.visualDirective} Camera position must differ visibly from previous shot.`;
+
+    case "develop":
+      // New information — emphasize action and detail not yet shown
+      return `${directive.shotSize} shot. New visual information: ${base}. ${directive.visualDirective} Show something NOT visible in previous shots.`;
+
+    case "insert":
+      // Scale jump — extreme close-up on critical detail
+      return `${directive.shotSize}. Dramatic scale shift — ${base}. ${directive.visualDirective} Jump to extreme detail that previous shots could not show.`;
+
+    case "peak":
+      // Climax — maximum emotional framing
+      return `${directive.shotSize}. CLIMAX moment — ${base}. ${directive.visualDirective} This is the most intense frame in the sequence.`;
+
+    case "resolve":
+      // Payoff — release and closure
+      return `${directive.shotSize}. Resolution: ${base}. ${directive.visualDirective} Show the outcome, the release, the visual reward.`;
+
+    default:
+      return `${base} [${directive.shotSize}] ${directive.visualDirective}`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -520,7 +595,7 @@ export function buildMultiShotPlan(opts: {
 
   const shotCount = planRecommendedShotCount(modelId, durationSec, sceneType);
   const effectiveCount = forced ? Math.max(2, shotCount) : shotCount;
-  const roles = planShotRoles(effectiveCount);
+  const roles = planShotRoles(effectiveCount, sceneType);
   const cap = getCapability(modelId);
   const durations = distributeDurations(roles, durationSec, cap.minShotDuration);
 
