@@ -633,10 +633,21 @@ function wordOverlapRatio(a: string, b: string): number {
 }
 
 /** Action verbs — detect whether prompts describe different actions */
-const ACTION_VERBS = /\b(walks?|runs?|turns?|looks?|grabs?|pushes?|pulls?|opens?|closes?|sits?|stands?|lifts?|drops?|reaches?|leans?|steps?|moves?|falls?|rises?|enters?|exits?|slides?|grips?|gestures?|points?|nods?|shakes?|trembles?|reveals?|pans?|tracks?|dollys?|zooms?|tilts?|cranes?)\b/gi;
+const ACTION_VERBS = /\b(walks?|runs?|turns?|looks?|grabs?|pushes?|pulls?|opens?|sits?|stands?|lifts?|drops?|reaches?|leans?|steps?|moves?|falls?|rises?|enters?|exits?|slides?|grips?|gestures?|points?|nods?|shakes?|trembles?|reveals?|pans?|tracks?|dollys?|zooms?|tilts?|cranes?)\b/gi;
+/** Words that look like action verbs but are framing/shot terms — exclude from action extraction */
+const FRAMING_FALSE_POSITIVES = new Set(["close", "pan", "tilt", "zoom", "track", "dolly", "crane", "wide", "medium"]);
 
 function extractActions(prompt: string): string[] {
   const matches = prompt.match(ACTION_VERBS);
+  if (!matches) return [];
+  return [...new Set(matches.map(m => m.toLowerCase()).filter(m => !FRAMING_FALSE_POSITIVES.has(m)))];
+}
+
+/** Subject nouns — detect whether adjacent shots describe the same subject (camera-only change) */
+const SUBJECT_NOUNS = /\b(man|woman|boy|girl|child|person|figure|knight|warrior|soldier|king|queen|chef|doctor|patient|priest|monk|merchant|guard|captain|elder|stranger|traveler|character|hero|villain|protagonist|dog|cat|horse|bird|creature|dragon|wolf|bear|lion|car|boat|ship|train|plane|building|tree|mountain|river|crowd|group|army|object|device|machine|weapon|sword|door|gate|chair|table|desk|bed|throne)\b/gi;
+
+function extractSubjects(prompt: string): string[] {
+  const matches = prompt.match(SUBJECT_NOUNS);
   return matches ? [...new Set(matches.map(m => m.toLowerCase()))] : [];
 }
 
@@ -716,6 +727,35 @@ export function validateProgressionQuality(
           severity: "warning",
           message: `인접 샷에서 같은 행동 반복 (${shared.join(", ")}) — 각 샷은 다른 행동/변화를 보여줘야 합니다`,
         });
+      }
+    }
+  }
+
+  // ── 3b. Camera-only change detection (same subject, different framing) ──
+  for (let i = 1; i < prompts.length; i++) {
+    if (prompts[i].length === 0 || prompts[i - 1].length === 0) continue;
+    const subjectsA = extractSubjects(prompts[i - 1]);
+    const subjectsB = extractSubjects(prompts[i]);
+    if (subjectsA.length > 0 && subjectsB.length > 0) {
+      const shared = subjectsA.filter(s => subjectsB.includes(s));
+      // Same subjects + different framing = camera-only change (no information gain)
+      if (shared.length > 0 && shared.length === subjectsA.length && shared.length === subjectsB.length) {
+        const framA = extractFramingCategory(prompts[i - 1]);
+        const framB = extractFramingCategory(prompts[i]);
+        if (framA !== "unknown" && framB !== "unknown" && framA !== framB) {
+          // Framing changed but subject didn't — only warn if actions also didn't change
+          const actA = extractActions(prompts[i - 1]);
+          const actB = extractActions(prompts[i]);
+          const sameActions = actA.length > 0 && actB.length > 0 &&
+            actA.every(a => actB.includes(a)) && actB.every(a => actA.includes(a));
+          if (sameActions) {
+            issues.push({
+              shotIndex: shots[i].index,
+              severity: "warning",
+              message: `카메라만 변경 (${framA}→${framB}) — 같은 피사체(${shared.join(",")})의 같은 행동. 새 정보/행동/상태가 필요합니다`,
+            });
+          }
+        }
       }
     }
   }

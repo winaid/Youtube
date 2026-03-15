@@ -987,12 +987,21 @@ ${(() => {
 4. 마지막 서브샷(resolve)은 반드시 시각적 payoff를 제공 — 시청자가 "봤다" 느끼는 보상
 5. 프롬프트가 구체적으로 다른 화면을 묘사해야 함 (같은 텍스트 복사 금지)
 
+⚠️ ANTI-REPETITION (가장 중요한 규칙):
+- 인접 서브샷은 반드시 다른 피사체(SUBJECT)를 묘사해야 함
+- 카메라 앵글만 바꾸고 같은 피사체+행동을 반복하는 것은 가짜 분할 → 금지
+- 정보 증가(information gain): 각 서브샷은 이전 샷에서 볼 수 없었던 것을 보여줘야 함
+- 예: establish=환경 공간 → develop=인물의 구체적 행동 → peak=감정이 집약되는 한 디테일 → resolve=상황이 변한 결과
+- ❌ 나쁜 예: "warrior in hall" → "closer shot of warrior in hall" → "close-up of warrior in hall" (같은 피사체 반복)
+- ✅ 좋은 예: "empty throne hall at dawn" → "warrior kneeling before altar, hands pressed" → "ECU warrior's eyes opening with resolve" → "wide pull-back, morning light flooding through door"
+
 릴 프로그레션 role별 지침:
 ${roles}
 
 - duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
 - 서브샷마다 구체적으로 다른 화면을 묘사 (≤80 words each)
-- 프롬프트에 shot size 명시 필수 (예: "ECU on trembling hands", "WS of empty hallway")`;
+- 프롬프트에 shot size 명시 필수 (예: "ECU on trembling hands", "WS of empty hallway")
+- 각 서브샷의 주 피사체(subject)를 이전 샷과 다르게 설정 (예: 공간→인물→소품→표정)`;
   })()}
 
 JSON 배열로만 출력 (마크다운 없이):

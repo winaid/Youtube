@@ -230,11 +230,13 @@ describe("buildDefaultMultiShot", () => {
     expect(shots[0].role).toBe("establish");
     expect(shots[shots.length - 1].role).toBe("resolve");
 
-    // 모든 샷에 basePrompt 포함 + progression directive 추가
+    // 각 샷이 비어있지 않고 서로 다른 시각 레이어를 묘사
     for (const s of shots) {
-      expect(s.prompt).toContain("A warrior walks into battle");
-      // 프로그레션 directive가 붙어서 basePrompt보다 길어야 함
-      expect(s.prompt.length).toBeGreaterThan("A warrior walks into battle".length);
+      expect(s.prompt.length).toBeGreaterThan(20);
+    }
+    // 인접 샷 프롬프트가 동일하지 않음 (decomposition이 각각 다른 내용 생성)
+    for (let i = 1; i < shots.length; i++) {
+      expect(shots[i].prompt).not.toBe(shots[i - 1].prompt);
     }
 
     // duration 합 일치

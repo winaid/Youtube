@@ -233,9 +233,14 @@ export function planRecommendedShotCount(
  * 예: environment는 reveal→expand→detail 리듬, comedy는 setup→setup→punchline.
  */
 const SCENE_TYPE_ROLE_VARIANTS: Partial<Record<PlannerSceneType, Record<number, ShotRole[]>>> = {
+  cinematic_sequence: {
+    3: ["establish", "peak", "resolve"],         // space → intensity → aftermath
+    4: ["establish", "develop", "peak", "resolve"],
+    5: ["establish", "develop", "insert", "peak", "resolve"],
+  },
   environment: {
     2: ["establish", "resolve"],
-    3: ["establish", "insert", "resolve"],      // wide → detail → vista payoff
+    3: ["establish", "insert", "resolve"],       // wide → detail → vista payoff
     4: ["establish", "develop", "insert", "resolve"],
     5: ["establish", "transition", "develop", "insert", "resolve"],
   },
@@ -247,7 +252,7 @@ const SCENE_TYPE_ROLE_VARIANTS: Partial<Record<PlannerSceneType, Record<number, 
   battle: {
     3: ["establish", "peak", "resolve"],         // scale → chaos → aftermath
     4: ["establish", "develop", "peak", "resolve"],
-    5: ["establish", "develop", "peak", "insert", "resolve"],  // insert after peak = aftermath detail
+    5: ["establish", "develop", "peak", "insert", "resolve"],
   },
   montage: {
     3: ["develop", "develop", "resolve"],        // rapid beats → payoff
@@ -377,17 +382,20 @@ export function buildDefaultMultiShot(opts: {
 }
 
 /**
- * 프로그레션 기반 샷 프롬프트 생성.
+ * 프로그레션 기반 샷 프롬프트 생성 — 진짜 시각적 분해.
  *
- * 핵심 변경: basePrompt를 그대로 복사하지 않고, role에 따라 구조적으로 다른 프롬프트를 생성.
- *   - establish: 공간/위치 중심 — 인물 디테일 최소화
- *   - develop: 행동/정보 중심 — 새로운 시각 정보 강조
- *   - peak: 감정/텐션 최고점 — 극적 프레이밍 강제
- *   - resolve: 해소/결과 — 변화된 상태 묘사
- *   - insert: 디테일 점프 — 스케일 급변
- *   - transition: 시점 전환 — 앵글/위치 변경
+ * 핵심 원칙: basePrompt를 반복하지 않는다.
+ * 대신 basePrompt에서 role에 해당하는 시각 레이어만 추출하고,
+ * 나머지는 해당 role의 시각 기능으로 대체한다.
  *
- * 이렇게 하면 fallback/auto-repair 시에도 각 샷이 구조적으로 다른 프레임을 묘사한다.
+ * 시각 레이어 분해:
+ *   - SPACE layer: 장소, 배경, 공간 정체성 (establish에 할당)
+ *   - ACTION layer: 행동, 동작, 변화 (develop에 할당)
+ *   - DETAIL layer: 디테일, 질감, 오브젝트 (insert에 할당)
+ *   - EMOTION layer: 감정, 표정, 반응 (peak에 할당)
+ *   - RESULT layer: 결과, 변화, 해소 (resolve에 할당)
+ *
+ * fallback/auto-repair 시에도 각 샷이 구조적으로 다른 프레임을 묘사.
  */
 function buildProgressionPrompt(
   basePrompt: string,
@@ -398,42 +406,156 @@ function buildProgressionPrompt(
   const directive = ROLE_PROGRESSION_DIRECTIVE[role];
   if (!directive) return basePrompt;
 
-  // basePrompt가 비어있으면 directive만 반환 (placeholder)
   if (!basePrompt.trim()) {
     return `[Shot ${index + 1}/${total} — ${role}] ${directive.visualDirective}`;
   }
 
-  const base = basePrompt.trim();
+  // Decompose basePrompt into visual layers
+  const layers = decomposePromptLayers(basePrompt.trim());
 
-  // Role-specific prompt restructuring — each role produces a structurally different prompt
   switch (role) {
     case "establish":
-      // Wide context — strip character close-up language, emphasize space
-      return `${directive.shotSize} shot. ${base}. ${directive.visualDirective} Focus on spatial context and atmosphere, not character detail.`;
+      // Show ONLY the space/environment. Do NOT mention the action or emotion.
+      return `${directive.shotSize} shot. ${layers.space}. No characters in focus — pure environment establishing the location.`;
 
     case "transition":
-      // Angle shift — emphasize camera repositioning
-      return `${directive.shotSize} shot from a new angle. ${base}. ${directive.visualDirective} Camera position must differ visibly from previous shot.`;
+      // Bridge shot — different angle on the space, hinting at what comes next
+      return `${directive.shotSize} shot, new angle. ${layers.space}, seen from a different perspective. Camera reveals the path toward the subject.`;
 
     case "develop":
-      // New information — emphasize action and detail not yet shown
-      return `${directive.shotSize} shot. New visual information: ${base}. ${directive.visualDirective} Show something NOT visible in previous shots.`;
+      // Show the subject and action — the "who" and "what"
+      return `${directive.shotSize} shot. ${layers.action}. New visual information not visible in the establishing shot.`;
 
     case "insert":
-      // Scale jump — extreme close-up on critical detail
-      return `${directive.shotSize}. Dramatic scale shift — ${base}. ${directive.visualDirective} Jump to extreme detail that previous shots could not show.`;
+      // Jump to extreme detail — one specific object or texture
+      return `Extreme close-up. ${layers.detail}. Dramatic scale change — a detail too small for previous shots to capture.`;
 
     case "peak":
-      // Climax — maximum emotional framing
-      return `${directive.shotSize}. CLIMAX moment — ${base}. ${directive.visualDirective} This is the most intense frame in the sequence.`;
+      // Maximum emotional intensity — the feeling, not the setting
+      return `${directive.shotSize}. ${layers.emotion}. The most intense moment — maximum visual and emotional impact.`;
 
     case "resolve":
-      // Payoff — release and closure
-      return `${directive.shotSize}. Resolution: ${base}. ${directive.visualDirective} Show the outcome, the release, the visual reward.`;
+      // The aftermath — what changed, the release
+      return `${directive.shotSize}. ${layers.result}. The outcome becomes visible — tension releases into visual closure.`;
 
     default:
-      return `${base} [${directive.shotSize}] ${directive.visualDirective}`;
+      return `${directive.shotSize} shot. ${basePrompt.trim()}`;
   }
+}
+
+// ─── Keyword extraction for prompt decomposition ───
+
+const SPACE_RE = /\b(forest|castle|room|street|market|temple|ruins|ocean|city|village|hall|kitchen|office|hospital|courtyard|arena|sky|mountain|valley|bridge|corridor|alley|cave|beach|desert|field|garden|square|harbor|rooftop|workshop|studio|laboratory|church|palace|prison|tower|dock|basement|attic|library|station|airport|stadium|cemetery|farm|barn|warehouse|factory|mine|quarry|jungle|swamp|tundra|glacier|volcano|canyon|cliff|plateau|oasis|shore|bay|lagoon|reef|island|building|house|cabin|tent|bunker|shelter|wall|staircase|balcony|terrace|window|doorway|gate|arch|path|trail|road|highway|intersection|plaza|park|pier|wharf|port|docks?|tunnel|passage)\b/gi;
+const ACTION_RE = /\b(rides?|walks?|runs?|fights?|tastes?|grabs?|turns?|opens?|pushes?|pulls?|enters?|exits?|climbs?|jumps?|swims?|throws?|catches?|breaks?|builds?|cuts?|draws?|fires?|hits?|kicks?|lands?|lifts?|drops?|picks?|places?|pours?|reads?|writes?|speaks?|shouts?|whispers?|sings?|dances?|flies?|drives?|sails?|crawls?|slides?|swings?|spins?|shifts?|reaches?|stretches?|holds?|carries?|leads?|follows?|chases?|escapes?|flees?|attacks?|defends?|guards?|strikes?|stabs?|slashes?|blocks?|dodges?|aims?|shoots?|loads?|charges?|retreats?|advances?|marches?|patrols?|scouts?|searching|examines?|inspects?)\b/gi;
+const EMOTION_RE = /\b(expression|horror|pride|fear|joy|anger|sadness|surprise|shock|despair|hope|love|hate|disgust|contempt|awe|wonder|grief|rage|panic|calm|peace|tension|anxiety|relief|excitement|frustration|satisfaction|confusion|determination|resignation|defiance|trembl\w*|shak\w*|sob\w*|laugh\w*|cry\w*|scream\w*|gasp\w*|frown\w*|smile\w*|grin\w*|sneer\w*|wince\w*|grimace\w*|sigh\w*|groan\w*)\b/gi;
+const DETAIL_RE = /\b(vines?|light\w*|steam|smoke|dust|rain|snow|ice|fire|flame|spark|glow\w*|shadow\w*|reflection|ripple|droplet|splash|thread|chain|rope|key|ring|coin|blade|handle|wheel|gear|button|latch|hinge|surface|texture|pattern|grain|rust|crack|peel|chip|stain|mark|scar|canopy|moss|cobweb|frost|dew|mud|sand|gravel|pebble|stone|brick|metal|wood|glass|leather|fabric|cloth|silk|wool|iron|steel|copper|gold|silver|bronze|marble|crystal|amber|ivory|porcelain|ceramic|concrete)\b/gi;
+const SUBJECT_RE = /\b(knight|chef|warrior|soldier|king|queen|prince|princess|doctor|nurse|patient|teacher|student|priest|monk|merchant|thief|guard|captain|general|emperor|peasant|farmer|hunter|blacksmith|carpenter|tailor|baker|butcher|fisherman|sailor|pirate|wizard|witch|dragon|wolf|horse|dog|cat|bird|eagle|hawk|raven|serpent|lion|tiger|bear|fox|deer|child|woman|man|boy|girl|elder|stranger|traveler|pilgrim|assassin|spy|detective|scientist|artist|musician|dancer|acrobat|gladiator|samurai|ninja|cowboy|sheriff)\b/gi;
+
+/** Extract unique matches from text using a regex pattern */
+function extractTerms(text: string, re: RegExp): string[] {
+  const matches = text.match(re);
+  return matches ? [...new Set(matches.map(m => m.toLowerCase()))] : [];
+}
+
+/**
+ * basePrompt를 시각 레이어로 분해.
+ *
+ * 2단계 전략:
+ *   1. 콤마/세미콜론 기준 절 분리 시도
+ *   2. 절이 1개뿐이면 키워드 추출 기반 분해
+ *
+ * 절대 규칙: 어떤 레이어도 원문을 그대로 반복하지 않는다.
+ */
+function decomposePromptLayers(prompt: string): {
+  space: string;
+  action: string;
+  detail: string;
+  emotion: string;
+  result: string;
+} {
+  const clauses = prompt
+    .split(/[,.;—–]+/)
+    .map(c => c.trim())
+    .filter(c => c.length > 3);
+
+  // Always extract keywords regardless of clause count
+  const spaceWords = extractTerms(prompt, SPACE_RE);
+  const actionWords = extractTerms(prompt, ACTION_RE);
+  const emotionWords = extractTerms(prompt, EMOTION_RE);
+  const detailWords = extractTerms(prompt, DETAIL_RE);
+  const subjectWords = extractTerms(prompt, SUBJECT_RE);
+
+  // ── Multi-clause decomposition ──
+  if (clauses.length >= 3) {
+    const spaceClauses: string[] = [];
+    const actionClauses: string[] = [];
+    const emotionClauses: string[] = [];
+    const detailClauses: string[] = [];
+
+    for (const clause of clauses) {
+      if (EMOTION_RE.test(clause)) emotionClauses.push(clause);
+      else if (ACTION_RE.test(clause)) actionClauses.push(clause);
+      else if (SPACE_RE.test(clause)) spaceClauses.push(clause);
+      else if (DETAIL_RE.test(clause)) detailClauses.push(clause);
+      else spaceClauses.push(clause);
+    }
+
+    return {
+      space: spaceClauses.length > 0 ? spaceClauses.join(", ") : buildSpaceLayer(spaceWords, prompt),
+      action: actionClauses.length > 0 ? actionClauses.join(", ") : buildActionLayer(subjectWords, actionWords, prompt),
+      detail: detailClauses.length > 0 ? detailClauses.join(", ") : buildDetailLayer(detailWords, spaceWords, prompt),
+      emotion: emotionClauses.length > 0 ? emotionClauses.join(", ") : buildEmotionLayer(emotionWords, actionWords, subjectWords),
+      result: buildResultLayer(emotionWords, actionWords, subjectWords),
+    };
+  }
+
+  // ── Single/two-clause: keyword-based decomposition ──
+  return {
+    space: buildSpaceLayer(spaceWords, prompt),
+    action: buildActionLayer(subjectWords, actionWords, prompt),
+    detail: buildDetailLayer(detailWords, spaceWords, prompt),
+    emotion: buildEmotionLayer(emotionWords, actionWords, subjectWords),
+    result: buildResultLayer(emotionWords, actionWords, subjectWords),
+  };
+}
+
+function buildSpaceLayer(spaceWords: string[], prompt: string): string {
+  if (spaceWords.length >= 2) return `${spaceWords.join(" and ")} — the surrounding environment`;
+  if (spaceWords.length === 1) return `${spaceWords[0]} environment — the space where the scene takes place`;
+  // No space words found — synthesize from subject context
+  return `The surrounding environment and atmosphere of the scene`;
+}
+
+function buildActionLayer(subjectWords: string[], actionWords: string[], prompt: string): string {
+  const subject = subjectWords.length > 0 ? subjectWords[0] : "the subject";
+  const action = actionWords.length > 0 ? actionWords[0] : "moving through the scene";
+  if (subjectWords.length > 0 && actionWords.length > 0) {
+    return `${subject} ${action} — the central physical action`;
+  }
+  if (actionWords.length > 0) return `Subject ${action} — the defining moment of action`;
+  if (subjectWords.length > 0) return `${subject} in motion — approaching, engaging, acting`;
+  return `The subject in mid-action — the key moment of movement or change`;
+}
+
+function buildDetailLayer(detailWords: string[], spaceWords: string[], prompt: string): string {
+  if (detailWords.length >= 2) return `${detailWords.slice(0, 3).join(", ")} — textural extreme close-up`;
+  if (detailWords.length === 1) return `${detailWords[0]} — surface texture and material in extreme detail`;
+  if (spaceWords.length > 0) return `Surface detail of the ${spaceWords[0]} — texture, material, wear, light`;
+  return `A crucial small detail — hands, objects, textures that previous shots missed`;
+}
+
+function buildEmotionLayer(emotionWords: string[], actionWords: string[], subjectWords: string[]): string {
+  if (emotionWords.length > 0) return `${emotionWords.join(" and ")} — the emotional climax`;
+  const subject = subjectWords.length > 0 ? subjectWords[0] : "the subject";
+  if (actionWords.length > 0) return `${subject}'s face at the peak of ${actionWords[0]} — eyes, mouth, breath`;
+  return `${subject}'s face — the most emotionally raw moment`;
+}
+
+function buildResultLayer(emotionWords: string[], actionWords: string[], subjectWords: string[]): string {
+  const subject = subjectWords.length > 0 ? subjectWords[0] : "the scene";
+  if (emotionWords.length > 0) return `${subject} after the ${emotionWords[0]} — the visible aftermath`;
+  if (actionWords.length > 0) return `The moment after ${subject} ${actionWords[0]} — what changed, what remains`;
+  return `${subject} in the aftermath — the stillness after the event`;
 }
 
 // ═══════════════════════════════════════════════════════════════════

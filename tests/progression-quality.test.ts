@@ -321,3 +321,91 @@ describe("validateMultiShots + progression quality", () => {
     expect(fakeSplitWarnings.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Camera-only change detection
+// ═══════════════════════════════════════════════════════════════════
+
+describe("camera-only change detection", () => {
+  it("같은 피사체, 같은 행동, 다른 프레이밍 → 카메라만 변경 경고", () => {
+    const shots = makeProgressionShots([
+      { prompt: "Wide shot of warrior stands in the throne room with sword raised", role: "establish", duration: "4" },
+      { prompt: "Close-up of warrior stands in the throne room with sword raised", role: "peak", duration: "3" },
+      { prompt: "Medium shot of courtyard after the battle with debris", role: "resolve", duration: "3" },
+    ]);
+    const issues = validateProgressionQuality(shots);
+    const cameraOnlyWarnings = issues.filter(i => i.message.includes("카메라만 변경"));
+    expect(cameraOnlyWarnings.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("같은 피사체, 다른 행동 → 카메라 경고 없음", () => {
+    const shots = makeProgressionShots([
+      { prompt: "Wide shot of warrior enters the throne room cautiously", role: "establish", duration: "4" },
+      { prompt: "Close-up of warrior draws sword and lunges forward", role: "peak", duration: "3" },
+      { prompt: "Medium shot of warrior stands victorious over fallen enemy", role: "resolve", duration: "3" },
+    ]);
+    const issues = validateProgressionQuality(shots);
+    const cameraOnlyWarnings = issues.filter(i => i.message.includes("카메라만 변경"));
+    expect(cameraOnlyWarnings).toHaveLength(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Visual layer decomposition quality
+// ═══════════════════════════════════════════════════════════════════
+
+describe("prompt decomposition quality", () => {
+  it("12s cinematic: 각 샷이 다른 시각 레이어를 묘사", () => {
+    const result = buildDefaultMultiShot({
+      durationSec: 12,
+      sceneType: "cinematic_sequence",
+      basePrompt: "A knight rides through a dark forest toward a distant castle",
+      modelId: MODEL,
+    });
+    expect(result.length).toBeGreaterThanOrEqual(3);
+
+    // establish should focus on space (forest, castle), NOT the knight's action
+    const establish = result.find(s => s.role === "establish")!;
+    expect(establish.prompt.toLowerCase()).not.toContain("knight rides");
+    expect(establish.prompt.toLowerCase()).toMatch(/forest|castle|environment/);
+
+    // develop or peak should focus on the knight's action or emotion
+    const actionShot = result.find(s => s.role === "develop" || s.role === "peak")!;
+    expect(actionShot.prompt.toLowerCase()).toMatch(/knight|rides|action|emotion|face/);
+  });
+
+  it("comedy: establish=환경, peak=감정, resolve=결과", () => {
+    const result = buildDefaultMultiShot({
+      durationSec: 10,
+      sceneType: "character-driven",
+      basePrompt: "A chef tastes his own soup and his expression shifts from pride to horror",
+      modelId: MODEL,
+    });
+
+    const establish = result.find(s => s.role === "establish")!;
+    const peak = result.find(s => s.role === "peak")!;
+    const resolve = result.find(s => s.role === "resolve")!;
+
+    // establish should NOT describe the tasting action
+    expect(establish.prompt.toLowerCase()).not.toContain("tastes");
+    // peak should focus on emotional content
+    expect(peak.prompt.toLowerCase()).toMatch(/expression|pride|horror|emotion/);
+    // resolve should describe aftermath
+    expect(resolve.prompt.toLowerCase()).toMatch(/after|aftermath|consequence|result|outcome/);
+  });
+
+  it("environment: insert 샷은 구체적 디테일 묘사", () => {
+    const result = buildDefaultMultiShot({
+      durationSec: 15,
+      sceneType: "environment",
+      basePrompt: "Ancient temple ruins overgrown with jungle vines, golden light breaking through canopy",
+      modelId: MODEL,
+    });
+
+    const insert = result.find(s => s.role === "insert");
+    if (insert) {
+      // insert should describe textural detail, not the whole scene
+      expect(insert.prompt.toLowerCase()).toMatch(/close|detail|texture|vine|light|canopy/);
+    }
+  });
+});
