@@ -44,14 +44,12 @@ describe("A. persona preset → bias direction", () => {
   it("3) lyrical-atmospheric → neutral (minimal motion but pace starts at 4, not ≥ 5)", () => {
     const ep = EDITORIAL_PERSONA_PRESETS["lyrical-atmospheric"];
     const bias = personaCutCountBias(ep);
-    // minimal + preferredCutPace[0]=4 (< 5) → neutral, not lower
     expect(bias).toBe("neutral");
   });
 
   it("4) gothic-macabre (minimal motion, pace [3,5]) → neutral 또는 lower", () => {
     const ep = EDITORIAL_PERSONA_PRESETS["gothic-macabre"];
     const bias = personaCutCountBias(ep);
-    // minimal with pace starting at 3, not ≥ 5 → should be neutral
     expect(["neutral", "lower"]).toContain(bias);
   });
 
@@ -104,13 +102,13 @@ describe("C. same range + different persona → different cut counts", () => {
       personaBias: formalistBias,
     });
 
-    // action은 upper(7), formalist는 lower(5 = density min)
+    // action은 upper(7), formalist는 lower(3)
     expect(actionResult.cutCount).toBeGreaterThan(formalistResult.cutCount);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// D. 15s → 3~5 기본 추천값
+// D. 15s → 1~2 기본 추천값
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. 15s → 1~2 default recommendation", () => {
@@ -158,7 +156,7 @@ describe("E. editorial persona regression check", () => {
     expect(ep.motionBias).toBe("minimal");
   });
 
-  it("13) density policy가 여전히 작동 (recommendMinimumCutCount)", () => {
+  it("13) density policy = 1 for all durations ≤ 15s (Kling native 15s)", () => {
     expect(recommendMinimumCutCount(15)).toBe(1);
     expect(recommendMinimumCutCount(12)).toBe(1);
     expect(recommendMinimumCutCount(9)).toBe(1);
