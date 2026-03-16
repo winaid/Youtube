@@ -12,7 +12,7 @@ import type { Cut, VideoGenerationConfig, StructuredSequenceDocument, PhysicsRul
 import { collectFailureModeNegatives, getGenreTemplate } from "@/lib/prompt-architecture";
 import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
 import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
-import { runSanitizePipeline } from "@/lib/prompt-sanitizer";
+import { runSanitizePipeline, stripMetaLabels } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
 import { normalizeSequence } from "@/lib/sequence-normalizer";
 import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
@@ -395,7 +395,12 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     motion = cam.motion;
   }
 
-  const primarySubject = json?.subjectAction || cut.sceneDescription;
+  // subject.primary는 가시적 주체/행동이어야 한다.
+  // sceneDescription은 기획 라벨(예: "장면 1", "[훅 — 강렬한 도입]...")일 수 있으므로
+  // json.subjectAction이 없으면 characterConsistency나 빈 문자열로 fallback.
+  const primarySubject = json?.subjectAction
+    || (cut.characterConsistency ? cut.characterConsistency.replace(/^캐릭터 고정:\s*/, "").replace(/\.\s*모든 장면.*$/, "").trim() : "")
+    || "";
   const characterRef = json?.characterRef || cut.characterConsistency || undefined;
 
   const beats = parseTimingBeats(json?.timingBeat, dur);
@@ -422,9 +427,10 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   // Environment: 추가 negative 강화 (공통 헬퍼)
   const finalUniversalNeg = isEnv ? enrichEnvironmentNegatives(universalNeg) : universalNeg;
 
-  const continuitySubject = prevCut?.videoPromptJson?.subjectAction || prevCut?.sceneDescription || primarySubject;
+  // continuity 추적: sceneDescription은 기획 라벨일 수 있으므로 사용하지 않음
+  const continuitySubject = prevCut?.videoPromptJson?.subjectAction || primarySubject;
   const continuityCharRef = prevCut?.characterConsistency || characterRef;
-  const continuityEnv = prevCut?.videoPromptJson?.locationCue || cut.sceneDescription.slice(0, 80);
+  const continuityEnv = prevCut?.videoPromptJson?.locationCue || json?.locationCue || "";
   const continuityLight = prevCut?.moodLighting || json?.moodLighting || cut.moodLighting || "";
 
   const styleSuffix = json?.styleSuffix || styleLabel.split(". ").slice(0, 1).join(". ");
@@ -471,7 +477,8 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
       locationCue: json?.locationCue,
       situationCue: json?.situationCue,
       emotionalAnchor: json?.emotionalAnchor,
-      environment: json?.locationCue || cut.sceneDescription.slice(0, 80),
+      // environment는 장소 묘사여야 한다. sceneDescription은 기획 라벨일 수 있으므로 fallback 제거.
+      environment: json?.locationCue || cut.moodLighting || "",
       moodLighting: json?.moodLighting || cut.moodLighting || "",
     },
 
@@ -510,6 +517,25 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
       hint: "Diegetic ambient sound",
     },
   };
+
+  // ── Meta-label guard: 기획 라벨이 시각 필드에 남아 있으면 제거 ──
+  const fieldsToSanitize = [
+    { key: "subject.primary", get: () => result.subject.primary, set: (v: string) => { result.subject.primary = v; } },
+    { key: "subject.action", get: () => result.subject.action, set: (v: string) => { result.subject.action = v; } },
+    { key: "scene.environment", get: () => result.scene.environment, set: (v: string) => { result.scene.environment = v; } },
+    { key: "scene.moodLighting", get: () => result.scene.moodLighting, set: (v: string) => { result.scene.moodLighting = v; } },
+  ] as const;
+  for (const f of fieldsToSanitize) {
+    const val = f.get();
+    if (val) {
+      const sanitized = stripMetaLabels(val);
+      if (sanitized.removed.length > 0) {
+        f.set(sanitized.text);
+      }
+    }
+  }
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════════

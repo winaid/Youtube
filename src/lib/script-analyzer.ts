@@ -262,8 +262,22 @@ function detectTransitionStrength(prevText: string, nextText: string): number {
 /** 주제 키워드 추출 (간단한 한국어 명사 추출) */
 function extractTopicKeywords(text: string): string[] {
   // 한국어 2-4글자 명사 패턴 (조사 제거)
+  // 조사를 lookbehind가 아닌 lookahead로 감지하여 어근만 추출.
+  // "달에서" → "달" (X "달에"), "시장을" → "시장"
   const matches = text.match(/[가-힣]{2,4}(?=[은는이가을를에서의로와과]|\s|$)/g);
-  return matches ? [...new Set(matches)] : [];
+  if (!matches) return [];
+
+  // 조사 잔류 제거: 끝이 조사 단독 글자(에/의/로/와/과/서)로 끝나면 떼어냄
+  const TRAILING_PARTICLES = /[에의로와과서]$/;
+  const cleaned = matches.map(m => {
+    // 2글자인데 끝이 조사면 추출 자체가 잘못된 것 → 버림
+    if (m.length === 2 && TRAILING_PARTICLES.test(m)) return null;
+    // 3-4글자인데 끝이 조사면 떼어냄
+    if (m.length >= 3 && TRAILING_PARTICLES.test(m)) return m.slice(0, -1);
+    return m;
+  }).filter((m): m is string => m !== null && m.length >= 2);
+
+  return [...new Set(cleaned)];
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -819,10 +833,11 @@ export function analyzeScript(
 /** 시퀀스 제목 생성 */
 function generateSequenceTitle(beats: ScriptBeat[], beatType: SequenceBeatType, seqIndex: number): string {
   const topics = extractTopicKeywords(beats.map(b => b.text).join(" ")).slice(0, 2);
-  const topicStr = topics.join("과 ");
+  // 한국어 조사 "과/와" 선택: 받침 있으면 "과", 없으면 "와"
+  const topicStr = joinKoreanTopics(topics);
 
   const titlePatterns: Partial<Record<SequenceBeatType, (t: string) => string>> = {
-    hook: (t) => t ? `${t} — 강렬한 도입` : "강렬한 도입",
+    hook: (t) => t ? `${t} — 도입` : "도입",
     setup: (t) => t ? `${t}의 배경` : "배경 설정",
     mechanism: (t) => t ? `${t}의 원리` : "핵심 원리",
     development: (t) => t ? `${t}의 전개` : "핵심 전개",
@@ -835,6 +850,23 @@ function generateSequenceTitle(beats: ScriptBeat[], beatType: SequenceBeatType, 
   };
 
   return titlePatterns[beatType]?.(topicStr) || `시퀀스 ${seqIndex + 1}`;
+}
+
+/**
+ * 한국어 조사 규칙에 맞게 토픽 키워드를 접속.
+ * 받침 있으면 "과", 없으면 "와".
+ * 빈 배열이면 "" 반환.
+ */
+function joinKoreanTopics(topics: string[]): string {
+  if (topics.length === 0) return "";
+  if (topics.length === 1) return topics[0];
+  return topics.reduce((acc, topic, i) => {
+    if (i === 0) return topic;
+    const prevChar = acc.charCodeAt(acc.length - 1);
+    // 한글 유니코드 범위: 0xAC00–0xD7A3, 받침 여부 = (code - 0xAC00) % 28 !== 0
+    const hasBatchim = prevChar >= 0xAC00 && prevChar <= 0xD7A3 && (prevChar - 0xAC00) % 28 !== 0;
+    return `${acc}${hasBatchim ? "과" : "와"} ${topic}`;
+  });
 }
 
 /** 시퀀스 목적 생성 */

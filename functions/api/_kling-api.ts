@@ -344,11 +344,37 @@ export async function klingCheckStatus(
 // ── Duration / Aspect ratio helpers ──────────────────────────────────────────
 
 /**
- * 입력 초 → Kling 지원 초 매핑. EvoLink API: 3~15초 정수 지원.
- * 실제 요청 초수를 최대한 유지하되 3~15 범위로 클램핑.
+ * 입력 초 → Kling O3 지원 초 매핑.
+ *
+ * Kling O3 API는 특정 이산 값만 지원:
+ *   5, 10 (standard), 3~15 (extended — 모델에 따라 다름)
+ *
+ * "Video duration out of range" 에러 방지를 위해
+ * 가장 가까운 지원 값으로 snap한다.
+ *
+ * 안전한 이산 값: 5, 10 (모든 O3 모델에서 보장).
+ * 3~4 → 5, 6~8 → 가장 가까운 5, 9~15 → 10 또는 15
  */
+const KLING_VALID_DURATIONS = [5, 10] as const;
+
 export function toKlingDuration(sec: number): number {
-  return Math.min(15, Math.max(3, Math.round(sec)));
+  const rounded = Math.round(sec);
+  const clamped = Math.min(15, Math.max(3, rounded));
+
+  // 정확히 유효 값이면 그대로
+  if (KLING_VALID_DURATIONS.includes(clamped as 5 | 10)) return clamped;
+
+  // 가장 가까운 유효 값으로 snap
+  let nearest = KLING_VALID_DURATIONS[0];
+  let minDist = Math.abs(clamped - nearest);
+  for (const valid of KLING_VALID_DURATIONS) {
+    const dist = Math.abs(clamped - valid);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = valid;
+    }
+  }
+  return nearest;
 }
 
 export function toKlingAspectRatio(ratio: string): "16:9" | "9:16" | "1:1" {

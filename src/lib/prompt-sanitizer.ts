@@ -519,6 +519,30 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
     }
   }
 
+  // 10. Meta-label stripping — 기획 라벨이 시각 프롬프트에 누출된 경우 제거
+  const metaResult = stripMetaLabels(prompt);
+  if (metaResult.removed.length > 0) {
+    prompt = metaResult.text;
+    log.push(`[meta-label] Stripped ${metaResult.removed.length} planning labels: ${metaResult.removed.join(", ")}`);
+    if (metaResult.wasDominated) {
+      issues.push({
+        rule: "meta_label_dominated_prompt",
+        severity: "error",
+        message: "Prompt was dominated by planning/editorial labels — no concrete visual content",
+      });
+    }
+  }
+
+  // 11. Malformed Korean detection
+  const malformed = detectMalformedKorean(prompt);
+  if (malformed.length > 0) {
+    issues.push({
+      rule: "malformed_korean_particles",
+      severity: "error",
+      message: `Malformed Korean particle combinations detected: ${malformed.join(", ")}`,
+    });
+  }
+
   // 최종 정리
   prompt = prompt
     .replace(/\.\s*\./g, ".")
@@ -941,6 +965,196 @@ export function detectEditorialPersonaConflicts(
     }
   }
 
+  return issues;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. Meta-Label / Planning Label Sanitizer
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 기획/편집 메타 라벨이 시각 프롬프트 필드에 누출되었는지 감지하고 제거.
+ *
+ * 이런 문구들은 planning-only이며 provider-facing 프롬프트에 절대 들어가면 안 됨:
+ * - "[달에과 제일 — 강렬한 도입]"
+ * - "강렬한 도입", "질문, 도발, 또는 약속"
+ * - shot role labels: 도입 / 전개 / 절정 / 마무리
+ * - beat descriptors: 핵심 메커니즘, 논리적 클라이맥스, 충격적 이미지
+ */
+
+/** 대괄호로 감싼 메타 라벨 (예: [달에과 제일 — 강렬한 도입]) */
+const BRACKETED_META_PATTERN = /\[[^\]]*(?:도입|전개|절정|마무리|삽입|전환|훅|hook|setup|mechanism|reveal|payoff|escalation|paradox|consequence|transition)[^\]]*\]/gi;
+
+/** 단독 출현 시 planning label인 한국어 구문 */
+const KOREAN_META_PHRASES = [
+  "강렬한 도입",
+  "시청자의 스크롤을 멈추는",
+  "질문, 도발, 또는 약속",
+  "질문, 도발, 약속",
+  "논리적 클라이맥스",
+  "핵심 메커니즘",
+  "충격적 이미지",
+  "텐션 상승",
+  "감정적 보상",
+  "시각적 보상",
+  "시점 전환",
+  "정보 축적",
+  "서사 전개",
+  "스크롤 멈춤",
+  "인지적 보상",
+  "감정적 여운",
+  "호기심 유발",
+  "시선 포착",
+];
+
+/** shot role labels — 단독 또는 슬래시 구분 나열 시 */
+const ROLE_LABEL_PATTERN = /(?:^|\s)(?:도입|전개|삽입|절정|마무리|전환)\s*[/·]\s*(?:도입|전개|삽입|절정|마무리|전환)(?:\s*[/·]\s*(?:도입|전개|삽입|절정|마무리|전환))*/g;
+
+/** em-dash 뒤에 오는 한국어 planning suffix 패턴 */
+const EMDASH_META_SUFFIX = /\s*[—–]\s*(?:강렬한 도입|배경 설정|핵심 원리|핵심 전개|숨겨진 진실|결과와 영향|텐션 상승|역설적 결론|최종 의미|시점 전환)/g;
+
+export interface MetaLabelSanitizeResult {
+  text: string;
+  removed: string[];
+  /** true if the text was dominated by meta labels (>50% removed) */
+  wasDominated: boolean;
+}
+
+/**
+ * 시각 프롬프트 텍스트에서 기획 메타 라벨을 제거.
+ * 제거 후 빈 문자열이 되면 wasDominated=true.
+ */
+export function stripMetaLabels(text: string): MetaLabelSanitizeResult {
+  const removed: string[] = [];
+  let cleaned = text;
+  const originalLength = text.trim().length;
+
+  // 1. 대괄호 메타 라벨 제거
+  cleaned = cleaned.replace(BRACKETED_META_PATTERN, (match) => {
+    removed.push(match);
+    return "";
+  });
+
+  // 2. em-dash planning suffix 제거
+  cleaned = cleaned.replace(EMDASH_META_SUFFIX, (match) => {
+    removed.push(match.trim());
+    return "";
+  });
+
+  // 3. 한국어 메타 구문 제거
+  for (const phrase of KOREAN_META_PHRASES) {
+    const pattern = new RegExp(escapeRegex(phrase), "g");
+    if (pattern.test(cleaned)) {
+      cleaned = cleaned.replace(pattern, (match) => {
+        removed.push(match);
+        return "";
+      });
+    }
+  }
+
+  // 4. role label 슬래시 나열 제거 (도입 / 전개 / 삽입 / 절정 / 마무리)
+  cleaned = cleaned.replace(ROLE_LABEL_PATTERN, (match) => {
+    removed.push(match.trim());
+    return "";
+  });
+
+  // 정리
+  cleaned = cleaned
+    .replace(/\.\s*\./g, ".")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^\s*[—–,.\s]+/, "")
+    .replace(/[—–,.\s]+\s*$/, "")
+    .trim();
+
+  const wasDominated = originalLength > 0 && cleaned.length < originalLength * 0.5;
+
+  return { text: cleaned, removed, wasDominated };
+}
+
+/**
+ * 시각 프롬프트 필드의 의미론적 유효성 검증.
+ *
+ * 각 필드가 해당 역할에 맞는 내용인지 확인:
+ * - subject.primary: 가시적 주체여야 함 (마케팅 문구 X)
+ * - environment: 장소 묘사여야 함 (hook label X)
+ * - moodLighting: 실제 광원/방향/품질이어야 함 (감정 카피 X)
+ * - action: 가시적 신체 동작이어야 함 (추상 서사 목적 X)
+ */
+export interface SemanticFieldIssue {
+  field: string;
+  value: string;
+  reason: string;
+}
+
+export function validateSemanticFields(fields: {
+  subject?: string;
+  environment?: string;
+  moodLighting?: string;
+  action?: string;
+}): SemanticFieldIssue[] {
+  const issues: SemanticFieldIssue[] = [];
+
+  // subject: 한국어 기획 라벨이면 reject
+  if (fields.subject) {
+    const stripped = stripMetaLabels(fields.subject);
+    if (stripped.wasDominated || stripped.text.length < 3) {
+      issues.push({
+        field: "subject",
+        value: fields.subject,
+        reason: "subject is a planning label, not a visible subject description",
+      });
+    }
+  }
+
+  // environment: 기획 라벨이면 reject
+  if (fields.environment) {
+    const stripped = stripMetaLabels(fields.environment);
+    if (stripped.wasDominated || stripped.text.length < 3) {
+      issues.push({
+        field: "environment",
+        value: fields.environment,
+        reason: "environment is a planning label, not a place description",
+      });
+    }
+  }
+
+  // moodLighting: 감정 카피만 있고 광원 묘사 없으면 경고
+  if (fields.moodLighting) {
+    const stripped = stripMetaLabels(fields.moodLighting);
+    if (stripped.wasDominated) {
+      issues.push({
+        field: "moodLighting",
+        value: fields.moodLighting,
+        reason: "moodLighting contains planning labels instead of actual lighting description",
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * 말이 안 되는 한국어 조합 감지.
+ * "달에과 제일" 같은 조사 중복/잘못된 결합을 탐지.
+ */
+const MALFORMED_PARTICLE_PATTERNS = [
+  // 조사 + 조사 연결 (에과, 에와, 에는, 의과, 를과, 을와, 에서과 등)
+  /[가-힣]+[에의로서][과와]/,
+  // 이중 조사 나열 (은는, 이가, 을를)
+  /[가-힣]+[은는][은는]/,
+  /[가-힣]+[이가][이가]/,
+  /[가-힣]+[을를][을를]/,
+];
+
+export function detectMalformedKorean(text: string): string[] {
+  const issues: string[] = [];
+  for (const pattern of MALFORMED_PARTICLE_PATTERNS) {
+    const matches = text.match(new RegExp(pattern.source, "g"));
+    if (matches) {
+      issues.push(...matches);
+    }
+  }
   return issues;
 }
 
