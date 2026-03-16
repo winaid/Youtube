@@ -18,7 +18,7 @@ import { normalizeSequence } from "@/lib/sequence-normalizer";
 import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
 import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
 import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
-import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor } from "@/lib/shot-splitting";
+import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor, type ShotBeatHint } from "@/lib/shot-splitting";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -1467,6 +1467,21 @@ export function assembleFromJSON(input: {
   });
 
   // ── Shot splitting — single shot → multi-shot sequence ──
+  // Derive beat hint for shot priority ordering:
+  // - Cut 1 is typically the hook → macro-first framing
+  // - Scene description with [훅] or hook markers → hook beat
+  // - Consequence/mechanism/payoff keywords → corresponding beat types
+  const beatHint: ShotBeatHint = (() => {
+    const desc = (input.cut.sceneDescription || "").toLowerCase();
+    if (input.cut.cutNumber === 1) return "hook";
+    if (/\[.*훅.*\]|hook|도입/.test(desc)) return "hook";
+    if (/mechanism|원리|메커니즘/.test(desc)) return "mechanism";
+    if (/consequence|결과|영향/.test(desc)) return "consequence";
+    if (/payoff|보상|착지/.test(desc)) return "payoff";
+    if (/paradox|역설/.test(desc)) return "paradox";
+    return "default";
+  })();
+
   const splitResult = enforceMinimumShotCount({
     sceneType: effectiveSceneType,
     subjectPrimary: normalizedDoc.subject.primary,
@@ -1480,6 +1495,7 @@ export function assembleFromJSON(input: {
       motion: normalizedDoc.camera.motion,
     },
     currentShotCount: 1,
+    beatHint,
   });
   const sequenceShots: ShotDescriptor[] = splitResult
     ? splitResult.shots
