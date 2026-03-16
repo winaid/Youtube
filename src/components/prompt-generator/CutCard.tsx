@@ -789,19 +789,45 @@ export default function CutCard({
               />
               {/* Video Prompt: JSON 뷰 (있으면) + raw string 토글 */}
               {cut.videoPromptJson ? (
-                <JsonPromptView
-                  json={cut.videoPromptJson}
-                  label={`Video Prompt (${cut.durationSec}초)`}
-                  color="#c4b800"
-                  onSaveField={(field, value) => {
-                    if (onUpdate && cut.videoPromptJson) {
-                      onUpdate({
-                        ...cut,
-                        videoPromptJson: { ...cut.videoPromptJson, [field]: value },
-                      });
-                    }
-                  }}
-                />
+                <>
+                  <JsonPromptView
+                    json={cut.videoPromptJson}
+                    label={`Video Prompt (${cut.durationSec}초)`}
+                    color="#c4b800"
+                    onSaveField={(field, value) => {
+                      if (onUpdate && cut.videoPromptJson) {
+                        onUpdate({
+                          ...cut,
+                          videoPromptJson: { ...cut.videoPromptJson, [field]: value },
+                        });
+                      }
+                    }}
+                  />
+                  {/* Multi-shot payload indicator — shows actual generation structure */}
+                  {cut.multiShot && cut.multiShot.length >= 2 && (
+                    <div
+                      className="rounded-lg p-2 space-y-1"
+                      style={{ background: "#e85d0408", border: "1px solid #e85d0420" }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold" style={{ color: "#e85d04" }}>
+                          실제 생성 페이로드: {cut.multiShot.length}샷 멀티샷
+                        </span>
+                        <Badge variant="outline" className="text-[9px] py-0 px-1" style={{ borderColor: "#e85d04", color: "#e85d04" }}>
+                          MULTI-SHOT
+                        </Badge>
+                      </div>
+                      {cut.multiShot.map((shot) => (
+                        <div key={shot.index} className="flex items-center gap-2 text-[9px]" style={{ color: "#6b7280" }}>
+                          <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
+                          <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
+                          <span className="truncate flex-1">{shot.prompt?.slice(0, 80)}{(shot.prompt?.length ?? 0) > 80 ? "…" : ""}</span>
+                          {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{shot.role}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               ) : (
                 <EditableField
                   label={`Video Prompt (${cut.durationSec}초)`}

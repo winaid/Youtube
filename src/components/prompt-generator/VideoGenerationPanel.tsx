@@ -874,7 +874,7 @@ export default function VideoGenerationPanel({
                   >
                     {isStitching
                       ? "합치는 중..."
-                      : `최종 몽타주 MP4 생성 (${montageState.completedCount}개 clip)`}
+                      : `최종 몽타주 MP4 생성 — 영상만 (${montageState.completedCount}개 clip)`}
                   </Button>
                   {/* stitch 불가 사유 (clip 미완료 등) */}
                   {!stitchReadiness.canStitch && stitchReadiness.reason && (
@@ -919,6 +919,9 @@ export default function VideoGenerationPanel({
                         다시 다운로드
                       </a>
                     )}
+                    <p className="mt-1 text-[10px]" style={{ color: "#6b7280" }}>
+                      영상 전용 MP4 — 나레이션/BGM/SFX는 별도 에셋으로 편집 소프트웨어에서 합성하세요.
+                    </p>
                   </div>
                 )}
                 {stitchResult && stitchResult.phase === "error" && (

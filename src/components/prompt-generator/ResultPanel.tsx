@@ -362,7 +362,9 @@ export default function ResultPanel({
         }
         return null;
       })(),
-      internalShotCount: cut.multiShot?.length ?? 0,
+      internalShotCount: cut.multiShot?.length
+        ?? videoGen.clips.find(c => c.cutNumber === cut.cutNumber)?.structuredSequence?.shots?.length
+        ?? 0,
     })),
   };
 
