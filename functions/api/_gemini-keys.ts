@@ -312,6 +312,67 @@ export function geminiErrorResponse(
   }, { status: res.status >= 400 && res.status < 600 ? res.status : 500 });
 }
 
+// === Gemini 응답 JSON 파싱 유틸리티 ===
+
+/**
+ * Extract the first balanced JSON object `{...}` from text that may contain
+ * markdown fences, trailing commentary, or other non-JSON content.
+ * Handles nested braces, strings with escaped quotes, and brace-like chars
+ * inside string values.
+ */
+export function parseFirstJsonObject(text: string): Record<string, unknown> | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && inStr) { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") depth++;
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract the first balanced JSON array `[...]` from text.
+ * Same logic as parseFirstJsonObject but for arrays.
+ */
+export function parseFirstJsonArray(text: string): unknown[] | null {
+  const start = text.indexOf("[");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && inStr) { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "[") depth++;
+    if (ch === "]") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const result = JSON.parse(text.slice(start, i + 1));
+          return Array.isArray(result) ? result : null;
+        } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 function classifyGeminiError(status: number, body: string): string {
   if (status === 401) return "INVALID_API_KEY";
   if (status === 403 && /quota|RESOURCE_EXHAUSTED/i.test(body)) return "QUOTA_EXCEEDED";

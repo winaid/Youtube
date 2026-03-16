@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -57,8 +57,7 @@ If no match, return empty array [].`;
     try {
       directors = JSON.parse(text);
     } catch {
-      const match = text.match(/\[[\s\S]*\]/);
-      directors = match ? JSON.parse(match[0]) : [];
+      directors = parseFirstJsonArray(text) ?? [];
     }
 
     return Response.json({ directors });

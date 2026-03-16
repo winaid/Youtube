@@ -8,7 +8,7 @@
  * 400/500 에러를 반환. 클라이언트가 heuristic fallback 처리.
  */
 
-import { GeminiEnv, buildGeminiUrl, getApiKeys, GEMINI_MODEL_PRO } from "./_gemini-keys";
+import { GeminiEnv, buildGeminiUrl, getApiKeys, GEMINI_MODEL_PRO, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -90,8 +90,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       try {
         const analysis = JSON.parse(jsonText);
         return Response.json({ success: true, analysis });
-      } catch (parseErr) {
-        console.error("[analyze-script] JSON parse error:", (parseErr as Error).message);
+      } catch {
+        const recovered = parseFirstJsonObject(jsonText);
+        if (recovered) {
+          return Response.json({ success: true, analysis: recovered });
+        }
+        console.error("[analyze-script] JSON parse error, recovery failed");
         return Response.json({ success: false, error: "Failed to parse LLM output as JSON" }, { status: 502 });
       }
     } catch (fetchErr) {

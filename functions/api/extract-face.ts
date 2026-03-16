@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -84,7 +84,12 @@ JSON으로만 응답:
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '{"faces":[]}';
-    const result = JSON.parse(text);
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      result = parseFirstJsonObject(text) ?? { faces: [] };
+    }
 
     return Response.json(result);
   } catch (error) {

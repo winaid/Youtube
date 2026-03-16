@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -239,8 +239,7 @@ ${String(feedback || "Make it better")}
     try {
       parsed = JSON.parse(text);
     } catch {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Failed to parse" };
+      parsed = parseFirstJsonObject(text) ?? { error: "Failed to parse" };
     }
 
     return Response.json(parsed);

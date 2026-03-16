@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -112,18 +112,23 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
     try {
       parsed = JSON.parse(text);
     } catch {
-      console.error(`JSON parse failed. truncated=${truncated} rawTextLen=${text.length} rawTail=${text.slice(-200)}`);
-      return Response.json({
-        error: truncated
-          ? "AI 응답이 토큰 한도로 잘려 파싱 실패 (API 키 문제 아님)"
-          : "AI 응답 파싱 실패",
-        detail: text.slice(0, 300),
-        cause: truncated ? "MAX_TOKENS" : "PARSE_ERROR",
-        recommendedCuts: DURATION_FALLBACK,
-        recommendedDuration: DURATION_FALLBACK,
-        reason: `분석 실패 - 기본값 ${DURATION_FALLBACK}장면 × ${DURATION_FALLBACK}초`,
-        scenes: [],
-      }, { status: truncated ? 422 : 500 });
+      const recovered = parseFirstJsonObject(text);
+      if (recovered) {
+        parsed = recovered as typeof parsed;
+      } else {
+        console.error(`JSON parse failed. truncated=${truncated} rawTextLen=${text.length} rawTail=${text.slice(-200)}`);
+        return Response.json({
+          error: truncated
+            ? "AI 응답이 토큰 한도로 잘려 파싱 실패 (API 키 문제 아님)"
+            : "AI 응답 파싱 실패",
+          detail: text.slice(0, 300),
+          cause: truncated ? "MAX_TOKENS" : "PARSE_ERROR",
+          recommendedCuts: DURATION_FALLBACK,
+          recommendedDuration: DURATION_FALLBACK,
+          reason: `분석 실패 - 기본값 ${DURATION_FALLBACK}장면 × ${DURATION_FALLBACK}초`,
+          scenes: [],
+        }, { status: truncated ? 422 : 500 });
+      }
     }
 
     const rawCuts = parsed.recommendedCuts ?? DURATION_FALLBACK;

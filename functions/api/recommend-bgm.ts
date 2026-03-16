@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -69,7 +69,12 @@ JSON으로만 응답:
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-    const bgmData = JSON.parse(text);
+    let bgmData;
+    try {
+      bgmData = JSON.parse(text);
+    } catch {
+      bgmData = parseFirstJsonObject(text) ?? {};
+    }
 
     return Response.json(bgmData);
   } catch (error) {

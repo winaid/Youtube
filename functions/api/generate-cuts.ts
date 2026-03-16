@@ -9,7 +9,7 @@
  *   Step2: maxTokens=8192~16384  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192~16384  (컷 N/2+1~N 상세) — Step2와 병렬
  */
-import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO, parseFirstJsonObject, parseFirstJsonArray } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
@@ -367,11 +367,7 @@ function inferMultiShotRole(index: number, total: number): ShotRoleServer {
 function safeParseObj(text: string): Record<string, unknown> | null {
   const t = text.trim();
   try { return JSON.parse(t) as Record<string, unknown>; } catch { /* */ }
-  try {
-    const m = t.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]) as Record<string, unknown>;
-  } catch { /* */ }
-  return null;
+  return parseFirstJsonObject(t);
 }
 
 function safeParseArr(text: string): unknown[] | null {
@@ -383,10 +379,15 @@ function safeParseArr(text: string): unknown[] | null {
     if (Array.isArray(r.cuts)) return r.cuts as unknown[];
     if (Array.isArray(r.details)) return r.details as unknown[];
   } catch { /* */ }
-  try {
-    const m = t.match(/\[[\s\S]*\]/);
-    if (m) return JSON.parse(m[0]) as unknown[];
-  } catch { /* */ }
+  return parseFirstJsonArray(t) ?? ((() => {
+    // If array extraction fails, try object and extract array fields
+    const obj = parseFirstJsonObject(t);
+    if (obj) {
+      if (Array.isArray(obj.cuts)) return obj.cuts as unknown[];
+      if (Array.isArray(obj.details)) return obj.details as unknown[];
+    }
+    return null;
+  })());
   return null;
 }
 

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -28,9 +28,9 @@ function extractJson(text: string): unknown {
     if (match) {
       return JSON.parse(match[1].trim());
     }
-    const braceMatch = text.match(/\{[\s\S]*\}/);
-    if (braceMatch) {
-      return JSON.parse(braceMatch[0]);
+    const recovered = parseFirstJsonObject(text);
+    if (recovered) {
+      return recovered;
     }
     throw new Error("Failed to extract JSON from response");
   }

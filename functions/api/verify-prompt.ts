@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -16,8 +16,8 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
       .replace(/\n?```\s*$/i, "")
       .trim()
   );
-  const braceMatch = raw.match(/\{[\s\S]*\}/);
-  if (braceMatch) attempts.push(braceMatch[0]);
+  const balanced = parseFirstJsonObject(raw);
+  if (balanced) return balanced;
 
   for (const s of attempts) {
     try {

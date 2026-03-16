@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -97,7 +97,12 @@ viral: sfx-ding, sfx-wrong-buzzer, sfx-record-scratch, sfx-tik-tok-oh-no`;
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '{"matches":[]}';
-    const result = JSON.parse(text);
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      result = parseFirstJsonObject(text) ?? { matches: [] };
+    }
 
     return Response.json(result);
   } catch (error) {

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
 import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -56,7 +56,12 @@ JSON 배열로 응답:
 
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "[]";
-    const subtitles = JSON.parse(text);
+    let subtitles;
+    try {
+      subtitles = JSON.parse(text);
+    } catch {
+      subtitles = parseFirstJsonArray(text) ?? [];
+    }
 
     // SRT 포맷 생성
     const srtContent = (subtitles as { index: number; startTime: string; endTime: string; text: string }[])

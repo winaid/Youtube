@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -145,19 +145,12 @@ JSON 배열로만 응답 (마크다운 없이):
     } catch {
       if (truncated) {
         console.warn(`[suggest-prompts] truncated response — attempting partial JSON recovery`);
-        try {
-          const bracketMatch = text.match(/\[[\s\S]*\]/);
-          if (bracketMatch) {
-            const partialParsed = JSON.parse(bracketMatch[0]);
-            cards = Array.isArray(partialParsed) ? partialParsed.filter((c: unknown) =>
+        const recovered = parseFirstJsonArray(text);
+        cards = recovered
+          ? (recovered as typeof cards).filter((c: unknown) =>
               typeof c === "object" && c !== null && "title" in c && "hook" in c
-            ) : [];
-          } else {
-            cards = [];
-          }
-        } catch {
-          cards = [];
-        }
+            )
+          : [];
       } else {
         cards = [];
       }

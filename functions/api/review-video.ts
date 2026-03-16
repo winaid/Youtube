@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -103,8 +103,7 @@ ${cutDescriptions}
     try {
       parsed = JSON.parse(text);
     } catch {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {
+      parsed = parseFirstJsonObject(text) ?? {
         overallScore: 50,
         overallComment: "리뷰 파싱 실패",
         cutFeedbacks: [],

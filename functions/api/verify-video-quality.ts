@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -21,14 +21,9 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
     } catch { /* next */ }
   }
 
-  // { ... } 블록 추출
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (match) {
-    try {
-      const p = JSON.parse(match[0]);
-      if (p && typeof p === "object") return p as Record<string, unknown>;
-    } catch { /* next */ }
-  }
+  // { ... } 블록 추출 (balanced brace extraction)
+  const balanced = parseFirstJsonObject(raw);
+  if (balanced) return balanced;
 
   // 개별 필드 regex 추출 (부분 파싱)
   const scoreMatch = raw.match(/"?overallScore"?\s*:\s*(\d+)/i);
