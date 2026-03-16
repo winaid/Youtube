@@ -13,13 +13,14 @@ import PromptHistoryPanel from "./PromptHistoryPanel";
 import VideoHistoryPanel from "./VideoHistoryPanel";
 import MyVideosPanel from "./MyVideosPanel";
 import NodeCanvas from "./NodeCanvas";
+import ScriptAnalyzerPanel from "./ScriptAnalyzerPanel";
 import type { VideoOutputMeta } from "@/lib/node-execution";
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "canvas" | "history" | "videos">("prompt");
+  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "script" | "canvas" | "history" | "videos">("prompt");
   const [canvasOutputs, setCanvasOutputs] = useState<Array<{ videoUrl: string; meta: VideoOutputMeta }>>([]);
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
@@ -108,6 +109,17 @@ export default function PromptGenerator() {
           시나리오 AI 생성
         </button>
         <button
+          onClick={() => setActiveTab("script")}
+          className="px-4 py-2 rounded-full text-sm font-medium transition-all"
+          style={
+            activeTab === "script"
+              ? { background: "linear-gradient(135deg, #e09500, #ea580c)", color: "white", boxShadow: "0 2px 8px #e0950040" }
+              : { background: "#e0950015", color: "#b87700" }
+          }
+        >
+          대본 분석
+        </button>
+        <button
           onClick={() => setActiveTab("canvas")}
           className="px-4 py-2 rounded-full text-sm font-medium transition-all"
           style={
@@ -158,6 +170,24 @@ export default function PromptGenerator() {
           <div className="min-w-0">
             <ResultPanel result={result} status={status} error={error} onUpdateResult={setResult} storyText={lastInput?.storyText} directorName={lastInput?.directorPersona} region={lastInput?.region} animationMode={lastInput?.animationMode} secondsPerScene={secondsPerScene} onSecondsPerSceneChange={setSecondsPerScene} />
           </div>
+        </div>
+      ) : activeTab === "script" ? (
+        <div className="max-w-3xl mx-auto">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold" style={{ color: "#222" }}>대본 분석기</h2>
+            <p className="text-xs mt-0.5" style={{ color: "#999" }}>
+              장문의 한국어 대본/나레이션을 릴 시퀀스 프로덕션 구조로 자동 변환합니다.
+              분석 결과를 프롬프트 워크플로우에 바로 적용할 수 있습니다.
+            </p>
+          </div>
+          <ScriptAnalyzerPanel
+            onApply={(output) => {
+              setResult(output);
+              setStatus("success");
+              setError(null);
+              setActiveTab("prompt");
+            }}
+          />
         </div>
       ) : activeTab === "canvas" ? (
         <div className="space-y-3">
