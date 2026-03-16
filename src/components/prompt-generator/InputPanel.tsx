@@ -15,10 +15,9 @@ import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-durat
 import {
   analyzeScriptPhaseA,
   enrichSequenceDetail,
-  enrichAllSequences,
   convertToCuts,
-  estimateRuntime,
   detectContentType,
+  buildAnalysisPrompt,
 } from "@/lib/script-analyzer";
 import type { ScriptAnalysisResult, AnalysisPhase, PhaseAResult, ScriptContentType } from "@/types/script-analysis";
 import { Button } from "@/components/ui/button";
@@ -345,19 +344,20 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       // Phase C: optional LLM enrichment
       setAnalysisPhase("enriching");
       try {
+        const prompt = buildAnalysisPrompt(storyText, detectedType);
         const res = await fetch("/api/analyze-script", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             scriptText: storyText,
-            contentType: detectedType,
-            phaseAResult: result,
+            analysisPrompt: prompt,
+            contentTypeHint: detectedType,
           }),
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.enrichedResult) {
-            result = data.enrichedResult;
+          if (data.analysis) {
+            result = data.analysis;
           }
         }
       } catch { /* continue without LLM */ }
@@ -1709,7 +1709,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           return null;
         })()}
 
-        {/* 생성 버튼 — 짧은 입력: "바로 생성" 강조, 긴 대본: "분석 후 생성" 강조 */}
+        {/* 생성 버튼 — 항상 두 액션 모두 표시, 입력 길이에 따라 강조만 변경 */}
         {(() => {
           const isAnalyzingScript = analysisPhase !== "idle" && analysisPhase !== "complete";
           const analysisLabel = isAnalyzingScript
@@ -1719,77 +1719,48 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             : "분석 중..."
             : "분석 후 생성";
 
-          // Long-form: emphasize "분석 후 생성", short: emphasize "바로 생성"
-          if (isLongForm) {
-            return (
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
-                  className="text-sm font-medium flex-shrink-0"
-                  size="lg"
-                  variant="outline"
-                  style={{ borderColor: "#787fff60", color: "#787fff" }}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      생성 중...
-                    </span>
-                  ) : "바로 생성"}
-                </Button>
-                <Button
-                  onClick={handleAnalyzeThenGenerate}
-                  disabled={!storyText.trim() || isLoading || isAnalyzingScript}
-                  className="flex-1 text-white font-semibold"
-                  size="lg"
-                  style={{ background: "linear-gradient(135deg, #e09500, #ea580c)", boxShadow: "0 4px 14px #e0950040" }}
-                >
-                  {isAnalyzingScript ? (
-                    <span className="flex items-center gap-2">
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      {analysisLabel}
-                    </span>
-                  ) : analysisLabel}
-                </Button>
-              </div>
-            );
-          }
+          // isLongForm: >=300 non-whitespace chars → recommend "분석 후 생성"
+          // otherwise → recommend "바로 생성"
+          const directIsPrimary = !isLongForm;
 
-          // Short-form: emphasize "바로 생성"
           return (
             <div className="flex gap-2">
               <Button
                 onClick={handleSubmit}
                 disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
-                className="flex-1 text-white font-semibold"
+                className={directIsPrimary ? "flex-1 text-white font-semibold" : "text-sm font-medium flex-shrink-0"}
                 size="lg"
-                style={{ background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }}
+                variant={directIsPrimary ? "default" : "outline"}
+                style={directIsPrimary
+                  ? { background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }
+                  : { borderColor: "#787fff60", color: "#787fff" }
+                }
               >
                 {isLoading ? (
                   <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    프롬프트 생성 중...
+                    <span className={`${directIsPrimary ? "h-4 w-4" : "h-3.5 w-3.5"} animate-spin rounded-full border-2 border-current border-t-transparent`} />
+                    {directIsPrimary ? "프롬프트 생성 중..." : "생성 중..."}
                   </span>
                 ) : "바로 생성"}
               </Button>
-              {onAnalyzeApply && storyText.replace(/\s/g, "").length >= 100 && (
-                <Button
-                  onClick={handleAnalyzeThenGenerate}
-                  disabled={!storyText.trim() || isLoading || isAnalyzingScript}
-                  className="text-sm font-medium flex-shrink-0"
-                  size="lg"
-                  variant="outline"
-                  style={{ borderColor: "#e0950060", color: "#b87700" }}
-                >
-                  {isAnalyzingScript ? (
-                    <span className="flex items-center gap-2">
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      {analysisLabel}
-                    </span>
-                  ) : "분석 후 생성"}
-                </Button>
-              )}
+              <Button
+                onClick={handleAnalyzeThenGenerate}
+                disabled={!storyText.trim() || isLoading || isAnalyzingScript}
+                className={directIsPrimary ? "text-sm font-medium flex-shrink-0" : "flex-1 text-white font-semibold"}
+                size="lg"
+                variant={directIsPrimary ? "outline" : "default"}
+                style={directIsPrimary
+                  ? { borderColor: "#e0950060", color: "#b87700" }
+                  : { background: "linear-gradient(135deg, #e09500, #ea580c)", boxShadow: "0 4px 14px #e0950040" }
+                }
+              >
+                {isAnalyzingScript ? (
+                  <span className="flex items-center gap-2">
+                    <span className={`${directIsPrimary ? "h-3.5 w-3.5" : "h-4 w-4"} animate-spin rounded-full border-2 border-current border-t-transparent`} />
+                    {analysisLabel}
+                  </span>
+                ) : analysisLabel}
+              </Button>
             </div>
           );
         })()}
