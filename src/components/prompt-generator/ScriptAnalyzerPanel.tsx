@@ -14,6 +14,7 @@ import {
   detectContentType,
   buildAnalysisPrompt,
 } from "@/lib/script-analyzer";
+import { normalizeAnalysisResult } from "@/lib/normalize";
 import type {
   ScriptAnalysisResult,
   AnalyzedSequence,
@@ -224,9 +225,10 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
       if (res.ok) {
         const data = await res.json() as { success: boolean; analysis?: ScriptAnalysisResult };
         if (data.success && data.analysis && !abortRef.current) {
-          setAnalysis(data.analysis);
-          setDetailedSeqs(new Set(data.analysis.sequences.map((_, i) => i)));
-          setDetailProgress({ done: data.analysis.sequences.length, total: data.analysis.sequences.length });
+          const normalized = normalizeAnalysisResult(data.analysis);
+          setAnalysis(normalized);
+          setDetailedSeqs(new Set(normalized.sequences.map((_, i) => i)));
+          setDetailProgress({ done: normalized.sequences.length, total: normalized.sequences.length });
         }
       }
     } catch {

@@ -36,6 +36,7 @@ import type {
   PhaseAResult,
 } from "@/types/script-analysis";
 import { SEQUENCE_MIN_DURATION } from "@/lib/sequence-density";
+import { normalizeAnalysisResult, safeString, safeArray, safeNumber } from "@/lib/normalize";
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants
@@ -1103,30 +1104,37 @@ export function estimateRuntime(scriptText: string): number {
  * 기존 ResultPanel/CutCard 워크플로우에 바로 투입할 수 있는 구조를 생성.
  */
 export function convertToCuts(analysis: ScriptAnalysisResult): Cut[] {
+  const safe = normalizeAnalysisResult(analysis);
   const cuts: Cut[] = [];
   let cutNumber = 1;
 
-  for (const seq of analysis.sequences) {
+  for (const seq of safe.sequences) {
+    const seqCuts = safeArray<AnalyzedCut>(seq.cuts);
+    const dur = safeNumber(seq.recommendedDurationSec, 8);
+    const cutCount = Math.max(1, seqCuts.length);
+
     cuts.push({
       cutNumber: cutNumber++,
-      durationSec: seq.recommendedDurationSec,
-      sceneDescription: `[${seq.title}] ${seq.purpose}`,
+      durationSec: dur,
+      sceneDescription: `[${safeString(seq.title)}] ${safeString(seq.purpose)}`,
       cameraDirection: deriveCameraDirection(seq),
       moodLighting: deriveMoodLighting(seq),
       imagePrompt: "",
       endImagePrompt: "",
-      videoPrompt: seq.cuts.map(c => c.suggestedPromptIntent).join(". "),
+      videoPrompt: seqCuts.map(c => safeString(c.suggestedPromptIntent)).filter(Boolean).join(". ") || safeString(seq.title),
       extendPrompt: "",
       transitionHint: seq.endingMode === "cliffhanger" ? "서스펜스 유지" : "자연 전환",
       characterConsistency: "",
       charactersInScene: [],
       shotCategory: "character-driven",
-      multiShot: seq.cuts.map((cut, i) => ({
-        index: i + 1,
-        prompt: cut.suggestedPromptIntent,
-        duration: String(Math.max(2, Math.round(seq.recommendedDurationSec / seq.cuts.length))),
-        role: cut.role,
-      })),
+      multiShot: seqCuts.length > 0
+        ? seqCuts.map((cut, i) => ({
+            index: i + 1,
+            prompt: safeString(cut.suggestedPromptIntent) || safeString(seq.title),
+            duration: String(Math.max(2, Math.round(dur / cutCount))),
+            role: cut.role || "develop" as ShotRole,
+          }))
+        : undefined,
     });
   }
 

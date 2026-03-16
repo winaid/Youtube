@@ -23,6 +23,11 @@ import { getMaxShots, getCapability } from "@/lib/kling-capability";
 import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
 import type { GenerationMode } from "@/lib/multi-shot-planner";
 
+/** Safely get prompt text — guards against undefined in malformed multiShot data */
+function safePrompt(shot: MultiShotPrompt): string {
+  return typeof shot.prompt === "string" ? shot.prompt : "";
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════
@@ -172,7 +177,7 @@ export function validateMultiShots(
   // ── 개별 샷 검증 ──
   for (const shot of shots) {
     // 빈 prompt
-    if (!shot.prompt || shot.prompt.trim().length === 0) {
+    if (!shot.prompt || safePrompt(shot).trim().length === 0) {
       shotIssues.push({
         shotIndex: shot.index,
         field: "prompt",
@@ -247,7 +252,7 @@ export function validateMultiShots(
     }
 
     // 동일 prompt 경고 (fake split 감지)
-    const trimmedPrompts = shots.map(s => s.prompt.trim().toLowerCase()).filter(p => p.length > 0);
+    const trimmedPrompts = shots.map(s => safePrompt(s).trim().toLowerCase()).filter(p => p.length > 0);
     if (trimmedPrompts.length >= 2) {
       for (let i = 1; i < trimmedPrompts.length; i++) {
         if (trimmedPrompts[i] === trimmedPrompts[i - 1]) {
@@ -521,7 +526,7 @@ export function validateStudioMode(
 
     // Studio 추가: 반복 프롬프트 검사
     if (shots.length >= 2) {
-      const prompts = shots.map(s => s.prompt.trim().toLowerCase()).filter(p => p.length > 0);
+      const prompts = shots.map(s => safePrompt(s).trim().toLowerCase()).filter(p => p.length > 0);
       const uniquePrompts = new Set(prompts);
       if (prompts.length >= 2 && uniquePrompts.size === 1) {
         aggregateIssues.push({
@@ -673,7 +678,7 @@ export function validateProgressionQuality(
   const issues: ProgressionIssue[] = [];
   if (shots.length < 2) return issues;
 
-  const prompts = shots.map(s => s.prompt.trim());
+  const prompts = shots.map(s => safePrompt(s).trim());
   const nonEmpty = prompts.filter(p => p.length > 0);
   if (nonEmpty.length < 2) return issues;
 

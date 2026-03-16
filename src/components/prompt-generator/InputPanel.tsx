@@ -19,6 +19,7 @@ import {
   detectContentType,
   buildAnalysisPrompt,
 } from "@/lib/script-analyzer";
+import { normalizeAnalysisResult } from "@/lib/normalize";
 import type { ScriptAnalysisResult, AnalysisPhase, PhaseAResult, ScriptContentType } from "@/types/script-analysis";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -357,7 +358,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         if (res.ok) {
           const data = await res.json();
           if (data.analysis) {
-            result = data.analysis;
+            result = normalizeAnalysisResult(data.analysis);
           }
         } else {
           // Log structured error from backend for debugging

@@ -802,7 +802,7 @@ export function sanitizeRenderedPrompt(prompt: string): string {
  * styleSuffix에 "cinematic realism"이 포함된 경우 자동 적용.
  */
 function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): void {
-  const fullText = parts.join(" ") + " " + json.styleSuffix;
+  const fullText = parts.join(" ") + " " + (json.styleSuffix || "");
   const isCinematicRealism = /cinematic\s*realism/i.test(fullText);
   if (!isCinematicRealism) return;
 
@@ -886,10 +886,10 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
 
   // Style (Kling은 no text/watermark 등 필수)
   // styleSuffix에서 레거시 부분 제거
-  const cleanSuffix = json.styleSuffix
+  const cleanSuffix = (json.styleSuffix || "")
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();
-  parts.push(cleanSuffix);
+  if (cleanSuffix) parts.push(cleanSuffix);
 
   // Cinematic realism medium enforcement — 3D/CGI drift 방지
   enforceCinematicRealismMedium(parts, json);
@@ -920,10 +920,10 @@ export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string 
   }
 
   // Style
-  const cleanSuffix = json.styleSuffix
+  const cleanSuffix2 = (json.styleSuffix || "")
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();
-  parts.push(cleanSuffix);
+  if (cleanSuffix2) parts.push(cleanSuffix2);
 
   return parts.filter(Boolean).join(". ");
 }
