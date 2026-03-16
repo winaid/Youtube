@@ -94,6 +94,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
+    // 최대 페이로드 제한 — 메모리 과다 사용 및 토큰 초과 방지
+    const MAX_SCRIPT_LENGTH = 200_000; // ~200KB
+    if (scriptText.length > MAX_SCRIPT_LENGTH) {
+      console.warn("[analyze-script][stage:validation] Script text too long:", scriptText.length);
+      return Response.json(
+        { success: false, error: `Script too long (${scriptText.length} chars, max ${MAX_SCRIPT_LENGTH})`, stage: "validation" },
+        { status: 413 },
+      );
+    }
+
     if (!analysisPrompt) {
       console.warn("[analyze-script][stage:validation] Missing analysisPrompt");
       return Response.json(

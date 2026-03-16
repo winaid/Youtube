@@ -23,7 +23,7 @@ interface StoryChatProps {
 
 export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
   const [personas, setPersonas] = useState(() => shufflePrompts(storyPersonas));
-  const [personaId, setPersonaId] = useState(storyPersonas[0].id);
+  const [personaId, setPersonaId] = useState(storyPersonas[0]?.id ?? "default");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +33,7 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const selectedPersona = personas.find((p) => p.id === personaId)!;
+  const selectedPersona = personas.find((p) => p.id === personaId) ?? personas[0] ?? { id: "default", name: "기본", prompt: "", description: "기본 페르소나" };
 
   // Persona-aware UI copy (product-like, not chatbot-like)
   const uiCopy = personaId === "vs-shorts"

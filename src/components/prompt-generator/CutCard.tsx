@@ -642,7 +642,7 @@ export default function CutCard({
                             onUpdate({
                               ...cut,
                               cameraDirection: preset.cameraDirection,
-                              videoPrompt: cut.videoPrompt.replace(
+                              videoPrompt: (cut.videoPrompt || "").replace(
                                 /Camera[^.]*\./i,
                                 preset.cameraDirection + "."
                               ),
@@ -677,25 +677,31 @@ export default function CutCard({
                 <button
                   key={ml.level}
                   onClick={() => {
-                    const currentKeywords = motionLevels.find((m) =>
-                      cut.cameraDirection.toLowerCase().includes(m.cameraKeywords.split(",")[0].trim().toLowerCase())
-                    );
-                    let newDirection = cut.cameraDirection;
+                    const dir = cut.cameraDirection || "";
+                    const currentKeywords = motionLevels.find((m) => {
+                      const kw = m.cameraKeywords.split(",")[0]?.trim() || "";
+                      return kw && dir.toLowerCase().includes(kw.toLowerCase());
+                    });
+                    let newDirection = dir;
                     if (currentKeywords) {
-                      newDirection = newDirection.replace(
-                        new RegExp(currentKeywords.cameraKeywords.split(",")[0].trim(), "i"),
-                        ml.cameraKeywords.split(",")[0].trim()
-                      );
+                      const oldKw = currentKeywords.cameraKeywords.split(",")[0]?.trim() || "";
+                      const newKw = ml.cameraKeywords.split(",")[0]?.trim() || "";
+                      if (oldKw) {
+                        newDirection = newDirection.replace(new RegExp(oldKw, "i"), newKw);
+                      }
+                    } else {
+                      // 매치 없으면 모션 키워드를 앞에 추가
+                      const newKw = ml.cameraKeywords.split(",")[0]?.trim() || "";
+                      if (newKw) newDirection = newKw + (newDirection ? ", " + newDirection : "");
                     }
                     onUpdate({ ...cut, cameraDirection: newDirection });
                   }}
                   className="text-[9px] px-1.5 py-0.5 rounded transition-all"
-                  style={{
-                    background: cut.cameraDirection.toLowerCase().includes(ml.cameraKeywords.split(",")[0].trim().toLowerCase().slice(0, 10))
-                      ? "#787fff" : "#f5f5f5",
-                    color: cut.cameraDirection.toLowerCase().includes(ml.cameraKeywords.split(",")[0].trim().toLowerCase().slice(0, 10))
-                      ? "white" : "#666",
-                  }}
+                  style={(() => {
+                    const kw = ml.cameraKeywords.split(",")[0]?.trim()?.toLowerCase()?.slice(0, 10) || "";
+                    const active = kw && (cut.cameraDirection || "").toLowerCase().includes(kw);
+                    return { background: active ? "#787fff" : "#f5f5f5", color: active ? "white" : "#666" };
+                  })()}
                   title={ml.description}
                 >
                   {ml.nameKo}

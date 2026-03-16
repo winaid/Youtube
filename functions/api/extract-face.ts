@@ -9,12 +9,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       characterSeeds?: { id: string; label: string; appearance: string }[];
     };
 
-    if (!rawBase64) {
-      return Response.json({ error: "imageBase64 is required" }, { status: 400 });
+    if (!rawBase64 || rawBase64.length < 100) {
+      return Response.json({ error: "imageBase64 is required and must be valid (min 100 chars)" }, { status: 400 });
     }
 
     // data:image/...;base64, 접두사 제거
-    const imageBase64 = rawBase64.includes(",") ? rawBase64.split(",")[1] : rawBase64;
+    const imageBase64 = rawBase64.includes(",") ? (rawBase64.split(",")[1] ?? rawBase64) : rawBase64;
     // MIME 타입 추출
     const mimeMatch = rawBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : "image/png";

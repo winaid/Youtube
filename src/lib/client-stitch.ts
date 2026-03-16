@@ -271,7 +271,7 @@ export async function executeStitch(
     onProgress?.(job.progress);
 
     const clipData = await fetchClipBlobs(orderedClips, (fetched, total) => {
-      const pct = Math.round((fetched / total) * 50); // 0-50%
+      const pct = total > 0 ? Math.round((fetched / total) * 50) : 0; // 0-50%
       job.progress = {
         phase: "fetching",
         percent: pct,
