@@ -101,7 +101,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
     (shotIndex: number, delta: number) => {
       const shot = shots.find((s) => s.index === shotIndex);
       if (!shot) return;
-      const currentDur = parseInt(shot.duration, 10) || 0;
+      const currentDur = parseFloat(shot.duration) || 0;
       const newDur = currentDur + delta;
       const result = resizeShot(modelId, shots, shotIndex, newDur);
       if (result) updateShots(result);
@@ -378,7 +378,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEdi
                 ok={validation.aggregateIssues.every(
                   (i) => !i.message.includes("시간 합계"),
                 )}
-                text={`duration 합: ${shots.reduce((s, sh) => s + (parseInt(sh.duration, 10) || 0), 0)}초 = ${totalDuration}초`}
+                text={`duration 합: ${shots.reduce((s, sh) => s + (parseFloat(sh.duration) || 0), 0)}초 = ${totalDuration}초`}
               />
               <ValidationLine
                 ok={!validation.shotIssues.some(

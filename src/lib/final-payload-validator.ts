@@ -397,7 +397,7 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
     }
     // duration 합
     if (input.durationSec) {
-      const durSum = input.multiShots.reduce((s, sh) => s + (parseInt(sh.duration, 10) || 0), 0);
+      const durSum = input.multiShots.reduce((s, sh) => s + (parseFloat(sh.duration) || 0), 0);
       if (Math.abs(durSum - input.durationSec) > 1) {
         issues.push({
           rule: "multishot_duration_mismatch",

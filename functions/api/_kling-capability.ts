@@ -222,13 +222,13 @@ export function normalizeMultiShots(
   const normalized = clamped.map((s, i) => ({
     index: i + 1,
     prompt: s.prompt,
-    duration: String(Math.max(cap.minShotDuration, parseInt(s.duration, 10) || cap.minShotDuration)),
+    duration: String(Math.max(cap.minShotDuration, parseFloat(s.duration) || cap.minShotDuration)),
   }));
 
-  const currentTotal = normalized.reduce((sum, s) => sum + parseInt(s.duration, 10), 0);
+  const currentTotal = normalized.reduce((sum, s) => sum + (parseFloat(s.duration) || 0), 0);
   if (currentTotal !== totalDurationSec && normalized.length > 0) {
     const diff = totalDurationSec - currentTotal;
-    const lastDur = parseInt(normalized[normalized.length - 1].duration, 10) + diff;
+    const lastDur = (parseFloat(normalized[normalized.length - 1].duration) || 0) + diff;
     if (lastDur >= cap.minShotDuration) {
       normalized[normalized.length - 1].duration = String(lastDur);
     }

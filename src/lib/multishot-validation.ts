@@ -205,7 +205,7 @@ export function validateMultiShots(
     }
 
     // duration 최소값
-    const dur = parseInt(shot.duration, 10) || 0;
+    const dur = parseFloat(shot.duration) || 0;
     if (dur < cap.minShotDuration) {
       shotIssues.push({
         shotIndex: shot.index,
@@ -217,7 +217,7 @@ export function validateMultiShots(
   }
 
   // ── duration 합 검증 ──
-  const durationSum = shots.reduce((sum, s) => sum + (parseInt(s.duration, 10) || 0), 0);
+  const durationSum = shots.reduce((sum, s) => sum + (parseFloat(s.duration) || 0), 0);
   const diff = Math.abs(durationSum - totalDurationSec);
   if (diff > 0.5 && shots.length > 0) {
     aggregateIssues.push({
@@ -359,7 +359,7 @@ export function addShot(
     return [newShot];
   }
 
-  const lastDur = parseInt(updated[lastIdx].duration, 10) || 0;
+  const lastDur = parseFloat(updated[lastIdx].duration) || 0;
   const newShotDur = Math.max(minDur, Math.floor(lastDur / 2));
   const remainDur = lastDur - newShotDur;
 
@@ -396,12 +396,12 @@ export function removeShot(
   const removeIdx = shotIndex - 1; // 0-based
   if (removeIdx < 0 || removeIdx >= shots.length) return null;
 
-  const removedDur = parseInt(shots[removeIdx].duration, 10) || 0;
+  const removedDur = parseFloat(shots[removeIdx].duration) || 0;
   const remaining = shots.filter((_, i) => i !== removeIdx);
 
   // 삭제된 시간을 마지막 샷에 흡수
   const lastIdx = remaining.length - 1;
-  const lastDur = parseInt(remaining[lastIdx].duration, 10) || 0;
+  const lastDur = parseFloat(remaining[lastIdx].duration) || 0;
   remaining[lastIdx] = { ...remaining[lastIdx], duration: String(lastDur + removedDur) };
 
   // re-index + role 재추론 (기존 role 유지, 없으면 추론)
@@ -432,7 +432,7 @@ export function resizeShot(
   if (idx < 0 || idx >= shots.length) return null;
   if (newDuration < minDur) return null;
 
-  const oldDur = parseInt(shots[idx].duration, 10) || 0;
+  const oldDur = parseFloat(shots[idx].duration) || 0;
   const delta = newDuration - oldDur; // positive = grew, negative = shrunk
   if (delta === 0) return shots.map((s) => ({ ...s }));
 
@@ -451,7 +451,7 @@ export function resizeShot(
   for (const ci of compensateOrder) {
     if (remaining === 0) break;
 
-    const curDur = parseInt(updated[ci].duration, 10) || 0;
+    const curDur = parseFloat(updated[ci].duration) || 0;
     const newCurDur = curDur + remaining;
 
     if (newCurDur >= minDur) {
