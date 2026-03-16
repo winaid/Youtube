@@ -134,8 +134,12 @@ describe("Sample 1: Black Death — full pipeline verification", () => {
   // ── Layer 2: Cut Generation ──────────────────────────────────
 
   describe("Layer 2: convertToCuts output", () => {
-    it("produces cuts matching sequence count", () => {
-      expect(cuts.length).toBe(analysis.sequences.length);
+    it("produces cuts from expanded AnalyzedCuts", () => {
+      // convertToCuts now expands each sequence's internal cuts into individual Cut objects
+      const expectedTotal = analysis.sequences.reduce((sum, seq) =>
+        sum + Math.max(1, seq.cuts.length), 0);
+      expect(cuts.length).toBe(expectedTotal);
+      expect(cuts.length).toBeGreaterThanOrEqual(3);
     });
 
     it("first cut is cut 1", () => {
@@ -401,8 +405,11 @@ describe("Sample 2: Steve Jobs biography — full pipeline verification", () => 
   // ── Layer 2: Cut Generation ──────────────────────────────────
 
   describe("Layer 2: convertToCuts output", () => {
-    it("cuts match sequences", () => {
-      expect(cuts.length).toBe(analysis.sequences.length);
+    it("cuts expand from internal AnalyzedCuts", () => {
+      const expectedTotal = analysis.sequences.reduce((sum, seq) =>
+        sum + Math.max(1, seq.cuts.length), 0);
+      expect(cuts.length).toBe(expectedTotal);
+      expect(cuts.length).toBeGreaterThanOrEqual(3);
     });
 
     it("first cut references Jobs/garage/origin story", () => {

@@ -13,6 +13,9 @@ import {
   getContentModeConfig,
   planSequenceBoundaries,
   buildAnalysisPrompt,
+  analyzeScript,
+  convertToCuts,
+  generateCutProgression,
   type ScriptBeat,
 } from "../src/lib/script-analyzer";
 
@@ -262,5 +265,95 @@ describe("buildAnalysisPrompt", () => {
   it("uses target runtime when provided", () => {
     const prompt = buildAnalysisPrompt(SHORT_SCRIPT, "auto", 120);
     expect(prompt).toContain("목표 총 런타임: 120초");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Anti-single-cut enforcement
+// ═══════════════════════════════════════════════════════════════════
+
+/** Black Death script from the test suite */
+const BLACK_DEATH_SCRIPT = `만약 흑사병이 없었다면, 오늘날 우리가 아는 자유와 임금 노동은 존재하지 않았을 수도 있다.
+14세기 유럽 인구의 3분의 1이 사라졌을 때, 남은 노동자들의 가치는 폭등했다. 영주들은 농노를 붙잡아둘 수 없었다.
+하지만 노동력 부족은 단순한 경제 현상이 아니었다. 교회의 권위도 함께 무너졌다. 신이 왜 이 재앙을 막지 않았는가?
+결과적으로 봉건제가 약화되면서, 노동자들은 처음으로 자신의 노동에 대한 대가를 요구할 수 있게 되었다.
+그래서 임금 노동이라는 개념이 탄생했고, 이것이 자본주의의 씨앗이 되었다.
+아이러니하게도, 인류 역사상 최악의 재앙이 자유와 근대성의 토대를 만든 셈이다.`;
+
+describe("anti-single-cut enforcement", () => {
+  it("multi-beat explanatory script must NOT produce 1 cut", () => {
+    const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
+    const cuts = convertToCuts(analysis);
+    expect(cuts.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("Black Death script produces correct multi-cut structure", () => {
+    const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
+    const cuts = convertToCuts(analysis);
+
+    // Must have multiple cuts representing distinct narrative beats
+    expect(cuts.length).toBeGreaterThanOrEqual(3);
+
+    // Each cut should have a meaningful description
+    for (const cut of cuts) {
+      expect(cut.sceneDescription.length).toBeGreaterThan(5);
+      expect(cut.videoPrompt.length).toBeGreaterThan(0);
+    }
+
+    // Per-cut duration should be reasonable (not the entire sequence duration)
+    for (const cut of cuts) {
+      expect(cut.durationSec).toBeGreaterThanOrEqual(5);
+      expect(cut.durationSec).toBeLessThanOrEqual(20);
+    }
+
+    // Total duration should cover the full script
+    const totalDur = cuts.reduce((sum, c) => sum + c.durationSec, 0);
+    expect(totalDur).toBeGreaterThanOrEqual(20);
+  });
+
+  it("generateCutProgression enforces min 3 cuts for 3+ beats", () => {
+    const beats: ScriptBeat[] = [
+      makeBeat({ index: 0, estimatedSec: 8, typeHint: "hook" }),
+      makeBeat({ index: 1, estimatedSec: 8, typeHint: "mechanism" }),
+      makeBeat({ index: 2, estimatedSec: 8, typeHint: "consequence" }),
+    ];
+    const cuts = generateCutProgression(beats, 24, "development");
+    expect(cuts.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("generateCutProgression enforces min 4 cuts for 5+ beats", () => {
+    const beats: ScriptBeat[] = [
+      makeBeat({ index: 0, estimatedSec: 6, typeHint: "hook" }),
+      makeBeat({ index: 1, estimatedSec: 6, typeHint: "setup" }),
+      makeBeat({ index: 2, estimatedSec: 6, typeHint: "mechanism" }),
+      makeBeat({ index: 3, estimatedSec: 6, typeHint: "consequence" }),
+      makeBeat({ index: 4, estimatedSec: 6, typeHint: "payoff" }),
+    ];
+    const cuts = generateCutProgression(beats, 30, "development");
+    expect(cuts.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("convertToCuts expands each sequence's AnalyzedCuts into separate Cuts", () => {
+    const analysis = analyzeScript(LONG_EXPLANATORY_SCRIPT);
+    const cuts = convertToCuts(analysis);
+
+    // Each AnalyzedCut in each sequence should produce its own Cut
+    const totalInternalCuts = analysis.sequences.reduce(
+      (sum, seq) => sum + Math.max(1, seq.cuts.length), 0,
+    );
+    expect(cuts.length).toBe(totalInternalCuts);
+
+    // Sequential cutNumber
+    cuts.forEach((cut, i) => {
+      expect(cut.cutNumber).toBe(i + 1);
+    });
+  });
+
+  it("short simple scripts are not over-split", () => {
+    const analysis = analyzeScript(SHORT_SCRIPT);
+    const cuts = convertToCuts(analysis);
+    // Short scripts should still work — just not artificially inflated
+    expect(cuts.length).toBeGreaterThanOrEqual(1);
+    expect(cuts.length).toBeLessThanOrEqual(6);
   });
 });

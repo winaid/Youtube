@@ -383,11 +383,12 @@ describe("convertToCuts with incomplete data", () => {
     };
     expect(() => convertToCuts(analysis)).not.toThrow();
     const cuts = convertToCuts(analysis);
-    expect(cuts[0].multiShot).toBeDefined();
-    cuts[0].multiShot!.forEach(s => {
-      expect(typeof s.prompt).toBe("string");
-      expect(() => s.prompt.trim()).not.toThrow();
-    });
+    // Each AnalyzedCut expands to its own Cut object
+    expect(cuts.length).toBe(2);
+    for (const cut of cuts) {
+      expect(typeof cut.videoPrompt).toBe("string");
+      expect(() => cut.videoPrompt.trim()).not.toThrow();
+    }
   });
 
   it("does not crash when entire analysis is from truncated JSON repair", () => {

@@ -438,7 +438,17 @@ export function generateCutProgression(
   beatType: SequenceBeatType,
 ): AnalyzedCut[] {
   // 추천 컷 수 결정
-  const cutCount = recommendCutCount(sequenceDurationSec, beatType);
+  let cutCount = recommendCutCount(sequenceDurationSec, beatType);
+
+  // Anti-single-cut rule: explanatory scripts with multiple narrative beats
+  // must produce enough cuts to represent distinct causal stages.
+  // A script with 3+ beats should never collapse into 1-2 cuts.
+  if (beats.length >= 3) {
+    cutCount = Math.max(cutCount, 3);
+  }
+  if (beats.length >= 5) {
+    cutCount = Math.max(cutCount, 4);
+  }
 
   // 비트 타입에 따른 role 패턴 결정
   const roles = selectRolePattern(cutCount, beatType);
@@ -1222,32 +1232,55 @@ export function convertToCuts(analysis: ScriptAnalysisResult): Cut[] {
 
   for (const seq of safe.sequences) {
     const seqCuts = safeArray<AnalyzedCut>(seq.cuts);
-    const dur = safeNumber(seq.recommendedDurationSec, 8);
-    const cutCount = Math.max(1, seqCuts.length);
+    const seqDur = safeNumber(seq.recommendedDurationSec, 8);
 
-    cuts.push({
-      cutNumber: cutNumber++,
-      durationSec: dur,
-      sceneDescription: `[${safeString(seq.title)}] ${safeString(seq.purpose)}`,
-      cameraDirection: deriveCameraDirection(seq),
-      moodLighting: deriveMoodLighting(seq),
-      imagePrompt: "",
-      endImagePrompt: "",
-      videoPrompt: seqCuts.map(c => safeString(c.suggestedPromptIntent)).filter(Boolean).join(". ") || safeString(seq.title),
-      extendPrompt: "",
-      transitionHint: seq.endingMode === "cliffhanger" ? "서스펜스 유지" : "자연 전환",
-      characterConsistency: "",
-      charactersInScene: [],
-      shotCategory: "character-driven",
-      multiShot: seqCuts.length > 0
-        ? seqCuts.map((cut, i) => ({
-            index: i + 1,
-            prompt: safeString(cut.suggestedPromptIntent) || safeString(seq.title),
-            duration: String(Math.max(2, Math.round(dur / cutCount))),
-            role: cut.role || "develop" as ShotRole,
-          }))
-        : undefined,
-    });
+    if (seqCuts.length === 0) {
+      // Skeleton sequence (Phase B not run) — single fallback Cut
+      cuts.push({
+        cutNumber: cutNumber++,
+        durationSec: seqDur,
+        sceneDescription: `[${safeString(seq.title)}] ${safeString(seq.purpose)}`,
+        cameraDirection: deriveCameraDirection(seq),
+        moodLighting: deriveMoodLighting(seq),
+        imagePrompt: "",
+        endImagePrompt: "",
+        videoPrompt: safeString(seq.title),
+        extendPrompt: "",
+        transitionHint: seq.endingMode === "cliffhanger" ? "서스펜스 유지" : "자연 전환",
+        characterConsistency: "",
+        charactersInScene: [],
+        shotCategory: "character-driven",
+      });
+      continue;
+    }
+
+    // Expand each AnalyzedCut into its own Cut object.
+    // Each Cut = one video generation (Kling API call).
+    const perCutDur = Math.max(5, Math.round(seqDur / seqCuts.length));
+
+    for (let i = 0; i < seqCuts.length; i++) {
+      const ac = seqCuts[i];
+      const isFirst = i === 0;
+      const isLast = i === seqCuts.length - 1;
+
+      cuts.push({
+        cutNumber: cutNumber++,
+        durationSec: perCutDur,
+        sceneDescription: `[${safeString(seq.title)}] ${safeString(ac.narrativeFunction)}`,
+        cameraDirection: deriveCameraDirectionFromCut(ac),
+        moodLighting: deriveMoodLighting(seq),
+        imagePrompt: "",
+        endImagePrompt: "",
+        videoPrompt: safeString(ac.suggestedPromptIntent) || safeString(seq.title),
+        extendPrompt: "",
+        transitionHint: isLast
+          ? (seq.endingMode === "cliffhanger" ? "서스펜스 유지" : "자연 전환")
+          : "컷 내 연결",
+        characterConsistency: "",
+        charactersInScene: [],
+        shotCategory: "character-driven",
+      });
+    }
   }
 
   return cuts;
@@ -1262,6 +1295,24 @@ function deriveCameraDirection(seq: AnalyzedSequence): string {
     case "contrast": return "Juxtaposition cuts — before/after";
     case "concept-reveal": return "Build-up to reveal — visual metaphor";
     case "atmosphere": return "Slow pan across environment";
+    default: return "Dynamic progression";
+  }
+}
+
+/** 개별 AnalyzedCut에서 카메라 방향 도출 */
+function deriveCameraDirectionFromCut(cut: AnalyzedCut): string {
+  switch (cut.visualFocus) {
+    case "environment": return "Wide establishing — spatial context";
+    case "action": return "Medium tracking — following movement";
+    case "face":
+    case "emotion": return "Close-up — emotional detail";
+    case "aftermath": return "Slow pull-back — revealing consequences";
+    case "object-detail": return "Macro close-up — detail emphasis";
+    case "contrast": return "Side-by-side or cut comparison";
+    case "spectacle": return "Wide dramatic — scale and impact";
+    case "concept":
+    case "concept-reveal": return "Visual metaphor — abstract to concrete";
+    case "reaction": return "Medium — character reaction";
     default: return "Dynamic progression";
   }
 }

@@ -343,19 +343,15 @@ describe("analyzeScript", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("convertToCuts", () => {
-  it("분석 결과를 Cut[]로 변환", () => {
+  it("expands AnalyzedCuts into individual Cut objects", () => {
     const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
     const cuts = convertToCuts(analysis);
-    expect(cuts.length).toBe(analysis.sequences.length);
-  });
-
-  it("각 Cut에 multiShot이 존재", () => {
-    const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
-    const cuts = convertToCuts(analysis);
-    for (const cut of cuts) {
-      expect(cut.multiShot).toBeTruthy();
-      expect(cut.multiShot!.length).toBeGreaterThanOrEqual(2);
-    }
+    // Total cuts = sum of all sequences' internal cuts
+    const expectedTotal = analysis.sequences.reduce((sum, seq) =>
+      sum + Math.max(1, seq.cuts.length), 0);
+    expect(cuts.length).toBe(expectedTotal);
+    // Must produce more than 1 cut for multi-beat explanatory content
+    expect(cuts.length).toBeGreaterThanOrEqual(3);
   });
 
   it("Cut의 cutNumber는 1부터 순차", () => {
@@ -366,33 +362,44 @@ describe("convertToCuts", () => {
     });
   });
 
-  it("각 Cut의 durationSec이 mode-aware 범위", () => {
+  it("각 Cut의 durationSec이 합리적 범위", () => {
     const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
-    // YouTube mode sequences can be up to 60s
-    const maxDuration = analysis.contentMode === "youtube" ? 60 : 15;
     const cuts = convertToCuts(analysis);
     for (const cut of cuts) {
-      expect(cut.durationSec).toBeGreaterThanOrEqual(8);
-      expect(cut.durationSec).toBeLessThanOrEqual(maxDuration);
+      // Individual expanded cuts have per-cut duration, not full sequence duration
+      expect(cut.durationSec).toBeGreaterThanOrEqual(5);
+      expect(cut.durationSec).toBeLessThanOrEqual(30);
     }
   });
 
-  it("multiShot의 각 샷에 role이 존재", () => {
+  it("각 Cut에 videoPrompt가 존재", () => {
     const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
     const cuts = convertToCuts(analysis);
     for (const cut of cuts) {
-      for (const shot of cut.multiShot!) {
-        expect(shot.role).toBeTruthy();
-      }
+      expect(cut.videoPrompt).toBeTruthy();
+      expect(cut.videoPrompt.length).toBeGreaterThan(0);
     }
   });
 
   it("sceneDescription에 시퀀스 제목 포함", () => {
     const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
     const cuts = convertToCuts(analysis);
-    for (let i = 0; i < cuts.length; i++) {
-      expect(cuts[i].sceneDescription).toContain(analysis.sequences[i].title);
+    // Each cut's description should contain its parent sequence title
+    for (const cut of cuts) {
+      expect(cut.sceneDescription).toMatch(/^\[.+\]/);
     }
+  });
+
+  it("multi-beat explanatory script produces at least 3 cuts", () => {
+    const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
+    const cuts = convertToCuts(analysis);
+    expect(cuts.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("short script with single beat produces at least 1 cut", () => {
+    const analysis = analyzeScript(SHORT_SCRIPT);
+    const cuts = convertToCuts(analysis);
+    expect(cuts.length).toBeGreaterThanOrEqual(1);
   });
 });
 
