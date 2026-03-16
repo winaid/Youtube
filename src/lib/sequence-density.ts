@@ -65,18 +65,18 @@ export const CUT_COUNT_MAX = 30;
  * "이 길이의 시퀀스는 내부적으로 몇 개의 서사 비트/샷을 가져야 하는가"의 가이드.
  * multi-shot-planner와 연동되어 Layer 3 샷 수 결정에 사용.
  *
- *   8–12s:  3–4 internal shots
- *   13–15s: 4–6 internal shots
+ *   8–12s:  2–3 internal shots (short hooks/counterfactuals — beat-driven, not noun-fragmented)
+ *   13–15s: 2–4 internal shots
  *
  * 8s 미만 시퀀스는 특수 케이스 (의도적 원테이크 또는 짧은 컷):
  *   3–5s:  1–2 shots
- *   6–7s:  2–3 shots
+ *   6–8s:  1–2 shots
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 8,  min: 2, max: 3 },
-  { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 4, max: 6 },
+  { maxSec: 8,  min: 1, max: 2 },
+  { maxSec: 12, min: 2, max: 3 },
+  { maxSec: 15, min: 2, max: 4 },
 ];
 
 /**

@@ -521,15 +521,13 @@ export default function ResultPanel({
               return (
                 <>
                   <Badge style={{ background: "#787fff", color: "white" }}>최종 {result.cuts.length}컷</Badge>
-                  {summary.hasRhythmContrast && summary.durationRange ? (
-                    <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
-                      {summary.durationRange.min}~{summary.durationRange.max}초/컷
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
-                      평균 {avgSec}초/컷
-                    </Badge>
-                  )}
+                  <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
+                    {result.cuts.length <= 6
+                      ? result.cuts.map(c => c.durationSec ?? 0).join("+") + "초"
+                      : summary.hasRhythmContrast && summary.durationRange
+                        ? `${summary.durationRange.min}~${summary.durationRange.max}초/컷 (평균 ${avgSec}초)`
+                        : `${avgSec}초/컷`}
+                  </Badge>
                   <Badge variant="outline" style={{ borderColor: "#787fff60" }}>
                     {`총 ${t}초 (${Math.floor(t / 60)}분 ${t % 60}초)`}
                   </Badge>

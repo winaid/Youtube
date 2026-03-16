@@ -125,16 +125,16 @@ describe("테스트 2: current segment ≤ 15초 유지", () => {
 // 3. fast density → currentSegmentTargetCuts 3~5+
 // ═══════════════════════════════════════════════════════════════════
 
-describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 4~6 (고밀도 정책)", () => {
-  it("15초 segment, neutral bias → targetCuts 5", () => {
+describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 2~4 (beat-driven 정책)", () => {
+  it("15초 segment, neutral bias → targetCuts 3", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15, personaBias: "neutral" });
-    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(4);
-    expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(6);
+    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(2);
+    expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(4);
   });
 
-  it("15초 segment, upper bias → targetCuts 6", () => {
+  it("15초 segment, upper bias → targetCuts 4", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15, personaBias: "upper" });
-    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(6);
+    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(4);
   });
 
   it("recommendMinimumCutCount(15) = 1", () => {
@@ -145,22 +145,22 @@ describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 4~6 (고밀�
     expect(recommendMinimumCutCount(12)).toBe(1);
   });
 
-  it("60초 project → multi-segment, 총 targetCuts ≥ 16", () => {
+  it("60초 project → multi-segment, 총 targetCuts ≥ 8", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 60 });
     expect(plan.segmentCount).toBeGreaterThanOrEqual(4);
-    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(16);
+    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(8);
   });
 
-  it("resolveCutCount(totalDurationSec=15, neutral) → cutCount 5", () => {
+  it("resolveCutCount(totalDurationSec=15, neutral) → cutCount 3", () => {
     const result = resolveCutCount({ totalDurationSec: 15, personaBias: "neutral" });
-    expect(result.cutCount).toBeGreaterThanOrEqual(4);
-    expect(result.cutCount).toBeLessThanOrEqual(6);
+    expect(result.cutCount).toBeGreaterThanOrEqual(2);
+    expect(result.cutCount).toBeLessThanOrEqual(4);
   });
 
-  it("recommendCutCountRange(15) → min = 4, max = 6", () => {
+  it("recommendCutCountRange(15) → min = 2, max = 4", () => {
     const range = recommendCutCountRange(15);
-    expect(range.min).toBe(4);
-    expect(range.max).toBe(6);
+    expect(range.min).toBe(2);
+    expect(range.max).toBe(4);
   });
 });
 

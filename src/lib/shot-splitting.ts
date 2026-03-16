@@ -34,6 +34,8 @@ export interface ShotDescriptor {
   environment: string;
   moodLighting: string;
   focus: string;        // temporal beat focus
+  /** Style directive propagated from style preset selection */
+  styleSuffix?: string;
 }
 
 export interface ShotProgressionResult {
@@ -304,6 +306,7 @@ export function splitSingleShotSequence(input: {
   durationSec: number;
   camera: { framing: string; angle: string; motion: string };
   beatHint?: ShotBeatHint;
+  styleSuffix?: string;
 }): SplitResult {
   const progression = detectShotProgression(input.action, input.subjectPrimary);
 
@@ -320,6 +323,7 @@ export function splitSingleShotSequence(input: {
         environment: input.environment,
         moodLighting: input.moodLighting,
         focus: `${input.subjectPrimary} — ${input.action}`.slice(0, 120),
+        ...(input.styleSuffix ? { styleSuffix: input.styleSuffix } : {}),
       }],
       splitLog: [],
       wasSplit: false,
@@ -382,6 +386,7 @@ export function splitSingleShotSequence(input: {
       environment: input.environment,
       moodLighting: input.moodLighting,
       focus: shotFocus.slice(0, 150),
+      ...(input.styleSuffix ? { styleSuffix: input.styleSuffix } : {}),
     });
   }
 
@@ -468,6 +473,7 @@ export function enforceMinimumShotCount(input: {
   camera: { framing: string; angle: string; motion: string };
   currentShotCount: number;
   beatHint?: ShotBeatHint;
+  styleSuffix?: string;
 }): SplitResult | null {
   // Already has multiple shots
   if (input.currentShotCount >= 2) return null;

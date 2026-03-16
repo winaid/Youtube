@@ -32,26 +32,26 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. recommendCutCountRange", () => {
-  it("1) 15s → { min: 4, max: 6 }", () => {
+  it("1) 15s → { min: 2, max: 4 }", () => {
     const r = recommendCutCountRange(15);
-    expect(r).toEqual({ min: 4, max: 6 });
+    expect(r).toEqual({ min: 2, max: 4 });
   });
 
   it("2) 5s → { min: 1, max: 2 }", () => {
     expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 2 });
   });
 
-  it("3) 8s → { min: 2, max: 3 }", () => {
-    expect(recommendCutCountRange(8)).toEqual({ min: 2, max: 3 });
+  it("3) 8s → { min: 1, max: 2 }", () => {
+    expect(recommendCutCountRange(8)).toEqual({ min: 1, max: 2 });
   });
 
-  it("4) 12s → { min: 3, max: 4 }", () => {
-    expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
+  it("4) 12s → { min: 2, max: 3 }", () => {
+    expect(recommendCutCountRange(12)).toEqual({ min: 2, max: 3 });
   });
 
   it("5) 20s → segment-aware (15s segment + 5s remainder)", () => {
-    // 15s → {4,6}, 5s → {1,2} → total = {5,8}
-    expect(recommendCutCountRange(20)).toEqual({ min: 5, max: 8 });
+    // 15s → {2,4}, 5s → {1,2} → total = {3,6}
+    expect(recommendCutCountRange(20)).toEqual({ min: 3, max: 6 });
   });
 
   it("6) 0 or negative → { min: 1, max: 2 }", () => {

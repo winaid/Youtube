@@ -54,11 +54,11 @@ describe("A. segment 분해 기본", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. per-segment cut budget", () => {
-  it("5) 15초 segment → cutRange {4, 6}", () => {
+  it("5) 15초 segment → cutRange {2, 4}", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
     const seg = plan.segments[0];
-    expect(seg.cutRange.min).toBeGreaterThanOrEqual(4);
-    expect(seg.cutRange.max).toBeLessThanOrEqual(6);
+    expect(seg.cutRange.min).toBeGreaterThanOrEqual(2);
+    expect(seg.cutRange.max).toBeLessThanOrEqual(4);
   });
 
   it("6) 120초 → totalTargetCuts = sum of all segment targets", () => {

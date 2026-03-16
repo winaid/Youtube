@@ -45,9 +45,9 @@ export const CUT_COUNT_MAX = 30;
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 8,  min: 2, max: 3 },
-  { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 4, max: 6 },
+  { maxSec: 8,  min: 1, max: 2 },
+  { maxSec: 12, min: 2, max: 3 },
+  { maxSec: 15, min: 2, max: 4 },
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {

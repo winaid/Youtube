@@ -359,8 +359,9 @@ export function buildDefaultMultiShot(opts: {
   sceneType?: PlannerSceneType;
   basePrompt?: string;
   modelId: string;
+  styleSuffix?: string;
 }): MultiShotPrompt[] {
-  const { durationSec, sceneType = "default", basePrompt = "", modelId } = opts;
+  const { durationSec, sceneType = "default", basePrompt = "", modelId, styleSuffix } = opts;
   const cap = getCapability(modelId);
 
   const shotCount = planRecommendedShotCount(modelId, durationSec, sceneType);
@@ -373,12 +374,11 @@ export function buildDefaultMultiShot(opts: {
   const roles = planShotRoles(effectiveCount, sceneType);
   const durations = distributeDurations(roles, durationSec, cap.minShotDuration);
 
-  return roles.map((role, i) => ({
-    index: i + 1,
-    prompt: buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType),
-    duration: String(durations[i]),
-    role,
-  }));
+  return roles.map((role, i) => {
+    const baseShot = buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType);
+    const prompt = styleSuffix ? `${baseShot}. ${styleSuffix}` : baseShot;
+    return { index: i + 1, prompt, duration: String(durations[i]), role };
+  });
 }
 
 /**

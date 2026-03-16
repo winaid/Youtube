@@ -1520,7 +1520,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   : (() => {
                       const totalSec = typeof duration === "number" ? duration : 15;
                       const range = densityPresetToRange(editingDensity, totalSec);
-                      return `${range.min}~${range.max}컷 범위 (${totalSec}초 기준)`;
+                      return `${range.min}~${range.max}컷 계획 범위 (${totalSec}초 기준, 생성 시 정확한 값 결정)`;
                     })()}
             </p>
           </div>

@@ -1429,39 +1429,94 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── 스타일 맵 ─────────────────────────────────────────────────────────────
-    // 설계 원칙:
-    //   - subject-focused composition: 배경 장식/배너/문양이 주제를 덮지 않게 subject-first 명시
-    //   - 각 계열(live_action / animation_2d / stop_motion / hybrid)별로 결과 성향 분리
-    //   - "2D 애니": 이전에 vibrant flat colors / clean outlines 강제 → 평면 카툰 고착 문제
-    //     → 스타일 자체는 cel-shaded 기반이지만 overriding color lock을 완화
-    //   - "하이브리드": "2D-3D blending"은 해석이 모호 → 실사 배경 + 스타일 캐릭터 명시
-    //   - "로토스코핑": 일반 2D 아님 — performance/live-motion 기반임을 유지
+    // 전체 STYLE_CATALOG (~50 entries) 대응.
+    // 키: catalog entry id (UI가 전송하는 animationMode 값)
+    // 값: positivePrompt 기반 스타일 디렉티브 (subject-focused 보강)
+    // 레거시 한글 키도 호환 유지.
     const videoStyleMap: Record<string, string> = {
-      // ── live_action 계열 ──────────────────────────────────────────────────
-      // 배경은 환경 묘사에 집중, 인물이 화면 주체
-      "실사":          "photorealistic cinematic 4K, subject-focused composition, natural light and shadow, minimal background decoration",
-      "빈티지 필름":   "vintage 35mm film, warm grain, faded colors, 1970s cinema, subject-centered frame, aged analog texture",
-      "네온 사이버펑크":"neon cyberpunk, glowing neon accent lights on subject, rain-wet street, holographic haze, subject-first NOT background-overloaded",
+      // ═══ live_action ═══
+      "cinematic-realism": "Photorealistic cinematic live-action. Natural lighting with dramatic shadows. Filmic depth of field with anamorphic lens characteristics. Subject-focused composition.",
+      "docu-handheld":     "Documentary-style handheld footage. Natural available lighting. Candid framing with observational distance. Subtle camera shake adding authenticity.",
+      "commercial-ad":     "High-end commercial cinematography. Perfect studio lighting with soft diffusion. Ultra-clean composition with product-hero framing. Smooth dolly and crane movements.",
+      "vintage-film":      "Vintage 35mm film look. Warm film grain throughout. Faded analog color palette with light leaks. Soft focus edges and chromatic aberration.",
+      "neon-noir":         "Neon noir aesthetic. Dark atmosphere with vivid neon lights — pink, blue, purple, cyan. Wet reflective surfaces catching neon glow. Rain-slicked urban environments.",
+      "vhs-retro":         "VHS analog video aesthetic. Visible scan lines and tracking artifacts. Color bleeding and chromatic distortion. Warm oversaturated colors with CRT screen glow.",
+      "sf-futuristic":     "Sci-fi futuristic city. Towering megastructures with holographic displays. Clean metallic and glass surfaces. Volumetric fog with neon accents. Cinematic widescreen.",
+      "gothic-horror":     "Gothic horror atmosphere. Deep shadows with minimal light — candles, moonlight, lightning. Desaturated cold blue-grey palette. Fog through decayed architecture.",
+      // legacy Korean keys
+      "실사":              "photorealistic cinematic 4K, subject-focused composition, natural light and shadow",
+      "빈티지 필름":       "vintage 35mm film, warm grain, faded colors, 1970s cinema, subject-centered frame",
+      "네온 사이버펑크":   "neon noir, glowing neon accent lights on subject, rain-wet street, holographic haze",
 
-      // ── animation_2d 계열 ─────────────────────────────────────────────────
-      // 이전: "vibrant flat colors, clean outlines" → 평면 카툰으로 과도하게 고착됨
-      // 수정: 스타일 식별자는 유지하되 색·선 강제를 완화, director aesthetic에 여지 부여
-      "2D 애니":       "2D cel-shaded animation, hand-drawn character with expressive linework, stylized but not rigidly flat, subject-focused frame, minimal decorative background elements",
-      "수채화 애니":   "watercolor animation, soft translucent washes, pastel tones, gentle bleeding edges, subject as focal point NOT decorative background",
-      "픽셀아트":      "pixel art 16-bit retro game aesthetic, clean pixel edges, limited color palette, character-centered composition",
-      "잉크워시":      "East Asian ink wash painting, sumi-e brush strokes, black ink on rice paper, negative space around subject, NOT ornate patterned background",
+      // ═══ animation_2d ═══
+      "tv-anime":          "2D anime animation style. Cel-shaded illustration with clean outlines and vibrant flat colors. Anime character proportions with expressive features. Dynamic camera angles with speed lines.",
+      "theatrical-anime":  "Theatrical-quality anime. Extremely detailed hand-drawn animation with rich color depth. Lush painted backgrounds with cinematic lighting. Fluid character animation.",
+      "storybook-anime":   "Storybook animation style. Soft pastel palette with gentle gradients. Picture-book illustration quality with round friendly character designs. Fairy-tale atmosphere.",
+      "painted-2d":        "Fully painted animation — every frame is a hand-painted oil/watercolor painting in motion. Expressive visible brushwork on all surfaces. Thick impasto highlights, soft wet-on-wet blending.",
+      "watercolor-animation": "Watercolor animation. Transparent color washes flowing and bleeding into each other. White paper showing through translucent layers. Soft undefined edges.",
+      "ink-drawing-anime": "Ink line drawing animation. Bold expressive pen strokes with varying line weight. Cross-hatching for shadows. Black ink on white paper. Architectural precision in environments.",
+      "webtoon-motion":    "Korean webtoon motion comic style. Clean digital line art with solid flat coloring. Dramatic panel-to-panel transitions. Manhwa proportions. Speed lines and impact frames.",
+      "cutout-anime":      "Paper cutout animation. Flat paper shapes with visible cut edges and layered depth. Hinged joint movement. Textured paper surfaces — kraft, cardstock. Craft aesthetic.",
+      // legacy Korean keys
+      "2D 애니":           "2D cel-shaded animation, hand-drawn character with expressive linework, stylized but not rigidly flat, subject-focused frame",
+      "수채화 애니":       "watercolor animation, soft translucent washes, pastel tones, gentle bleeding edges, subject as focal point",
 
-      // ── stop_motion 계열 ─────────────────────────────────────────────────
-      // 스톱모션: 단순 "claymation" 금지 — 질감·움직임·조명의 구체적 미학 주입
-      "스톱모션":      "stop-motion animation, handcrafted tactile textures, deliberate frame-by-frame stiffness, real-world material imperfections (clay, fabric, wire), theatrical high-contrast lighting, psychological set design, subject-first NOT generic decorative set",
-      "클레이":        "claymation, smooth clay figures, visible fingerprint texture, studio lighting, clay-built environment NOT painted backdrop",
-      "미니어처":      "tilt-shift miniature photography, tiny diorama, shallow depth of field, handcrafted miniature set, subject as primary miniature figure",
+      // ═══ animation_3d ═══
+      "pixar-style":       "Pixar-style 3D animation. Smooth subsurface scattering on skin. Expressive stylized character designs. Rich global illumination. Cinematic depth of field.",
+      "dreamworks-style":  "DreamWorks-style 3D animation. Bold exaggerated character proportions. Dynamic action-oriented poses. Saturated vivid color palette with dramatic lighting. Energetic camera.",
+      "stylized-3d":       "Stylized 3D animation with toon shading. Bold outlines over 3D geometry. Flat color zones with sharp shadow edges — cel-shaded look in 3D. Vibrant cartoon palette.",
+      "semi-real-3d":      "Semi-realistic 3D animation. Anime-influenced character proportions within detailed realistic environments. Cinematic lighting with ray-traced reflections.",
+      "low-poly-3d":       "Low-poly 3D art style. Visible geometric facets on all surfaces. Flat shading with minimal texture. Clean geometric design. Peaceful minimalist aesthetic.",
+      "miniature-3d":      "Tilt-shift miniature effect. Extreme shallow depth of field making everything appear diorama-scale. Toy-like proportions. Bright overhead lighting on miniature sets.",
+      "game-cinematic-3d": "AAA game cinematic quality 3D rendering. Unreal Engine 5 level detail. Ray-traced global illumination. High-fidelity character models. Epic dramatic camera choreography.",
+      // legacy Korean keys
+      "하이브리드":        "Semi-realistic 3D animation. Anime-influenced characters in photorealistic environments. Cinematic lighting with ray-traced reflections.",
+      "미니어처":          "tilt-shift miniature photography, tiny diorama, shallow depth of field, handcrafted miniature set",
 
-      // ── hybrid 계열 ──────────────────────────────────────────────────────
-      // 로토스코핑: "painted outlines" 금지 — 실사 퍼포먼스 기반 움직임 질감이 핵심
-      "로토스코핑":    "rotoscoped 2D animation over live-action performance, movement derived from real human motion, natural body mechanics under stylized painterly surface, traced-from-live-motion rhythm, NOT flat cartoon NOT generic anime NOT painted background banner",
-      // 하이브리드: 이전 "2D-3D blending"은 모호 → 실사 공간 + 스타일 캐릭터로 명확화
-      "하이브리드":    "HYBRID COMPOSITE [BACKGROUND=photorealistic cinematic live-action: real physical textures, volumetric depth, naturalistic environment lighting, no animation on background | CHARACTER=stylized illustrated design: visible design lines, graphic artistic stylization, character-designed render]. ANTI-COLLAPSE: NEVER render entire frame as anime/cartoon/flat illustration — background MUST stay photorealistic and cinematic. Stylization applies ONLY to characters, NOT to environment. Mixed-media composite: realistic set + stylized figure against it.",
+      // ═══ painting ═══
+      "watercolor":        "Watercolor painting style. Transparent paint washes with visible water bleeding. White paper texture through translucent layers. Soft edges. Delicate light through paint transparency.",
+      "oil-painting":      "Oil painting style with thick impasto brushwork. Visible palette knife and brush texture. Rich opaque color mixing on canvas. Dramatic chiaroscuro lighting.",
+      "gouache":           "Gouache painting style. Opaque matte color layers with subtle brush texture. Flat color areas with soft blending. Rich saturated matte palette. Illustrative composition.",
+      "pastel":            "Pastel crayon art style. Soft chalky texture on textured paper. Gentle blending with visible grain. Warm diffused color. Dreamy atmospheric quality.",
+      "east-asian-painting": "2D animated sequence in East Asian painting-inspired art style. Brush-and-ink influenced rendering. Muted mineral pigment palette with ink wash gradients. Rice paper surface hint.",
+      "ink-wash":          "2D animated sequence in sumi-e ink wash art style. Monochrome ink gradients. Varying ink density with deliberate white space. Rice paper texture. Dynamic 2D scene.",
+      "inkwash-painting":  "Western ink wash painting style. Fluid black ink diluted to grey tones. Expressive wet brush strokes. Dramatic contrast between dense black and diluted washes.",
+      "van-gogh-painted":  "Van Gogh post-impressionist style. Swirling energetic brushstrokes with thick impasto. Vivid complementary colors — deep blues against bright yellows. Starry night dynamic.",
+      "editorial-illustration": "Editorial illustration style. Bold graphic compositions with strong silhouettes. Limited impactful color palette — 3-4 key colors. Conceptual visual metaphors.",
+      "storybook-illustration": "Children's storybook illustration. Warm gentle color palette with watercolor or gouache textures. Whimsical character designs. Magical atmosphere. Hand-crafted quality.",
+      // legacy Korean keys
+      "잉크워시":          "East Asian ink wash painting, sumi-e brush strokes, black ink on rice paper, negative space around subject",
+
+      // ═══ stop_motion ═══
+      "claymation":        "Claymation animation with smooth clay figures. Fingerprint texture on surfaces. Warm studio lighting. Material imperfections — clay joins, fingermarks. Stop-motion jitter.",
+      "paper-collage":     "Paper collage stop-motion. Cut paper layers with visible scissors-cut edges. Textured paper — newspaper, kraft, magazine clippings. Shadow between layers creating depth.",
+      "felt-craft":        "Felt craft stop-motion. Soft felt fabric texture on all characters. Visible stitching and fabric seams. Button eyes and embroidered details. Cozy handmade aesthetic.",
+      "wooden-puppet":     "Wooden puppet stop-motion. Carved wooden characters with visible wood grain. Marionette-like jointed movement. Warm wood tones. Miniature wooden stage sets.",
+      "paper-puppet":      "Paper puppet shadow theater animation. Silhouette characters against backlit translucent screen. Intricate paper-cut details in shadow. Traditional shadow puppet articulation.",
+      "miniature-diorama": "Stop-motion with handcrafted miniature textures. Frame-by-frame movement with stop-motion jitter. Tactile material surfaces — clay, fabric, felt, wood. Miniature diorama environments.",
+      // legacy Korean keys
+      "스톱모션":          "stop-motion animation, handcrafted tactile textures, frame-by-frame stiffness, real-world material imperfections, subject-first",
+      "클레이":            "claymation, smooth clay figures, visible fingerprint texture, studio lighting, clay-built environment",
+
+      // ═══ retro_game ═══
+      "pixel-art":         "Pixel art 16-bit retro animation. Crisp hard pixel edges with no anti-aliasing. Limited color palette. Blocky character sprites on pixel art backgrounds. Dithered gradients.",
+      "16bit-jrpg":        "16-bit JRPG pixel art style. Super Nintendo era composition. Rich detailed pixel backgrounds with parallax scrolling. Chibi character sprites. 256-color palette with dithering.",
+      "8bit-arcade":       "8-bit NES/Famicom era pixel graphics. Extremely limited color palette — max 4 colors per sprite. Chunky large pixels. Simple geometric shapes. Arcade game aesthetic.",
+      "ps1-lowpoly":       "PlayStation 1 era low-poly 3D graphics. Visible polygon edges with warped texture mapping. Affine texture distortion. Limited texture resolution. Early 3D game aesthetic.",
+      "90s-game-cutscene": "90s pre-rendered CG cutscene style. Early computer graphics with Gouraud shading. Dramatic camera rotations. Metallic chrome reflective surfaces. Lens flare effects.",
+      "visual-novel":      "Visual novel game style. Static or subtly animated character portraits on illustrated backgrounds. Clean anime-style character art. Ambient mood-dependent lighting.",
+      // legacy Korean keys
+      "픽셀아트":          "pixel art 16-bit retro game aesthetic, clean pixel edges, limited color palette, character-centered composition",
+
+      // ═══ experimental ═══
+      "rotoscoping":       "Rotoscoped 2D animation. Performance-derived fluid movement with painterly overlay. Hand-traced outlines over realistic motion. Organic handheld feel with artistic enhancement.",
+      "mixed-media-collage": "Mixed media collage animation. Layered photography, illustration, fabric texture, printed material. Cut-and-paste aesthetic with visible edge seams between media.",
+      "live-paint-overlay": "Live-action footage with hand-painted overlay. Real photographic base beneath artistic paint strokes. Animated brush marks moving over filmed scenes. Dual reality — photography and painting.",
+      "docu-illustrated":  "Documentary footage with animated illustrated overlay. Real-world documentary base with animated line drawings, diagrams, infographic elements floating over live footage.",
+      "2d-3d-hybrid":      "2D-3D hybrid animation. Hand-drawn 2D animated characters within photorealistic 3D environments. Clear visual distinction between character and environment rendering.",
+      "surreal-composite": "Surreal composite visual. Dream-logic spatial composition — impossible architecture, gravity-defying objects. Scale distortion. Melting, morphing, transforming elements.",
+      // legacy Korean keys
+      "로토스코핑":        "rotoscoped 2D animation over live-action performance, movement from real human motion, traced-from-live-motion rhythm",
     };
     const videoStyle = videoStyleMap[String(animationMode)] ?? "photorealistic cinematic, subject-focused composition";
 

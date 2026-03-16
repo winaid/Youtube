@@ -111,12 +111,12 @@ describe("C. same range + different persona → different cut counts", () => {
 // D. 15s → 1~2 기본 추천값
 // ═══════════════════════════════════════════════════════════════════
 
-describe("D. 15s → 4~6 default recommendation", () => {
-  it("8) 15s 기본 추천이 { min: 4, max: 6 }", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
+describe("D. 15s → 2~4 default recommendation", () => {
+  it("8) 15s 기본 추천이 { min: 2, max: 4 }", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 2, max: 4 });
   });
 
-  it("9) 15s + 기본 persona → 4~6 범위 내 컷 수", () => {
+  it("9) 15s + 기본 persona → 2~4 범위 내 컷 수", () => {
     const range = recommendCutCountRange(15);
     const bias = personaCutCountBias(DEFAULT_EDITORIAL_PERSONA);
     const result = resolveCutCount({
@@ -124,8 +124,8 @@ describe("D. 15s → 4~6 default recommendation", () => {
       totalDurationSec: 15,
       personaBias: bias,
     });
-    expect(result.cutCount).toBeGreaterThanOrEqual(4);
-    expect(result.cutCount).toBeLessThanOrEqual(6);
+    expect(result.cutCount).toBeGreaterThanOrEqual(2);
+    expect(result.cutCount).toBeLessThanOrEqual(4);
   });
 });
 

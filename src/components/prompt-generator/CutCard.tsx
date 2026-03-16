@@ -394,6 +394,7 @@ export default function CutCard({
         sceneType,
         basePrompt: cut.sceneDescription || "",
         modelId,
+        styleSuffix: cut.videoPromptJson?.styleSuffix,
       });
       if (autoShots.length >= 2) {
         onUpdate({ ...cut, multiShot: autoShots });
@@ -526,6 +527,7 @@ export default function CutCard({
                         sceneType,
                         basePrompt: cut.sceneDescription || "",
                         modelId,
+                        styleSuffix: cut.videoPromptJson?.styleSuffix,
                       });
                       onUpdate({ ...cut, multiShot: initial, intentionalOneTake: undefined });
                     }}

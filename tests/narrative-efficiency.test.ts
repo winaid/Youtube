@@ -123,18 +123,18 @@ describe("C. recommendMinimumCutCount 새 정책", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. recommendCutCountRange 서사 친화적 범위", () => {
-  it("15초 → {4, 6}", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
+  it("15초 → {2, 4}", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 2, max: 4 });
   });
 
-  it("120초 → {32, 48}", () => {
-    // 8 × {4, 6} = {32, 48}
-    expect(recommendCutCountRange(120)).toEqual({ min: 32, max: 48 });
+  it("120초 → {16, 32}", () => {
+    // 8 × {2, 4} = {16, 32}
+    expect(recommendCutCountRange(120)).toEqual({ min: 16, max: 32 });
   });
 
-  it("210초 → {56, 84}", () => {
-    // 14 × {4, 6} = {56, 84}
-    expect(recommendCutCountRange(210)).toEqual({ min: 56, max: 84 });
+  it("210초 → {28, 56}", () => {
+    // 14 × {2, 4} = {28, 56}
+    expect(recommendCutCountRange(210)).toEqual({ min: 28, max: 56 });
   });
 });
 
@@ -187,14 +187,14 @@ describe("F. dense 프리셋으로 빠른 편집 선택 가능", () => {
     expect(dense.min).toBeGreaterThanOrEqual(normal.max);
   });
 
-  it("dense(120초) → 48~50컷 추천", () => {
+  it("dense(120초) → 32~34컷 추천", () => {
     const dense = densityPresetToRange("dense", 120);
-    expect(dense.min).toBeGreaterThanOrEqual(48);
+    expect(dense.min).toBeGreaterThanOrEqual(32);
   });
 
-  it("sparse(120초) → 31~32컷 추천", () => {
+  it("sparse(120초) → 15~16컷 추천", () => {
     const sparse = densityPresetToRange("sparse", 120);
-    expect(sparse.min).toBeGreaterThanOrEqual(31);
-    expect(sparse.max).toBeLessThanOrEqual(32);
+    expect(sparse.min).toBeGreaterThanOrEqual(15);
+    expect(sparse.max).toBeLessThanOrEqual(16);
   });
 });

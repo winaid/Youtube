@@ -61,23 +61,23 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
 });
 
 describe("Layer 1→2: recommendCutCountRange", () => {
-  it("15초 → {4, 6} 시퀀스 내부 밀도 범위", () => {
+  it("15초 → {2, 4} 시퀀스 내부 밀도 범위", () => {
     const range = recommendCutCountRange(15);
-    expect(range.min).toBe(4);
-    expect(range.max).toBe(6);
+    expect(range.min).toBe(2);
+    expect(range.max).toBe(4);
   });
 
   it("48초 → 4 segments × per-segment range", () => {
     const range = recommendCutCountRange(48);
-    // 3 full segments (15s each, range {4,6}) + 1 remainder (3s, range {1,2})
-    expect(range.min).toBe(3 * 4 + 1); // 13
-    expect(range.max).toBe(3 * 6 + 2); // 20
+    // 3 full segments (15s each, range {2,4}) + 1 remainder (3s, range {1,2})
+    expect(range.min).toBe(3 * 2 + 1); // 7
+    expect(range.max).toBe(3 * 4 + 2); // 14
   });
 
-  it("120초 → 8 segments × {4,6}", () => {
+  it("120초 → 8 segments × {2,4}", () => {
     const range = recommendCutCountRange(120);
-    expect(range.min).toBe(8 * 4); // 32
-    expect(range.max).toBe(8 * 6); // 48
+    expect(range.min).toBe(8 * 2); // 16
+    expect(range.max).toBe(8 * 4); // 32
   });
 });
 

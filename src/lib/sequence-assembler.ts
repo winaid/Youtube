@@ -1509,6 +1509,7 @@ export function assembleFromJSON(input: {
     },
     currentShotCount: 1,
     beatHint,
+    styleSuffix: normalizedDoc.reinforcement.styleSuffix,
   });
   const sequenceShots: ShotDescriptor[] = splitResult
     ? splitResult.shots
@@ -1560,7 +1561,11 @@ export function assembleFromJSON(input: {
         shot.camera.framing === "MCU" ? "Medium close-up" :
         shot.camera.framing === "ECU" ? "Extreme close-up" :
         `${shot.camera.framing} shot`;
-      const prompt = `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim();
+      // Inject styleSuffix so style selection survives into multi-shot prompts
+      const styleTag = normalizedDoc.reinforcement.styleSuffix
+        ? `. ${normalizedDoc.reinforcement.styleSuffix}`
+        : "";
+      const prompt = `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}${styleTag}`.trim();
       const duration = String(Math.round(shot.endSec - shot.startSec));
       return { index: i + 1, prompt, duration, role };
     });

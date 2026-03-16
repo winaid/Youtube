@@ -62,23 +62,23 @@ describe("B. total vs current segment target 분리", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. perSegmentCutRange", () => {
-  it("6) density fallback → perSegmentCutRange = singleSegmentRange(15) = {4, 6}", () => {
+  it("6) density fallback → perSegmentCutRange = singleSegmentRange(15) = {2, 4}", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    expect(plan.perSegmentCutRange).toEqual({ min: 4, max: 6 });
+    expect(plan.perSegmentCutRange).toEqual({ min: 2, max: 4 });
   });
 
   it("7) preferredRange 지정 → perSegmentCutRange = preferredRange", () => {
     const plan = resolveSegmentPlan({
       totalDurationSec: 120,
-      preferredRange: { min: 4, max: 6 },
+      preferredRange: { min: 2, max: 4 },
     });
-    expect(plan.perSegmentCutRange).toEqual({ min: 4, max: 6 });
+    expect(plan.perSegmentCutRange).toEqual({ min: 2, max: 4 });
   });
 
   it("8) totalCutRange는 전체 시퀀스 기준", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    // 120초 = 8 segments × {4,6} = {32, 48}
-    expect(plan.totalCutRange).toEqual({ min: 32, max: 48 });
+    // 120초 = 8 segments × {2,4} = {16, 32}
+    expect(plan.totalCutRange).toEqual({ min: 16, max: 32 });
   });
 });
 
@@ -125,7 +125,7 @@ describe("E. server/client parity", () => {
   it("14) 120초 + preferredRange + upper bias parity", () => {
     const opts = {
       totalDurationSec: 120,
-      preferredRange: { min: 4, max: 6 },
+      preferredRange: { min: 2, max: 4 },
       personaBias: "upper" as const,
     };
     expect(serverResolveSegmentPlan(opts)).toEqual(resolveSegmentPlan(opts));
