@@ -37,6 +37,7 @@ import type {
 } from "@/types/script-analysis";
 import { SEQUENCE_MIN_DURATION } from "@/lib/sequence-density";
 import { normalizeAnalysisResult, safeString, safeArray, safeNumber } from "@/lib/normalize";
+import { estimateNarrationDuration, estimateNarrationRuntime } from "@/lib/narration-timing";
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants
@@ -46,9 +47,6 @@ import { normalizeAnalysisResult, safeString, safeArray, safeNumber } from "@/li
 const SEQ_MIN_SEC = SEQUENCE_MIN_DURATION; // 8
 const SEQ_MAX_SEC = 15;
 const SEQ_TARGET_SEC = 10;
-
-/** 읽기 속도: 한국어 나레이션 기준 (초당 글자 수) */
-const KO_CHARS_PER_SEC = 4.5;
 
 /** 문장당 최소 예상 화면 시간 (나레이션 없는 시각적 표현 포함) */
 const MIN_SEC_PER_SENTENCE = 2;
@@ -205,11 +203,8 @@ export function parseScriptBeats(scriptText: string): ScriptBeat[] {
 
 /** 문장 그룹의 예상 화면 시간 계산 */
 function estimateSentenceGroupDuration(text: string): number {
-  // 한국어 글자 수 기반 나레이션 시간
-  const charCount = text.replace(/\s/g, "").length;
-  const narrationSec = charCount / KO_CHARS_PER_SEC;
-  // 시각적 표현 시간 (나레이션보다 항상 약간 더 긴다)
-  return Math.max(MIN_SEC_PER_SENTENCE, Math.ceil(narrationSec * 1.2));
+  const est = estimateNarrationDuration(text, "natural");
+  return Math.max(MIN_SEC_PER_SENTENCE, Math.ceil(est.totalWithBreathingSec));
 }
 
 /** 배경/설정 감지 키워드 */
@@ -1081,16 +1076,13 @@ function generateCliffhangerText(beats: ScriptBeat[], beatType: SequenceBeatType
 
 /**
  * 대본 텍스트의 총 런타임을 추정.
- * 한국어 나레이션 속도 + 시각적 표현 시간 기반.
+ * Korean-specific pacing model with punctuation pauses,
+ * proper noun overhead, and visual breathing room.
+ *
+ * @see narration-timing.ts for the full pacing model
  */
 export function estimateRuntime(scriptText: string): number {
-  const charCount = scriptText.replace(/\s/g, "").length;
-  if (charCount === 0) return 0;
-
-  // 기본 나레이션 시간
-  const narrationSec = charCount / KO_CHARS_PER_SEC;
-  // 시각적 호흡 (나레이션의 20% 추가)
-  return Math.ceil(narrationSec * 1.2);
+  return estimateNarrationRuntime(scriptText);
 }
 
 // ═══════════════════════════════════════════════════════════════════

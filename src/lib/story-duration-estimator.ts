@@ -28,14 +28,14 @@ export interface StoryDurationEstimate {
 
 // ── 상수 ────────────────────────────────────────────────────────────────────────
 
-/** 한국어 기준 1초당 약 4~5글자 나레이션 속도 (보수적: 4자/초) */
-const CHARS_PER_SECOND_KO = 4;
+/** 한국어 기준 1초당 약 3.2글자 자연 나레이션 속도 (다큐/해설 기준) */
+const CHARS_PER_SECOND_KO = 3.2;
 
 /** 영어 기준 1초당 약 2.5단어 나레이션 속도 */
 const WORDS_PER_SECOND_EN = 2.5;
 
-/** 나레이션 대비 영상은 약 1.5배 (비주얼 여유) */
-const VISUAL_MULTIPLIER = 1.5;
+/** 나레이션 대비 영상은 약 1.35배 (비주얼 여유 + 구두점/수사적 포즈) */
+const VISUAL_MULTIPLIER = 1.35;
 
 /** 최소 project total (너무 짧은 글이라도 최소 30초) */
 const MIN_PROJECT_TOTAL_SEC = 30;
