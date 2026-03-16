@@ -19,7 +19,6 @@ import type { ShotRole, Cut } from "@/types";
 import type {
   ScriptAnalysisResult,
   ScriptAnalysisIssue,
-  ScriptIssueCode,
   AnalysisConfidence,
   AnalyzedSequence,
   AnalyzedCut,
@@ -50,7 +49,6 @@ const MIN_SEC_PER_SENTENCE = 2;
 /** 시퀀스당 컷 수 범위 */
 const MIN_CUTS_PER_SEQ = 2;
 const MAX_CUTS_PER_SEQ = 6;
-const TARGET_CUTS_PER_SEQ = 4;
 
 // ═══════════════════════════════════════════════════════════════════
 // Beat Detection — 대본에서 논점 비트를 추출
@@ -454,7 +452,7 @@ function selectVisualFocus(
 }
 
 /** 이전 컷 → 현재 컷의 변화 설명 */
-function describeCutChange(prevRole: ShotRole, currentRole: ShotRole, beatType: SequenceBeatType): string {
+function describeCutChange(prevRole: ShotRole, currentRole: ShotRole, _beatType: SequenceBeatType): string {
   const changes: Record<string, string> = {
     "establish→develop": "공간에서 행동으로 — 주체가 등장하고 행동 시작",
     "establish→peak": "공간에서 클라이맥스로 — 급격한 텐션 점프",
@@ -504,8 +502,8 @@ function generatePromptIntent(
   role: ShotRole,
   beatType: SequenceBeatType,
   beats: ScriptBeat[],
-  cutIndex: number,
-  totalCuts: number,
+  _cutIndex: number,
+  _totalCuts: number,
 ): string {
   // 비트 텍스트에서 핵심 주제 추출
   const combinedText = beats.map(b => b.text).join(" ");

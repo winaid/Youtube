@@ -19,7 +19,7 @@ import type {
   SequenceBeatType,
   ScriptContentType,
 } from "@/types/script-analysis";
-import type { PromptOutput, Cut } from "@/types";
+import type { PromptOutput } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types & Constants
@@ -473,7 +473,7 @@ function SequenceCard({
             </p>
             {seq.cliffhangerText && (
               <p className="text-[10px] mt-1 italic" style={{ color: "#ef4444" }}>
-                예고: "{seq.cliffhangerText}"
+                예고: &ldquo;{seq.cliffhangerText}&rdquo;
               </p>
             )}
           </div>
@@ -512,7 +512,7 @@ function SequenceCard({
             <p className="text-[10px] font-medium mb-2" style={{ color: "#555" }}>컷 프로그레션</p>
             <div className="space-y-1.5">
               {seq.cuts.map((cut, cutIdx) => (
-                <CutProgressionRow key={cutIdx} cut={cut} index={cutIdx} />
+                <CutProgressionRow key={cutIdx} cut={cut} />
               ))}
             </div>
           </div>
@@ -544,7 +544,7 @@ const ROLE_COLOR: Record<string, string> = {
   transition: "#6b7280",
 };
 
-function CutProgressionRow({ cut, index }: { cut: AnalyzedCut; index: number }) {
+function CutProgressionRow({ cut }: { cut: AnalyzedCut }) {
   const roleColor = ROLE_COLOR[cut.role] || "#666";
 
   return (
