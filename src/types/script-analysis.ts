@@ -224,3 +224,30 @@ export interface ScriptAnalysisResponse {
   analysis?: ScriptAnalysisResult;
   error?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Progressive Analysis Phases
+// ═══════════════════════════════════════════════════════════════════
+
+/** Analysis phase for progressive rendering */
+export type AnalysisPhase =
+  | "idle"
+  | "structural"     // Phase A: beats, boundaries, skeleton sequences
+  | "detailing"      // Phase B: per-sequence cut progression + strategies
+  | "enriching"      // Phase C: LLM enhancement (optional)
+  | "complete";
+
+/** Per-sequence detail status */
+export type SequenceDetailStatus = "skeleton" | "detailed";
+
+/** Phase A result — structural skeleton with reusable intermediates */
+export interface PhaseAResult {
+  /** Structural analysis with skeleton sequences (no cuts, stub strategies) */
+  result: ScriptAnalysisResult;
+  /** Parsed beats (reusable in Phase B) */
+  beats: import("@/lib/script-analyzer").ScriptBeat[];
+  /** Sequence beat groups (reusable in Phase B) */
+  sequenceGroups: import("@/lib/script-analyzer").ScriptBeat[][];
+  /** Cache key for this script text */
+  cacheKey: string;
+}

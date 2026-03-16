@@ -8,17 +8,24 @@
  *   4. 전체 분석: 엔드투엔드 분석 결과 검증
  *   5. 변환: 분석 결과 → Cut[] 구조 변환
  *   6. 품질: 구조 품질 분석
+ *   7. Phase A/B: Progressive analysis phases
+ *   8. Caching: Script hash caching layer
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   parseScriptBeats,
   planSequenceBoundaries,
   generateCutProgression,
   analyzeScript,
+  analyzeScriptPhaseA,
+  enrichSequenceDetail,
+  enrichAllSequences,
   convertToCuts,
   estimateRuntime,
   detectContentType,
+  scriptHash,
+  clearAnalysisCache,
 } from "@/lib/script-analyzer";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -647,5 +654,180 @@ describe("generalization across narrative types", () => {
       const result = analyzeScript(script);
       expect(Array.isArray(result.issues)).toBe(true);
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. Phase A: Fast Structural Analysis
+// ═══════════════════════════════════════════════════════════════════
+
+describe("analyzeScriptPhaseA", () => {
+  beforeEach(() => clearAnalysisCache());
+
+  it("빈 텍스트 → short_script issue", () => {
+    const { result } = analyzeScriptPhaseA("");
+    expect(result.issues[0].code).toBe("short_script");
+    expect(result.sequences).toEqual([]);
+  });
+
+  it("returns skeleton sequences with empty cuts", () => {
+    const { result } = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    expect(result.sequences.length).toBeGreaterThanOrEqual(2);
+    for (const seq of result.sequences) {
+      expect(seq.cuts).toEqual([]);
+      expect(seq.purpose).toBe("");
+      expect(seq.rationale).toBe("");
+    }
+  });
+
+  it("returns structural metadata in skeleton", () => {
+    const { result } = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    for (const seq of result.sequences) {
+      expect(seq.title.length).toBeGreaterThan(0);
+      expect(seq.beatType).toBeTruthy();
+      expect(seq.recommendedDurationSec).toBeGreaterThanOrEqual(8);
+      expect(seq.recommendedCutCount).toBeGreaterThanOrEqual(2);
+      expect(seq.endingMode).toBeTruthy();
+      expect(seq.sourceText.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("returns macro analysis (hook, thesis, runtime)", () => {
+    const { result } = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    expect(result.mainHook.length).toBeGreaterThan(0);
+    expect(result.thesis.length).toBeGreaterThan(0);
+    expect(result.totalSuggestedRuntime).toBeGreaterThan(0);
+    expect(result.confidence).toBeTruthy();
+  });
+
+  it("returns reusable intermediates (beats, sequenceGroups)", () => {
+    const phaseA = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    expect(phaseA.beats.length).toBeGreaterThan(0);
+    expect(phaseA.sequenceGroups.length).toBe(phaseA.result.sequences.length);
+    expect(phaseA.cacheKey.length).toBeGreaterThan(0);
+  });
+
+  it("첫 시퀀스는 항상 hook", () => {
+    const { result } = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    expect(result.sequences[0].beatType).toBe("hook");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 12. Phase B: Per-Sequence Detail Enrichment
+// ═══════════════════════════════════════════════════════════════════
+
+describe("enrichSequenceDetail", () => {
+  beforeEach(() => clearAnalysisCache());
+
+  it("fills cuts, purpose, rationale, strategies", () => {
+    const phaseA = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    const enriched = enrichSequenceDetail(
+      phaseA.result.sequences[0],
+      phaseA.sequenceGroups,
+      0,
+      phaseA.result.sequences.length,
+    );
+
+    expect(enriched.cuts.length).toBeGreaterThanOrEqual(2);
+    expect(enriched.purpose.length).toBeGreaterThan(0);
+    expect(enriched.rationale.length).toBeGreaterThan(0);
+    expect(enriched.retentionStrategy.curiosityPoint.length).toBeGreaterThan(0);
+    expect(enriched.visualStrategy.toneHint.length).toBeGreaterThan(0);
+  });
+
+  it("preserves structural fields from Phase A", () => {
+    const phaseA = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    const skeleton = phaseA.result.sequences[0];
+    const enriched = enrichSequenceDetail(skeleton, phaseA.sequenceGroups, 0, phaseA.result.sequences.length);
+
+    expect(enriched.id).toBe(skeleton.id);
+    expect(enriched.title).toBe(skeleton.title);
+    expect(enriched.beatType).toBe(skeleton.beatType);
+    expect(enriched.recommendedDurationSec).toBe(skeleton.recommendedDurationSec);
+    expect(enriched.endingMode).toBe(skeleton.endingMode);
+    expect(enriched.sourceText).toBe(skeleton.sourceText);
+  });
+
+  it("updates recommendedCutCount to match actual cuts", () => {
+    const phaseA = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    const enriched = enrichSequenceDetail(
+      phaseA.result.sequences[0],
+      phaseA.sequenceGroups,
+      0,
+      phaseA.result.sequences.length,
+    );
+    expect(enriched.recommendedCutCount).toBe(enriched.cuts.length);
+  });
+});
+
+describe("enrichAllSequences", () => {
+  beforeEach(() => clearAnalysisCache());
+
+  it("produces same result as monolithic analyzeScript", () => {
+    const phaseA = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    const phased = enrichAllSequences(phaseA);
+    const monolithic = analyzeScript(BLACK_DEATH_SCRIPT);
+
+    // Same sequence count
+    expect(phased.sequences.length).toBe(monolithic.sequences.length);
+
+    // Same macro fields
+    expect(phased.mainHook).toBe(monolithic.mainHook);
+    expect(phased.thesis).toBe(monolithic.thesis);
+    expect(phased.totalSuggestedRuntime).toBe(monolithic.totalSuggestedRuntime);
+
+    // Same per-sequence fields
+    for (let i = 0; i < phased.sequences.length; i++) {
+      expect(phased.sequences[i].cuts.length).toBe(monolithic.sequences[i].cuts.length);
+      expect(phased.sequences[i].purpose).toBe(monolithic.sequences[i].purpose);
+      expect(phased.sequences[i].beatType).toBe(monolithic.sequences[i].beatType);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 13. Caching Layer
+// ═══════════════════════════════════════════════════════════════════
+
+describe("caching", () => {
+  beforeEach(() => clearAnalysisCache());
+
+  it("scriptHash produces consistent hash for same text", () => {
+    const h1 = scriptHash("테스트 텍스트");
+    const h2 = scriptHash("테스트 텍스트");
+    expect(h1).toBe(h2);
+  });
+
+  it("scriptHash normalizes whitespace", () => {
+    const h1 = scriptHash("테스트   텍스트");
+    const h2 = scriptHash("테스트 텍스트");
+    expect(h1).toBe(h2);
+  });
+
+  it("scriptHash differs for different text", () => {
+    const h1 = scriptHash("텍스트 A");
+    const h2 = scriptHash("텍스트 B");
+    expect(h1).not.toBe(h2);
+  });
+
+  it("second analyzeScriptPhaseA call returns cached full result", () => {
+    // First call: full analysis (populates cache via enrichAllSequences path)
+    const phaseA1 = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    enrichAllSequences(phaseA1); // caches full result
+
+    // Second call: should return cached full result with cuts
+    const phaseA2 = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    expect(phaseA2.result.sequences[0].cuts.length).toBeGreaterThan(0);
+    expect(phaseA2.result.sequences[0].purpose.length).toBeGreaterThan(0);
+  });
+
+  it("clearAnalysisCache resets all caches", () => {
+    analyzeScript(BLACK_DEATH_SCRIPT); // populates cache
+    clearAnalysisCache();
+
+    // After clear, Phase A should return skeleton again
+    const { result } = analyzeScriptPhaseA(BLACK_DEATH_SCRIPT);
+    expect(result.sequences[0].cuts).toEqual([]);
   });
 });

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  analyzeScript,
+  analyzeScriptPhaseA,
+  enrichSequenceDetail,
+  enrichAllSequences,
   convertToCuts,
   estimateRuntime,
   detectContentType,
@@ -18,7 +20,10 @@ import type {
   AnalyzedCut,
   SequenceBeatType,
   ScriptContentType,
+  AnalysisPhase,
+  PhaseAResult,
 } from "@/types/script-analysis";
+import type { ScriptBeat } from "@/lib/script-analyzer";
 import type { PromptOutput } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -73,6 +78,14 @@ const CONTENT_TYPE_OPTIONS: { value: ScriptContentType; label: string }[] = [
   { value: "educational", label: "교육" },
 ];
 
+const PHASE_LABEL: Record<AnalysisPhase, string> = {
+  idle: "",
+  structural: "구조 분석 중...",
+  detailing: "시퀀스 상세 생성 중...",
+  enriching: "AI 심층 분석 중...",
+  complete: "",
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // Component
 // ═══════════════════════════════════════════════════════════════════
@@ -81,10 +94,16 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
   const [scriptText, setScriptText] = useState("");
   const [contentType, setContentType] = useState<ScriptContentType>("auto");
   const [analysis, setAnalysis] = useState<ScriptAnalysisResult | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [phase, setPhase] = useState<AnalysisPhase>("idle");
+  const [detailedSeqs, setDetailedSeqs] = useState<Set<number>>(new Set());
+  const [detailProgress, setDetailProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const [expandedSeq, setExpandedSeq] = useState<number | null>(null);
   const [useLLM, setUseLLM] = useState(true);
+
+  // Refs for Phase B intermediates (avoids re-renders)
+  const phaseARef = useRef<PhaseAResult | null>(null);
+  const abortRef = useRef(false);
 
   // ── Pre-analysis estimates ──
   const preEstimate = useMemo(() => {
@@ -96,57 +115,127 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
     return { charCount, runtime, seqCount, detected };
   }, [scriptText]);
 
-  // ── Analyze ──
+  // ── Progressive Analysis ──
   const handleAnalyze = useCallback(async () => {
     if (!scriptText.trim()) return;
 
-    setAnalyzing(true);
+    abortRef.current = false;
     setError(null);
+    setDetailedSeqs(new Set());
 
+    // ── Phase A: Structural (instant) ──
+    setPhase("structural");
+    const effectiveType = contentType === "auto" ? detectContentType(scriptText) : contentType;
+
+    let phaseA: PhaseAResult;
     try {
-      // Client-side heuristic (immediate)
-      const effectiveType = contentType === "auto" ? detectContentType(scriptText) : contentType;
-      const heuristicResult = analyzeScript(scriptText, { contentTypeHint: effectiveType });
-
-      // Try LLM enhancement if enabled
-      if (useLLM) {
-        try {
-          const prompt = buildAnalysisPrompt(scriptText, effectiveType);
-          const res = await fetch("/api/analyze-script", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              scriptText,
-              contentTypeHint: effectiveType,
-              analysisPrompt: prompt,
-            }),
-          });
-
-          if (res.ok) {
-            const data = await res.json() as { success: boolean; analysis?: ScriptAnalysisResult };
-            if (data.success && data.analysis) {
-              setAnalysis(data.analysis);
-              setExpandedSeq(0);
-              setAnalyzing(false);
-              return;
-            }
-          }
-          // LLM failed — fall through to heuristic
-          console.warn("[ScriptAnalyzer] LLM failed, using heuristic");
-        } catch {
-          console.warn("[ScriptAnalyzer] LLM request failed, using heuristic");
-        }
-      }
-
-      // Use heuristic result
-      setAnalysis(heuristicResult);
-      setExpandedSeq(0);
+      phaseA = analyzeScriptPhaseA(scriptText, { contentTypeHint: effectiveType });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "분석 중 오류 발생");
-    } finally {
-      setAnalyzing(false);
+      setError(err instanceof Error ? err.message : "구조 분석 실패");
+      setPhase("idle");
+      return;
+    }
+
+    phaseARef.current = phaseA;
+
+    // If cache hit returned fully-enriched result, skip Phase B
+    const isCacheHit = phaseA.result.sequences.length > 0 &&
+      phaseA.result.sequences[0].cuts.length > 0;
+
+    if (isCacheHit) {
+      setAnalysis(phaseA.result);
+      setDetailedSeqs(new Set(phaseA.result.sequences.map((_, i) => i)));
+      setDetailProgress({ done: phaseA.result.sequences.length, total: phaseA.result.sequences.length });
+      setExpandedSeq(0);
+      // Skip to Phase C if LLM enabled
+      if (useLLM) {
+        setPhase("enriching");
+        runLLMEnrichment(scriptText, effectiveType, phaseA.result);
+      } else {
+        setPhase("complete");
+      }
+      return;
+    }
+
+    // Show skeleton immediately
+    setAnalysis(phaseA.result);
+    setExpandedSeq(0);
+
+    // ── Phase B: Per-sequence detail (progressive, via microtask cascade) ──
+    setPhase("detailing");
+    const totalSeqs = phaseA.result.sequences.length;
+    setDetailProgress({ done: 0, total: totalSeqs });
+
+    // Run Phase B in microtask cascade to allow UI paints between sequences
+    let currentResult = phaseA.result;
+    for (let i = 0; i < totalSeqs; i++) {
+      if (abortRef.current) break;
+
+      // Yield to browser paint
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      if (abortRef.current) break;
+
+      const enriched = enrichSequenceDetail(
+        currentResult.sequences[i],
+        phaseA.sequenceGroups,
+        i,
+        totalSeqs,
+      );
+
+      currentResult = {
+        ...currentResult,
+        sequences: currentResult.sequences.map((s, idx) => idx === i ? enriched : s),
+      };
+
+      setAnalysis(currentResult);
+      setDetailedSeqs(prev => new Set(prev).add(i));
+      setDetailProgress({ done: i + 1, total: totalSeqs });
+    }
+
+    if (abortRef.current) return;
+
+    // ── Phase C: LLM enrichment (optional, background) ──
+    if (useLLM) {
+      setPhase("enriching");
+      runLLMEnrichment(scriptText, effectiveType, currentResult);
+    } else {
+      setPhase("complete");
     }
   }, [scriptText, contentType, useLLM]);
+
+  // ── Phase C: LLM Enhancement (non-blocking) ──
+  const runLLMEnrichment = useCallback(async (
+    text: string,
+    effectiveType: ScriptContentType,
+    fallbackResult: ScriptAnalysisResult,
+  ) => {
+    try {
+      const prompt = buildAnalysisPrompt(text, effectiveType);
+      const res = await fetch("/api/analyze-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scriptText: text,
+          contentTypeHint: effectiveType,
+          analysisPrompt: prompt,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json() as { success: boolean; analysis?: ScriptAnalysisResult };
+        if (data.success && data.analysis && !abortRef.current) {
+          setAnalysis(data.analysis);
+          setDetailedSeqs(new Set(data.analysis.sequences.map((_, i) => i)));
+          setDetailProgress({ done: data.analysis.sequences.length, total: data.analysis.sequences.length });
+        }
+      }
+    } catch {
+      // LLM failed silently — heuristic result already visible
+      console.warn("[ScriptAnalyzer] LLM enrichment failed, keeping heuristic result");
+    } finally {
+      if (!abortRef.current) setPhase("complete");
+    }
+  }, []);
 
   // ── Apply to workflow ──
   const handleApply = useCallback(() => {
@@ -170,6 +259,8 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
   // ═══════════════════════════════════════════════════════════════
   // Render
   // ═══════════════════════════════════════════════════════════════
+
+  const isAnalyzing = phase !== "idle" && phase !== "complete";
 
   return (
     <div className="space-y-4">
@@ -240,17 +331,43 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
 
             <Button
               onClick={handleAnalyze}
-              disabled={!scriptText.trim() || analyzing}
+              disabled={!scriptText.trim() || isAnalyzing}
               className="text-sm"
               style={{
-                background: analyzing ? "#999" : "#e09500",
+                background: isAnalyzing ? "#999" : "#e09500",
                 color: "white",
-                boxShadow: analyzing ? "none" : "0 2px 8px #e0950040",
+                boxShadow: isAnalyzing ? "none" : "0 2px 8px #e0950040",
               }}
             >
-              {analyzing ? "분석 중..." : "분석하기"}
+              {isAnalyzing ? PHASE_LABEL[phase] : "분석하기"}
             </Button>
           </div>
+
+          {/* Phase-specific progress indicator */}
+          {phase === "detailing" && detailProgress.total > 0 && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px]" style={{ color: "#999" }}>
+                <span>시퀀스 상세 생성 중...</span>
+                <span>{detailProgress.done}/{detailProgress.total}</span>
+              </div>
+              <div className="h-1 rounded-full overflow-hidden" style={{ background: "#e5e5e5" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: `${(detailProgress.done / detailProgress.total) * 100}%`,
+                    background: "#e09500",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {phase === "enriching" && (
+            <div className="flex items-center gap-2 text-[10px]" style={{ color: "#8b5cf6" }}>
+              <span className="inline-block w-2 h-2 rounded-full animate-pulse" style={{ background: "#8b5cf6" }} />
+              AI 심층 분석 진행 중... (구조 분석 결과는 이미 표시됨)
+            </div>
+          )}
 
           {error && (
             <p className="text-xs p-2 rounded" style={{ color: "#dc2626", background: "#dc262610" }}>
@@ -353,10 +470,12 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
                     onClick={handleApply}
                     size="sm"
                     className="text-xs"
+                    disabled={phase === "structural" || phase === "detailing"}
                     style={{
                       background: "#22c55e",
                       color: "white",
                       boxShadow: "0 2px 6px #22c55e40",
+                      opacity: (phase === "structural" || phase === "detailing") ? 0.5 : 1,
                     }}
                   >
                     프롬프트 워크플로우에 적용
@@ -370,6 +489,7 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
                 {analysis.sequences.map((seq) => {
                   const meta = BEAT_TYPE_META[seq.beatType];
                   const widthPercent = (seq.recommendedDurationSec / analysis.totalSuggestedRuntime) * 100;
+                  const isDetailed = detailedSeqs.has(seq.id - 1);
                   return (
                     <button
                       key={seq.id}
@@ -380,9 +500,9 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
                         minWidth: 32,
                         background: meta.color,
                         color: "white",
-                        opacity: expandedSeq === seq.id - 1 ? 1 : 0.7,
+                        opacity: expandedSeq === seq.id - 1 ? 1 : isDetailed ? 0.7 : 0.4,
                       }}
-                      title={`${seq.title} (${seq.recommendedDurationSec}초)`}
+                      title={`${seq.title} (${seq.recommendedDurationSec}초)${isDetailed ? "" : " — 상세 로딩 중"}`}
                     >
                       {seq.id}
                     </button>
@@ -397,6 +517,7 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
                     key={seq.id}
                     sequence={seq}
                     isExpanded={expandedSeq === seqIdx}
+                    isDetailed={detailedSeqs.has(seqIdx)}
                     onToggle={() => setExpandedSeq(expandedSeq === seqIdx ? null : seqIdx)}
                   />
                 ))}
@@ -416,10 +537,12 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
 function SequenceCard({
   sequence: seq,
   isExpanded,
+  isDetailed,
   onToggle,
 }: {
   sequence: AnalyzedSequence;
   isExpanded: boolean;
+  isDetailed: boolean;
   onToggle: () => void;
 }) {
   const meta = BEAT_TYPE_META[seq.beatType];
@@ -459,63 +582,92 @@ function SequenceCard({
         >
           {ENDING_MODE_LABEL[seq.endingMode] || seq.endingMode}
         </Badge>
+        {!isDetailed && (
+          <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#e09500" }} />
+        )}
         <span className="text-xs" style={{ color: "#ccc" }}>{isExpanded ? "▲" : "▼"}</span>
       </button>
 
       {/* Expanded content */}
       {isExpanded && (
         <div className="px-3 pb-3 space-y-3" style={{ background: meta.bg }}>
-          {/* Purpose & Rationale */}
-          <div className="pt-2">
-            <p className="text-[11px]" style={{ color: "#555" }}>{seq.purpose}</p>
-            <p className="text-[10px] mt-1" style={{ color: "#999" }}>
-              <span className="font-medium">이유:</span> {seq.rationale}
-            </p>
-            {seq.cliffhangerText && (
-              <p className="text-[10px] mt-1 italic" style={{ color: "#ef4444" }}>
-                예고: &ldquo;{seq.cliffhangerText}&rdquo;
-              </p>
-            )}
-          </div>
-
-          {/* Source text */}
-          <div className="p-2 rounded text-[10px]" style={{ background: "#ffffff80", color: "#666" }}>
-            <p className="font-medium mb-1" style={{ color: "#999" }}>원본 대본 구간:</p>
-            {seq.sourceText.length > 200
-              ? seq.sourceText.slice(0, 200) + "…"
-              : seq.sourceText}
-          </div>
-
-          {/* Retention strategy */}
-          <div className="grid grid-cols-2 gap-2">
-            <RetentionItem label="호기심" value={seq.retentionStrategy.curiosityPoint} color="#f59e0b" />
-            <RetentionItem label="정보 증가" value={seq.retentionStrategy.informationGain} color="#3b82f6" />
-            <RetentionItem label="에스컬레이션" value={seq.retentionStrategy.escalation} color="#ea580c" />
-            <RetentionItem label="보상" value={seq.retentionStrategy.payoff} color="#22c55e" />
-          </div>
-
-          {/* Visual strategy */}
-          <div className="flex gap-2 flex-wrap">
-            <Badge variant="outline" className="text-[9px]" style={{ color: "#8b5cf6", borderColor: "#8b5cf640" }}>
-              드라이버: {seq.visualStrategy.primaryDriver}
-            </Badge>
-            <Badge variant="outline" className="text-[9px]" style={{ color: "#8b5cf6", borderColor: "#8b5cf640" }}>
-              착지: {seq.visualStrategy.finalFrameLanding}
-            </Badge>
-            <Badge variant="outline" className="text-[9px]" style={{ color: "#8b5cf6", borderColor: "#8b5cf640" }}>
-              톤: {seq.visualStrategy.toneHint}
-            </Badge>
-          </div>
-
-          {/* Cut progression */}
-          <div>
-            <p className="text-[10px] font-medium mb-2" style={{ color: "#555" }}>컷 프로그레션</p>
-            <div className="space-y-1.5">
-              {seq.cuts.map((cut, cutIdx) => (
-                <CutProgressionRow key={cutIdx} cut={cut} />
-              ))}
+          {!isDetailed ? (
+            /* Skeleton loading state */
+            <div className="py-4 space-y-2">
+              <div className="flex items-center gap-2 text-[11px]" style={{ color: "#999" }}>
+                <span className="inline-block w-2 h-2 rounded-full animate-pulse" style={{ background: meta.color }} />
+                상세 정보 생성 중...
+              </div>
+              {/* Source text (available from Phase A) */}
+              <div className="p-2 rounded text-[10px]" style={{ background: "#ffffff80", color: "#666" }}>
+                <p className="font-medium mb-1" style={{ color: "#999" }}>원본 대본 구간:</p>
+                {seq.sourceText.length > 200
+                  ? seq.sourceText.slice(0, 200) + "…"
+                  : seq.sourceText}
+              </div>
+              {/* Skeleton bars for cuts */}
+              <div className="space-y-1">
+                {Array.from({ length: seq.recommendedCutCount }, (_, i) => (
+                  <div key={i} className="h-8 rounded animate-pulse" style={{ background: "#e5e5e5" }} />
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Full detailed content */
+            <>
+              {/* Purpose & Rationale */}
+              <div className="pt-2">
+                <p className="text-[11px]" style={{ color: "#555" }}>{seq.purpose}</p>
+                <p className="text-[10px] mt-1" style={{ color: "#999" }}>
+                  <span className="font-medium">이유:</span> {seq.rationale}
+                </p>
+                {seq.cliffhangerText && (
+                  <p className="text-[10px] mt-1 italic" style={{ color: "#ef4444" }}>
+                    예고: &ldquo;{seq.cliffhangerText}&rdquo;
+                  </p>
+                )}
+              </div>
+
+              {/* Source text */}
+              <div className="p-2 rounded text-[10px]" style={{ background: "#ffffff80", color: "#666" }}>
+                <p className="font-medium mb-1" style={{ color: "#999" }}>원본 대본 구간:</p>
+                {seq.sourceText.length > 200
+                  ? seq.sourceText.slice(0, 200) + "…"
+                  : seq.sourceText}
+              </div>
+
+              {/* Retention strategy */}
+              <div className="grid grid-cols-2 gap-2">
+                <RetentionItem label="호기심" value={seq.retentionStrategy.curiosityPoint} color="#f59e0b" />
+                <RetentionItem label="정보 증가" value={seq.retentionStrategy.informationGain} color="#3b82f6" />
+                <RetentionItem label="에스컬레이션" value={seq.retentionStrategy.escalation} color="#ea580c" />
+                <RetentionItem label="보상" value={seq.retentionStrategy.payoff} color="#22c55e" />
+              </div>
+
+              {/* Visual strategy */}
+              <div className="flex gap-2 flex-wrap">
+                <Badge variant="outline" className="text-[9px]" style={{ color: "#8b5cf6", borderColor: "#8b5cf640" }}>
+                  드라이버: {seq.visualStrategy.primaryDriver}
+                </Badge>
+                <Badge variant="outline" className="text-[9px]" style={{ color: "#8b5cf6", borderColor: "#8b5cf640" }}>
+                  착지: {seq.visualStrategy.finalFrameLanding}
+                </Badge>
+                <Badge variant="outline" className="text-[9px]" style={{ color: "#8b5cf6", borderColor: "#8b5cf640" }}>
+                  톤: {seq.visualStrategy.toneHint}
+                </Badge>
+              </div>
+
+              {/* Cut progression */}
+              <div>
+                <p className="text-[10px] font-medium mb-2" style={{ color: "#555" }}>컷 프로그레션</p>
+                <div className="space-y-1.5">
+                  {seq.cuts.map((cut, cutIdx) => (
+                    <CutProgressionRow key={cutIdx} cut={cut} />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -1,17 +1,22 @@
 /**
  * script-analyzer.ts — 대본 → 릴 시퀀스 프로덕션 구조 변환 엔진
  *
- * 두 가지 분석 경로:
- *   1. Client-side heuristic: 즉시 프리뷰 + API 불가 시 fallback
- *   2. Server-side LLM:     깊은 한국어 분석 (generate-cuts 패턴)
+ * 3-Phase Progressive Architecture:
+ *   Phase A: Fast structural analysis (beats, boundaries, skeleton sequences)
+ *   Phase B: Per-sequence detail enrichment (cuts, strategies, cliffhangers)
+ *   Phase C: Optional LLM deep analysis (server-side)
  *
  * 핵심 원칙:
  *   - 텍스트를 문장 수로 나누지 않는다
  *   - 논점/비트 전환을 기준으로 시퀀스 경계를 결정한다
  *   - 모든 컷은 존재 이유가 있어야 한다
  *   - 결과물은 요약이 아니라 프로덕션 구조다
+ *   - Phase A is returned instantly for progressive rendering
+ *   - Phase B is lazy per-sequence, parallelizable
+ *   - Phase C is optional background enrichment
  *
- * grep: analyzeScript, parseScriptBeats, planSequenceBoundaries,
+ * grep: analyzeScript, analyzeScriptPhaseA, enrichSequenceDetail,
+ *       parseScriptBeats, planSequenceBoundaries,
  *       generateCutProgression, convertToCuts, estimateRuntime
  */
 
@@ -28,6 +33,7 @@ import type {
   VisualStrategy,
   CutVisualFocus,
   ScriptContentType,
+  PhaseAResult,
 } from "@/types/script-analysis";
 import { SEQUENCE_MIN_DURATION } from "@/lib/sequence-density";
 
@@ -49,6 +55,40 @@ const MIN_SEC_PER_SENTENCE = 2;
 /** 시퀀스당 컷 수 범위 */
 const MIN_CUTS_PER_SEQ = 2;
 const MAX_CUTS_PER_SEQ = 6;
+
+// ═══════════════════════════════════════════════════════════════════
+// Caching Layer
+// ═══════════════════════════════════════════════════════════════════
+
+const CACHE_MAX = 20;
+const beatCache = new Map<string, ScriptBeat[]>();
+const boundaryCache = new Map<string, ScriptBeat[][]>();
+const fullAnalysisCache = new Map<string, ScriptAnalysisResult>();
+
+/** Simple string hash for cache keys */
+export function scriptHash(text: string): string {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  let h = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    h = ((h << 5) - h + normalized.charCodeAt(i)) | 0;
+  }
+  return String(h);
+}
+
+function cacheSet<T>(map: Map<string, T>, key: string, value: T): void {
+  if (map.size >= CACHE_MAX) {
+    const first = map.keys().next().value;
+    if (first !== undefined) map.delete(first);
+  }
+  map.set(key, value);
+}
+
+/** Clear all caches (for testing) */
+export function clearAnalysisCache(): void {
+  beatCache.clear();
+  boundaryCache.clear();
+  fullAnalysisCache.clear();
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Beat Detection — 대본에서 논점 비트를 추출
@@ -553,25 +593,40 @@ function describeRetentionReason(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Main Analysis Function
+// Phase A: Fast Structural Analysis
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 대본 텍스트를 릴 시퀀스 프로덕션 구조로 분석.
+ * Phase A — 빠른 구조 분석 (즉시 반환).
  *
- * Client-side heuristic 분석 — API 없이 즉시 결과 반환.
- * Server-side LLM 분석 결과로 대체/보강 가능.
+ * 반환:
+ *   - 매크로 분석 (hook, thesis, runtime, confidence, issues)
+ *   - 시퀀스 스켈레톤 (title, beatType, duration, cutCount, endingMode)
+ *   - 빈 cuts[] / stub strategies (Phase B에서 채움)
+ *   - beats, sequenceGroups (Phase B에서 재사용)
+ *
+ * 캐시 히트 시: 이전 full analysis를 즉시 반환.
  */
-export function analyzeScript(
+export function analyzeScriptPhaseA(
   scriptText: string,
   options?: {
     targetRuntimeSec?: number;
     contentTypeHint?: ScriptContentType;
   },
-): ScriptAnalysisResult {
+): PhaseAResult {
   const text = scriptText.trim();
+  const key = scriptHash(text);
+
+  // Check full analysis cache — if available, return instantly
+  const cached = fullAnalysisCache.get(key);
+  if (cached) {
+    const beats = beatCache.get(key) || parseScriptBeats(text);
+    const groups = boundaryCache.get(key) || planSequenceBoundaries(beats);
+    return { result: cached, beats, sequenceGroups: groups, cacheKey: key };
+  }
+
   if (!text) {
-    return {
+    const empty: ScriptAnalysisResult = {
       sourceSummary: "",
       mainHook: "",
       thesis: "",
@@ -583,19 +638,28 @@ export function analyzeScript(
       confidence: "low",
       sequences: [],
     };
+    return { result: empty, beats: [], sequenceGroups: [], cacheKey: key };
   }
 
-  // 1. 비트 파싱
-  const beats = parseScriptBeats(text);
+  // 1. Beat parsing (cached)
+  let beats = beatCache.get(key);
+  if (!beats) {
+    beats = parseScriptBeats(text);
+    cacheSet(beatCache, key, beats);
+  }
 
-  // 2. 총 런타임 추정
+  // 2. Runtime
   const estimatedRuntime = options?.targetRuntimeSec
     ?? beats.reduce((sum, b) => sum + b.estimatedSec, 0);
 
-  // 3. 시퀀스 경계 결정
-  const sequenceGroups = planSequenceBoundaries(beats);
+  // 3. Sequence boundaries (cached)
+  let sequenceGroups = boundaryCache.get(key);
+  if (!sequenceGroups) {
+    sequenceGroups = planSequenceBoundaries(beats);
+    cacheSet(boundaryCache, key, sequenceGroups);
+  }
 
-  // 4. 시퀀스별 분석
+  // 4. Skeleton sequences (title, beatType, duration, endingMode — NO cuts/strategies)
   let charOffset = 0;
   const sequences: AnalyzedSequence[] = sequenceGroups.map((seqBeats, seqIdx) => {
     const seqDuration = Math.min(
@@ -603,13 +667,11 @@ export function analyzeScript(
       Math.max(SEQ_MIN_SEC, seqBeats.reduce((s, b) => s + b.estimatedSec, 0)),
     );
 
-    // 대표 비트 타입 결정 (가장 강한 비트의 타입)
     const dominantBeat = seqBeats.reduce((best, b) =>
       b.intensity > best.intensity ? b : best, seqBeats[0]);
     const beatType = seqIdx === 0 ? "hook" as SequenceBeatType : dominantBeat.typeHint;
 
-    // 종료 방식 결정
-    const isLast = seqIdx === sequenceGroups.length - 1;
+    const isLast = seqIdx === sequenceGroups!.length - 1;
     const endingMode: SequenceEndingMode = isLast
       ? "close"
       : beatType === "paradox" ? "paradox"
@@ -617,7 +679,6 @@ export function analyzeScript(
       : dominantBeat.intensity > 0.5 ? "cliffhanger"
       : "loop-open";
 
-    // sourceSpan 계산
     const seqSourceText = seqBeats.map(b => b.text).join(" ");
     const startChar = text.indexOf(seqBeats[0].text, charOffset);
     const lastBeatText = seqBeats[seqBeats.length - 1].text;
@@ -625,44 +686,36 @@ export function analyzeScript(
     const endChar = lastBeatStart >= 0 ? lastBeatStart + lastBeatText.length : startChar + seqSourceText.length;
     if (startChar >= 0) charOffset = endChar;
 
-    // 내부 컷 프로그레션
-    const cuts = generateCutProgression(seqBeats, seqDuration, beatType);
-
-    // 클리프행어 텍스트
-    const cliffhangerText = endingMode === "cliffhanger"
-      ? generateCliffhangerText(seqBeats, beatType)
-      : undefined;
+    const cutCount = recommendCutCount(seqDuration, beatType);
 
     return {
       id: seqIdx + 1,
       title: generateSequenceTitle(seqBeats, beatType, seqIdx),
-      purpose: generateSequencePurpose(seqBeats, beatType),
+      purpose: "",             // Phase B
       beatType,
       sourceText: seqSourceText,
       sourceSpan: startChar >= 0 ? { startChar, endChar } : undefined,
       recommendedDurationSec: seqDuration,
-      recommendedCutCount: cuts.length,
-      rationale: generateSequenceRationale(beatType, seqIdx, sequenceGroups.length),
+      recommendedCutCount: cutCount,
+      rationale: "",           // Phase B
       endingMode,
-      cliffhangerText,
-      retentionStrategy: generateRetentionStrategy(seqBeats, beatType, endingMode),
-      visualStrategy: generateVisualStrategy(beatType, isLast),
-      cuts,
+      cliffhangerText: undefined, // Phase B
+      retentionStrategy: { curiosityPoint: "", informationGain: "", escalation: "", payoff: "" },
+      visualStrategy: { primaryDriver: "concept-reveal" as const, finalFrameLanding: "unresolved-curiosity" as const, toneHint: "" },
+      cuts: [],                // Phase B
     };
   });
 
-  // 5. 매크로 분석
+  // 5. Macro analysis
   const hookBeat = beats.find(b => b.typeHint === "hook") ?? beats[0];
   const thesis = extractThesis(beats);
   const summary = text.length > 200 ? text.slice(0, 200) + "…" : text;
 
-  // 6. 구조 품질 분석
+  // 6. Quality analysis (runs on skeleton — issues/notes/weaknesses don't need cuts)
   const { notes, weaknesses, issues } = analyzeStructuralQuality(beats, sequences, text);
-
-  // 7. 신뢰도 계산
   const confidence = computeConfidence(beats, sequences, issues);
 
-  return {
+  const result: ScriptAnalysisResult = {
     sourceSummary: summary,
     mainHook: hookBeat?.text?.slice(0, 100) || "",
     thesis,
@@ -674,6 +727,93 @@ export function analyzeScript(
     confidence,
     sequences,
   };
+
+  return { result, beats, sequenceGroups, cacheKey: key };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Phase B: Per-Sequence Detail Enrichment
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Phase B — 단일 시퀀스의 상세 정보를 채움.
+ *
+ * cuts[], purpose, rationale, retentionStrategy, visualStrategy, cliffhangerText.
+ * Phase A의 skeleton sequence를 받아 enriched copy를 반환.
+ */
+export function enrichSequenceDetail(
+  sequence: AnalyzedSequence,
+  sequenceGroups: ScriptBeat[][],
+  seqIdx: number,
+  totalSeqs: number,
+): AnalyzedSequence {
+  const seqBeats = sequenceGroups[seqIdx];
+  if (!seqBeats) return sequence;
+
+  const beatType = sequence.beatType;
+  const isLast = seqIdx === totalSeqs - 1;
+
+  const cuts = generateCutProgression(seqBeats, sequence.recommendedDurationSec, beatType);
+  const cliffhangerText = sequence.endingMode === "cliffhanger"
+    ? generateCliffhangerText(seqBeats, beatType)
+    : undefined;
+
+  return {
+    ...sequence,
+    purpose: generateSequencePurpose(seqBeats, beatType),
+    rationale: generateSequenceRationale(beatType, seqIdx, totalSeqs),
+    cliffhangerText,
+    retentionStrategy: generateRetentionStrategy(seqBeats, beatType, sequence.endingMode),
+    visualStrategy: generateVisualStrategy(beatType, isLast),
+    cuts,
+    recommendedCutCount: cuts.length,
+  };
+}
+
+/**
+ * Phase B — 모든 시퀀스를 한번에 enrich (batch).
+ *
+ * Phase A 결과를 받아 모든 시퀀스에 상세 정보를 채움.
+ * 결과를 full analysis cache에 저장.
+ */
+export function enrichAllSequences(phaseA: PhaseAResult): ScriptAnalysisResult {
+  const { result, sequenceGroups, cacheKey } = phaseA;
+  const totalSeqs = result.sequences.length;
+
+  const enrichedSequences = result.sequences.map((seq, idx) =>
+    enrichSequenceDetail(seq, sequenceGroups, idx, totalSeqs),
+  );
+
+  const enrichedResult: ScriptAnalysisResult = {
+    ...result,
+    sequences: enrichedSequences,
+  };
+
+  // Cache the full result
+  cacheSet(fullAnalysisCache, cacheKey, enrichedResult);
+
+  return enrichedResult;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Backward-Compatible Full Analysis
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 대본 텍스트를 릴 시퀀스 프로덕션 구조로 분석.
+ *
+ * Backward-compatible: Phase A + Phase B를 순차 실행하여
+ * 기존과 동일한 complete ScriptAnalysisResult를 반환.
+ */
+export function analyzeScript(
+  scriptText: string,
+  options?: {
+    targetRuntimeSec?: number;
+    contentTypeHint?: ScriptContentType;
+  },
+): ScriptAnalysisResult {
+  const phaseA = analyzeScriptPhaseA(scriptText, options);
+  return enrichAllSequences(phaseA);
 }
 
 // ═══════════════════════════════════════════════════════════════════
