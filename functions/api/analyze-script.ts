@@ -16,6 +16,8 @@ import {
   GEMINI_MODEL_PRO,
   streamingGenerate,
   parseFirstJsonObject,
+  repairTruncatedJson,
+  sanitizeJsonText,
   geminiErrorResponse,
 } from "./_gemini-keys";
 
@@ -73,8 +75,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const requestBody = {
       contents: [{ parts: [{ text: analysisPrompt }] }],
       generationConfig: {
-        maxOutputTokens: 16384,
-        temperature: 0.4,
+        maxOutputTokens: 65536,
+        temperature: 0.3,
         responseMimeType: "application/json",
       },
     };
@@ -116,7 +118,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     console.log(`[analyze-script][stage:llm_response_check] Got ${result.text.length} chars. truncated=${result.truncated ?? false}`);
 
-    // ── Stage 5: JSON parsing ──
+    // ── Stage 5: JSON parsing (3-tier recovery) ──
     stage.current = "json_parse";
     let jsonText = result.text.trim();
 
@@ -125,30 +127,49 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       jsonText = jsonText.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "").trim();
     }
 
-    // Direct parse
+    // Sanitize common LLM artifacts (trailing commas, control chars, unicode quotes)
+    jsonText = sanitizeJsonText(jsonText);
+
+    const wasTruncated = result.truncated ?? false;
+
+    // Tier 1: Direct parse
     try {
       const analysis = JSON.parse(jsonText);
-      console.log(`[analyze-script][stage:json_parse] Direct parse OK. sequences=${analysis?.sequences?.length ?? "?"}`);
-      return Response.json({ success: true, analysis });
+      console.log(`[analyze-script][stage:json_parse] Tier-1 direct parse OK. sequences=${analysis?.sequences?.length ?? "?"}`);
+      return Response.json({ success: true, analysis, partial: wasTruncated });
     } catch {
-      // Recovery parse — extract first JSON object
-      const recovered = parseFirstJsonObject(jsonText);
-      if (recovered) {
-        console.log(`[analyze-script][stage:json_parse] Recovery parse OK. sequences=${(recovered as { sequences?: unknown[] })?.sequences?.length ?? "?"}`);
-        return Response.json({ success: true, analysis: recovered });
-      }
-
-      console.error(`[analyze-script][stage:json_parse] JSON parse failed. First 200 chars: ${jsonText.slice(0, 200)}`);
-      return Response.json(
-        {
-          success: false,
-          error: "Failed to parse LLM output as JSON",
-          stage: "json_parse",
-          rawPreview: jsonText.slice(0, 300),
-        },
-        { status: 502 },
-      );
+      // continue to tier 2
     }
+
+    // Tier 2: Balanced-brace extraction (handles trailing commentary after JSON)
+    const recovered = parseFirstJsonObject(jsonText);
+    if (recovered) {
+      console.log(`[analyze-script][stage:json_parse] Tier-2 balanced-brace OK. sequences=${(recovered as { sequences?: unknown[] })?.sequences?.length ?? "?"}`);
+      return Response.json({ success: true, analysis: recovered, partial: wasTruncated });
+    }
+
+    // Tier 3: Truncated JSON repair (handles MAX_TOKENS / timeout cutoffs)
+    const repaired = repairTruncatedJson(jsonText);
+    if (repaired) {
+      const seqCount = (repaired as { sequences?: unknown[] })?.sequences;
+      console.log(`[analyze-script][stage:json_parse] Tier-3 truncated repair OK. sequences=${Array.isArray(seqCount) ? seqCount.length : "?"}`);
+      return Response.json({ success: true, analysis: repaired, partial: true });
+    }
+
+    console.error(`[analyze-script][stage:json_parse] All 3 tiers failed. truncated=${wasTruncated}, length=${jsonText.length}. First 300 chars: ${jsonText.slice(0, 300)}`);
+    return Response.json(
+      {
+        success: false,
+        error: "LLM 응답을 JSON으로 파싱할 수 없습니다. 대본이 너무 길거나 복잡할 수 있습니다.",
+        stage: "json_parse",
+        truncated: wasTruncated,
+        rawPreview: jsonText.slice(0, 300),
+        help: wasTruncated
+          ? "응답이 토큰 한도로 잘렸습니다. 대본을 줄이거나 다시 시도하세요."
+          : "LLM이 비정상적인 출력을 반환했습니다. 다시 시도하세요.",
+      },
+      { status: 502 },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[analyze-script][stage:${stage.current}] Unhandled error:`, message);

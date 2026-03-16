@@ -315,6 +315,24 @@ export function geminiErrorResponse(
 // === Gemini 응답 JSON 파싱 유틸리티 ===
 
 /**
+ * Sanitize raw LLM text before JSON parsing:
+ * - Strip trailing commas before } or ]
+ * - Remove control characters (except \n, \r, \t inside strings — handled by JSON.parse)
+ * - Normalize unicode quotes to ASCII
+ */
+export function sanitizeJsonText(text: string): string {
+  let s = text;
+  // Remove zero-width and non-printable control chars (keep \n \r \t)
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  // Normalize unicode quotes
+  s = s.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+  s = s.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
+  // Strip trailing commas before ] or } (common LLM mistake)
+  s = s.replace(/,\s*([}\]])/g, "$1");
+  return s;
+}
+
+/**
  * Extract the first balanced JSON object `{...}` from text that may contain
  * markdown fences, trailing commentary, or other non-JSON content.
  * Handles nested braces, strings with escaped quotes, and brace-like chars
@@ -341,6 +359,113 @@ export function parseFirstJsonObject(text: string): Record<string, unknown> | nu
     }
   }
   return null;
+}
+
+/**
+ * Attempt to repair truncated JSON by closing unclosed strings, arrays, and objects.
+ * Works on LLM output that was cut off mid-stream (MAX_TOKENS or timeout).
+ *
+ * Strategy:
+ * 1. Find the outermost `{` to start from
+ * 2. Track depth of {}, [], and string state
+ * 3. Truncate at the last cleanly closed value boundary
+ * 4. Close remaining open brackets/braces
+ */
+export function repairTruncatedJson(text: string): Record<string, unknown> | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+
+  const json = text.slice(start);
+  let inStr = false;
+  let esc = false;
+  const stack: string[] = [];
+  let lastCleanPos = -1;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && inStr) { esc = true; continue; }
+    if (ch === '"') {
+      if (inStr) {
+        inStr = false;
+        lastCleanPos = i;
+      } else {
+        inStr = true;
+      }
+      continue;
+    }
+    if (inStr) continue;
+
+    if (ch === "{") { stack.push("}"); continue; }
+    if (ch === "[") { stack.push("]"); continue; }
+    if (ch === "}" || ch === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) {
+        stack.pop();
+        lastCleanPos = i;
+        if (stack.length === 0) {
+          try { return JSON.parse(json.slice(0, i + 1)); } catch { break; }
+        }
+      }
+      continue;
+    }
+    if (ch === "," || ch === ":") { lastCleanPos = i; }
+  }
+
+  // JSON was truncated — try to repair
+  if (stack.length === 0) return null;
+
+  // Determine a good truncation point: rewind to last clean position
+  let repaired = json;
+  if (inStr) {
+    // We're inside an unclosed string — truncate the partial string value
+    const lastQuote = json.lastIndexOf('"', json.length - 1);
+    if (lastQuote > start) {
+      repaired = json.slice(0, lastQuote + 1);
+      // Recompute stack after truncation
+      return repairTruncatedJson(repaired);
+    }
+  }
+
+  // Trim trailing partial tokens (incomplete keys/values)
+  repaired = repaired.replace(/,\s*"[^"]*$/, "");  // trailing partial "key
+  repaired = repaired.replace(/,\s*$/, "");          // trailing comma
+  repaired = repaired.replace(/:\s*$/, ': null');     // trailing colon with no value
+
+  // Close remaining brackets
+  const closers = [...stack].reverse().join("");
+  repaired = repaired + closers;
+
+  // Sanitize before final parse
+  repaired = sanitizeJsonText(repaired);
+
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    // One more attempt: aggressively trim to the last valid value boundary
+    const lastGoodBrace = Math.max(
+      repaired.lastIndexOf("}"),
+      repaired.lastIndexOf("]"),
+      repaired.lastIndexOf('"'),
+    );
+    if (lastGoodBrace > 0) {
+      const aggressive = json.slice(0, lastGoodBrace + 1);
+      const stack2: string[] = [];
+      let inStr2 = false, esc2 = false;
+      for (let i = 0; i < aggressive.length; i++) {
+        const c = aggressive[i];
+        if (esc2) { esc2 = false; continue; }
+        if (c === "\\" && inStr2) { esc2 = true; continue; }
+        if (c === '"') { inStr2 = !inStr2; continue; }
+        if (inStr2) continue;
+        if (c === "{") stack2.push("}");
+        else if (c === "[") stack2.push("]");
+        else if (c === "}" || c === "]") { if (stack2.length) stack2.pop(); }
+      }
+      const final = sanitizeJsonText(aggressive) + stack2.reverse().join("");
+      try { return JSON.parse(final); } catch { return null; }
+    }
+    return null;
+  }
 }
 
 /**

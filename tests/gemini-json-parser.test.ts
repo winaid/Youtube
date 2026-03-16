@@ -5,7 +5,7 @@
  * trailing text, markdown fences, strings with braces, escaped quotes, etc.
  */
 import { describe, it, expect } from "vitest";
-import { parseFirstJsonObject, parseFirstJsonArray } from "../functions/api/_gemini-keys";
+import { parseFirstJsonObject, parseFirstJsonArray, sanitizeJsonText, repairTruncatedJson } from "../functions/api/_gemini-keys";
 
 // ─── parseFirstJsonObject ───────────────────────────────────────────
 
