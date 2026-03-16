@@ -272,6 +272,82 @@ const trustBuilderCards: PromptCard[] = [
   },
 ];
 
+// ── pool 4: VS 쇼츠 — 과학·역사·전략 근거 기반 VS 매치업 설계 ──────────────
+//
+// 선정 기준:
+//  1. 과학·역사·전략·생물학적 근거가 있는 비교만
+//  2. 단순 "누가 이김?" 아닌 조건·변수·반전 포인트 포함
+//  3. 동물·역사·군사·문명·기술 등 다양한 매치업 타입
+//  4. 전 세계 다양한 지역/시대 포함
+//  5. 빈 추측·밈 배틀·혐오 금지
+
+const vsShortsCards: PromptCard[] = [
+  // ── 동물 ──
+  {
+    title: "고릴라 vs 북극곰",
+    hook: "악력 600kg 고릴라 vs 한 방에 물개 목 부러뜨리는 북극곰. 체급 차이가 2배인데 승부가 갈림",
+    marketingTactic: "근력 밀도 vs 체급·지방 방어, 환경 변수가 결정적",
+  },
+  {
+    title: "티라노사우루스 vs 아프리카 코끼리",
+    hook: "6톤 코끼리가 현존 최강 육상동물인데 12톤 육식공룡을 만나면?",
+    marketingTactic: "교합력 5만 N vs 돌진 충격량, 기동성·지구력 비교",
+  },
+  {
+    title: "킹코브라 vs 코모도드래곤",
+    hook: "신경독 vs 패혈 독. 먼저 물면 이기는 게 아님. '어디를' 무느냐가 핵심",
+    marketingTactic: "독 메커니즘 차이 + 방어 스케일 + 선제 거리",
+  },
+  {
+    title: "범고래 vs 백상아리",
+    hook: "상어가 바다 최강인 줄 알지? 범고래는 상어 간만 골라 뜯어먹음. 실제 관측 기록 있음",
+    marketingTactic: "지능·협동 사냥 vs 단독 포식, 실제 Farallon 사례",
+  },
+  // ── 군사·역사 ──
+  {
+    title: "로마 군단 vs 몽골 기병",
+    hook: "중보병 최강 vs 기마궁수 최강. 평원이면 몽골, 근데 지형이 바뀌면?",
+    marketingTactic: "기동력 vs 진형 방어, 보급선·지형 변수",
+  },
+  {
+    title: "스파르타 300 vs 일본 사무라이 300",
+    hook: "300명 대 300명 보병전. 방패벽 팔랑크스 vs 이도류 개인전투. 누가 무너지나?",
+    marketingTactic: "집단 전술 vs 개인 무술, 장비 중량·기동성 트레이드오프",
+  },
+  {
+    title: "중세 성채 vs 현대 특수부대 12명",
+    hook: "500명 수비대의 성 vs 현대 장비를 가진 12명. 기술 격차가 몇 년이면 성벽이 의미 없어지나?",
+    marketingTactic: "기술 격차·야간 장비·폭발물 vs 수적 우위·방어 지형",
+  },
+  // ── 문명·기술 ──
+  {
+    title: "청나라 시기 영국 vs 현대 중국",
+    hook: "아편전쟁 때 영국이 청나라를 박살냈는데 지금 중국을 만나면?",
+    marketingTactic: "산업혁명 초기 vs 핵보유 GDP 2위, 기술 세대 차이 분석",
+  },
+  {
+    title: "나폴레옹 대육군 vs 1차 세계대전 프랑스군",
+    hook: "같은 프랑스군인데 100년 차이. 기관총 하나가 기병 돌격을 어떻게 바꾸는지",
+    marketingTactic: "기동전 vs 참호전, 화력 밀도·교리 진화",
+  },
+  {
+    title: "이순신 거북선 함대 vs 넬슨 트라팔가 함대",
+    hook: "거북선 13척 vs 전열함 27척. 300년 기술 격차인데 해협 지형이면 얘기가 달라짐",
+    marketingTactic: "화포 사거리·장갑 vs 조류·협수로 전술",
+  },
+  // ── 혼합 가상 ──
+  {
+    title: "인간 100명 vs 침팬지 1마리",
+    hook: "침팬지 한 마리 악력이 성인 남성 5배. 100명이면 이기겠지? 조건을 바꿔보면",
+    marketingTactic: "집단 협동 vs 순간 폭발력, 공간 조건 변수",
+  },
+  {
+    title: "F-22 랩터 1대 vs 2차대전 전투기 100대",
+    hook: "미사일 6발 쏘면 6대 격추. 나머지 94대가 달려들면? 탄약이 핵심 변수",
+    marketingTactic: "BVR 사거리·스텔스 vs 수적 포화, 연료·탄약 한계",
+  },
+];
+
 // ─── 지역 다양성 유틸 ────────────────────────────────────────────────────────
 
 /** 카드 제목/훅에서 지역을 추정 (완벽할 필요 없음 — 편향 방지가 목적) */
@@ -354,6 +430,7 @@ const cardPools: Record<string, PromptCard[]> = {
   "history-marketing": historyMarketingCards,
   "shorts-scenario":   shortsScenarioCards,
   "trust-builder":     trustBuilderCards,
+  "vs-shorts":         vsShortsCards,
 };
 
 // legacy string prompts (backwards compat)
@@ -361,6 +438,7 @@ const promptPools: Record<string, string[]> = {
   "history-marketing": historyMarketingCards.map((c) => c.title),
   "shorts-scenario":   shortsScenarioCards.map((c) => c.title),
   "trust-builder":     trustBuilderCards.map((c) => c.title),
+  "vs-shorts":         vsShortsCards.map((c) => c.title),
 };
 
 export function shufflePrompts(personas: StoryAIPersona[]): StoryAIPersona[] {
@@ -401,5 +479,62 @@ export const storyPersonas: StoryAIPersona[] = [
       "나는 '신뢰도 떡상 기획자'야. 역사 속 의사/병원이 투명성·공개·무료 진료·출판 전략으로 환자 신뢰를 쌓아 실제로 환자를 유치한 구체적 마케팅 사례를 내레이션 스크립트로 써. 출력은 반드시 쇼츠용 짧은 줄 내레이션 형식 — 희곡/시나리오/대화극 형식 절대 금지. 인물명: 대사 형식 절대 금지. [장면 설명] 형식 절대 금지. 공감 훅으로 시작, 역사 팩트로 신뢰 구축, 현대 적용 교훈으로 마무리.",
     samplePrompts: pickRandom(promptPools["trust-builder"], 4),
     sampleCards:   pickRandomCards(trustBuilderCards, 4),
+  },
+  {
+    id: "vs-shorts",
+    name: "VS 쇼츠 설계기",
+    description: "과학·역사·전략 근거를 바탕으로 VS형 쇼츠 시퀀스를 설계합니다",
+    persona: `나는 'VS 쇼츠 설계기'야. VS형 주제를 받으면 과학·역사·전략·생물학적 근거를 바탕으로 쇼츠/릴스용 시퀀스를 설계해.
+
+핵심 원칙:
+1. 근거 기반. 크기/무게/속도/내구력/무기체계/방어체계/환경/지형/기술격차/보급/훈련/전술/생물학적 한계/시대 차이를 실제 수치와 사실로 비교해.
+2. 야생 추측을 팩트처럼 쓰지 마. 가정에 크게 의존하면 명시해.
+3. "큰 놈이 이김"으로 단순화하지 마. 환경·지구력·기동성·협동·기술·사거리·전략·지속력이 더 중요한 경우가 많음.
+4. 결과는 조건부일 수 있음. "평지면 X, 한랭지면 Y", "단판이면 X, 장기전이면 Y", "전술적으로 X, 전략적으로 Y".
+5. 가짜 드라마 금지. "이것이 모든 것을 바꿨다" "아무도 예상 못했다" 같은 빈 과장 금지. 반전이 실제로 정당화될 때만.
+
+쇼츠 구조 규칙:
+- 리텐션 퍼스트. 비트 구조: 훅 → 매치업 프레임 → 핵심 변수/메커니즘 → 리빌 → 판정/조건부 판정
+- 기본 길이: 8~15초, 컷 2~4개. 5컷 이상은 진짜 필요할 때만.
+- 과도 분절 금지. 명사 수로 쪼개지 말고 아이디어·논점·반전이 바뀔 때만 컷을 나눠.
+- 첫 컷은 매크로 클리어: 누구 vs 누구인지, 어떤 충돌인지, 왜 흥미로운지 즉시 파악 가능해야 함.
+
+매치업 처리:
+- 먼저 시나리오를 정규화. "청나라 영국 vs 현대 중국"은 모호함 → "청나라 시기의 영국? 영국 vs 청나라? 당시 영국 vs 현재 중국?" 중 콘텐츠적으로 가장 흥미롭고 논리적으로 유효한 비교로 해석.
+- "누가 이김"을 유효한 경연 프레임으로 변환: 일대일? 해전? 산업전? 영토 방어? 상징적 맞대결?
+
+출력 형식 — 반드시 아래 JSON 구조로:
+{
+  "topic": "",
+  "matchupType": "animal|history|military|civilization|technology|mixed_hypothetical",
+  "coreQuestion": "",
+  "comparisonFrame": "",
+  "keyVariables": [],
+  "likelyVerdict": "",
+  "verdictType": "clear|conditional|context-dependent",
+  "shortHook": "",
+  "sequencePlan": [
+    {
+      "sequenceId": "seq_1",
+      "role": "hook|framing|mechanism|reveal|payoff",
+      "summary": "",
+      "durationSec": 8,
+      "cuts": [
+        {
+          "cutId": "cut_1",
+          "role": "",
+          "beatType": "",
+          "visualObjective": "",
+          "narrationObjective": "",
+          "reason": ""
+        }
+      ]
+    }
+  ]
+}
+
+톤: 날카롭고, 명확하고, 압축적이고, 신나지만 유치하지 않게. 분석적이되 학술적이지 않게. 근거가 있으면 자신감 있게, 불확실하면 솔직하게.`,
+    samplePrompts: pickRandom(promptPools["vs-shorts"], 4),
+    sampleCards:   pickRandomCards(vsShortsCards, 4),
   },
 ];

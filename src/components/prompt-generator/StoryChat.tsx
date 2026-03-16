@@ -35,6 +35,29 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
 
   const selectedPersona = personas.find((p) => p.id === personaId)!;
 
+  // Persona-aware UI copy (product-like, not chatbot-like)
+  const uiCopy = personaId === "vs-shorts"
+    ? {
+        headerTitle: "VS 쇼츠 설계기",
+        headerDesc: "과학·역사·전략 근거를 바탕으로 VS형 쇼츠 시퀀스를 설계합니다",
+        placeholder: "예: 고릴라 vs 북극곰, 로마 군단 vs 몽골 기병, 청나라 시기 영국 vs 현대 중국",
+        helperText: "단순 승부 예측이 아니라 비교 조건, 핵심 변수, 반전 포인트를 포함해 쇼츠 구조로 설계합니다",
+        emptyChat: "VS 주제를 입력하거나 아래 예시를 선택하세요",
+        headerColor: "#6d28d9",
+        borderColor: "#8b5cf660",
+        bgGradient: "linear-gradient(135deg, #8b5cf620, #3b82f610)",
+      }
+    : {
+        headerTitle: "시나리오 AI 생성",
+        headerDesc: "역사 마케팅 사례 발굴 또는 팩트 기반 대체역사 쇼츠를 생성합니다",
+        placeholder: "역사 마케팅 또는 '만약에 역사' 주제를 요청해보세요...",
+        helperText: "",
+        emptyChat: "아래 예시를 클릭하거나 직접 질문해보세요!",
+        headerColor: "#7a7000",
+        borderColor: "#fff78760",
+        bgGradient: "linear-gradient(135deg, #fff78720, #787fff10)",
+      };
+
   // 히스토리 로드
   useEffect(() => {
     setHistory(getScenarioHistory());
@@ -199,15 +222,15 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
   const hasAssistantResponse = messages.some((m) => m.role === "assistant");
 
   return (
-    <Card className="border-2 overflow-hidden" style={{ borderColor: "#fff78760" }}>
-      <CardHeader className="pb-3" style={{ background: "linear-gradient(135deg, #fff78720, #787fff10)" }}>
+    <Card className="border-2 overflow-hidden" style={{ borderColor: uiCopy.borderColor }}>
+      <CardHeader className="pb-3" style={{ background: uiCopy.bgGradient }}>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-lg" style={{ color: "#7a7000" }}>
-              시나리오 AI 생성
+            <CardTitle className="text-lg" style={{ color: uiCopy.headerColor }}>
+              {uiCopy.headerTitle}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              역사 마케팅 사례 발굴 또는 팩트 기반 대체역사 쇼츠를 생성합니다
+              {uiCopy.headerDesc}
             </p>
           </div>
           <div className="flex gap-1.5">
@@ -309,9 +332,19 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
         <div className="rounded-lg border p-3 space-y-3 max-h-[500px] overflow-y-auto min-h-[120px]" style={{ borderColor: "#787fff20", background: "#fafafa" }}>
           {messages.length === 0 && (
             <p className="text-xs text-muted-foreground text-center py-4">
-              아래 예시를 클릭하거나 직접 질문해보세요!
-              <br />
-              <span style={{ color: "#22c55e" }}>Google Search로 실제 역사를 검색하여 시나리오에 반영합니다</span>
+              {uiCopy.emptyChat}
+              {uiCopy.helperText && (
+                <>
+                  <br />
+                  <span className="text-[10px]" style={{ color: "#999" }}>{uiCopy.helperText}</span>
+                </>
+              )}
+              {personaId !== "vs-shorts" && (
+                <>
+                  <br />
+                  <span style={{ color: "#22c55e" }}>Google Search로 실제 역사를 검색하여 시나리오에 반영합니다</span>
+                </>
+              )}
             </p>
           )}
           {messages.map((msg, i) => (
@@ -475,7 +508,7 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="역사 마케팅 또는 '만약에 역사' 주제를 요청해보세요..."
+            placeholder={uiCopy.placeholder}
             rows={2}
             className="resize-none flex-1 text-sm focus-visible:ring-[#fff787]"
           />
