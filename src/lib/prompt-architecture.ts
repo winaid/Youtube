@@ -12,6 +12,13 @@
  * 스타일/무드 표현은 F 직전, subject/scene/action 완성 후에만 약하게 부가.
  */
 
+import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
+
+/** Lazy style lookup for negative constraints — avoids tight coupling */
+function _getStyleForNegatives(animationMode: string): { negativePrompt: string } | null {
+  return getStyleById(animationMode) ?? getStyleByLegacyMode(animationMode) ?? null;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // 1. 장르별 템플릿 (Genre Templates)
 // ─────────────────────────────────────────────────────────────────
@@ -541,17 +548,30 @@ export function buildNegativePrompt(input: PromptLayerInput): string {
   ];
   universalNegatives.forEach(n => negatives.add(n));
 
-  // Layer 2: 실패 패턴 기반 자동 negative
+  // Layer 2: 스타일 카탈로그 negative (anti-collapse 핵심)
+  if (input.animationMode) {
+    const styleEntry = _getStyleForNegatives(input.animationMode);
+    if (styleEntry?.negativePrompt) {
+      styleEntry.negativePrompt
+        .replace(/^Avoid:\s*/i, "")
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean)
+        .forEach((n: string) => negatives.add(n));
+    }
+  }
+
+  // Layer 3: 실패 패턴 기반 자동 negative
   const failureNegatives = collectFailureModeNegatives(input.scenePrompt);
   failureNegatives.forEach(n => negatives.add(n));
 
-  // Layer 3: 장르 템플릿 기반 negative
+  // Layer 4: 장르 템플릿 기반 negative
   const genre = getGenreTemplate(input.shotCategory);
   if (genre) {
     genre.commonNegatives.forEach(n => negatives.add(n));
   }
 
-  // Layer 4: 사용자 지정 negative
+  // Layer 5: 사용자 지정 negative
   if (input.userNegativePrompt) {
     input.userNegativePrompt.split(",").map(s => s.trim()).filter(Boolean)
       .forEach(n => negatives.add(n));

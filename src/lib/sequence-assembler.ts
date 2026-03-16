@@ -125,6 +125,7 @@ export interface SingleShotDocument {
 
   negatives: {
     universal: string[];
+    style: string[];
     sceneSpecific: string[];
     failureMode: string[];
     user: string[];
@@ -400,6 +401,18 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   const beats = parseTimingBeats(json?.timingBeat, dur);
 
   const universalNeg = ["text overlay", "watermark", "subtitle", "logo", "blurry", "low quality", "distorted"];
+
+  // Style catalog negatives — core anti-collapse constraints
+  const styleNeg: string[] = [];
+  if (styleEntry?.negativePrompt) {
+    const raw = styleEntry.negativePrompt
+      .replace(/^Avoid:\s*/i, "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
+    styleNeg.push(...raw);
+  }
+
   const sceneNeg = getGenreTemplate(cut.shotCategory)?.commonNegatives || [];
   const failureNeg = collectFailureModeNegatives(cut.videoPrompt || cut.sceneDescription);
   const userNeg = config.negativePrompt
@@ -487,6 +500,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
 
     negatives: {
       universal: finalUniversalNeg,
+      style: [...new Set(styleNeg)],
       sceneSpecific: [...new Set(sceneNeg)],
       failureMode: [...new Set(failureNeg)],
       user: userNeg,
@@ -648,6 +662,7 @@ export function validateShotDocument(doc: SingleShotDocument): ValidationResult 
   // Rule 7: Positive/negative conflict
   const allNeg = [
     ...doc.negatives.universal,
+    ...(doc.negatives.style || []),
     ...doc.negatives.sceneSpecific,
     ...doc.negatives.failureMode,
     ...doc.negatives.user,
@@ -1060,8 +1075,18 @@ export function serializeForProvider(
     sections.transition = doc.transition.fromPrevious;
   }
 
-  // 9. Style suffix (light — first sentence only)
-  if (doc.reinforcement.styleSuffix) {
+  // 9. Style — inject global style block (core visual identity)
+  // Use the full global style, not just first sentence, so style actually shapes output
+  if (doc.global.style && doc.global.style.length > 10) {
+    // Take first 3 sentences of the global style for strong influence
+    // without exceeding provider word limit
+    const styleSentences = doc.global.style.split(". ").filter(Boolean);
+    const styleBlock = styleSentences.slice(0, 3).join(". ");
+    if (styleBlock.length > 10) {
+      parts.push(styleBlock);
+      sections.style = styleBlock;
+    }
+  } else if (doc.reinforcement.styleSuffix) {
     const first = doc.reinforcement.styleSuffix.split(". ")[0];
     if (first && first.length > 5) {
       parts.push(first);
@@ -1086,9 +1111,10 @@ export function serializeForProvider(
   // Build prompt
   let prompt = parts.filter(Boolean).join(". ");
 
-  // 13. Negatives
+  // 13. Negatives (5 layers: universal → style → sceneSpecific → failureMode → user)
   const allNeg = [
     ...doc.negatives.universal,
+    ...(doc.negatives.style || []),
     ...doc.negatives.sceneSpecific,
     ...doc.negatives.failureMode,
     ...doc.negatives.user,

@@ -136,6 +136,7 @@ const COMPARE_PATHS: string[] = [
   "shotPlan.negativeDirectives",
   // negatives
   "negatives.universal",
+  "negatives.style",
   "negatives.sceneSpecific",
   "negatives.failureMode",
   "negatives.user",
@@ -259,6 +260,7 @@ export function humanFieldName(path: string): string {
     "shotPlan.timingBeat": "타이밍 비트",
     "shotPlan.negativeDirectives": "네거티브 지시",
     "negatives.universal": "네거티브 (공통)",
+    "negatives.style": "네거티브 (스타일)",
     "negatives.sceneSpecific": "네거티브 (장면)",
     "negatives.failureMode": "네거티브 (실패방지)",
     "negatives.user": "네거티브 (사용자)",

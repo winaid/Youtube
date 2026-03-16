@@ -230,7 +230,7 @@ function serializeSequenceToPrompt(
 
   // Negatives
   const allNeg = seq.negatives
-    ? [...seq.negatives.universal, ...seq.negatives.sceneSpecific, ...seq.negatives.failureMode, ...seq.negatives.user]
+    ? [...seq.negatives.universal, ...(seq.negatives.style || []), ...seq.negatives.sceneSpecific, ...seq.negatives.failureMode, ...seq.negatives.user]
     : (shot.negativeDirectives || []);
   let uniqueNeg = [...new Set(allNeg)].slice(0, 30);
 
