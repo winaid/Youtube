@@ -36,6 +36,7 @@ export const SEQUENCE_MIN_DURATION = 8;
  *   31–45s: 3 시퀀스
  *   46–60s: 4 시퀀스
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 5, minCuts: 1 },
   { maxSec: 8, minCuts: 1 },
@@ -518,7 +519,7 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
   }
 
   // ── Kling 15초 상한 클램핑: 개별 컷이 KLING_SEGMENT_CAP 초과 시 분할 ──
-  let clamped: typeof working = [];
+  const clamped: typeof working = [];
   for (const c of working) {
     if (c.durationSec > KLING_SEGMENT_CAP) {
       const splitCount = Math.ceil(c.durationSec / KLING_SEGMENT_CAP);
