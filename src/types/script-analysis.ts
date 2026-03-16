@@ -68,7 +68,9 @@ export type ScriptIssueCode =
   | "weak_payoff"
   | "unclear_boundary"
   | "single_beat_type"
-  | "short_script";
+  | "short_script"
+  | "INCOMPLETE_ANALYSIS"
+  | "EMPTY_CUTS";
 
 // ═══════════════════════════════════════════════════════════════════
 // Sequence-Level Analysis

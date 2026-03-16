@@ -206,6 +206,112 @@ describe("normalizeAnalysisResult", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+// 4b. Incomplete analysis detection (summary exists, sequences missing)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("normalizeAnalysisResult — incomplete analysis detection", () => {
+  it("flags INCOMPLETE_ANALYSIS when summary exists but sequences are empty", () => {
+    const result = normalizeAnalysisResult({
+      sourceSummary: "흑사병이 유럽을 변화시킨 이유",
+      thesis: "흑사병은 근대화를 앞당겼다",
+      mainHook: "재앙이 오히려 발전을 촉진",
+      sequences: [],
+    } as Partial<ScriptAnalysisResult>);
+
+    expect(result.sequences).toHaveLength(0);
+    expect(result.thesis).toBe("흑사병은 근대화를 앞당겼다");
+    const incompleteIssue = result.issues.find(i => i.code === "INCOMPLETE_ANALYSIS");
+    expect(incompleteIssue).toBeDefined();
+    expect(incompleteIssue!.severity).toBe("error");
+  });
+
+  it("flags INCOMPLETE_ANALYSIS when sequences field is missing entirely", () => {
+    const result = normalizeAnalysisResult({
+      sourceSummary: "경제 분석",
+      thesis: "자본주의의 역설",
+    } as Partial<ScriptAnalysisResult>);
+
+    expect(result.sequences).toHaveLength(0);
+    expect(result.issues.some(i => i.code === "INCOMPLETE_ANALYSIS")).toBe(true);
+  });
+
+  it("does NOT flag INCOMPLETE_ANALYSIS when sequences exist", () => {
+    const result = normalizeAnalysisResult({
+      sourceSummary: "테스트",
+      thesis: "테스트 논제",
+      sequences: [{
+        id: 1,
+        title: "훅",
+        beatType: "hook",
+        recommendedDurationSec: 10,
+        cuts: [{ role: "establish", suggestedPromptIntent: "Wide shot" }],
+      }],
+    } as Partial<ScriptAnalysisResult>);
+
+    expect(result.sequences).toHaveLength(1);
+    expect(result.issues.some(i => i.code === "INCOMPLETE_ANALYSIS")).toBe(false);
+  });
+
+  it("does NOT flag when both summary and sequences are empty (no false positive)", () => {
+    const result = normalizeAnalysisResult({});
+
+    expect(result.sequences).toHaveLength(0);
+    expect(result.issues.some(i => i.code === "INCOMPLETE_ANALYSIS")).toBe(false);
+  });
+
+  it("flags EMPTY_CUTS when sequences exist but all cuts are empty", () => {
+    const result = normalizeAnalysisResult({
+      sourceSummary: "테스트",
+      sequences: [
+        { id: 1, title: "훅", beatType: "hook", recommendedDurationSec: 8, cuts: [] },
+        { id: 2, title: "전개", beatType: "development", recommendedDurationSec: 10, cuts: [] },
+      ],
+    } as Partial<ScriptAnalysisResult>);
+
+    expect(result.sequences).toHaveLength(2);
+    expect(result.issues.some(i => i.code === "EMPTY_CUTS")).toBe(true);
+  });
+
+  it("does NOT flag EMPTY_CUTS when at least one sequence has cuts", () => {
+    const result = normalizeAnalysisResult({
+      sourceSummary: "테스트",
+      sequences: [
+        { id: 1, title: "훅", beatType: "hook", recommendedDurationSec: 8, cuts: [{ role: "establish" }] },
+        { id: 2, title: "전개", beatType: "development", recommendedDurationSec: 10, cuts: [] },
+      ],
+    } as Partial<ScriptAnalysisResult>);
+
+    expect(result.issues.some(i => i.code === "EMPTY_CUTS")).toBe(false);
+  });
+});
+
+describe("convertToCuts — empty sequence guard", () => {
+  it("returns empty array for analysis with no sequences", () => {
+    const analysis: ScriptAnalysisResult = normalizeAnalysisResult({
+      sourceSummary: "흑사병 분석",
+      thesis: "근대화 촉진",
+      sequences: [],
+    } as Partial<ScriptAnalysisResult>);
+
+    const cuts = convertToCuts(analysis);
+    expect(cuts).toHaveLength(0);
+  });
+
+  it("total duration is 0 for empty sequences", () => {
+    const result = normalizeAnalysisResult({
+      sourceSummary: "테스트",
+      thesis: "테스트",
+      sequences: [],
+    } as Partial<ScriptAnalysisResult>);
+
+    expect(result.totalSuggestedRuntime).toBe(0);
+    expect(result.sequences).toHaveLength(0);
+    // This is the exact broken state: summary exists + 0s duration + no sequences
+    expect(result.issues.some(i => i.code === "INCOMPLETE_ANALYSIS")).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
 // 5. convertToCuts with incomplete analysis data (end-to-end)
 // ═══════════════════════════════════════════════════════════════════
 

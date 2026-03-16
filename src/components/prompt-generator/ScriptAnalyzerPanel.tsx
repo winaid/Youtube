@@ -255,10 +255,28 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
         userMessage?: string;
         code?: string;
         retryable?: boolean;
+        incomplete?: boolean;
+        incompleteReason?: string;
       };
 
       if (res.ok && data.success && data.analysis && !abortRef.current) {
         const normalized = normalizeAnalysisResult(data.analysis);
+
+        // Guard: reject analysis with no usable sequence structure
+        if (normalized.sequences.length === 0) {
+          const summaryExists = !!(normalized.thesis || normalized.sourceSummary || normalized.mainHook);
+          setLlmError({
+            userMessage: summaryExists
+              ? "분석 요약은 생성되었으나 시퀀스 구조가 누락되었습니다. 다시 시도하거나 기본 분석을 사용하세요."
+              : "분석 결과가 비어 있습니다. 다시 시도해주세요.",
+            code: data.incomplete ? "INCOMPLETE_ANALYSIS" : "EMPTY_ANALYSIS",
+            retryable: true,
+          });
+          console.warn(`[ScriptAnalyzer] LLM returned ${summaryExists ? "summary only" : "empty result"} — sequences: 0, incomplete=${data.incomplete}`);
+          // Don't overwrite existing heuristic analysis with incomplete LLM result
+          return;
+        }
+
         setAnalysis(normalized);
         setDetailedSeqs(new Set(normalized.sequences.map((_, i) => i)));
         setDetailProgress({ done: normalized.sequences.length, total: normalized.sequences.length });
@@ -299,9 +317,12 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
     setPhase("complete");
   }, []);
 
+  // ── Derived state: is analysis usable? ──
+  const analysisUsable = analysis !== null && analysis.sequences.length > 0;
+
   // ── Apply to workflow ──
   const handleApply = useCallback(() => {
-    if (!analysis || !onApply) return;
+    if (!analysis || !onApply || analysis.sequences.length === 0) return;
 
     const cuts = convertToCuts(analysis);
     const output: PromptOutput = {
@@ -481,11 +502,17 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
                   매크로 분석
                 </CardTitle>
                 <div className="flex gap-2">
-                  <Badge style={{ background: "#e0950015", color: "#b87700" }}>
-                    {analysis.totalSuggestedRuntime}초
+                  <Badge style={{
+                    background: analysis.totalSuggestedRuntime > 0 ? "#e0950015" : "#dc262610",
+                    color: analysis.totalSuggestedRuntime > 0 ? "#b87700" : "#dc2626",
+                  }}>
+                    {analysis.totalSuggestedRuntime > 0 ? `${analysis.totalSuggestedRuntime}초` : "시간 미산출"}
                   </Badge>
-                  <Badge style={{ background: "#22c55e15", color: "#16a34a" }}>
-                    {analysis.suggestedSequenceCount}개 시퀀스
+                  <Badge style={{
+                    background: analysis.sequences.length > 0 ? "#22c55e15" : "#dc262610",
+                    color: analysis.sequences.length > 0 ? "#16a34a" : "#dc2626",
+                  }}>
+                    {analysis.sequences.length > 0 ? `${analysis.suggestedSequenceCount}개 시퀀스` : "시퀀스 없음"}
                   </Badge>
                   {analysis.confidence && (
                     <Badge style={{
@@ -550,7 +577,45 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
             </CardContent>
           </Card>
 
+          {/* ── Incomplete analysis warning ── */}
+          {analysis.sequences.length === 0 && (analysis.thesis || analysis.sourceSummary) && (
+            <Card>
+              <CardContent className="pt-4 pb-4">
+                <div className="p-3 rounded space-y-2" style={{ background: "#f59e0b10", border: "1px solid #f59e0b30" }}>
+                  <p className="text-xs font-medium" style={{ color: "#b87700" }}>
+                    분석 불완전: 시퀀스 구조 누락
+                  </p>
+                  <p className="text-[11px]" style={{ color: "#92700a" }}>
+                    분석 요약은 생성되었으나, 영상 제작에 필요한 시퀀스/컷 구조가 생성되지 않았습니다.
+                    AI 서버 응답이 잘리거나 불완전했을 수 있습니다.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[10px] h-6 px-2"
+                      style={{ borderColor: "#e09500", color: "#e09500" }}
+                      onClick={handleRetryLLM}
+                    >
+                      AI 분석 재시도
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[10px] h-6 px-2"
+                      style={{ borderColor: "#6b7280", color: "#6b7280" }}
+                      onClick={handleSkipLLM}
+                    >
+                      기본 분석으로 진행
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Sequence Timeline Overview */}
+          {analysis.sequences.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -560,9 +625,9 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
                     onClick={handleApply}
                     size="sm"
                     className="text-xs"
-                    disabled={phase === "structural" || phase === "detailing"}
+                    disabled={phase === "structural" || phase === "detailing" || !analysisUsable}
                     style={{
-                      background: "#22c55e",
+                      background: analysisUsable ? "#22c55e" : "#999",
                       color: "white",
                       boxShadow: "0 2px 6px #22c55e40",
                       opacity: (phase === "structural" || phase === "detailing") ? 0.5 : 1,
@@ -614,6 +679,7 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
               </div>
             </CardContent>
           </Card>
+          )}
         </>
       )}
     </div>

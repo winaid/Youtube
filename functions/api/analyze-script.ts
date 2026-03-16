@@ -252,11 +252,34 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const wasTruncated = result.truncated ?? false;
 
+    /** Wrap parsed JSON with sequence validation before returning. */
+    function makeAnalysisResponse(analysis: Record<string, unknown>, partial: boolean, tier: string) {
+      const seqs = Array.isArray(analysis?.sequences) ? analysis.sequences : [];
+      const hasSequences = seqs.length > 0;
+      const hasSummary = !!(analysis?.thesis || analysis?.sourceSummary || analysis?.mainHook);
+
+      console.log(`[analyze-script][stage:json_parse] ${tier} OK. sequences=${seqs.length}, hasSummary=${hasSummary}`);
+
+      if (!hasSequences && hasSummary) {
+        // Summary exists but no sequence structure — incomplete analysis
+        console.warn(`[analyze-script][stage:json_parse] Incomplete: summary present but sequences empty`);
+        return Response.json({
+          success: true,
+          analysis,
+          partial: true,
+          incomplete: true,
+          incompleteReason: "MISSING_SEQUENCES",
+          userMessage: "분석 요약은 생성되었으나 시퀀스 구조가 누락되었습니다. 다시 시도해주세요.",
+        });
+      }
+
+      return Response.json({ success: true, analysis, partial });
+    }
+
     // Tier 1: Direct parse
     try {
       const analysis = JSON.parse(jsonText);
-      console.log(`[analyze-script][stage:json_parse] Tier-1 direct parse OK. sequences=${analysis?.sequences?.length ?? "?"}`);
-      return Response.json({ success: true, analysis, partial: wasTruncated });
+      return makeAnalysisResponse(analysis, wasTruncated, "Tier-1 direct parse");
     } catch {
       // continue to tier 2
     }
@@ -264,16 +287,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // Tier 2: Balanced-brace extraction (handles trailing commentary after JSON)
     const recovered = parseFirstJsonObject(jsonText);
     if (recovered) {
-      console.log(`[analyze-script][stage:json_parse] Tier-2 balanced-brace OK. sequences=${(recovered as { sequences?: unknown[] })?.sequences?.length ?? "?"}`);
-      return Response.json({ success: true, analysis: recovered, partial: wasTruncated });
+      return makeAnalysisResponse(recovered, wasTruncated, "Tier-2 balanced-brace");
     }
 
     // Tier 3: Truncated JSON repair (handles MAX_TOKENS / timeout cutoffs)
     const repaired = repairTruncatedJson(jsonText);
     if (repaired) {
-      const seqCount = (repaired as { sequences?: unknown[] })?.sequences;
-      console.log(`[analyze-script][stage:json_parse] Tier-3 truncated repair OK. sequences=${Array.isArray(seqCount) ? seqCount.length : "?"}`);
-      return Response.json({ success: true, analysis: repaired, partial: true });
+      return makeAnalysisResponse(repaired, true, "Tier-3 truncated repair");
     }
 
     console.error(`[analyze-script][stage:json_parse] All 3 tiers failed. truncated=${wasTruncated}, length=${jsonText.length}. First 300 chars: ${jsonText.slice(0, 300)}`);

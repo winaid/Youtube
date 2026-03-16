@@ -182,6 +182,26 @@ export function normalizeAnalysisResult(raw: Partial<ScriptAnalysisResult> | und
   const sequences = safeArray<Partial<AnalyzedSequence>>(raw.sequences)
     .map((seq, i) => normalizeAnalyzedSequence(seq ?? {}, i + 1));
 
+  const hasSummary = !!(safeString(raw.sourceSummary) || safeString(raw.thesis) || safeString(raw.mainHook));
+  const hasSequences = sequences.length > 0;
+  const hasUsableCuts = sequences.some(s => (s.cuts?.length ?? 0) > 0);
+
+  // If summary exists but no sequences, flag as incomplete
+  const issues = safeArray<Partial<ScriptAnalysisIssue>>(raw.issues).map(i => normalizeIssue(i ?? {}));
+  if (hasSummary && !hasSequences) {
+    issues.push({
+      code: "INCOMPLETE_ANALYSIS",
+      severity: "error",
+      message: "분석 요약은 생성되었으나 시퀀스 구조가 누락되었습니다. 다시 시도하세요.",
+    });
+  } else if (hasSequences && !hasUsableCuts) {
+    issues.push({
+      code: "EMPTY_CUTS",
+      severity: "warning",
+      message: "시퀀스 구조는 있으나 개별 컷 정보가 비어 있습니다.",
+    });
+  }
+
   return {
     sourceSummary: safeString(raw.sourceSummary),
     mainHook: safeString(raw.mainHook),
@@ -190,7 +210,7 @@ export function normalizeAnalysisResult(raw: Partial<ScriptAnalysisResult> | und
     suggestedSequenceCount: safeNumber(raw.suggestedSequenceCount, sequences.length),
     structuralNotes: safeArray<string>(raw.structuralNotes).map(safeString),
     weaknesses: safeArray<string>(raw.weaknesses).map(safeString),
-    issues: safeArray<Partial<ScriptAnalysisIssue>>(raw.issues).map(i => normalizeIssue(i ?? {})),
+    issues,
     confidence: (raw.confidence === "low" || raw.confidence === "medium" || raw.confidence === "high")
       ? raw.confidence : "low",
     sequences,
