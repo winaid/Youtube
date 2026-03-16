@@ -42,6 +42,8 @@ export interface ScriptAnalysisResult {
   confidence: AnalysisConfidence;
   /** 시퀀스 계획 */
   sequences: AnalyzedSequence[];
+  /** 컨텐츠 모드 (short-form vs youtube) */
+  contentMode?: ContentMode;
 }
 
 /** 분석 신뢰도 */
@@ -111,9 +113,9 @@ export interface AnalyzedSequence {
   sourceText: string;
   /** 원본 대본 내 위치 (char offset) */
   sourceSpan?: { startChar: number; endChar: number };
-  /** 추천 duration (초, 8-15 범위) */
+  /** 추천 duration (초). short-form: 8-15, youtube: 15-60 */
   recommendedDurationSec: number;
-  /** 추천 내부 컷 수 (2-6) */
+  /** 추천 내부 컷 수 (short-form: 2-6, youtube: 2-12) */
   recommendedCutCount: number;
   /** 이 시퀀스가 존재하는 이유 */
   rationale: string;
@@ -220,6 +222,31 @@ export type ScriptContentType =
   | "social-commentary"  // 사회 비평
   | "educational"        // 교육
   | "auto";              // 자동 감지
+
+/**
+ * Content mode determines planning strategy.
+ *
+ * short-form: 8-30초, 시퀀스/컷 단위 계획, 리텐션 압축
+ * youtube:    60-180초, 섹션 단위 계획, 논리적 전개, 나레이션 기반 타이밍
+ */
+export type ContentMode = "short-form" | "youtube";
+
+export interface ContentModeConfig {
+  mode: ContentMode;
+  /** 섹션/시퀀스 당 최소 duration (초) */
+  sectionMinSec: number;
+  /** 섹션/시퀀스 당 최대 duration (초) */
+  sectionMaxSec: number;
+  /** 섹션/시퀀스 당 목표 duration (초) */
+  sectionTargetSec: number;
+  /** 전체 목표 duration 범위 */
+  totalMinSec: number;
+  totalMaxSec: number;
+  /** 섹션 경계 결정 기준 — beat transition threshold */
+  boundaryTransitionThreshold: number;
+  /** 섹션당 최소 beat 수 (split 방지) */
+  minBeatsPerSection: number;
+}
 
 export interface ScriptAnalysisResponse {
   success: boolean;

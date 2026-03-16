@@ -104,7 +104,10 @@ describe("Sample 1: Black Death — full pipeline verification", () => {
 
   describe("Layer 1: Script analysis result", () => {
     it("produces reasonable sequence count", () => {
-      expect(analysis.sequences.length).toBeGreaterThanOrEqual(3);
+      // YouTube mode produces fewer, longer sections (2-6 typical)
+      // Short-form produces more, shorter sequences (3-12 typical)
+      const minSeqs = analysis.contentMode === "youtube" ? 1 : 3;
+      expect(analysis.sequences.length).toBeGreaterThanOrEqual(minSeqs);
       expect(analysis.sequences.length).toBeLessThanOrEqual(12);
     });
 
@@ -119,10 +122,11 @@ describe("Sample 1: Black Death — full pipeline verification", () => {
       expect(matchCount).toBeGreaterThanOrEqual(2);
     });
 
-    it("each sequence has duration in 8-15s range", () => {
+    it("each sequence has mode-aware duration range", () => {
+      const maxDuration = analysis.contentMode === "youtube" ? 60 : 15;
       for (const seq of analysis.sequences) {
         expect(seq.recommendedDurationSec).toBeGreaterThanOrEqual(8);
-        expect(seq.recommendedDurationSec).toBeLessThanOrEqual(15);
+        expect(seq.recommendedDurationSec).toBeLessThanOrEqual(maxDuration);
       }
     });
   });
@@ -368,7 +372,8 @@ describe("Sample 2: Steve Jobs biography — full pipeline verification", () => 
 
   describe("Layer 1: Script analysis result", () => {
     it("produces reasonable sequence count for biography", () => {
-      expect(analysis.sequences.length).toBeGreaterThanOrEqual(3);
+      const minSeqs = analysis.contentMode === "youtube" ? 1 : 3;
+      expect(analysis.sequences.length).toBeGreaterThanOrEqual(minSeqs);
       expect(analysis.sequences.length).toBeLessThanOrEqual(12);
     });
 

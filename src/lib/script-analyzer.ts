@@ -33,6 +33,8 @@ import type {
   VisualStrategy,
   CutVisualFocus,
   ScriptContentType,
+  ContentMode,
+  ContentModeConfig,
   PhaseAResult,
 } from "@/types/script-analysis";
 import { SEQUENCE_MIN_DURATION } from "@/lib/sequence-density";
@@ -40,13 +42,37 @@ import { normalizeAnalysisResult, safeString, safeArray, safeNumber } from "@/li
 import { estimateNarrationDuration, estimateNarrationRuntime } from "@/lib/narration-timing";
 
 // ═══════════════════════════════════════════════════════════════════
-// Constants
+// Constants & Content Mode Configuration
 // ═══════════════════════════════════════════════════════════════════
 
-/** 시퀀스 목표 duration 범위 */
-const SEQ_MIN_SEC = SEQUENCE_MIN_DURATION; // 8
-const SEQ_MAX_SEC = 15;
-const SEQ_TARGET_SEC = 10;
+/** Short-form mode defaults (릴/쇼츠: 8-30초) */
+const SHORT_FORM_CONFIG: ContentModeConfig = {
+  mode: "short-form",
+  sectionMinSec: SEQUENCE_MIN_DURATION, // 8
+  sectionMaxSec: 15,
+  sectionTargetSec: 10,
+  totalMinSec: 8,
+  totalMaxSec: 30,
+  boundaryTransitionThreshold: 0.4,
+  minBeatsPerSection: 1,
+};
+
+/** YouTube mode defaults (유튜브 해설: 60-180초) */
+const YOUTUBE_MODE_CONFIG: ContentModeConfig = {
+  mode: "youtube",
+  sectionMinSec: 15,
+  sectionMaxSec: 60,
+  sectionTargetSec: 30,
+  totalMinSec: 60,
+  totalMaxSec: 180,
+  boundaryTransitionThreshold: 0.6,
+  minBeatsPerSection: 3,
+};
+
+/** Legacy aliases for backward compatibility in callers */
+const SEQ_MIN_SEC = SHORT_FORM_CONFIG.sectionMinSec;
+const SEQ_MAX_SEC = SHORT_FORM_CONFIG.sectionMaxSec;
+const SEQ_TARGET_SEC = SHORT_FORM_CONFIG.sectionTargetSec;
 
 /** 문장당 최소 예상 화면 시간 (나레이션 없는 시각적 표현 포함) */
 const MIN_SEC_PER_SENTENCE = 2;
@@ -54,6 +80,47 @@ const MIN_SEC_PER_SENTENCE = 2;
 /** 시퀀스당 컷 수 범위 */
 const MIN_CUTS_PER_SEQ = 2;
 const MAX_CUTS_PER_SEQ = 6;
+
+/** YouTube mode 컷 범위 */
+const YT_MAX_CUTS_PER_SEQ = 12;
+
+/**
+ * Threshold for auto-detecting YouTube mode from narration runtime.
+ * Scripts estimated at >= 40s of narration are too long for short-form.
+ */
+const YOUTUBE_MODE_RUNTIME_THRESHOLD_SEC = 40;
+
+/**
+ * Detect content mode based on script characteristics.
+ *
+ * YouTube mode triggers when:
+ * 1. Estimated narration runtime >= 40s, OR
+ * 2. Script contains multiple causal stages / explanatory logic, OR
+ * 3. ContentType is history/economics/what-if/social-commentary AND text is substantial
+ */
+export function detectContentMode(
+  scriptText: string,
+  estimatedRuntimeSec: number,
+  contentType: ScriptContentType,
+): ContentMode {
+  // Long narration → YouTube mode
+  if (estimatedRuntimeSec >= YOUTUBE_MODE_RUNTIME_THRESHOLD_SEC) return "youtube";
+
+  // Explanatory content types with substantial text → YouTube mode
+  const explanatoryTypes: ScriptContentType[] = ["history", "economics", "what-if", "social-commentary"];
+  if (explanatoryTypes.includes(contentType) && scriptText.length > 200) return "youtube";
+
+  // Multiple causal markers → YouTube mode
+  const causalMarkers = scriptText.match(/(?:때문|결과|영향|원인|이유|따라서|그래서|그런데|오히려|하지만|반면|결국|이로\s*인해|덕분에)/g);
+  if (causalMarkers && causalMarkers.length >= 3 && scriptText.length > 150) return "youtube";
+
+  return "short-form";
+}
+
+/** Get config for a content mode */
+export function getContentModeConfig(mode: ContentMode): ContentModeConfig {
+  return mode === "youtube" ? YOUTUBE_MODE_CONFIG : SHORT_FORM_CONFIG;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Caching Layer
@@ -293,9 +360,11 @@ function extractTopicKeywords(text: string): string[] {
  *   - 한 시퀀스에 너무 많은 주장을 넣지 않음
  *   - 시퀀스는 하나의 미니 이벤트 또는 미니 논증
  */
-export function planSequenceBoundaries(beats: ScriptBeat[]): ScriptBeat[][] {
+export function planSequenceBoundaries(beats: ScriptBeat[], modeConfig?: ContentModeConfig): ScriptBeat[][] {
   if (beats.length === 0) return [];
   if (beats.length === 1) return [beats];
+
+  const cfg = modeConfig ?? SHORT_FORM_CONFIG;
 
   const sequences: ScriptBeat[][] = [];
   let currentSeq: ScriptBeat[] = [];
@@ -308,22 +377,25 @@ export function planSequenceBoundaries(beats: ScriptBeat[]): ScriptBeat[][] {
     currentSeq.push(beat);
     currentDuration += beat.estimatedSec;
 
-    // 시퀀스 분할 결정
+    // 시퀀스 분할 결정 (mode-aware)
     const shouldSplit = (() => {
       // 마지막 비트면 분할하지 않음
       if (i === beats.length - 1) return false;
 
       // 최대 duration 초과하면 강제 분할
-      if (currentDuration >= SEQ_MAX_SEC) return true;
+      if (currentDuration >= cfg.sectionMaxSec) return true;
+
+      // YouTube mode: 최소 beat 수 미달 시 분할 억제
+      if (currentSeq.length < cfg.minBeatsPerSection) return false;
 
       // 목표 duration에 도달했고 다음 비트가 강한 전환이면 분할
-      if (currentDuration >= SEQ_MIN_SEC && nextBeat && nextBeat.transitionStrength > 0.4) return true;
+      if (currentDuration >= cfg.sectionMinSec && nextBeat && nextBeat.transitionStrength > cfg.boundaryTransitionThreshold) return true;
 
       // 목표 duration 근처이고 다음 비트가 새 타입이면 분할
-      if (currentDuration >= SEQ_TARGET_SEC && nextBeat && nextBeat.typeHint !== beat.typeHint) return true;
+      if (currentDuration >= cfg.sectionTargetSec && nextBeat && nextBeat.typeHint !== beat.typeHint) return true;
 
-      // 3개 이상 비트가 쌓였고 minimum duration을 넘었으면 분할
-      if (currentSeq.length >= 3 && currentDuration >= SEQ_MIN_SEC) return true;
+      // short-form only: 3개 이상 비트가 쌓였고 minimum duration을 넘었으면 분할
+      if (cfg.mode === "short-form" && currentSeq.length >= 3 && currentDuration >= cfg.sectionMinSec) return true;
 
       return false;
     })();
@@ -338,7 +410,7 @@ export function planSequenceBoundaries(beats: ScriptBeat[]): ScriptBeat[][] {
   // 남은 비트 처리
   if (currentSeq.length > 0) {
     // 너무 짧은 마지막 시퀀스는 이전에 합치기
-    if (currentDuration < SEQ_MIN_SEC / 2 && sequences.length > 0) {
+    if (currentDuration < cfg.sectionMinSec / 2 && sequences.length > 0) {
       sequences[sequences.length - 1].push(...currentSeq);
     } else {
       sequences.push(currentSeq);
@@ -392,19 +464,25 @@ export function generateCutProgression(
 /** 시퀀스 duration과 비트 타입 기반 추천 컷 수 */
 function recommendCutCount(durationSec: number, beatType: SequenceBeatType): number {
   let base: number;
+  const maxCuts = durationSec > 15 ? YT_MAX_CUTS_PER_SEQ : MAX_CUTS_PER_SEQ;
+
   if (durationSec <= 8) base = 2;
   else if (durationSec <= 10) base = 3;
   else if (durationSec <= 12) base = 4;
-  else base = 5;
+  else if (durationSec <= 15) base = 5;
+  // YouTube mode: longer sections get more cuts
+  else if (durationSec <= 25) base = 6;
+  else if (durationSec <= 40) base = 8;
+  else base = 10;
 
   // 비트 타입에 따른 조정
   switch (beatType) {
-    case "hook": return Math.min(MAX_CUTS_PER_SEQ, Math.max(MIN_CUTS_PER_SEQ, base));
-    case "reveal": return Math.min(MAX_CUTS_PER_SEQ, base + 1);   // 리빌은 한 컷 더
-    case "development": return Math.min(MAX_CUTS_PER_SEQ, base);
+    case "hook": return Math.min(maxCuts, Math.max(MIN_CUTS_PER_SEQ, base));
+    case "reveal": return Math.min(maxCuts, base + 1);   // 리빌은 한 컷 더
+    case "development": return Math.min(maxCuts, base);
     case "payoff":
-    case "paradox": return Math.min(MAX_CUTS_PER_SEQ, Math.max(3, base)); // 최소 3컷
-    default: return Math.min(MAX_CUTS_PER_SEQ, base);
+    case "paradox": return Math.min(maxCuts, Math.max(3, base)); // 최소 3컷
+    default: return Math.min(maxCuts, base);
   }
 }
 
@@ -662,19 +740,28 @@ export function analyzeScriptPhaseA(
   const estimatedRuntime = options?.targetRuntimeSec
     ?? beats.reduce((sum, b) => sum + b.estimatedSec, 0);
 
-  // 3. Sequence boundaries (cached)
+  // 2b. Detect content mode
+  const contentType = options?.contentTypeHint ?? detectContentType(text);
+  const contentMode = detectContentMode(text, estimatedRuntime, contentType);
+  const modeConfig = getContentModeConfig(contentMode);
+
+  console.log(`[script-analyzer] contentMode=${contentMode}, estimatedRuntime=${estimatedRuntime}s, contentType=${contentType}`);
+
+  // 3. Sequence boundaries (cached) — mode-aware
   let sequenceGroups = boundaryCache.get(key);
   if (!sequenceGroups) {
-    sequenceGroups = planSequenceBoundaries(beats);
+    sequenceGroups = planSequenceBoundaries(beats, modeConfig);
     cacheSet(boundaryCache, key, sequenceGroups);
   }
 
   // 4. Skeleton sequences (title, beatType, duration, endingMode — NO cuts/strategies)
   let charOffset = 0;
   const sequences: AnalyzedSequence[] = sequenceGroups.map((seqBeats, seqIdx) => {
+    // Mode-aware duration: use actual beat durations, clamped to mode range
+    const rawDuration = seqBeats.reduce((s, b) => s + b.estimatedSec, 0);
     const seqDuration = Math.min(
-      SEQ_MAX_SEC,
-      Math.max(SEQ_MIN_SEC, seqBeats.reduce((s, b) => s + b.estimatedSec, 0)),
+      modeConfig.sectionMaxSec,
+      Math.max(modeConfig.sectionMinSec, rawDuration),
     );
 
     const dominantBeat = seqBeats.reduce((best, b) =>
@@ -736,6 +823,7 @@ export function analyzeScriptPhaseA(
     issues,
     confidence,
     sequences,
+    contentMode,
   };
 
   return { result, beats, sequenceGroups, cacheKey: key };
@@ -1231,30 +1319,72 @@ export function buildAnalysisPrompt(
   contentType: ScriptContentType,
   targetRuntimeSec?: number,
 ): string {
+  // Detect content mode from script characteristics
+  const est = estimateNarrationDuration(scriptText, "natural");
+  const estimatedRuntime = est.totalWithBreathingSec;
+  const contentMode = detectContentMode(scriptText, estimatedRuntime, contentType);
+  const modeConfig = getContentModeConfig(contentMode);
+
   const runtimeHint = targetRuntimeSec
     ? `목표 총 런타임: ${targetRuntimeSec}초`
-    : "총 런타임은 내용에 맞게 자동 결정";
+    : contentMode === "youtube"
+      ? `추정 나레이션 런타임: ${Math.round(estimatedRuntime)}초. 목표 총 런타임: ${modeConfig.totalMinSec}-${modeConfig.totalMaxSec}초`
+      : "총 런타임은 내용에 맞게 자동 결정";
 
-  return `당신은 숏폼 릴 시퀀스 프로덕션 전문가입니다.
+  // Mode-specific persona and rules
+  const persona = contentMode === "youtube"
+    ? "유튜브 해설 영상 프로덕션 전문가"
+    : "숏폼 릴 시퀀스 프로덕션 전문가";
 
-아래 한국어 대본/나레이션을 분석하여 릴 시리즈 프로덕션 구조로 변환하세요.
+  const formatDesc = contentMode === "youtube"
+    ? "유튜브 해설 영상 프로덕션 구조"
+    : "릴 시리즈 프로덕션 구조";
+
+  const durationRule = contentMode === "youtube"
+    ? `각 섹션은 ${modeConfig.sectionMinSec}-${modeConfig.sectionMaxSec}초 분량이어야 합니다. 나레이션 기반으로 duration을 산정하세요 (한국어 ~3.2자/초).`
+    : `각 시퀀스는 ${modeConfig.sectionMinSec}-${modeConfig.sectionMaxSec}초 분량이어야 합니다.`;
+
+  const cutRule = contentMode === "youtube"
+    ? "각 섹션 내부에 2-12개의 컷 프로그레션을 설계하세요. 30초 이상 섹션은 최소 4컷."
+    : "각 시퀀스 내부에 2-6개의 컷 프로그레션을 설계하세요.";
+
+  const boundaryGuide = contentMode === "youtube"
+    ? `## 섹션 경계 결정 기준 (유튜브 해설)
+- 논리적 단위 (주장 → 근거 → 결과)가 하나의 섹션
+- 최소 ${modeConfig.minBeatsPerSection}개 비트가 모여야 섹션을 구성
+- 짧은 논점을 무리하게 분리하지 마세요 — 관련 비트를 합쳐서 15초 이상 섹션으로 만드세요
+- 인과 관계가 이어지는 비트들은 같은 섹션에 유지
+- 시청자가 "그래서 어떻게 됐는데?"라고 느끼는 자연 전환 지점에서 섹션을 나누세요`
+    : `## 시퀀스 경계 결정 기준
+- 비트 전환 (논점/감정/시점 변화)
+- 원인→결과 전환
+- 정보 공개/충격/반전 포인트
+- 시청 리텐션 최적 pause 지점
+- 한 시퀀스 = 하나의 미니 이벤트, 미니 논증, 또는 감정 단위`;
+
+  const durationRange = contentMode === "youtube"
+    ? `숫자(${modeConfig.sectionMinSec}-${modeConfig.sectionMaxSec})`
+    : `숫자(${modeConfig.sectionMinSec}-${modeConfig.sectionMaxSec})`;
+
+  const cutRange = contentMode === "youtube" ? "숫자(2-12)" : "숫자(2-6)";
+
+  return `당신은 ${persona}입니다.
+
+아래 한국어 대본/나레이션을 분석하여 ${formatDesc}로 변환하세요.
 이것은 요약이 아닙니다. 프로덕션 구조 변환입니다.
+
+## 콘텐츠 모드: ${contentMode === "youtube" ? "유튜브 해설 (60-180초)" : "숏폼 릴 (8-30초)"}
 
 ## 규칙
 1. 텍스트를 문장 수나 길이로 나누지 마세요. 서사 비트 전환을 기준으로 시퀀스를 분리하세요.
-2. 각 시퀀스는 8-15초 분량이어야 합니다. ${runtimeHint}.
-3. 각 시퀀스 내부에 2-6개의 컷 프로그레션을 설계하세요.
+2. ${durationRule} ${runtimeHint}.
+3. ${cutRule}
 4. 모든 컷은 존재 이유가 있어야 합니다. 가짜 분할 금지.
 5. 주제/도메인에 관계없이 서사 구조를 분석하세요 (역사, 경제, 브랜드, 인물, 코미디, 감정 등 모두 적용).
 
 ## 컨텐츠 타입: ${contentType}
 
-## 시퀀스 경계 결정 기준
-- 비트 전환 (논점/감정/시점 변화)
-- 원인→결과 전환
-- 정보 공개/충격/반전 포인트
-- 시청 리텐션 최적 pause 지점
-- 한 시퀀스 = 하나의 미니 이벤트, 미니 논증, 또는 감정 단위
+${boundaryGuide}
 
 ## 각 시퀀스의 비트 타입
 - hook: 강렬한 도입 — 스크롤 멈춤 (질문, 도발, 약속)
@@ -1287,6 +1417,7 @@ issues 배열에 다음 코드로 문제를 보고하세요:
   "thesis": "핵심 논제/전제",
   "totalSuggestedRuntime": 숫자(초),
   "suggestedSequenceCount": 숫자,
+  "contentMode": "${contentMode}",
   "structuralNotes": ["잘 된 점1", ...],
   "weaknesses": ["약점1", ...],
   "issues": [{"code": "이슈코드", "severity": "info|warning|error", "message": "설명", "suggestion": "개선 제안"}],
@@ -1299,8 +1430,8 @@ issues 배열에 다음 코드로 문제를 보고하세요:
       "beatType": "hook|setup|mechanism|development|reveal|consequence|escalation|paradox|payoff|transition",
       "sourceText": "해당 원문 구간",
       "sourceSpan": {"startChar": 0, "endChar": 100},
-      "recommendedDurationSec": 숫자(8-15),
-      "recommendedCutCount": 숫자(2-6),
+      "recommendedDurationSec": ${durationRange},
+      "recommendedCutCount": ${cutRange},
       "rationale": "존재 이유",
       "endingMode": "close|cliffhanger|loop-open|payoff|paradox|transition",
       "cliffhangerText": "클리프행어 시 예고 텍스트 (optional)",

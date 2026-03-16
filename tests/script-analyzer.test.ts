@@ -254,19 +254,23 @@ describe("analyzeScript", () => {
     expect(result.thesis.length).toBeGreaterThan(0);
   });
 
-  it("모든 시퀀스에 8-15초 범위 duration", () => {
+  it("모든 시퀀스에 mode-aware duration 범위", () => {
     const result = analyzeScript(BLACK_DEATH_SCRIPT);
+    // Black Death script triggers YouTube mode → 15-60s sections
+    const maxDuration = result.contentMode === "youtube" ? 60 : 15;
     for (const seq of result.sequences) {
       expect(seq.recommendedDurationSec).toBeGreaterThanOrEqual(8);
-      expect(seq.recommendedDurationSec).toBeLessThanOrEqual(15);
+      expect(seq.recommendedDurationSec).toBeLessThanOrEqual(maxDuration);
     }
   });
 
-  it("모든 시퀀스에 2-6개 컷", () => {
+  it("모든 시퀀스에 mode-aware 컷 수", () => {
     const result = analyzeScript(BLACK_DEATH_SCRIPT);
+    // YouTube mode allows up to 12 cuts per section
+    const maxCuts = result.contentMode === "youtube" ? 12 : 6;
     for (const seq of result.sequences) {
       expect(seq.recommendedCutCount).toBeGreaterThanOrEqual(2);
-      expect(seq.recommendedCutCount).toBeLessThanOrEqual(6);
+      expect(seq.recommendedCutCount).toBeLessThanOrEqual(maxCuts);
       expect(seq.cuts.length).toBe(seq.recommendedCutCount);
     }
   });
@@ -362,12 +366,14 @@ describe("convertToCuts", () => {
     });
   });
 
-  it("각 Cut의 durationSec이 8-15 범위", () => {
+  it("각 Cut의 durationSec이 mode-aware 범위", () => {
     const analysis = analyzeScript(BLACK_DEATH_SCRIPT);
+    // YouTube mode sequences can be up to 60s
+    const maxDuration = analysis.contentMode === "youtube" ? 60 : 15;
     const cuts = convertToCuts(analysis);
     for (const cut of cuts) {
       expect(cut.durationSec).toBeGreaterThanOrEqual(8);
-      expect(cut.durationSec).toBeLessThanOrEqual(15);
+      expect(cut.durationSec).toBeLessThanOrEqual(maxDuration);
     }
   });
 
@@ -635,9 +641,11 @@ describe("generalization across narrative types", () => {
   it("다양한 서사 타입 모두 시퀀스 경계 정상 분리", () => {
     for (const script of [BIOGRAPHY_SCRIPT, BRAND_STORY_SCRIPT, EMOTIONAL_SCRIPT]) {
       const result = analyzeScript(script);
+      // Mode-aware: youtube allows up to 60s, short-form up to 15s
+      const maxDuration = result.contentMode === "youtube" ? 60 : 15;
       for (const seq of result.sequences) {
         expect(seq.recommendedDurationSec).toBeGreaterThanOrEqual(8);
-        expect(seq.recommendedDurationSec).toBeLessThanOrEqual(15);
+        expect(seq.recommendedDurationSec).toBeLessThanOrEqual(maxDuration);
         expect(seq.cuts.length).toBeGreaterThanOrEqual(2);
       }
     }
