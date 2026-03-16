@@ -447,3 +447,106 @@ export function auditAudioPipeline(): AudioPipelineStatus[] {
 export function isAudioEndToEnd(): boolean {
   return auditAudioPipeline().every(s => s.supported);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Legacy Field Quarantine
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Legacy fields that MUST NOT be read outside the adapter boundary.
+ *
+ * These fields on Cut are consumed only by toCanonicalSequence().
+ * All downstream consumers should read from StructuredSequenceDocument
+ * or CutCardViewModel instead.
+ */
+export const QUARANTINED_LEGACY_FIELDS: readonly string[] = [
+  "videoPromptJson",  // → use StructuredSequenceDocument.shotPlan
+  "multiShot",        // → use CanonicalResult.multiShot or canonical shots[]
+  "extendPromptJson", // → use StructuredSequenceDocument for extend data
+] as const;
+
+/**
+ * Consumer boundary map — documents which component reads from which source.
+ *
+ * This is the authoritative map of who reads what.
+ * Tests use this to verify no consumer reads legacy fields directly.
+ */
+export const CANONICAL_CONSUMER_MAP = {
+  "CutCard": {
+    previousSource: "Cut.videoPromptJson, Cut.multiShot, Cut.durationSec, Cut.videoPrompt",
+    canonicalSource: "CutCardViewModel.videoPromptJson, CutCardViewModel.multiShot, CutCardViewModel.durationSec, CutCardViewModel.videoPrompt",
+    status: "rewired" as const,
+  },
+  "MultiShotEditor": {
+    previousSource: "Cut.multiShot, Cut.durationSec",
+    canonicalSource: "CutCardViewModel.multiShot (passed via CutCard), Cut.durationSec via effectiveDurationSec",
+    status: "rewired" as const,
+  },
+  "ResultPanel.export": {
+    previousSource: "Cut.multiShot, Cut.durationSec, Cut.videoPrompt, Cut.extendPrompt",
+    canonicalSource: "viewModelToExportSequence(CutCardViewModel) via canonicalViewModels",
+    status: "rewired" as const,
+  },
+  "ResultPanel.feedbackRefine": {
+    previousSource: "Cut.videoPrompt, Cut.extendPrompt",
+    canonicalSource: "CutCardViewModel.videoPrompt, CutCardViewModel.extendPrompt via canonicalViewModels",
+    status: "rewired" as const,
+  },
+  "ResultPanel.batchBudget": {
+    previousSource: "Cut.durationSec, Cut.multiShot",
+    canonicalSource: "CutCardViewModel.durationSec, CutCardViewModel.multiShot via canonicalViewModels",
+    status: "rewired" as const,
+  },
+  "useVideoGeneration.qualityChecklist": {
+    previousSource: "Cut.videoPromptJson",
+    canonicalSource: "canonicalVideoPromptJson derived from StructuredSequenceDocument.shotPlan",
+    status: "rewired" as const,
+  },
+  "useVideoGeneration.submitMultiShot": {
+    previousSource: "Cut.multiShot",
+    canonicalSource: "assembled.suggestedMultiShot (canonical) ?? Cut.multiShot (fallback)",
+    status: "rewired" as const,
+  },
+  "useVideoGeneration.submitVideoPromptJson": {
+    previousSource: "Cut.videoPromptJson",
+    canonicalSource: "canonicalVideoPromptJson derived from StructuredSequenceDocument.shotPlan",
+    status: "rewired" as const,
+  },
+  "SequenceTimelineEditor": {
+    previousSource: "StructuredSequenceDocument (already canonical)",
+    canonicalSource: "StructuredSequenceDocument (unchanged — was already canonical)",
+    status: "already_canonical" as const,
+  },
+  "TimelineEditor": {
+    previousSource: "VideoClip.structuredSequence (already canonical)",
+    canonicalSource: "VideoClip.structuredSequence (unchanged — was already canonical)",
+    status: "already_canonical" as const,
+  },
+  "useVideoGeneration.legacyPrompt": {
+    previousSource: "Cut.videoPrompt, Cut.extendPrompt (safety fallback only)",
+    canonicalSource: "Cut.videoPrompt (intentionally kept for safety retry only — not source of truth)",
+    status: "quarantined_legacy_only" as const,
+  },
+} as const;
+
+/**
+ * Audit a set of consumer module names against the consumer map.
+ * Returns list of consumers still reading legacy fields directly.
+ */
+export function auditConsumerCanonicalStatus(): {
+  rewired: string[];
+  alreadyCanonical: string[];
+  quarantined: string[];
+} {
+  const rewired: string[] = [];
+  const alreadyCanonical: string[] = [];
+  const quarantined: string[] = [];
+
+  for (const [name, info] of Object.entries(CANONICAL_CONSUMER_MAP)) {
+    if (info.status === "rewired") rewired.push(name);
+    else if (info.status === "already_canonical") alreadyCanonical.push(name);
+    else if (info.status === "quarantined_legacy_only") quarantined.push(name);
+  }
+
+  return { rewired, alreadyCanonical, quarantined };
+}

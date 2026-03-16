@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
 import { getMaxShots } from "@/lib/kling-capability";
 import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
 import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
 import { detectShotProgression, splitSingleShotSequence, type ShotBeatHint } from "@/lib/shot-splitting";
+import type { CutCardViewModel } from "@/lib/canonical-view-model";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -25,6 +26,8 @@ import { motionLevels } from "@/data/motion-intensity-presets";
 
 interface CutCardProps {
   cut: Cut;
+  /** Canonical view-model — when provided, UI reads from this instead of raw Cut fields */
+  canonicalViewModel?: CutCardViewModel;
   characterSeeds?: CharacterSeed[];
   onUpdate?: (updated: Cut) => void;
   storyboardImage?: string;
@@ -315,7 +318,7 @@ function JsonPromptView({
 }
 
 export default function CutCard({
-  cut, characterSeeds, onUpdate,
+  cut, canonicalViewModel: cvm, characterSeeds, onUpdate,
   storyboardImage: _storyboardImage, storyboardCandidates: _storyboardCandidates, storyboardLoading: _storyboardLoading, onGenerateImage: _onGenerateImage, onSelectCandidate: _onSelectCandidate,
   storyboardEndImage: _storyboardEndImage, storyboardEndLoading: _storyboardEndLoading, onGenerateEndImage: _onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
@@ -324,6 +327,14 @@ export default function CutCard({
   shotSnapshots,
   narrationState,
 }: CutCardProps) {
+  // ── Canonical-first data derivation ──
+  // When canonicalViewModel is available, use it as the source of truth.
+  // Otherwise fall back to raw Cut fields (legacy path, to be deprecated).
+  const effectiveVideoPromptJson: VideoPromptJson | undefined = cvm?.videoPromptJson ?? cut.videoPromptJson;
+  const effectiveMultiShot: MultiShotPrompt[] = cvm?.multiShot ?? cut.multiShot ?? [];
+  const effectiveDurationSec: number = cvm?.durationSec ?? cut.durationSec;
+  const effectiveVideoPrompt: string = cvm?.videoPrompt ?? cut.videoPrompt;
+
   const isEven = cut.cutNumber % 2 === 0;
   const [feedbackText, setFeedbackText] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
@@ -336,22 +347,22 @@ export default function CutCard({
   // 조건: modelId 있고, onUpdate 있고, multiShot 비어있고, 의도적 원테이크 아니고, eligible
   useEffect(() => {
     if (!modelId || !onUpdate) return;
-    if (cut.multiShot && cut.multiShot.length > 0) return;
+    if (effectiveMultiShot.length > 0) return;
     if (cut.intentionalOneTake) return;
 
     const sceneType = (cut.shotCategory ?? "default") as PlannerSceneType;
-    const maxShots = getMaxShots(modelId, cut.durationSec);
-    const forced = shouldForceMultiShot(sceneType, cut.durationSec, modelId);
+    const maxShots = getMaxShots(modelId, effectiveDurationSec);
+    const forced = shouldForceMultiShot(sceneType, effectiveDurationSec, modelId);
 
     if (forced || maxShots >= 2) {
       // ── Check for arrow/progression in content FIRST ──
       // If the cut's action/subject contains progression markers (A → B → C),
       // use content-aware split instead of generic role-based split.
-      const action = cut.videoPrompt || cut.sceneDescription || "";
+      const action = effectiveVideoPrompt || cut.sceneDescription || "";
       const subject = cut.characterConsistency || "";
       const progression = detectShotProgression(action, subject);
 
-      if (progression.hasProgression && cut.durationSec > 3) {
+      if (progression.hasProgression && effectiveDurationSec > 3) {
         // Content-aware split: use the actual progression segments
         const beatHint: ShotBeatHint = cut.cutNumber === 1 ? "hook" :
           /\[.*훅.*\]|hook|도입/i.test(cut.sceneDescription || "") ? "hook" : "default";
@@ -361,7 +372,7 @@ export default function CutCard({
           action,
           environment: cut.moodLighting || "",
           moodLighting: cut.moodLighting || "",
-          durationSec: cut.durationSec,
+          durationSec: effectiveDurationSec,
           camera: {
             framing: cut.cameraDirection?.match(/\b(WS|MS|CU|MCU|ECU|LS)\b/i)?.[0] || "MS",
             angle: "eye_level",
@@ -390,18 +401,18 @@ export default function CutCard({
 
       // Fallback: generic role-based split
       const autoShots = buildDefaultMultiShot({
-        durationSec: cut.durationSec,
+        durationSec: effectiveDurationSec,
         sceneType,
         basePrompt: cut.sceneDescription || "",
         modelId,
-        styleSuffix: cut.videoPromptJson?.styleSuffix,
+        styleSuffix: effectiveVideoPromptJson?.styleSuffix,
       });
       if (autoShots.length >= 2) {
         onUpdate({ ...cut, multiShot: autoShots });
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelId, cut.cutNumber, cut.durationSec, cut.shotCategory]);
+  }, [modelId, cut.cutNumber, effectiveDurationSec, cut.shotCategory]);
 
   const handleFieldSave = (field: keyof Cut, value: string) => {
     if (onUpdate) {
@@ -431,7 +442,7 @@ export default function CutCard({
               장면 {cut.cutNumber}
             </Badge>
             <span className="text-xs text-muted-foreground">
-              {cut.durationSec}초
+              {effectiveDurationSec}초
             </span>
             <Badge
               variant="outline"
@@ -488,10 +499,10 @@ export default function CutCard({
 
         {/* 멀티샷 기본 에디터 — eligible 클립은 자동 초기화 */}
         {modelId && onUpdate && (() => {
-          const maxShots = getMaxShots(modelId, cut.durationSec);
-          const hasMultiShot = cut.multiShot && cut.multiShot.length > 0;
+          const maxShots = getMaxShots(modelId, effectiveDurationSec);
+          const hasMultiShot = effectiveMultiShot.length > 0;
           const sceneType = (cut.shotCategory ?? "default") as PlannerSceneType;
-          const forced = shouldForceMultiShot(sceneType, cut.durationSec, modelId);
+          const forced = shouldForceMultiShot(sceneType, effectiveDurationSec, modelId);
 
           // 이미 멀티샷이 있으면 에디터 표시
           if (hasMultiShot) {
@@ -523,11 +534,11 @@ export default function CutCard({
                   <button
                     onClick={() => {
                       const initial = buildDefaultMultiShot({
-                        durationSec: cut.durationSec,
+                        durationSec: effectiveDurationSec,
                         sceneType,
                         basePrompt: cut.sceneDescription || "",
                         modelId,
-                        styleSuffix: cut.videoPromptJson?.styleSuffix,
+                        styleSuffix: effectiveVideoPromptJson?.styleSuffix,
                       });
                       onUpdate({ ...cut, multiShot: initial, intentionalOneTake: undefined });
                     }}
@@ -553,12 +564,12 @@ export default function CutCard({
 
           // maxShots > 0이지만 자동 생성 대상 아닌 경우 — 수동 시작 버튼
           if (maxShots > 0) {
-            const rec = getRecommendedShotRange(cut.durationSec);
+            const rec = getRecommendedShotRange(effectiveDurationSec);
             const defaultShots = Math.min(rec.min, maxShots);
             return (
               <button
                 onClick={() => {
-                  const initial = distributeEvenly(modelId, Math.max(2, defaultShots), cut.durationSec);
+                  const initial = distributeEvenly(modelId, Math.max(2, defaultShots), effectiveDurationSec);
                   onUpdate({ ...cut, multiShot: initial });
                 }}
                 className="text-[10px] px-2 py-1 rounded-md transition-colors"
@@ -790,36 +801,38 @@ export default function CutCard({
                 onSave={(v) => handleFieldSave("endImagePrompt", v)}
               />
               {/* Video Prompt: JSON 뷰 (있으면) + raw string 토글 */}
-              {cut.videoPromptJson ? (
+              {/* Source: canonical view-model when available, fallback to Cut */}
+              {effectiveVideoPromptJson ? (
                 <>
                   <JsonPromptView
-                    json={cut.videoPromptJson}
-                    label={`Video Prompt (${cut.durationSec}초)`}
+                    json={effectiveVideoPromptJson}
+                    label={`Video Prompt (${effectiveDurationSec}초)`}
                     color="#c4b800"
                     onSaveField={(field, value) => {
-                      if (onUpdate && cut.videoPromptJson) {
+                      if (onUpdate && effectiveVideoPromptJson) {
                         onUpdate({
                           ...cut,
-                          videoPromptJson: { ...cut.videoPromptJson, [field]: value },
+                          videoPromptJson: { ...effectiveVideoPromptJson, [field]: value },
                         });
                       }
                     }}
                   />
                   {/* Multi-shot payload indicator — shows actual generation structure */}
-                  {cut.multiShot && cut.multiShot.length >= 2 && (
+                  {/* Source: effectiveMultiShot (canonical when available) */}
+                  {effectiveMultiShot.length >= 2 && (
                     <div
                       className="rounded-lg p-2 space-y-1"
                       style={{ background: "#e85d0408", border: "1px solid #e85d0420" }}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-semibold" style={{ color: "#e85d04" }}>
-                          실제 생성 페이로드: {cut.multiShot.length}샷 멀티샷
+                          실제 생성 페이로드: {effectiveMultiShot.length}샷 멀티샷
                         </span>
                         <Badge variant="outline" className="text-[9px] py-0 px-1" style={{ borderColor: "#e85d04", color: "#e85d04" }}>
-                          MULTI-SHOT
+                          {cvm ? "CANONICAL" : "MULTI-SHOT"}
                         </Badge>
                       </div>
-                      {cut.multiShot.map((shot) => (
+                      {effectiveMultiShot.map((shot) => (
                         <div key={shot.index} className="flex items-center gap-2 text-[9px]" style={{ color: "#6b7280" }}>
                           <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
                           <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
@@ -832,8 +845,8 @@ export default function CutCard({
                 </>
               ) : (
                 <EditableField
-                  label={`Video Prompt (${cut.durationSec}초)`}
-                  value={cut.videoPrompt}
+                  label={`Video Prompt (${effectiveDurationSec}초)`}
+                  value={effectiveVideoPrompt}
                   color="#c4b800"
                   bgColor="#fff78720"
                   onSave={(v) => handleFieldSave("videoPrompt", v)}

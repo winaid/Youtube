@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset } from "@/types";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset, DEFAULT_VIDEO_CONFIG } from "@/types";
 import { resolveModelForWorkflow } from "@/lib/kling-capability";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { checkBatchBudget, BATCH_BUDGET_SECONDS } from "@/lib/batch-runtime-budget";
@@ -22,6 +22,7 @@ import OneClickPipeline from "./OneClickPipeline";
 import VideoHistoryPanel, { saveToHistory } from "./VideoHistoryPanel";
 import VideoReviewPanel from "./VideoReviewPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
+import { cutToViewModel, viewModelToExportSequence, type CutCardViewModel } from "@/lib/canonical-view-model";
 
 interface ResultPanelProps {
   result: PromptOutput | null;
@@ -156,18 +157,40 @@ export default function ResultPanel({
     }
   }, [result, videoGen.completedCount, videoGen.clips, videoGen.shotNarrationStates]);
 
-  // Enhancement 2: Feedback-based prompt refinement
+  // ── Canonical View-Model derivation (must be before callbacks that use it) ──
+  // All UI reads should go through these view-models, not raw Cut fields.
+  const canonicalViewModels = useMemo<Map<number, CutCardViewModel>>(() => {
+    if (!result) return new Map();
+    const config = videoGen.config ?? DEFAULT_VIDEO_CONFIG;
+    const map = new Map<number, CutCardViewModel>();
+    for (let i = 0; i < result.cuts.length; i++) {
+      const cut = result.cuts[i];
+      const prevCut = i > 0 ? result.cuts[i - 1] : undefined;
+      try {
+        map.set(cut.cutNumber, cutToViewModel(cut, config, prevCut));
+      } catch {
+        // Graceful degradation: if canonical conversion fails, skip
+      }
+    }
+    return map;
+  }, [result, videoGen.config]);
+
+  // Enhancement 2: Feedback-based prompt refinement — canonical-derived inputs
   const handleFeedbackRefine = useCallback(async (cutNumber: number, feedback: string) => {
     if (!result || !onUpdateResult) return;
     const cut = result.cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
+    // Use canonical view-model for prompt data when available
+    const vm = canonicalViewModels.get(cutNumber);
+    const videoPrompt = vm?.videoPrompt ?? cut.videoPrompt;
+    const extendPrompt = vm?.extendPrompt ?? cut.extendPrompt;
     try {
       const res = await fetch("/api/refine-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          videoPrompt: cut.videoPrompt,
-          extendPrompt: cut.extendPrompt,
+          videoPrompt,
+          extendPrompt,
           feedback,
           cutNumber,
           mode: "feedback",
@@ -183,20 +206,24 @@ export default function ResultPanel({
         }
       }
     } catch (err) { console.error("[refine-prompt feedback]", err); }
-  }, [result, onUpdateResult]);
+  }, [result, onUpdateResult, canonicalViewModels]);
 
-  // Enhancement 3: English native correction (manual trigger)
+  // Enhancement 3: English native correction (manual trigger) — canonical-derived inputs
   const handleEnglishRefine = useCallback(async (cutNumber: number) => {
     if (!result || !onUpdateResult) return;
     const cut = result.cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
+    // Use canonical view-model for prompt data when available
+    const vm = canonicalViewModels.get(cutNumber);
+    const videoPrompt = vm?.videoPrompt ?? cut.videoPrompt;
+    const extendPrompt = vm?.extendPrompt ?? cut.extendPrompt;
     try {
       const res = await fetch("/api/refine-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          videoPrompt: cut.videoPrompt,
-          extendPrompt: cut.extendPrompt,
+          videoPrompt,
+          extendPrompt,
           cutNumber,
           mode: "english-native",
         }),
@@ -211,7 +238,7 @@ export default function ResultPanel({
         }
       }
     } catch (err) { console.error("[refine-prompt english]", err); }
-  }, [result, onUpdateResult]);
+  }, [result, onUpdateResult, canonicalViewModels]);
 
   // Drag & Drop 장면 재배치 — hooks must be before early returns
   const handleDragStart = useCallback((cutIndex: number) => {
@@ -302,12 +329,15 @@ export default function ResultPanel({
   const genMode = videoGen.config.generationMode ?? "batch";
   const fastCuts = result.cuts;
 
-  // 런타임 예산 계산
-  const batchClips: BatchClipInfo[] = result.cuts.map(c => ({
-    id: c.cutNumber,
-    durationSec: c.durationSec ?? DURATION_FALLBACK,
-    shotCount: c.multiShot?.length,
-  }));
+  // 런타임 예산 계산 — canonical view-model preferred
+  const batchClips: BatchClipInfo[] = result.cuts.map(c => {
+    const vm = canonicalViewModels.get(c.cutNumber);
+    return {
+      id: c.cutNumber,
+      durationSec: vm?.durationSec ?? c.durationSec ?? DURATION_FALLBACK,
+      shotCount: vm?.multiShot?.length ?? c.multiShot?.length,
+    };
+  });
   const budgetResult = checkBatchBudget(batchClips);
 
   const exportJson = {
@@ -317,8 +347,14 @@ export default function ResultPanel({
     directorPersona: result.directorPersonaPrompt,
     characterSeeds: result.characterSeeds,
     continuityRules: result.continuityRules,
-    // Layer 1: 총 런타임
-    totalRuntime: (() => { const t = result.cuts.reduce((s, c) => s + (c.durationSec ?? DURATION_FALLBACK), 0); return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`; })(),
+    // Layer 1: 총 런타임 — canonical duration preferred
+    totalRuntime: (() => {
+      const t = result.cuts.reduce((s, c) => {
+        const vm = canonicalViewModels.get(c.cutNumber);
+        return s + (vm?.durationSec ?? c.durationSec ?? DURATION_FALLBACK);
+      }, 0);
+      return `${t}초 (${Math.floor(t / 60)}분${t % 60 > 0 ? ` ${t % 60}초` : ""})`;
+    })(),
     sequenceCount: result.cuts.length,
     runtimeBudget: {
       totalSec: budgetResult.totalRuntimeSec,
@@ -326,46 +362,29 @@ export default function ResultPanel({
       withinBudget: budgetResult.withinBudget,
       usage: `${Math.round(budgetResult.usageRatio * 100)}%`,
     },
-    // Layer 2: 시퀀스 (각 8–15초 Kling 생성 단위)
-    sequences: result.cuts.map((cut) => ({
-      sequence: cut.cutNumber,
-      sequenceDuration: `${cut.durationSec}s`,
-      method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND",
-      scene: cut.sceneDescription,
-      camera: cut.cameraDirection,
-      lighting: cut.moodLighting,
-      videoPrompt: cut.videoPrompt,
-      extendPrompt: cut.extendPrompt,
-      charactersInScene: cut.charactersInScene,
-      intentionalOneTake: cut.intentionalOneTake ?? false,
-      // Layer 3: 시퀀스 내부 멀티샷 (최대 6개)
-      // Source priority: Cut.multiShot (bridged from shot-splitting) > structuredSequence.shots
-      internalShots: (() => {
-        // Primary: Cut.multiShot (includes progression-aware splits)
-        if (cut.multiShot && cut.multiShot.length > 0) {
-          return cut.multiShot.map(s => ({
-            index: s.index,
-            prompt: s.prompt,
-            duration: s.duration,
-            role: s.role ?? null,
-          }));
-        }
-        // Fallback: structuredSequence.shots (if clip has been generated)
-        const clip = videoGen.clips.find(c => c.cutNumber === cut.cutNumber);
-        if (clip?.structuredSequence?.shots && clip.structuredSequence.shots.length >= 2) {
-          return clip.structuredSequence.shots.map((s, i) => ({
-            index: i + 1,
-            prompt: `${s.action}. ${s.environment}`.trim() || s.focus,
-            duration: String(Math.round((s.endSec - s.startSec) * 10) / 10),
-            role: i === 0 ? "establish" : i === clip.structuredSequence!.shots.length - 1 ? "resolve" : "develop",
-          }));
-        }
-        return null;
-      })(),
-      internalShotCount: cut.multiShot?.length
-        ?? videoGen.clips.find(c => c.cutNumber === cut.cutNumber)?.structuredSequence?.shots?.length
-        ?? 0,
-    })),
+    // Layer 2: 시퀀스 — canonical view-model as source of truth
+    sequences: result.cuts.map((cut) => {
+      const vm = canonicalViewModels.get(cut.cutNumber);
+      const clipSeq = videoGen.clips.find(c => c.cutNumber === cut.cutNumber)?.structuredSequence;
+      if (vm) {
+        return viewModelToExportSequence(vm, clipSeq);
+      }
+      // Fallback for cases where canonical conversion failed
+      return {
+        sequence: cut.cutNumber,
+        sequenceDuration: `${cut.durationSec}s`,
+        method: cut.cutNumber === 1 ? "VIDEO_PROMPT" : "EXTEND",
+        scene: cut.sceneDescription,
+        camera: cut.cameraDirection,
+        lighting: cut.moodLighting,
+        videoPrompt: cut.videoPrompt,
+        extendPrompt: cut.extendPrompt,
+        charactersInScene: cut.charactersInScene,
+        intentionalOneTake: cut.intentionalOneTake ?? false,
+        internalShots: null,
+        internalShotCount: cut.multiShot?.length ?? 0,
+      };
+    }),
   };
 
   const handleCopyJson = async () => {
@@ -844,6 +863,7 @@ export default function ResultPanel({
               >
                 <CutCard
                   cut={cut}
+                  canonicalViewModel={canonicalViewModels.get(cut.cutNumber)}
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
                   userVideoMode={videoGen.config.mode}

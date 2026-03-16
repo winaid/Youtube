@@ -1163,8 +1163,29 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       }
 
       // ── 품질 체크리스트 (프롬프트 사전 검증) ─────────────────────────
-      if (cut.videoPromptJson && assembled.preview) {
-        const checklist = generateQualityChecklist(assembled.preview.renderedPrompt, cut.videoPromptJson, {
+      // Source: canonical shotPlan (preferred) → Cut.videoPromptJson (legacy fallback)
+      // ShotPlan uses structured sub-objects; VideoPromptJson uses flat strings.
+      const canonicalVideoPromptJson = sequence.shotPlan ? {
+        shotSize: sequence.shotPlan.camera.framing,
+        cameraAngle: sequence.shotPlan.camera.angle,
+        cameraMovement: sequence.shotPlan.camera.motion,
+        subjectBlocking: sequence.shotPlan.subject?.blocking || sequence.shotPlan.subject?.primary || "",
+        subjectAction: sequence.shotPlan.action,
+        actionBeat: cut.videoPromptJson?.actionBeat || "",
+        bodySignal: cut.videoPromptJson?.bodySignal || "",
+        revealed: cut.videoPromptJson?.revealed || "",
+        withheld: cut.videoPromptJson?.withheld || "",
+        timingBeat: sequence.shotPlan.timingBeat || "",
+        transitionFromPrev: sequence.shotPlan.transitionFromPrev || "",
+        characterRef: sequence.shotPlan.subject?.characterRef || "",
+        moodLighting: sequence.shotPlan.moodLighting || "",
+        styleSuffix: sequence.styleProfile?.mode || cut.videoPromptJson?.styleSuffix || "",
+        locationCue: sequence.shotPlan.locationCue,
+        situationCue: sequence.shotPlan.situationCue,
+        emotionalAnchor: sequence.shotPlan.emotionalAnchor,
+      } as import("@/types").VideoPromptJson : cut.videoPromptJson;
+      if (canonicalVideoPromptJson && assembled.preview) {
+        const checklist = generateQualityChecklist(assembled.preview.renderedPrompt, canonicalVideoPromptJson, {
           shotCategory: cut.shotCategory,
           characterRole: cut.characterRole,
         });
@@ -1409,16 +1430,18 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,
-        // multiShot: capability 기반 clamp + auto-repair
+        // multiShot: canonical-first, capability 기반 clamp + auto-repair
+        // Source: canonical assembled.suggestedMultiShot → cut.multiShot (legacy fallback)
         ...((() => {
           const dur = cfg.durationSeconds ?? cut.durationSec ?? 5;
           if (engine !== "kling") return {};
 
-          // 기존 멀티샷이 있으면 clamp
-          if (cut.multiShot && cut.multiShot.length > 0) {
+          // Canonical multiShot: prefer assembled suggested > cut.multiShot
+          const canonicalMultiShot = assembled.suggestedMultiShot ?? cut.multiShot;
+          if (canonicalMultiShot && canonicalMultiShot.length > 0) {
             const maxShotCount = getMaxShots(effectiveModel, dur);
             if (maxShotCount <= 0) return {};
-            const clamped = cut.multiShot.slice(0, maxShotCount).map((s, i) => ({
+            const clamped = canonicalMultiShot.slice(0, maxShotCount).map((s, i) => ({
               ...s,
               index: i + 1,
             }));
@@ -1431,7 +1454,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         generationMode: cfg.generationMode ?? "batch",
         sceneType: cut.shotCategory,
         intentionalOneTake: cut.intentionalOneTake,
-        ...(cut.videoPromptJson ? { videoPromptJson: cut.videoPromptJson } : {}),
+        // VideoPromptJson: canonical-derived preferred over legacy Cut field
+        ...(canonicalVideoPromptJson ? { videoPromptJson: canonicalVideoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
         // Custom Element: charactersInScene 기반 element_list 자동 주입
         ...((() => {
@@ -1504,8 +1528,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           aspectRatio: cfg.aspectRatio,
           videoMode,
           promptPreview: (legacyPrompt || "").slice(0, 80),
-          multiShotCount: cut.multiShot?.length ?? 0,
-          multiShotRoles: cut.multiShot?.map(s => s.role ?? "unknown") ?? [],
+          multiShotCount: (assembled.suggestedMultiShot ?? cut.multiShot)?.length ?? 0,
+          multiShotRoles: (assembled.suggestedMultiShot ?? cut.multiShot)?.map(s => s.role ?? "unknown") ?? [],
           generationMode: cfg.generationMode ?? "batch",
           intentionalOneTake: cut.intentionalOneTake ?? false,
         },
