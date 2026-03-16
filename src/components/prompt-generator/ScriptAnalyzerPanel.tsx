@@ -226,15 +226,28 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
 
     try {
       const prompt = buildAnalysisPrompt(text, effectiveType);
-      const res = await fetch("/api/analyze-script", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scriptText: text,
-          contentTypeHint: effectiveType,
-          analysisPrompt: prompt,
-        }),
-      });
+
+      // Client-side timeout: 58s — slightly under Cloudflare's 60s edge limit.
+      // Server has its own adaptive retry (20s Pro → 20s Pro → 12s Flash = 56s max).
+      // This AbortController catches the case where the network itself is slow.
+      const controller = new AbortController();
+      const clientTimeout = setTimeout(() => controller.abort(), 58_000);
+
+      let res: Response;
+      try {
+        res = await fetch("/api/analyze-script", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scriptText: text,
+            contentTypeHint: effectiveType,
+            analysisPrompt: prompt,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(clientTimeout);
+      }
 
       const data = await res.json() as {
         success: boolean;
@@ -259,13 +272,16 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
         setLlmError(errInfo);
         console.warn(`[ScriptAnalyzer] LLM enrichment failed: code=${errInfo.code}, status=${res.status}, message=${errInfo.userMessage}`);
       }
-    } catch {
+    } catch (err) {
+      const isTimeout = err instanceof DOMException && err.name === "AbortError";
       setLlmError({
-        userMessage: "네트워크 오류로 AI 분석에 실패했습니다. 기본 분석 결과를 사용합니다.",
-        code: "NETWORK_ERROR",
+        userMessage: isTimeout
+          ? "분석 서버 응답 시간이 초과되었습니다. 다시 시도하거나 기본 분석 결과를 사용하세요."
+          : "네트워크 오류로 AI 분석에 실패했습니다. 기본 분석 결과를 사용합니다.",
+        code: isTimeout ? "CLIENT_TIMEOUT" : "NETWORK_ERROR",
         retryable: true,
       });
-      console.warn("[ScriptAnalyzer] LLM enrichment failed (network error), keeping heuristic result");
+      console.warn(`[ScriptAnalyzer] LLM enrichment failed (${isTimeout ? "client timeout" : "network error"}), keeping heuristic result`);
     } finally {
       if (!abortRef.current) setPhase("complete");
     }

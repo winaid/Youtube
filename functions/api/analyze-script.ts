@@ -4,11 +4,19 @@
  * Client에서 대본 텍스트를 받아 Gemini LLM으로 깊은 구조 분석 후
  * 릴 시퀀스 프로덕션 구조를 반환.
  *
- * v3: Provider error classification + retry with backoff for transient errors.
- * - 503/UNAVAILABLE → retry up to 2 times with exponential backoff
- * - Structured provider error diagnostics
- * - User-safe Korean error messages
- * - Proper error serialization (no more [object Object])
+ * v4: Adaptive timeout + Flash model fallback.
+ *
+ * Timeout budget (must fit within Cloudflare 60s edge limit):
+ *   attempt 0: Pro   20s  →  fail  → 2s backoff
+ *   attempt 1: Pro   20s  →  fail  → 2s backoff
+ *   attempt 2: Flash 12s  →  fail  → return error
+ *   worst-case total: 20+2+20+2+12 = 56s < 60s ✓
+ *
+ * For 503/UNAVAILABLE: same budget, same retry.
+ * For non-transient errors (401, 404): fail immediately.
+ *
+ * Partial text recovery: if streaming collected chunks before timeout,
+ * those are used for JSON parsing (tier-2/3 recovery).
  *
  * Fallback: LLM 실패 시 client-side heuristic 결과를 그대로 사용하도록
  * 에러를 반환. 클라이언트가 heuristic fallback 처리.
@@ -17,6 +25,7 @@
 import {
   GeminiEnv,
   GEMINI_MODEL_PRO,
+  GEMINI_MODEL_FLASH,
   streamingGenerate,
   parseFirstJsonObject,
   repairTruncatedJson,
@@ -35,10 +44,19 @@ interface AnalyzeRequest {
   analysisPrompt: string;
 }
 
-/** Max retry attempts for transient provider errors (503, rate limit) */
-const MAX_RETRIES = 2;
-/** Backoff delays in ms: 1st retry after 2s, 2nd after 4s */
-const BACKOFF_MS = [2000, 4000];
+/**
+ * Retry strategy per attempt.
+ * Budget: must total < 60s (Cloudflare edge limit).
+ * attempt 0: Pro 20s, attempt 1: Pro 20s, attempt 2: Flash 12s
+ * Backoff: 2s between each. Worst: 20+2+20+2+12 = 56s.
+ */
+const ATTEMPT_CONFIG = [
+  { model: "pro"   as const, timeoutMs: 20_000, backoffMs: 2000 },
+  { model: "pro"   as const, timeoutMs: 20_000, backoffMs: 2000 },
+  { model: "flash" as const, timeoutMs: 12_000, backoffMs: 0    },
+] as const;
+
+const MAX_RETRIES = ATTEMPT_CONFIG.length - 1;
 
 /** Safe serialization — never returns [object Object] */
 function safeErrorString(err: unknown): string {
@@ -86,27 +104,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     console.log(`[analyze-script][stage:validation] OK. scriptText=${scriptText.length}chars, prompt=${analysisPrompt.length}chars, contentTypeHint=${body.contentTypeHint ?? "none"}`);
 
-    // ── Stage 3: LLM request via streaming (with retry for transient errors) ──
+    // ── Stage 3: LLM request via streaming (adaptive timeout + Flash fallback) ──
     stage.current = "llm_request";
-    const requestBody = {
+    const makeRequestBody = (maxTokens: number) => ({
       contents: [{ parts: [{ text: analysisPrompt }] }],
       generationConfig: {
-        maxOutputTokens: 65536,
+        maxOutputTokens: maxTokens,
         temperature: 0.3,
         responseMimeType: "application/json",
       },
-    };
+    });
 
     let result: Awaited<ReturnType<typeof streamingGenerate>> | null = null;
     let lastProviderDiag: ReturnType<typeof parseProviderError> | null = null;
     let retryCount = 0;
+    let usedModel = GEMINI_MODEL_PRO;
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      result = await streamingGenerate(env, GEMINI_MODEL_PRO, requestBody, {
-        timeoutMs: 50_000, // 50s — under Cloudflare's 60s edge limit
+    for (let attempt = 0; attempt < ATTEMPT_CONFIG.length; attempt++) {
+      const config = ATTEMPT_CONFIG[attempt];
+      const model = config.model === "flash" ? GEMINI_MODEL_FLASH : GEMINI_MODEL_PRO;
+      usedModel = model;
+
+      // Flash gets fewer tokens (faster response)
+      const maxTokens = config.model === "flash" ? 32768 : 65536;
+
+      result = await streamingGenerate(env, model, makeRequestBody(maxTokens), {
+        timeoutMs: config.timeoutMs,
       });
 
-      // Success or got usable text — break out
+      // Success or got usable partial text — break out and try to parse
       if (!result.error || result.text) break;
 
       // Classify the error
@@ -114,19 +140,23 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const diagBody = result.error ?? "";
       lastProviderDiag = parseProviderError(diagStatus, diagBody);
 
-      // Only retry transient provider errors
-      if (!isTransientProviderError(lastProviderDiag.code) || attempt === MAX_RETRIES) {
+      // Only retry transient provider errors (503, 429, timeout)
+      if (!isTransientProviderError(lastProviderDiag.code) || attempt === ATTEMPT_CONFIG.length - 1) {
         break;
       }
 
       retryCount = attempt + 1;
-      const delay = BACKOFF_MS[attempt] ?? 4000;
+      const nextConfig = ATTEMPT_CONFIG[attempt + 1];
+      const nextModel = nextConfig.model === "flash" ? "Flash" : "Pro";
       console.warn(
         `[analyze-script][stage:llm_request] Transient error (${lastProviderDiag.code}), ` +
-        `retry ${retryCount}/${MAX_RETRIES} after ${delay}ms. ` +
+        `retry ${retryCount}/${MAX_RETRIES} → ${nextModel} (${nextConfig.timeoutMs}ms) after ${config.backoffMs}ms backoff. ` +
         `provider_status=${lastProviderDiag.providerStatus}, provider_message="${lastProviderDiag.providerMessage.slice(0, 200)}"`,
       );
-      await new Promise(resolve => setTimeout(resolve, delay));
+
+      if (config.backoffMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, config.backoffMs));
+      }
     }
 
     if (!result) {
@@ -206,7 +236,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    console.log(`[analyze-script][stage:llm_response_check] Got ${result.text.length} chars. truncated=${result.truncated ?? false}, retries=${retryCount}`);
+    console.log(`[analyze-script][stage:llm_response_check] Got ${result.text.length} chars. model=${usedModel}, truncated=${result.truncated ?? false}, retries=${retryCount}`);
 
     // ── Stage 5: JSON parsing (3-tier recovery) ──
     stage.current = "json_parse";
