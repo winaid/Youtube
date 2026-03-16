@@ -218,8 +218,8 @@ const SCENE_SPLIT_TEMPLATES: Record<string, SplitTemplate> = {
  */
 type SegmentScope = "macro" | "detail" | "symbolic";
 
-const MACRO_INDICATORS = /\b(wide|aerial|landscape|city|era|century|plague|collapse|war|revolution|society|world|civilization|panoram|overhead|skyline|horizon|establish|medieval|ancient|modern|empire|mass|crowd|army|population|death\s*toll)\b/i;
-const DETAIL_INDICATORS = /\b(close|finger|hand|palm|coin|drop|eye|tear|face|detail|object|texture|grain|ripple|single\s+|tiny|small)\b/i;
+const MACRO_INDICATORS = /\b(wide|aerial|landscape|city|era|century|plague|collapse|war|revolution|society|world|civilization|panoram|overhead|skyline|horizon|establish|medieval|ancient|modern|empire|mass|crowd|army|population|death\s*toll|street|village|town|market|square|stage|garage|workshop|factory|office|room|building|hall|field|valley|mountain|ocean|harbor|bridge|gate|arena|young\s+man|young\s+woman|man\s+in|woman\s+in|figure\s+in|person\s+in|people\s+in|standing\s+in|walking\s+through)\b/i;
+const DETAIL_INDICATORS = /\b(close-?up|close\s+shot|close\s+view|finger|hand|palm|coin|drop|eye|tear|detail|object|texture|grain|ripple|single\s+|tiny|small|tip\b|needle|thread|button|surface|circuit\s*board|component|wire|solder)\b/i;
 
 function classifySegmentScope(segment: string): SegmentScope {
   const hasMacro = MACRO_INDICATORS.test(segment);
@@ -258,18 +258,31 @@ function reorderSegmentsForBeatType(
 
   // Find best macro segment to move to front
   const macroIdx = classified.findIndex(c => c.scope === "macro");
-  if (macroIdx <= 0) {
-    // No macro segment found — prefix with establishing context from subject/environment
-    return { segments, reordered: false };
+  if (macroIdx > 0) {
+    // Move macro segment to first position, keep rest in order
+    const reordered = [
+      classified[macroIdx].text,
+      ...classified.filter((_, i) => i !== macroIdx).map(c => c.text),
+    ];
+    return { segments: reordered, reordered: true };
   }
 
-  // Move macro segment to first position, keep rest in order
-  const reordered = [
-    classified[macroIdx].text,
-    ...classified.filter((_, i) => i !== macroIdx).map(c => c.text),
-  ];
+  // No macro segment found. For hooks, still avoid detail-first:
+  // If first segment is detail and there's a symbolic segment, swap them.
+  // A symbolic segment (person in context, general scene) is better for
+  // hook opening than a close-up detail insert.
+  if (classified[0].scope === "detail") {
+    const symbolicIdx = classified.findIndex((c, i) => i > 0 && c.scope === "symbolic");
+    if (symbolicIdx > 0) {
+      const reordered = [
+        classified[symbolicIdx].text,
+        ...classified.filter((_, i) => i !== symbolicIdx).map(c => c.text),
+      ];
+      return { segments: reordered, reordered: true };
+    }
+  }
 
-  return { segments: reordered, reordered: true };
+  return { segments, reordered: false };
 }
 
 /**
