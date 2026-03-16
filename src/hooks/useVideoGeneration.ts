@@ -908,7 +908,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   // 단일 장면 생성
   const generateCut = useCallback(async (cutNumber: number, preserveVariants?: boolean) => {
     const t0 = performance.now(); // ── 전체 시작
-    const cut = cuts.find((c) => c.cutNumber === cutNumber);
+    let cut = cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
 
     const cfg = state.config;
@@ -1087,6 +1087,22 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       });
 
       const sequence = assembled.structuredSequence;
+
+      // ── Bridge: progression-aware multiShot override ──────────────────
+      // When shot-splitting detects arrow progression (A → B → C) or other
+      // content-aware progressions, it produces suggestedMultiShot.
+      // This MUST override Cut.multiShot so editor/preview/submit all
+      // reflect the real split structure instead of generic role-based shots.
+      if (assembled.suggestedMultiShot && assembled.suggestedMultiShot.length >= 2) {
+        // Only override if the cut doesn't already have user-edited multiShot
+        // that differs in count (user may have manually adjusted)
+        const existingCount = cut.multiShot?.length ?? 0;
+        const suggestedCount = assembled.suggestedMultiShot.length;
+        if (existingCount < 2 || existingCount === suggestedCount) {
+          cut = { ...cut, multiShot: assembled.suggestedMultiShot };
+          console.log(`[CUT ${cutNumber}] 🔗 Progression-aware multiShot bridge: ${suggestedCount} shots from shot-splitting`);
+        }
+      }
 
       // ── 3-way snapshot: original (assembleFromJSON 직후, QA 전) ──
       const snapshotOriginal = JSON.parse(JSON.stringify(sequence)) as StructuredSequenceDocument;

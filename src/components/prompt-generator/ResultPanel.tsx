@@ -339,14 +339,29 @@ export default function ResultPanel({
       charactersInScene: cut.charactersInScene,
       intentionalOneTake: cut.intentionalOneTake ?? false,
       // Layer 3: 시퀀스 내부 멀티샷 (최대 6개)
-      internalShots: cut.multiShot && cut.multiShot.length > 0
-        ? cut.multiShot.map(s => ({
+      // Source priority: Cut.multiShot (bridged from shot-splitting) > structuredSequence.shots
+      internalShots: (() => {
+        // Primary: Cut.multiShot (includes progression-aware splits)
+        if (cut.multiShot && cut.multiShot.length > 0) {
+          return cut.multiShot.map(s => ({
             index: s.index,
             prompt: s.prompt,
             duration: s.duration,
             role: s.role ?? null,
-          }))
-        : null,
+          }));
+        }
+        // Fallback: structuredSequence.shots (if clip has been generated)
+        const clip = videoGen.clips.find(c => c.cutNumber === cut.cutNumber);
+        if (clip?.structuredSequence?.shots && clip.structuredSequence.shots.length >= 2) {
+          return clip.structuredSequence.shots.map((s, i) => ({
+            index: i + 1,
+            prompt: `${s.action}. ${s.environment}`.trim() || s.focus,
+            duration: String(Math.round((s.endSec - s.startSec) * 10) / 10),
+            role: i === 0 ? "establish" : i === clip.structuredSequence!.shots.length - 1 ? "resolve" : "develop",
+          }));
+        }
+        return null;
+      })(),
       internalShotCount: cut.multiShot?.length ?? 0,
     })),
   };

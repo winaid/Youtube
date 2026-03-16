@@ -5,8 +5,9 @@ import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarra
 import MultiShotEditor from "./MultiShotEditor";
 import { getMaxShots } from "@/lib/kling-capability";
 import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
-import { shouldForceMultiShot, buildDefaultMultiShot } from "@/lib/multi-shot-planner";
+import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
+import { detectShotProgression, splitSingleShotSequence, type ShotBeatHint } from "@/lib/shot-splitting";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -331,6 +332,7 @@ export default function CutCard({
   const [showPresets, setShowPresets] = useState(false);
 
   // 멀티샷 자동 초기화 — useEffect로 안전하게 처리
+  // Priority: progression-aware split > generic role-based split
   // 조건: modelId 있고, onUpdate 있고, multiShot 비어있고, 의도적 원테이크 아니고, eligible
   useEffect(() => {
     if (!modelId || !onUpdate) return;
@@ -342,6 +344,51 @@ export default function CutCard({
     const forced = shouldForceMultiShot(sceneType, cut.durationSec, modelId);
 
     if (forced || maxShots >= 2) {
+      // ── Check for arrow/progression in content FIRST ──
+      // If the cut's action/subject contains progression markers (A → B → C),
+      // use content-aware split instead of generic role-based split.
+      const action = cut.videoPrompt || cut.sceneDescription || "";
+      const subject = cut.characterConsistency || "";
+      const progression = detectShotProgression(action, subject);
+
+      if (progression.hasProgression && cut.durationSec > 3) {
+        // Content-aware split: use the actual progression segments
+        const beatHint: ShotBeatHint = cut.cutNumber === 1 ? "hook" :
+          /\[.*훅.*\]|hook|도입/i.test(cut.sceneDescription || "") ? "hook" : "default";
+        const splitResult = splitSingleShotSequence({
+          sceneType,
+          subjectPrimary: subject,
+          action,
+          environment: cut.moodLighting || "",
+          moodLighting: cut.moodLighting || "",
+          durationSec: cut.durationSec,
+          camera: {
+            framing: cut.cameraDirection?.match(/\b(WS|MS|CU|MCU|ECU|LS)\b/i)?.[0] || "MS",
+            angle: "eye_level",
+            motion: cut.cameraDirection || "static",
+          },
+          beatHint,
+        });
+        if (splitResult.wasSplit && splitResult.shots.length >= 2) {
+          const roles = planShotRoles(splitResult.shots.length, sceneType);
+          const progressionMultiShot = splitResult.shots.map((shot, i) => {
+            const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
+              shot.camera.framing === "CU" ? "Close-up" :
+              shot.camera.framing === "MCU" ? "Medium close-up" :
+              `${shot.camera.framing} shot`;
+            return {
+              index: i + 1,
+              prompt: `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
+              duration: String(Math.round(shot.endSec - shot.startSec)),
+              role: roles[i] || ("develop" as const),
+            };
+          });
+          onUpdate({ ...cut, multiShot: progressionMultiShot });
+          return;
+        }
+      }
+
+      // Fallback: generic role-based split
       const autoShots = buildDefaultMultiShot({
         durationSec: cut.durationSec,
         sceneType,

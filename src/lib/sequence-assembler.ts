@@ -19,6 +19,8 @@ import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
 import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
 import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
 import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor, type ShotBeatHint } from "@/lib/shot-splitting";
+import { planShotRoles } from "@/lib/multi-shot-planner";
+import type { MultiShotPrompt, ShotRole } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Provider Capability Abstraction
@@ -1222,6 +1224,17 @@ export interface AssembleFromJSONResult {
   };
   /** 파이프라인 단계별 trace (raw → normalized → final) */
   pipelineTrace: PipelineTrace;
+  /**
+   * Content-aware multi-shot array derived from shot-splitting progression detection.
+   *
+   * When arrow progressions (A → B → C) or other progressions are detected,
+   * this contains the properly split shots in MultiShotPrompt[] format.
+   * The caller MUST use this to update Cut.multiShot so that editor/preview/submit
+   * all reflect the real multi-shot structure.
+   *
+   * undefined = no progression-based split was performed (use existing multiShot).
+   */
+  suggestedMultiShot?: import("@/types").MultiShotPrompt[];
   /** 디버그 전용 프리뷰 — source of truth 아님, 저장/전송 금지 */
   preview?: {
     renderedPrompt: string;
@@ -1514,6 +1527,12 @@ export function assembleFromJSON(input: {
         moodLighting: normalizedDoc.scene.moodLighting,
         focus: `${normalizedDoc.subject.primary} — ${normalizedDoc.subject.action}`.slice(0, 120),
       }];
+  // ── Convert split shots → MultiShotPrompt[] for Cut.multiShot bridge ──
+  // This is the critical bridge between System A (structuredSequence.shots)
+  // and System B (Cut.multiShot). Without this, shot-splitting results
+  // never reach the actual video generation submission.
+  let suggestedMultiShot: MultiShotPrompt[] | undefined;
+
   if (splitResult?.wasSplit) {
     normalizeLog.push(...splitResult.splitLog);
     // Update temporal beats from split shots
@@ -1525,6 +1544,26 @@ export function assembleFromJSON(input: {
         focus: shot.focus,
       });
     }
+
+    // Bridge: convert ShotDescriptor[] → MultiShotPrompt[]
+    // This ensures progression-aware splits become the actual multiShot
+    // used by editor, preview, and submission.
+    const sceneType = (effectiveSceneType || "default") as import("@/lib/multi-shot-planner").PlannerSceneType;
+    const roles = planShotRoles(sequenceShots.length, sceneType);
+    suggestedMultiShot = sequenceShots.map((shot, i) => {
+      const role: ShotRole = roles[i] || "develop";
+      // Build a content-aware prompt from the split shot's actual content
+      // instead of generic role-based prompts that ignore the progression
+      const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
+        shot.camera.framing === "MS" ? "Medium shot" :
+        shot.camera.framing === "CU" ? "Close-up" :
+        shot.camera.framing === "MCU" ? "Medium close-up" :
+        shot.camera.framing === "ECU" ? "Extreme close-up" :
+        `${shot.camera.framing} shot`;
+      const prompt = `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim();
+      const duration = String(Math.round(shot.endSec - shot.startSec));
+      return { index: i + 1, prompt, duration, role };
+    });
   }
 
   // ── Sequence density validation ──
@@ -1711,6 +1750,7 @@ export function assembleFromJSON(input: {
   return {
     structuredSequence,
     document: normalizedDoc,
+    suggestedMultiShot,
     diagnostics: {
       validation,
       sanitizeFixes: [...sanitizeFixes, ...normalizeLog],
