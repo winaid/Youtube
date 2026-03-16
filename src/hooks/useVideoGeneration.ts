@@ -196,10 +196,16 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     config: { ...DEFAULT_VIDEO_CONFIG },
   });
 
+  const mountedRef = useRef(true);
+  const cutsRef = useRef(cuts);
+  cutsRef.current = cuts; // 매 렌더마다 최신 cuts 동기화
   const pollTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
   // 동일 cutNumber에 대한 중복 폴링 방지
   const activePolls = useRef<Set<number>>(new Set());
   const autoModeRef = useRef(false);
+  const retryingCuts = useRef<Set<number>>(new Set()); // auto-retry 중복 방지
+  // 피드백 기반 재생성 시 cuts prop mutation 대신 사용하는 prompt override
+  const promptOverridesRef = useRef<Map<number, string>>(new Map());
 
   // ── 3-way comparison 스냅샷 저장 (per cut) ──
   const shotSnapshotsRef = useRef<Map<number, ShotSnapshots>>(new Map());
@@ -317,6 +323,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     const timers = pollTimers.current;
     const polls = activePolls.current;
     return () => {
+      mountedRef.current = false;
       timers.forEach((timer) => clearTimeout(timer));
       polls.clear();
     };
@@ -447,6 +454,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       },
       pollMeta: { pollCount: number; tPollStart: number },
     ): Promise<void> => {
+      if (!mountedRef.current) return; // unmount 후 state 업데이트 방지
       const finalUri = pollData.variants?.[0]?.videoUri || pollData.videoUri;
       if (!finalUri) {
         updateClip(cutNumber, { status: "failed", error: "영상 생성 완료되었으나 비디오 URL이 없습니다" });
@@ -586,6 +594,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         clipUpdate.sceneExtensionEligible = !!clipUpdate.canonicalVideoUri;
       }
 
+      if (!mountedRef.current) return; // unmount 후 state 업데이트 방지
       updateClip(cutNumber, clipUpdate);
 
       // ── 타이밍 ──
@@ -647,7 +656,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         if (!proxyUri) {
           console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 건너뜀: proxyUri 없음`);
         } else {
-          const cut = cuts.find((c) => c.cutNumber === cutNumber);
+          const cut = cutsRef.current.find((c) => c.cutNumber === cutNumber);
           const clipForRecord = state.clips.find(c => c.cutNumber === cutNumber);
           const saved = saveVideoRecord({
             operationName,
@@ -681,7 +690,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             updateClip(cutNumber, { lastFrameBase64: lastFrame });
             console.log(`[CUT ${cutNumber}] lastFrame 저장 완료 — 다음 컷 continuity 준비됨`);
 
-            const cut = cuts.find((c) => c.cutNumber === cutNumber);
+            const cut = cutsRef.current.find((c) => c.cutNumber === cutNumber);
             fetch("/api/verify-video-quality", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -773,6 +782,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       failData: { error?: string; noRetry?: boolean },
       attempt: number,
     ): void => {
+      if (!mountedRef.current) return; // unmount 후 state 업데이트 방지
       console.error(`[CUT ${cutNumber}] 생성 실패:`, failData.error || "unknown error", { noRetry: failData.noRetry, attempt });
       setState((prev) => {
         const clip = prev.clips.find((c) => c.cutNumber === cutNumber);
@@ -870,7 +880,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       activePolls.current.delete(cutNumber);
       pollTimers.current.delete(cutNumber);
     }
-  }, [updateClip, onSeedDetected, cuts]);
+  }, [updateClip, onSeedDetected]);
 
   // 미완료 작업 polling 재개
   const resumeJob = useCallback((job: VideoJobRecord) => {
@@ -882,25 +892,40 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       status: "polling",
       operationName: job.operationName || job.taskId,
     });
-    startPolling(
-      job.cutNumber,
-      job.operationName || job.taskId,
-      (job.engine as "kling") || "kling",
-      job.taskId,
-      false,
-      undefined,
-      job.jobId,
-    );
+    try {
+      startPolling(
+        job.cutNumber,
+        job.operationName || job.taskId,
+        (job.engine as "kling") || "kling",
+        job.taskId,
+        false,
+        undefined,
+        job.jobId,
+      );
+    } catch (err) {
+      // 폴링 시작 실패 → recoverableJobs에 복원 + clip 상태 롤백
+      console.error(`[resumeJob] CUT ${job.cutNumber} 폴링 재개 실패:`, err);
+      setRecoverableJobs(prev => [...prev, job]);
+      updateClip(job.cutNumber, {
+        status: "failed",
+        error: `작업 복구 실패: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }, [updateClip, startPolling]);
 
   // Auto-retry effect: when a clip becomes "idle" with retryCount > 0, auto-generate
   useEffect(() => {
+    if (!mountedRef.current) return;
     const clipToRetry = state.clips.find(
       (c) => c.status === "idle" && c.retryCount && c.retryCount > 0
         && !activePolls.current.has(c.cutNumber) // 이미 폴링 중인 컷 제외
+        && !retryingCuts.current.has(c.cutNumber) // 이미 재시도 시작한 컷 제외
     );
     if (clipToRetry) {
-      generateCut(clipToRetry.cutNumber);
+      retryingCuts.current.add(clipToRetry.cutNumber);
+      generateCut(clipToRetry.cutNumber).finally(() => {
+        retryingCuts.current.delete(clipToRetry.cutNumber);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.clips]);
@@ -910,6 +935,13 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     const t0 = performance.now(); // ── 전체 시작
     let cut = cuts.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
+
+    // 피드백 기반 재생성 시 prompt override 적용 (prop mutation 대신)
+    const promptOverride = promptOverridesRef.current.get(cutNumber);
+    if (promptOverride) {
+      cut = { ...cut, videoPrompt: promptOverride };
+      promptOverridesRef.current.delete(cutNumber); // 1회성 사용 후 제거
+    }
 
     const cfg = state.config;
     // legacyPrompt: safety retry 등 극한 fallback에서만 사용.
@@ -1949,13 +1981,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
   // ===== 피드백 기반 재생성 =====
   const regenerateFromFeedback = useCallback(async (cutNumber: number, improvedPrompt?: string) => {
-    // 피드백의 개선된 프롬프트로 업데이트 후 재생성
+    // 피드백의 개선된 프롬프트를 override ref에 저장 (prop 직접 mutation 대신)
     if (improvedPrompt) {
-      const cut = cuts.find((c) => c.cutNumber === cutNumber);
-      if (cut) {
-        // 프롬프트를 직접 업데이트 (부모 컴포넌트에서 관리하므로 videoPrompt만 활용)
-        cut.videoPrompt = improvedPrompt;
-      }
+      promptOverridesRef.current.set(cutNumber, improvedPrompt);
     }
 
     setState((prev) => ({
@@ -1967,7 +1995,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     resetClip(cutNumber);
     // 짧은 딜레이 후 생성 시작 (상태 업데이트 반영 대기)
     setTimeout(() => generateCut(cutNumber), 300);
-  }, [cuts, resetClip, generateCut]);
+  }, [resetClip, generateCut]);
 
   // ===== 피드백 기반 전체 재생성 (needsRegeneration인 컷만) =====
   const regenerateAllFromFeedback = useCallback(async () => {
@@ -1988,8 +2016,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     for (const cutNum of toRegenerate) {
       const feedback = state.review.cutFeedbacks.find((f) => f.cutNumber === cutNum);
       if (feedback?.improvedPrompt) {
-        const cut = cuts.find((c) => c.cutNumber === cutNum);
-        if (cut) cut.videoPrompt = feedback.improvedPrompt;
+        // prop 직접 mutation 대신 override ref 사용
+        promptOverridesRef.current.set(cutNum, feedback.improvedPrompt);
       }
       resetClip(cutNum);
     }
@@ -2002,7 +2030,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       isAutoMode: true,
       currentAutoIndex: firstIdx >= 0 ? firstIdx : 0,
     }));
-  }, [state.review, state.clips, cuts, resetClip]);
+  }, [state.review, state.clips, resetClip]);
 
   // ═══════════════════════════════════════════════════════════════
   // Narration Audio Pipeline
