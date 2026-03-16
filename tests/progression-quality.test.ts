@@ -391,7 +391,7 @@ describe("prompt decomposition quality", () => {
     // peak should focus on emotional content
     expect(peak.prompt.toLowerCase()).toMatch(/expression|pride|horror|emotion/);
     // resolve should describe aftermath
-    expect(resolve.prompt.toLowerCase()).toMatch(/after|aftermath|consequence|result|outcome/);
+    expect(resolve.prompt.toLowerCase()).toMatch(/after|aftermath|consequence|result|outcome|wake/);
   });
 
   it("environment: insert 샷은 구체적 디테일 묘사", () => {

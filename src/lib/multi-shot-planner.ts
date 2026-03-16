@@ -375,7 +375,7 @@ export function buildDefaultMultiShot(opts: {
 
   return roles.map((role, i) => ({
     index: i + 1,
-    prompt: buildProgressionPrompt(basePrompt, role, i, effectiveCount),
+    prompt: buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType),
     duration: String(durations[i]),
     role,
   }));
@@ -402,6 +402,7 @@ function buildProgressionPrompt(
   role: ShotRole,
   index: number,
   total: number,
+  sceneType: PlannerSceneType = "default",
 ): string {
   const directive = ROLE_PROGRESSION_DIRECTIVE[role];
   if (!directive) return basePrompt;
@@ -410,33 +411,27 @@ function buildProgressionPrompt(
     return `[Shot ${index + 1}/${total} — ${role}] ${directive.visualDirective}`;
   }
 
-  // Decompose basePrompt into visual layers
-  const layers = decomposePromptLayers(basePrompt.trim());
+  // Decompose basePrompt into visual layers (scene-type aware)
+  const layers = decomposePromptLayers(basePrompt.trim(), sceneType);
 
   switch (role) {
     case "establish":
-      // Show ONLY the space/environment. Do NOT mention the action or emotion.
-      return `${directive.shotSize} shot. ${layers.space}. No characters in focus — pure environment establishing the location.`;
+      return `${directive.shotSize} shot. ${layers.space}. Atmosphere only — the action hasn't started.`;
 
     case "transition":
-      // Bridge shot — different angle on the space, hinting at what comes next
-      return `${directive.shotSize} shot, new angle. ${layers.space}, seen from a different perspective. Camera reveals the path toward the subject.`;
+      return `${directive.shotSize} shot. ${layers.transition}. A new vantage point before the action begins.`;
 
     case "develop":
-      // Show the subject and action — the "who" and "what"
-      return `${directive.shotSize} shot. ${layers.action}. New visual information not visible in the establishing shot.`;
+      return `${directive.shotSize} shot. ${layers.action}. First clear view of the subject in motion.`;
 
     case "insert":
-      // Jump to extreme detail — one specific object or texture
-      return `Extreme close-up. ${layers.detail}. Dramatic scale change — a detail too small for previous shots to capture.`;
+      return `Extreme close-up. ${layers.detail}. Scale jump — invisible at any wider framing.`;
 
     case "peak":
-      // Maximum emotional intensity — the feeling, not the setting
-      return `${directive.shotSize}. ${layers.emotion}. The most intense moment — maximum visual and emotional impact.`;
+      return `${directive.shotSize}. ${layers.emotion}. The single most intense frame in the sequence.`;
 
     case "resolve":
-      // The aftermath — what changed, the release
-      return `${directive.shotSize}. ${layers.result}. The outcome becomes visible — tension releases into visual closure.`;
+      return `${directive.shotSize}. ${layers.result}. The tension breaks — visual closure.`;
 
     default:
       return `${directive.shotSize} shot. ${basePrompt.trim()}`;
@@ -447,14 +442,37 @@ function buildProgressionPrompt(
 
 const SPACE_RE = /\b(forest|castle|room|street|market|temple|ruins|ocean|city|village|hall|kitchen|office|hospital|courtyard|arena|sky|mountain|valley|bridge|corridor|alley|cave|beach|desert|field|garden|square|harbor|rooftop|workshop|studio|laboratory|church|palace|prison|tower|dock|basement|attic|library|station|airport|stadium|cemetery|farm|barn|warehouse|factory|mine|quarry|jungle|swamp|tundra|glacier|volcano|canyon|cliff|plateau|oasis|shore|bay|lagoon|reef|island|building|house|cabin|tent|bunker|shelter|wall|staircase|balcony|terrace|window|doorway|gate|arch|path|trail|road|highway|intersection|plaza|park|pier|wharf|port|docks?|tunnel|passage)\b/gi;
 const ACTION_RE = /\b(rides?|walks?|runs?|fights?|tastes?|grabs?|turns?|opens?|pushes?|pulls?|enters?|exits?|climbs?|jumps?|swims?|throws?|catches?|breaks?|builds?|cuts?|draws?|fires?|hits?|kicks?|lands?|lifts?|drops?|picks?|places?|pours?|reads?|writes?|speaks?|shouts?|whispers?|sings?|dances?|flies?|drives?|sails?|crawls?|slides?|swings?|spins?|shifts?|reaches?|stretches?|holds?|carries?|leads?|follows?|chases?|escapes?|flees?|attacks?|defends?|guards?|strikes?|stabs?|slashes?|blocks?|dodges?|aims?|shoots?|loads?|charges?|retreats?|advances?|marches?|patrols?|scouts?|searching|examines?|inspects?)\b/gi;
-const EMOTION_RE = /\b(expression|horror|pride|fear|joy|anger|sadness|surprise|shock|despair|hope|love|hate|disgust|contempt|awe|wonder|grief|rage|panic|calm|peace|tension|anxiety|relief|excitement|frustration|satisfaction|confusion|determination|resignation|defiance|trembl\w*|shak\w*|sob\w*|laugh\w*|cry\w*|scream\w*|gasp\w*|frown\w*|smile\w*|grin\w*|sneer\w*|wince\w*|grimace\w*|sigh\w*|groan\w*)\b/gi;
-const DETAIL_RE = /\b(vines?|light\w*|steam|smoke|dust|rain|snow|ice|fire|flame|spark|glow\w*|shadow\w*|reflection|ripple|droplet|splash|thread|chain|rope|key|ring|coin|blade|handle|wheel|gear|button|latch|hinge|surface|texture|pattern|grain|rust|crack|peel|chip|stain|mark|scar|canopy|moss|cobweb|frost|dew|mud|sand|gravel|pebble|stone|brick|metal|wood|glass|leather|fabric|cloth|silk|wool|iron|steel|copper|gold|silver|bronze|marble|crystal|amber|ivory|porcelain|ceramic|concrete)\b/gi;
+const EMOTION_RE = /\b(horror|pride|fear|joy|anger|sadness|surprise|shock|despair|hope|love|hate|disgust|contempt|awe|wonder|grief|rage|panic|calm|peace|tension|anxiety|relief|excitement|frustration|satisfaction|confusion|determination|resignation|defiance|trembl\w*|shak\w*|sob\w*|laugh\w*|cry\w*|scream\w*|gasp\w*|frown\w*|smile\w*|grin\w*|sneer\w*|wince\w*|grimace\w*|sigh\w*|groan\w*)\b/gi;
+const DETAIL_RE = /\b(vines?|lighting|lights?|lit|steam|smoke|dust|rain|snow|ice|fire|flame|spark|glow\w*|shadow\w*|reflection|ripple|droplet|splash|thread|chain|rope|key|ring|coin|blade|handle|wheel|gear|button|latch|hinge|surface|texture|pattern|grain|rust|crack|peel|chip|stain|mark|scar|canopy|moss|cobweb|frost|dew|mud|sand|gravel|pebble|stone|brick|metal|wood|glass|leather|fabric|cloth|silk|wool|iron|steel|copper|gold|silver|bronze|marble|crystal|amber|ivory|porcelain|ceramic|concrete)\b/gi;
 const SUBJECT_RE = /\b(knight|chef|warrior|soldier|king|queen|prince|princess|doctor|nurse|patient|teacher|student|priest|monk|merchant|thief|guard|captain|general|emperor|peasant|farmer|hunter|blacksmith|carpenter|tailor|baker|butcher|fisherman|sailor|pirate|wizard|witch|dragon|wolf|horse|dog|cat|bird|eagle|hawk|raven|serpent|lion|tiger|bear|fox|deer|child|woman|man|boy|girl|elder|stranger|traveler|pilgrim|assassin|spy|detective|scientist|artist|musician|dancer|acrobat|gladiator|samurai|ninja|cowboy|sheriff)\b/gi;
 
 /** Extract unique matches from text using a regex pattern */
 function extractTerms(text: string, re: RegExp): string[] {
   const matches = text.match(re);
   return matches ? [...new Set(matches.map(m => m.toLowerCase()))] : [];
+}
+
+/** Capitalize first letter */
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Strip inflection to base verb: "rides"→"ride", "tastes"→"taste", "pushes"→"push" */
+function toBaseVerb(verb: string): string {
+  if (verb.endsWith("ies")) return verb.slice(0, -3) + "y";
+  if (verb.endsWith("shes") || verb.endsWith("ches") || verb.endsWith("xes") || verb.endsWith("zes") || verb.endsWith("sses"))
+    return verb.slice(0, -2);
+  if (verb.endsWith("s") && !verb.endsWith("ss")) return verb.slice(0, -1);
+  return verb;
+}
+
+/** Convert verb to present participle: "ride"→"riding", "taste"→"tasting", "run"→"running" */
+function toGerund(verb: string): string {
+  const base = toBaseVerb(verb);
+  if (base.endsWith("ie")) return base.slice(0, -2) + "ying";
+  if (base.endsWith("e") && !base.endsWith("ee")) return base.slice(0, -1) + "ing";
+  if (/[^aeiou][aeiou][bdgklmnprst]$/.test(base) && base.length <= 4) return base + base[base.length - 1] + "ing";
+  return base + "ing";
 }
 
 /**
@@ -464,10 +482,14 @@ function extractTerms(text: string, re: RegExp): string[] {
  *   1. 콤마/세미콜론 기준 절 분리 시도
  *   2. 절이 1개뿐이면 키워드 추출 기반 분해
  *
- * 절대 규칙: 어떤 레이어도 원문을 그대로 반복하지 않는다.
+ * 핵심 원칙:
+ *   - 어떤 레이어도 원문을 그대로 반복하지 않는다.
+ *   - 모든 레이어는 완전한 시각 묘사 문장이어야 한다 (키워드 나열 금지).
+ *   - "keyword — category label" 패턴 금지 → 카메라가 보는 장면을 묘사.
  */
-function decomposePromptLayers(prompt: string): {
+function decomposePromptLayers(prompt: string, sceneType: PlannerSceneType = "default"): {
   space: string;
+  transition: string;
   action: string;
   detail: string;
   emotion: string;
@@ -493,6 +515,11 @@ function decomposePromptLayers(prompt: string): {
     const detailClauses: string[] = [];
 
     for (const clause of clauses) {
+      // Reset global regex lastIndex to avoid statefulness bugs with .test()
+      EMOTION_RE.lastIndex = 0;
+      ACTION_RE.lastIndex = 0;
+      SPACE_RE.lastIndex = 0;
+      DETAIL_RE.lastIndex = 0;
       if (EMOTION_RE.test(clause)) emotionClauses.push(clause);
       else if (ACTION_RE.test(clause)) actionClauses.push(clause);
       else if (SPACE_RE.test(clause)) spaceClauses.push(clause);
@@ -500,62 +527,148 @@ function decomposePromptLayers(prompt: string): {
       else spaceClauses.push(clause);
     }
 
-    return {
-      space: spaceClauses.length > 0 ? spaceClauses.join(", ") : buildSpaceLayer(spaceWords, prompt),
-      action: actionClauses.length > 0 ? actionClauses.join(", ") : buildActionLayer(subjectWords, actionWords, prompt),
-      detail: detailClauses.length > 0 ? detailClauses.join(", ") : buildDetailLayer(detailWords, spaceWords, prompt),
-      emotion: emotionClauses.length > 0 ? emotionClauses.join(", ") : buildEmotionLayer(emotionWords, actionWords, subjectWords),
-      result: buildResultLayer(emotionWords, actionWords, subjectWords),
-    };
+    // If all clauses landed in space (no real differentiation), fall back to keyword extraction
+    const hasDifferentiation = actionClauses.length > 0 || emotionClauses.length > 0 || detailClauses.length > 0;
+    if (hasDifferentiation) {
+      return {
+        space: spaceClauses.length > 0 ? spaceClauses.join(", ") : buildSpaceLayer(spaceWords, prompt),
+        transition: buildTransitionLayer(spaceClauses, detailClauses, spaceWords, prompt),
+        action: actionClauses.length > 0 ? actionClauses.join(", ") : buildActionLayer(subjectWords, actionWords, prompt),
+        detail: detailClauses.length > 0 ? detailClauses.join(", ") : buildDetailLayer(detailWords, spaceWords, prompt),
+        emotion: emotionClauses.length > 0 ? emotionClauses.join(", ") : buildEmotionLayer(emotionWords, actionWords, subjectWords),
+        result: buildResultLayer(emotionWords, actionWords, subjectWords, prompt, sceneType),
+      };
+    }
+    // else: fall through to keyword-based decomposition below
   }
 
   // ── Single/two-clause: keyword-based decomposition ──
   return {
     space: buildSpaceLayer(spaceWords, prompt),
+    transition: buildTransitionLayer([], [], spaceWords, prompt),
     action: buildActionLayer(subjectWords, actionWords, prompt),
     detail: buildDetailLayer(detailWords, spaceWords, prompt),
     emotion: buildEmotionLayer(emotionWords, actionWords, subjectWords),
-    result: buildResultLayer(emotionWords, actionWords, subjectWords),
+    result: buildResultLayer(emotionWords, actionWords, subjectWords, prompt, sceneType),
   };
 }
 
 function buildSpaceLayer(spaceWords: string[], prompt: string): string {
-  if (spaceWords.length >= 2) return `${spaceWords.join(" and ")} — the surrounding environment`;
-  if (spaceWords.length === 1) return `${spaceWords[0]} environment — the space where the scene takes place`;
-  // No space words found — synthesize from subject context
-  return `The surrounding environment and atmosphere of the scene`;
+  if (spaceWords.length >= 3) {
+    return `${capitalize(spaceWords[0])} and ${spaceWords[1]} and ${spaceWords[2]} spread across the frame, atmosphere and depth visible in every direction`;
+  }
+  if (spaceWords.length >= 2) {
+    return `${capitalize(spaceWords[0])} stretching toward the ${spaceWords[1]}, the full environment visible from a distance`;
+  }
+  if (spaceWords.length === 1) {
+    return `The ${spaceWords[0]} laid bare from edge to edge, its light, its air, its scale filling the frame`;
+  }
+  // No space keywords — use subject to imply environment
+  const subjects = extractTerms(prompt, SUBJECT_RE);
+  if (subjects.length > 0) {
+    return `The ${subjects[0]}'s surroundings — the full space, light, and atmosphere visible before any action begins`;
+  }
+  return `The full environment of the scene — space, light, and atmosphere filling the frame from edge to edge`;
+}
+
+function buildTransitionLayer(spaceClauses: string[], detailClauses: string[], spaceWords: string[], prompt: string): string {
+  if (detailClauses.length > 0) {
+    return `${detailClauses[0]}, glimpsed from a new angle as the camera moves through the space`;
+  }
+  if (spaceClauses.length > 1) {
+    return `${spaceClauses[1]}, discovered as the viewpoint shifts to reveal hidden depth`;
+  }
+  if (spaceWords.length >= 2) {
+    return `The ${spaceWords[1]} from a second vantage point, new geometry and depth emerging from the shift in perspective`;
+  }
+  if (spaceWords.length === 1) {
+    return `A new angle on the ${spaceWords[0]}, revealing what the first view couldn't show`;
+  }
+  return `The same space from a shifted vantage point, new depth and geometry emerging as the camera finds a second angle`;
 }
 
 function buildActionLayer(subjectWords: string[], actionWords: string[], prompt: string): string {
-  const subject = subjectWords.length > 0 ? subjectWords[0] : "the subject";
-  const action = actionWords.length > 0 ? actionWords[0] : "moving through the scene";
+  const subject = subjectWords.length > 0 ? `The ${subjectWords[0]}` : "The figure";
+
   if (subjectWords.length > 0 && actionWords.length > 0) {
-    return `${subject} ${action} — the central physical action`;
+    return `${subject} ${toGerund(actionWords[0])}, captured in the act — movement and intent visible at medium distance`;
   }
-  if (actionWords.length > 0) return `Subject ${action} — the defining moment of action`;
-  if (subjectWords.length > 0) return `${subject} in motion — approaching, engaging, acting`;
-  return `The subject in mid-action — the key moment of movement or change`;
+  if (actionWords.length > 0) {
+    return `A figure ${toGerund(actionWords[0])} with purpose, the first clear view of the action driving the scene`;
+  }
+  if (subjectWords.length > 0) {
+    return `${subject} in deliberate motion, body language revealing intent as the action begins`;
+  }
+  return `The central action unfolding, subject and movement captured together for the first time`;
 }
 
 function buildDetailLayer(detailWords: string[], spaceWords: string[], prompt: string): string {
-  if (detailWords.length >= 2) return `${detailWords.slice(0, 3).join(", ")} — textural extreme close-up`;
-  if (detailWords.length === 1) return `${detailWords[0]} — surface texture and material in extreme detail`;
-  if (spaceWords.length > 0) return `Surface detail of the ${spaceWords[0]} — texture, material, wear, light`;
-  return `A crucial small detail — hands, objects, textures that previous shots missed`;
+  if (detailWords.length >= 3) {
+    return `${capitalize(detailWords[0])} and ${detailWords[1]} and ${detailWords[2]}, surface texture magnified until it fills the entire frame`;
+  }
+  if (detailWords.length >= 2) {
+    return `${capitalize(detailWords[0])} and ${detailWords[1]} at intimate scale, grain and imperfection visible only at this magnification`;
+  }
+  if (detailWords.length === 1) {
+    return `${capitalize(detailWords[0])} in extreme magnification, every surface imperfection and textural detail exposed`;
+  }
+  if (spaceWords.length > 0) {
+    return `The surface of the ${spaceWords[0]} — cracks, wear, material grain, the fingerprint of time visible at intimate scale`;
+  }
+  return `A critical detail too small for any wider shot — texture, surface, or object that tells the story at extreme magnification`;
 }
 
 function buildEmotionLayer(emotionWords: string[], actionWords: string[], subjectWords: string[]): string {
-  if (emotionWords.length > 0) return `${emotionWords.join(" and ")} — the emotional climax`;
-  const subject = subjectWords.length > 0 ? subjectWords[0] : "the subject";
-  if (actionWords.length > 0) return `${subject}'s face at the peak of ${actionWords[0]} — eyes, mouth, breath`;
-  return `${subject}'s face — the most emotionally raw moment`;
+  const subject = subjectWords.length > 0 ? `the ${subjectWords[0]}` : "the subject";
+
+  if (emotionWords.length >= 2) {
+    return `${capitalize(emotionWords[0])} cracking into ${emotionWords[1]} across ${subject}'s face — the exact instant the feeling transforms`;
+  }
+  if (emotionWords.length === 1) {
+    return `Raw ${emotionWords[0]} written across ${subject}'s face — eyes, brow, and mouth all carrying the weight of this moment`;
+  }
+  if (actionWords.length > 0) {
+    return `${capitalize(subject)}'s face mid-${toBaseVerb(actionWords[0])} — whatever this costs, it shows in the eyes, the jaw, the breath`;
+  }
+  return `${capitalize(subject)}'s face at the most unguarded moment — the feeling visible in every micro-expression`;
 }
 
-function buildResultLayer(emotionWords: string[], actionWords: string[], subjectWords: string[]): string {
-  const subject = subjectWords.length > 0 ? subjectWords[0] : "the scene";
-  if (emotionWords.length > 0) return `${subject} after the ${emotionWords[0]} — the visible aftermath`;
-  if (actionWords.length > 0) return `The moment after ${subject} ${actionWords[0]} — what changed, what remains`;
-  return `${subject} in the aftermath — the stillness after the event`;
+function buildResultLayer(emotionWords: string[], actionWords: string[], subjectWords: string[], prompt: string, sceneType: PlannerSceneType): string {
+  const subject = subjectWords.length > 0 ? `the ${subjectWords[0]}` : "the scene";
+
+  // Scene-type specific resolve patterns
+  if (sceneType === "environment") {
+    const space = extractTerms(prompt, SPACE_RE);
+    if (space.length > 0) {
+      return `The ${space[0]} after the moment passes — same place, different reality, silence filling where movement was`;
+    }
+    return `The landscape settling into new stillness — what was in motion has stopped, and the change lingers visibly`;
+  }
+
+  if (sceneType === "character-driven" && subjectWords.length > 0) {
+    if (emotionWords.length > 0) {
+      const finalEmotion = emotionWords[emotionWords.length - 1];
+      return `${capitalize(subject)} in the wake of ${finalEmotion} — body still, breath slowing, the weight settling into the frame`;
+    }
+    return `${capitalize(subject)} after everything — standing changed, the body language of someone altered by what just happened`;
+  }
+
+  if (sceneType === "battle") {
+    if (subjectWords.length > 0) {
+      return `${capitalize(subject)} standing in the aftermath of the fight — dust settling, weapons lowered, the cost of the clash written on the body`;
+    }
+    return `The battlefield after the clash — dust and silence where chaos was, the outcome written in the debris`;
+  }
+
+  if (actionWords.length > 0) {
+    const base = toBaseVerb(actionWords[0]);
+    return `${capitalize(subject)} after the ${base} — the world and the body settling into a new stillness, the change visible`;
+  }
+  if (emotionWords.length > 0) {
+    const finalEmotion = emotionWords[emotionWords.length - 1];
+    return `The ${finalEmotion} fading from the face — what remains is quieter, heavier, and permanent`;
+  }
+  return `${capitalize(subject)} in the aftermath — what moved has stopped, what changed remains written across the frame`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
