@@ -359,8 +359,19 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           if (data.analysis) {
             result = data.analysis;
           }
+        } else {
+          // Log structured error from backend for debugging
+          try {
+            const errData = await res.json();
+            console.warn(`[analyze-script] ${res.status} at stage:${errData.stage ?? "unknown"} — ${errData.error}`, errData.detail ?? "");
+          } catch {
+            console.warn(`[analyze-script] ${res.status} (no structured error)`);
+          }
+          // Continue with heuristic result — LLM enrichment is optional
         }
-      } catch { /* continue without LLM */ }
+      } catch (fetchErr) {
+        console.warn("[analyze-script] Network error, continuing with heuristic:", (fetchErr as Error).message);
+      }
 
       if (analysisAbortRef.current) { setAnalysisPhase("idle"); return; }
 
