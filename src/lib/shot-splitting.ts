@@ -398,7 +398,17 @@ export function splitSingleShotSequence(input: {
     splitLog.push(`[shot-split] Reordered segments for ${beatHint} beat — macro-first priority`);
   }
 
-  return { shots, splitLog, wasSplit: true };
+  // ── Anti-fake-split: merge back adjacent shots with identical visual objectives ──
+  const { shots: mergedShots, mergeLog } = mergeAdjacentFakeSplits(shots);
+  splitLog.push(...mergeLog);
+
+  // If merge collapsed everything back to 1 shot, it wasn't a genuine split
+  if (mergedShots.length <= 1 && shots.length > 1) {
+    splitLog.push(`[anti-fake-split] All shots merged back — split was not genuine`);
+    return { shots: mergedShots, splitLog, wasSplit: false };
+  }
+
+  return { shots: mergedShots, splitLog, wasSplit: mergedShots.length >= 2 };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -498,7 +508,129 @@ export function enforceMinimumShotCount(input: {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 7. Sequence Density Validation
+// 7. Anti-Fake-Split — merge adjacent shots with identical objectives
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Detect whether two adjacent shots have substantially identical visual objectives.
+ *
+ * A "fake split" occurs when:
+ * - Two shots share the same subject AND the same visual action/framing
+ * - No meaningful visual change between them (same framing, same action core)
+ * - Split was triggered by noun count rather than genuine visual progression
+ *
+ * Returns similarity score 0-1. Score > 0.7 means shots should be merged.
+ *
+ * grep: computeShotSimilarity, mergeAdjacentFakeSplits
+ */
+export function computeShotSimilarity(a: ShotDescriptor, b: ShotDescriptor): number {
+  let score = 0;
+  let factors = 0;
+
+  // Same framing → strong similarity signal
+  if (a.camera.framing === b.camera.framing) { score += 0.3; }
+  factors += 0.3;
+
+  // Same angle
+  if (a.camera.angle === b.camera.angle) { score += 0.1; }
+  factors += 0.1;
+
+  // Same motion
+  if (a.camera.motion === b.camera.motion) { score += 0.1; }
+  factors += 0.1;
+
+  // Subject overlap — core subject words
+  const aSubjectWords = new Set(a.subject.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const bSubjectWords = new Set(b.subject.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const subjectOverlap = [...aSubjectWords].filter(w => bSubjectWords.has(w)).length;
+  const subjectUnion = new Set([...aSubjectWords, ...bSubjectWords]).size;
+  if (subjectUnion > 0) {
+    score += 0.25 * (subjectOverlap / subjectUnion);
+  }
+  factors += 0.25;
+
+  // Action overlap — core action verbs/nouns
+  const aActionWords = new Set(a.action.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const bActionWords = new Set(b.action.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const actionOverlap = [...aActionWords].filter(w => bActionWords.has(w)).length;
+  const actionUnion = new Set([...aActionWords, ...bActionWords]).size;
+  if (actionUnion > 0) {
+    score += 0.25 * (actionOverlap / actionUnion);
+  }
+  factors += 0.25;
+
+  return factors > 0 ? score / factors : 0;
+}
+
+/**
+ * Merge adjacent shots when visual objective is substantially identical.
+ *
+ * This prevents fake splits caused by:
+ * - Noun count triggering a split (e.g., "man walks through crowd" → 2 shots with same wide framing)
+ * - Template-based splits that produce visually identical shots
+ *
+ * Returns merged shots + merge log.
+ */
+export function mergeAdjacentFakeSplits(
+  shots: ShotDescriptor[],
+  similarityThreshold = 0.7,
+): { shots: ShotDescriptor[]; mergeLog: string[] } {
+  if (shots.length <= 1) return { shots, mergeLog: [] };
+
+  const result: ShotDescriptor[] = [];
+  const mergeLog: string[] = [];
+  let current = shots[0];
+
+  for (let i = 1; i < shots.length; i++) {
+    const next = shots[i];
+    const similarity = computeShotSimilarity(current, next);
+
+    if (similarity >= similarityThreshold) {
+      // Merge: extend current shot to cover both time ranges
+      mergeLog.push(
+        `[anti-fake-split] Merged ${current.shotId}+${next.shotId} (similarity ${(similarity * 100).toFixed(0)}% ≥ ${(similarityThreshold * 100).toFixed(0)}% threshold). ` +
+        `Same framing="${current.camera.framing}", subject overlap detected.`,
+      );
+      current = {
+        ...current,
+        endSec: next.endSec,
+        // Combine actions if they differ
+        action: current.action === next.action
+          ? current.action
+          : `${current.action}; ${next.action}`,
+        focus: current.focus,
+      };
+      // Re-number remaining shots
+    } else {
+      result.push(current);
+      current = next;
+    }
+  }
+  result.push(current);
+
+  // Re-number shot IDs
+  result.forEach((s, i) => { s.shotId = `shot_${i + 1}`; });
+
+  return { shots: result, mergeLog };
+}
+
+/**
+ * Validate that a split produces genuinely different shots.
+ * Returns true if the split is valid (shots are distinct).
+ */
+export function isGenuineSplit(shots: ShotDescriptor[]): boolean {
+  if (shots.length <= 1) return true;
+
+  for (let i = 0; i < shots.length - 1; i++) {
+    if (computeShotSimilarity(shots[i], shots[i + 1]) >= 0.7) {
+      return false; // At least one pair is too similar
+    }
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Sequence Density Validation
 // ═══════════════════════════════════════════════════════════════════
 
 export interface SequenceDensityIssue {

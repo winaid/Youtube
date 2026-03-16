@@ -46,6 +46,17 @@ export interface MontageExportState {
   stitchCapability: StitchCapability;
   /** stitch가 불가능한 이유 (사용자 안내용, capability=not_available일 때) */
   stitchUnavailableReason: string;
+  /**
+   * Audio mux support status — honest disclosure.
+   *
+   * Current state: false.
+   * FFmpeg concat pipeline uses -c copy (video stream only).
+   * Narration/SFX audio tracks are NOT included in exported montage.
+   * Audio is functional in preview (timeline playback) but NOT in export.
+   */
+  audioMuxSupported: boolean;
+  /** User-facing audio limitation message */
+  audioLimitationNotice: string;
 }
 
 /** stitch 실행 가능 여부 판정 결과 */
@@ -114,6 +125,11 @@ export function computeMontageExportState(
     stitchUnavailableReason:
       "현재 버전에서는 서버/클라이언트 stitch(ffmpeg/WebCodecs)가 미구현입니다. " +
       "개별 clip을 다운로드한 후 외부 편집 도구로 합쳐주세요.",
+    audioMuxSupported: false,
+    audioLimitationNotice:
+      "내보내기 영상에는 오디오가 포함되지 않습니다. " +
+      "나레이션/효과음은 미리보기에서만 재생되며, 몽타주 합성 시 비디오 스트림만 결합됩니다. " +
+      "오디오가 필요한 경우, 개별 오디오 파일을 다운로드하여 외부 편집 도구에서 합성하세요.",
   };
 }
 
