@@ -443,7 +443,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   // Environment: globalStyle에 positive 키워드 보장 (공통 헬퍼)
   const globalStyle = isEnv ? enrichEnvironmentPositives(styleLabel) : styleLabel;
 
-  return {
+  const result: SingleShotDocument = {
     shotId: `shot_${cut.cutNumber}`,
     cutNumber: cut.cutNumber,
 
