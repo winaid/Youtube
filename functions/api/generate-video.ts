@@ -530,9 +530,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // durationSeconds 타입 검증
     if (req.durationSeconds !== undefined) {
       const durNum = Number(req.durationSeconds);
-      if (!Number.isFinite(durNum)) {
+      if (!Number.isFinite(durNum) || durNum <= 0) {
         return Response.json(
-          { error: `durationSeconds must be a number, got: ${JSON.stringify(req.durationSeconds)}` },
+          { error: `durationSeconds must be a positive number, got: ${JSON.stringify(req.durationSeconds)}` },
           { status: 400 },
         );
       }
@@ -643,7 +643,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           { status: 400 },
         );
       } else {
-        // Batch Mode: auto-repair — 기본 멀티샷 자동 생성
+        // Batch Mode: auto-repair — 역할 기반 멀티샷 자동 생성
         const autoShotCount = normalizedDuration <= 5 ? 2
           : normalizedDuration <= 8 ? 3
           : normalizedDuration <= 12 ? 4
@@ -651,9 +651,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const minShotDur = getCapability(modelUsed).minShotDuration;
         const baseDur = Math.floor(normalizedDuration / autoShotCount);
         const remainder = normalizedDuration - baseDur * autoShotCount;
+        // 역할 패턴: 시각적 진행감을 위해 샷별 다른 접두사 적용
+        const ROLE_PREFIXES: Record<number, string[]> = {
+          2: ["[Establishing wide shot] ", "[Resolving close-up] "],
+          3: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Resolving close-up] "],
+          4: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
+          5: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
+        };
+        const prefixes = ROLE_PREFIXES[autoShotCount] ?? ROLE_PREFIXES[4]!;
+        const basePrompt = finalPromptForProvider || "";
         const repairedShots: KlingMultiShot[] = Array.from({ length: autoShotCount }, (_, i) => ({
           index: i + 1,
-          prompt: finalPromptForProvider || "",
+          prompt: `${prefixes[i] ?? ""}${basePrompt}`.slice(0, 512),
           duration: String(i === autoShotCount - 1 ? baseDur + remainder : baseDur),
         }));
         req.multiShot = repairedShots;

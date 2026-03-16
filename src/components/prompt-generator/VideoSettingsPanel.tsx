@@ -124,7 +124,7 @@ export default function VideoSettingsPanel({
 
   // 예상 비용 계산 (fast 모드 고정)
   const pricePerSec = 0.15;
-  const estimatedCost = pricePerSec * config.durationSeconds * config.sampleCount;
+  const estimatedCost = pricePerSec * (config.durationSeconds ?? 6) * config.sampleCount;
 
   const engineLabels: Record<VideoEngine, string> = { kling: "Kling", auto: "Auto" };
   const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };

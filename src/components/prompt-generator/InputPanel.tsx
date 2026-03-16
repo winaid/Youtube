@@ -514,6 +514,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
   const handleWebSelect = (webDir: WebDirectorResult) => {
     // 웹 결과를 커스텀 감독으로 추가 (signatureTechniques 포함)
+    // persona 기본값: 스타일+설명 기반 fallback (Gemini 생성 전까지 사용)
+    const fallbackPersona = webDir.description
+      ? `${webDir.name} 스타일의 연출. ${webDir.description}`
+      : `${webDir.name} (${webDir.style}) 스타일의 시네마틱 연출가`;
     const newDirector: DirectorPersona = {
       id: webDir.id,
       name: webDir.name,
@@ -521,7 +525,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       region: webDir.region,
       style: webDir.style,
       description: webDir.description,
-      persona: "", // Gemini가 생성 시 채움
+      persona: fallbackPersona,
       signatureTechniques: webDir.signatureTechniques,
       notableWorks: webDir.notableWorks,
     };
@@ -535,6 +539,32 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     setDirectorPersona(webDir.id);
     setDirectorSearch("");
     setWebResults([]);
+
+    // 비동기로 Gemini persona 생성 요청
+    fetch("/api/generate-persona", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: webDir.name,
+        style: webDir.style,
+        description: webDir.description,
+        signatureTechniques: webDir.signatureTechniques,
+        notableWorks: webDir.notableWorks,
+      }),
+    })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.persona) {
+          setCustomDirectors((prev) => {
+            const updated = prev.map((d) =>
+              d.id === webDir.id ? { ...d, persona: data.persona } : d,
+            );
+            persistCustomDirectors(updated);
+            return updated;
+          });
+        }
+      })
+      .catch(() => { /* fallback persona 유지 */ });
   };
 
   const handleDeleteCustomDirector = (directorId: string) => {

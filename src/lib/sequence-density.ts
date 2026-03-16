@@ -40,7 +40,11 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 5, minCuts: 1 },
   { maxSec: 8, minCuts: 1 },
   { maxSec: 15, minCuts: 1 },
-  { maxSec: Infinity, minCuts: 1 },
+  { maxSec: 30, minCuts: 2 },
+  { maxSec: 60, minCuts: 4 },
+  { maxSec: 120, minCuts: 8 },
+  { maxSec: 300, minCuts: 20 },
+  { maxSec: Infinity, minCuts: 20 },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -512,6 +516,26 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
 
     needed--;
   }
+
+  // ── Kling 15초 상한 클램핑: 개별 컷이 KLING_SEGMENT_CAP 초과 시 분할 ──
+  let clamped: typeof working = [];
+  for (const c of working) {
+    if (c.durationSec > KLING_SEGMENT_CAP) {
+      const splitCount = Math.ceil(c.durationSec / KLING_SEGMENT_CAP);
+      const baseDur = Math.floor(c.durationSec / splitCount);
+      const remainder = c.durationSec - baseDur * splitCount;
+      for (let s = 0; s < splitCount; s++) {
+        const splitDur = s === splitCount - 1 ? baseDur + remainder : baseDur;
+        const part = { ...c, durationSec: splitDur } as typeof c;
+        delete (part as Record<string, unknown>).durationClass;
+        delete (part as Record<string, unknown>).structureType;
+        clamped.push(part);
+      }
+    } else {
+      clamped.push(c);
+    }
+  }
+  working = clamped;
 
   // cutNumber 재정렬 (cutNumber 필드가 있는 경우에만)
   return working.map((c, i) => {

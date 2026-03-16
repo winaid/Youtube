@@ -2058,17 +2058,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // multiShot sub-duration 비례 재조정: 총 duration이 바뀌면 서브샷도 비례 스케일링
       if (updated.multiShot && Array.isArray(updated.multiShot) && updated.multiShot.length > 0 && newDur !== c.durationSec) {
-        const oldSubTotal = updated.multiShot.reduce((s: number, sh: { duration: string }) => s + (parseInt(sh.duration, 10) || 0), 0);
+        const oldSubTotal = updated.multiShot.reduce((s: number, sh: { duration: string }) => s + (parseFloat(sh.duration) || 0), 0);
         if (oldSubTotal > 0) {
           const ratio = newDur / oldSubTotal;
           const rescaled = updated.multiShot.map((sh: { index: number; prompt: string; duration: string }, si: number, arr: Array<{ index: number; prompt: string; duration: string }>) => {
             if (si === arr.length - 1) {
               // 마지막 서브샷: 나머지 할당 (반올림 오차 보정)
               const prevSum = arr.slice(0, si).reduce((s2: number, _: unknown, j: number) =>
-                s2 + Math.max(1, Math.round((parseInt(arr[j].duration, 10) || 0) * ratio)), 0);
+                s2 + Math.max(1, Math.round((parseFloat(arr[j].duration) || 0) * ratio)), 0);
               return { ...sh, duration: String(Math.max(1, newDur - prevSum)) };
             }
-            return { ...sh, duration: String(Math.max(1, Math.round((parseInt(sh.duration, 10) || 0) * ratio))) };
+            return { ...sh, duration: String(Math.max(1, Math.round((parseFloat(sh.duration) || 0) * ratio))) };
           });
           updated.multiShot = rescaled;
         }

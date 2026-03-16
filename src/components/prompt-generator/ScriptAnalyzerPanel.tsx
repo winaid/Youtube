@@ -141,7 +141,7 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
 
     // If cache hit returned fully-enriched result, skip Phase B
     const isCacheHit = phaseA.result.sequences.length > 0 &&
-      phaseA.result.sequences[0].cuts.length > 0;
+      phaseA.result.sequences.every(s => s.cuts.length > 0);
 
     if (isCacheHit) {
       setAnalysis(phaseA.result);
