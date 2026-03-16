@@ -1,16 +1,26 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques,
   GenerationPersona, DEFAULT_GENERATION_PERSONA, StyleFamily,
   EditingDensityPreset, CutCountRange,
+  type PromptOutput,
 } from "@/types";
 import { recommendCutCountRange, densityPresetToRange } from "@/lib/sequence-density";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
+import {
+  analyzeScriptPhaseA,
+  enrichSequenceDetail,
+  enrichAllSequences,
+  convertToCuts,
+  estimateRuntime,
+  detectContentType,
+} from "@/lib/script-analyzer";
+import type { ScriptAnalysisResult, AnalysisPhase, PhaseAResult, ScriptContentType } from "@/types/script-analysis";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -47,6 +57,8 @@ interface InputPanelProps {
   onSecondsPerSceneChange: (v: number) => void;
   /** 결과가 이미 생성되었는지 여부 — 사전 계획 요약 표시 제어 */
   hasResult?: boolean;
+  /** 분석 후 생성 결과를 워크플로우에 적용 */
+  onAnalyzeApply?: (output: PromptOutput) => void;
 }
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
@@ -251,7 +263,7 @@ function persistCustomDirectors(dirs: DirectorPersona[]) {
   } catch { /* storage full */ }
 }
 
-export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult, onAnalyzeApply }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -294,6 +306,90 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   } | null>(null);
   const [isRecommending, setIsRecommending] = useState(false);
   const [showRecommendation, setShowRecommendation] = useState(false);
+
+  // ── 분석 후 생성 (inline script analysis) ──
+  const [analysisPhase, setAnalysisPhase] = useState<AnalysisPhase>("idle");
+  const analysisAbortRef = useRef(false);
+  const isLongForm = storyText.replace(/\s/g, "").length >= 300;
+
+  const handleAnalyzeThenGenerate = useCallback(async () => {
+    if (!storyText.trim()) return;
+    analysisAbortRef.current = false;
+    setAnalysisPhase("structural");
+
+    try {
+      const detectedType = detectContentType(storyText);
+      const phaseA = analyzeScriptPhaseA(storyText, { contentTypeHint: detectedType });
+
+      setAnalysisPhase("detailing");
+      let result = phaseA.result;
+
+      // Phase B: progressive sequence detail enrichment
+      for (let i = 0; i < result.sequences.length; i++) {
+        if (analysisAbortRef.current) break;
+        if (result.sequences[i].cuts.length > 0) continue;
+        try {
+          const enriched = enrichSequenceDetail(
+            result.sequences[i],
+            phaseA.sequenceGroups,
+            i,
+            result.sequences.length,
+          );
+          result = {
+            ...result,
+            sequences: result.sequences.map((s, j) => j === i ? enriched : s),
+          };
+        } catch { /* continue */ }
+      }
+
+      // Phase C: optional LLM enrichment
+      setAnalysisPhase("enriching");
+      try {
+        const res = await fetch("/api/analyze-script", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scriptText: storyText,
+            contentType: detectedType,
+            phaseAResult: result,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.enrichedResult) {
+            result = data.enrichedResult;
+          }
+        }
+      } catch { /* continue without LLM */ }
+
+      if (analysisAbortRef.current) { setAnalysisPhase("idle"); return; }
+
+      // Convert to PromptOutput and apply
+      const cuts = convertToCuts(result);
+      const output: PromptOutput = {
+        projectTitle: result.thesis || "대본 분석 프로젝트",
+        conceptSummary: result.sourceSummary,
+        globalStylePrompt: "대본 분석 기반 시퀀스",
+        directorPersonaPrompt: "",
+        totalCuts: cuts.length,
+        characterSeeds: [],
+        continuityRules: [],
+        cuts,
+      };
+
+      setAnalysisPhase("complete");
+      if (onAnalyzeApply) {
+        onAnalyzeApply(output);
+      }
+    } catch (err) {
+      console.error("[analyze-then-generate]", err);
+      setAnalysisPhase("idle");
+    }
+  }, [storyText, onAnalyzeApply]);
+
+  const analysisAbortRefForCleanup = analysisAbortRef;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { return () => { analysisAbortRefForCleanup.current = true; }; }, []);
 
   // 시나리오 프리필
   useEffect(() => {
@@ -640,17 +736,20 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5 pt-5">
-        {/* 시나리오 입력 */}
+        {/* 시나리오 / 썰 입력 */}
         <div className="space-y-2">
           <Label htmlFor="story">시나리오 / 썰</Label>
           <Textarea
             id="story"
-            placeholder="영상으로 만들고 싶은 이야기를 입력하세요..."
+            placeholder="영상으로 만들고 싶은 이야기, 대본, 썰, 설명글을 입력하세요"
             value={storyText}
             onChange={(e) => setStoryText(e.target.value)}
             rows={5}
             className="resize-none focus-visible:ring-[#787fff]"
           />
+          <p className="text-[10px] leading-relaxed" style={{ color: "#9ca3af" }}>
+            짧은 입력은 바로 시퀀스로 만들고, 긴 대본은 핵심 훅과 컷 구조를 분석해 설계합니다.
+          </p>
         </div>
 
         {/* AI 감독 추천 버튼 */}
@@ -1610,23 +1709,90 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           return null;
         })()}
 
-        {/* 생성 버튼 */}
-        <Button
-          onClick={handleSubmit}
-          disabled={!storyText.trim() || !directorPersona || isLoading}
-          className="w-full text-white font-semibold"
-          size="lg"
-          style={{ background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }}
-        >
-          {isLoading ? (
-            <span className="flex items-center gap-2">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              프롬프트 생성 중...
-            </span>
-          ) : (
-            "프롬프트 생성하기"
-          )}
-        </Button>
+        {/* 생성 버튼 — 짧은 입력: "바로 생성" 강조, 긴 대본: "분석 후 생성" 강조 */}
+        {(() => {
+          const isAnalyzingScript = analysisPhase !== "idle" && analysisPhase !== "complete";
+          const analysisLabel = isAnalyzingScript
+            ? analysisPhase === "structural" ? "구조 분석 중..."
+            : analysisPhase === "detailing" ? "시퀀스 상세 생성 중..."
+            : analysisPhase === "enriching" ? "AI 심층 분석 중..."
+            : "분석 중..."
+            : "분석 후 생성";
+
+          // Long-form: emphasize "분석 후 생성", short: emphasize "바로 생성"
+          if (isLongForm) {
+            return (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
+                  className="text-sm font-medium flex-shrink-0"
+                  size="lg"
+                  variant="outline"
+                  style={{ borderColor: "#787fff60", color: "#787fff" }}
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      생성 중...
+                    </span>
+                  ) : "바로 생성"}
+                </Button>
+                <Button
+                  onClick={handleAnalyzeThenGenerate}
+                  disabled={!storyText.trim() || isLoading || isAnalyzingScript}
+                  className="flex-1 text-white font-semibold"
+                  size="lg"
+                  style={{ background: "linear-gradient(135deg, #e09500, #ea580c)", boxShadow: "0 4px 14px #e0950040" }}
+                >
+                  {isAnalyzingScript ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      {analysisLabel}
+                    </span>
+                  ) : analysisLabel}
+                </Button>
+              </div>
+            );
+          }
+
+          // Short-form: emphasize "바로 생성"
+          return (
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSubmit}
+                disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
+                className="flex-1 text-white font-semibold"
+                size="lg"
+                style={{ background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }}
+              >
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    프롬프트 생성 중...
+                  </span>
+                ) : "바로 생성"}
+              </Button>
+              {onAnalyzeApply && storyText.replace(/\s/g, "").length >= 100 && (
+                <Button
+                  onClick={handleAnalyzeThenGenerate}
+                  disabled={!storyText.trim() || isLoading || isAnalyzingScript}
+                  className="text-sm font-medium flex-shrink-0"
+                  size="lg"
+                  variant="outline"
+                  style={{ borderColor: "#e0950060", color: "#b87700" }}
+                >
+                  {isAnalyzingScript ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      {analysisLabel}
+                    </span>
+                  ) : "분석 후 생성"}
+                </Button>
+              )}
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );
