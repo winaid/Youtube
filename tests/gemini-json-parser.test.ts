@@ -212,3 +212,129 @@ describe("parseFirstJsonArray", () => {
     expect(parseFirstJsonArray("[]")).toEqual([]);
   });
 });
+
+// ─── sanitizeJsonText ───────────────────────────────────────────────
+
+describe("sanitizeJsonText", () => {
+  it("strips trailing commas before closing brace", () => {
+    const input = '{"a": 1, "b": 2,}';
+    expect(JSON.parse(sanitizeJsonText(input))).toEqual({ a: 1, b: 2 });
+  });
+
+  it("strips trailing commas before closing bracket", () => {
+    const input = '[1, 2, 3,]';
+    expect(JSON.parse(sanitizeJsonText(input))).toEqual([1, 2, 3]);
+  });
+
+  it("strips nested trailing commas", () => {
+    const input = '{"items": [1, 2,], "nested": {"x": 1,},}';
+    expect(JSON.parse(sanitizeJsonText(input))).toEqual({ items: [1, 2], nested: { x: 1 } });
+  });
+
+  it("removes control characters", () => {
+    const input = '{"text": "hello\x00world"}';
+    const result = sanitizeJsonText(input);
+    expect(result).not.toContain("\x00");
+    expect(JSON.parse(result)).toEqual({ text: "helloworld" });
+  });
+
+  it("normalizes unicode quotes to ASCII", () => {
+    const input = '{\u201Ckey\u201D: \u201Cvalue\u201D}';
+    const result = sanitizeJsonText(input);
+    expect(result).toContain('"key"');
+    expect(JSON.parse(result)).toEqual({ key: "value" });
+  });
+
+  it("preserves valid JSON unchanged", () => {
+    const input = '{"valid": true, "list": [1, 2]}';
+    expect(sanitizeJsonText(input)).toBe(input);
+  });
+});
+
+// ─── repairTruncatedJson ────────────────────────────────────────────
+
+describe("repairTruncatedJson", () => {
+  it("repairs JSON truncated mid-object", () => {
+    const input = '{"name": "Alice", "score": 95, "items": [1, 2';
+    const result = repairTruncatedJson(input);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("Alice");
+    expect(result!.score).toBe(95);
+  });
+
+  it("repairs JSON truncated after a complete nested object", () => {
+    const input = '{"sequences": [{"id": 1, "title": "Hook"}, {"id": 2, "title": "Dev"';
+    const result = repairTruncatedJson(input);
+    expect(result).not.toBeNull();
+    const seqs = result!.sequences as { id: number; title: string }[];
+    expect(Array.isArray(seqs)).toBe(true);
+    expect(seqs.length).toBeGreaterThanOrEqual(1);
+    expect(seqs[0].id).toBe(1);
+  });
+
+  it("repairs JSON truncated mid-string value", () => {
+    const input = '{"title": "이것은 매우 긴 제목이고 여기서 잘';
+    const result = repairTruncatedJson(input);
+    expect(result).not.toBeNull();
+  });
+
+  it("repairs JSON with trailing comma before truncation", () => {
+    const input = '{"a": 1, "b": 2,';
+    const result = repairTruncatedJson(input);
+    expect(result).not.toBeNull();
+    expect(result!.a).toBe(1);
+    expect(result!.b).toBe(2);
+  });
+
+  it("repairs deeply nested truncated JSON", () => {
+    const input = '{"level1": {"level2": {"level3": [1, 2, 3';
+    const result = repairTruncatedJson(input);
+    expect(result).not.toBeNull();
+    expect(result!.level1).toBeDefined();
+  });
+
+  it("returns null for text with no JSON", () => {
+    expect(repairTruncatedJson("no json here")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(repairTruncatedJson("")).toBeNull();
+  });
+
+  it("returns complete JSON object as-is (no repair needed)", () => {
+    const input = '{"complete": true}';
+    const result = repairTruncatedJson(input);
+    expect(result).toEqual({ complete: true });
+  });
+
+  it("handles realistic analyze-script truncated output", () => {
+    const input = JSON.stringify({
+      sourceSummary: "역사 다큐",
+      mainHook: "충격적 사실",
+      thesis: "역사의 교훈",
+      totalSuggestedRuntime: 60,
+      suggestedSequenceCount: 4,
+      structuralNotes: ["구조 양호"],
+      weaknesses: [],
+      issues: [],
+      confidence: "high",
+      sequences: [
+        { id: 1, title: "도입", beatType: "hook", recommendedDurationSec: 10 },
+        { id: 2, title: "전개", beatType: "development", recommendedDurationSec: 12 },
+      ],
+    });
+    // Truncate at 80% of the string
+    const truncated = input.slice(0, Math.floor(input.length * 0.8));
+    const result = repairTruncatedJson(truncated);
+    expect(result).not.toBeNull();
+    expect(result!.sourceSummary).toBe("역사 다큐");
+    expect(result!.mainHook).toBe("충격적 사실");
+  });
+
+  it("repairs JSON truncated with trailing colon (key without value)", () => {
+    const input = '{"a": 1, "b":';
+    const result = repairTruncatedJson(input);
+    expect(result).not.toBeNull();
+    expect(result!.a).toBe(1);
+  });
+});

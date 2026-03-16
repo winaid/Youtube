@@ -375,97 +375,97 @@ export function repairTruncatedJson(text: string): Record<string, unknown> | nul
   const start = text.indexOf("{");
   if (start < 0) return null;
 
-  const json = text.slice(start);
-  let inStr = false;
-  let esc = false;
-  const stack: string[] = [];
-  let lastCleanPos = -1;
+  let json = text.slice(start);
 
-  for (let i = 0; i < json.length; i++) {
-    const ch = json[i];
-    if (esc) { esc = false; continue; }
-    if (ch === "\\" && inStr) { esc = true; continue; }
-    if (ch === '"') {
-      if (inStr) {
-        inStr = false;
-        lastCleanPos = i;
-      } else {
-        inStr = true;
-      }
-      continue;
-    }
-    if (inStr) continue;
+  // If we end inside an unclosed string, truncate back to the last opening quote
+  // and strip the dangling key-value. Do this iteratively (not recursively).
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let inStr = false;
+    let esc = false;
+    const stack: string[] = [];
+    let lastCleanPos = -1;
+    let endedInString = false;
 
-    if (ch === "{") { stack.push("}"); continue; }
-    if (ch === "[") { stack.push("]"); continue; }
-    if (ch === "}" || ch === "]") {
-      if (stack.length > 0 && stack[stack.length - 1] === ch) {
-        stack.pop();
-        lastCleanPos = i;
-        if (stack.length === 0) {
-          try { return JSON.parse(json.slice(0, i + 1)); } catch { break; }
+    for (let i = 0; i < json.length; i++) {
+      const ch = json[i];
+      if (esc) { esc = false; continue; }
+      if (ch === "\\" && inStr) { esc = true; continue; }
+      if (ch === '"') {
+        if (inStr) {
+          inStr = false;
+          lastCleanPos = i;
+        } else {
+          inStr = true;
         }
+        continue;
       }
-      continue;
-    }
-    if (ch === "," || ch === ":") { lastCleanPos = i; }
-  }
+      if (inStr) continue;
 
-  // JSON was truncated — try to repair
-  if (stack.length === 0) return null;
-
-  // Determine a good truncation point: rewind to last clean position
-  let repaired = json;
-  if (inStr) {
-    // We're inside an unclosed string — truncate the partial string value
-    const lastQuote = json.lastIndexOf('"', json.length - 1);
-    if (lastQuote > start) {
-      repaired = json.slice(0, lastQuote + 1);
-      // Recompute stack after truncation
-      return repairTruncatedJson(repaired);
-    }
-  }
-
-  // Trim trailing partial tokens (incomplete keys/values)
-  repaired = repaired.replace(/,\s*"[^"]*$/, "");  // trailing partial "key
-  repaired = repaired.replace(/,\s*$/, "");          // trailing comma
-  repaired = repaired.replace(/:\s*$/, ': null');     // trailing colon with no value
-
-  // Close remaining brackets
-  const closers = [...stack].reverse().join("");
-  repaired = repaired + closers;
-
-  // Sanitize before final parse
-  repaired = sanitizeJsonText(repaired);
-
-  try {
-    return JSON.parse(repaired);
-  } catch {
-    // One more attempt: aggressively trim to the last valid value boundary
-    const lastGoodBrace = Math.max(
-      repaired.lastIndexOf("}"),
-      repaired.lastIndexOf("]"),
-      repaired.lastIndexOf('"'),
-    );
-    if (lastGoodBrace > 0) {
-      const aggressive = json.slice(0, lastGoodBrace + 1);
-      const stack2: string[] = [];
-      let inStr2 = false, esc2 = false;
-      for (let i = 0; i < aggressive.length; i++) {
-        const c = aggressive[i];
-        if (esc2) { esc2 = false; continue; }
-        if (c === "\\" && inStr2) { esc2 = true; continue; }
-        if (c === '"') { inStr2 = !inStr2; continue; }
-        if (inStr2) continue;
-        if (c === "{") stack2.push("}");
-        else if (c === "[") stack2.push("]");
-        else if (c === "}" || c === "]") { if (stack2.length) stack2.pop(); }
+      if (ch === "{") { stack.push("}"); continue; }
+      if (ch === "[") { stack.push("]"); continue; }
+      if (ch === "}" || ch === "]") {
+        if (stack.length > 0 && stack[stack.length - 1] === ch) {
+          stack.pop();
+          lastCleanPos = i;
+          if (stack.length === 0) {
+            try { return JSON.parse(json.slice(0, i + 1)); } catch { break; }
+          }
+        }
+        continue;
       }
-      const final = sanitizeJsonText(aggressive) + stack2.reverse().join("");
-      try { return JSON.parse(final); } catch { return null; }
+      if (ch === "," || ch === ":") { lastCleanPos = i; }
     }
-    return null;
+
+    endedInString = inStr;
+
+    if (stack.length === 0 && !endedInString) return null;
+
+    if (endedInString) {
+      // Find the quote that opened this unclosed string and cut before it
+      const lastQuoteOpen = json.lastIndexOf('"');
+      if (lastQuoteOpen > 0) {
+        json = json.slice(0, lastQuoteOpen);
+        continue; // retry with shortened text
+      }
+      return null;
+    }
+
+    // Not inside a string — try to repair by closing open brackets
+    let repaired = json;
+    repaired = repaired.replace(/,\s*"[^"]*$/, "");  // trailing partial "key
+    repaired = repaired.replace(/,\s*$/, "");          // trailing comma
+    repaired = repaired.replace(/:\s*$/, ": null");    // trailing colon with no value
+
+    // Recompute stack after trimming
+    const stack2: string[] = [];
+    let inStr2 = false, esc2 = false;
+    for (let i = 0; i < repaired.length; i++) {
+      const c = repaired[i];
+      if (esc2) { esc2 = false; continue; }
+      if (c === "\\" && inStr2) { esc2 = true; continue; }
+      if (c === '"') { inStr2 = !inStr2; continue; }
+      if (inStr2) continue;
+      if (c === "{") stack2.push("}");
+      else if (c === "[") stack2.push("]");
+      else if ((c === "}" || c === "]") && stack2.length) stack2.pop();
+    }
+
+    const closers = stack2.reverse().join("");
+    repaired = sanitizeJsonText(repaired) + closers;
+
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      // Aggressive fallback: trim to the last cleanly closed bracket/brace
+      if (lastCleanPos > 0) {
+        json = json.slice(0, lastCleanPos + 1);
+        continue;
+      }
+      return null;
+    }
   }
+
+  return null;
 }
 
 /**
