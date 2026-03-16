@@ -8,10 +8,19 @@
  * 4. Missing analysisPrompt → 400 with stage marker
  * 5. buildAnalysisPrompt produces non-empty prompt for valid input
  * 6. Request payload shape matches route expectations
+ * 7. Provider error classification (503, 429, 500, etc.)
+ * 8. parseProviderError structured diagnostics
+ * 9. Transient error detection for retry logic
  */
 
 import { describe, test, expect } from "vitest";
 import { buildAnalysisPrompt, detectContentType } from "@/lib/script-analyzer";
+import {
+  isRetryableError,
+  classifyGeminiError,
+  parseProviderError,
+  isTransientProviderError,
+} from "../functions/api/_gemini-keys";
 
 // ═══════════════════════════════════════════════════════════════════
 // Test the client-side contract (what InputPanel sends)
@@ -127,15 +136,152 @@ describe("analyze-script response schema", () => {
     expect(errorResponse.stage).toBeDefined();
   });
 
-  test("timeout error includes code: TIMEOUT", () => {
+  test("timeout error includes code: PROVIDER_TIMEOUT", () => {
     const timeoutResponse = {
       success: false,
-      error: "LLM request timed out. Try shorter input or retry.",
-      stage: "llm_timeout",
-      code: "TIMEOUT",
+      error: "분석 서버 응답 시간이 초과되었습니다.",
+      stage: "provider_timeout",
+      code: "PROVIDER_TIMEOUT",
+      retryable: true,
     };
 
-    expect(timeoutResponse.code).toBe("TIMEOUT");
-    expect(timeoutResponse.stage).toBe("llm_timeout");
+    expect(timeoutResponse.code).toBe("PROVIDER_TIMEOUT");
+    expect(timeoutResponse.stage).toBe("provider_timeout");
+    expect(timeoutResponse.retryable).toBe(true);
+  });
+
+  test("provider unavailable error has correct shape", () => {
+    const response = {
+      success: false,
+      error: "분석 서버가 현재 혼잡합니다. 잠시 후 다시 시도해주세요.",
+      userMessage: "분석 서버가 현재 혼잡합니다. 잠시 후 다시 시도해주세요.",
+      stage: "provider_unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      retryCount: 2,
+    };
+
+    expect(response.success).toBe(false);
+    expect(response.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(response.retryable).toBe(true);
+    expect(response.userMessage).toContain("혼잡");
+    expect(response.retryCount).toBe(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Provider Error Classification
+// ═══════════════════════════════════════════════════════════════════
+
+describe("classifyGeminiError — provider error classification", () => {
+  test("503 → PROVIDER_UNAVAILABLE", () => {
+    const body = JSON.stringify({
+      error: { code: 503, message: "This model is currently experiencing high demand.", status: "UNAVAILABLE" },
+    });
+    expect(classifyGeminiError(503, body)).toBe("PROVIDER_UNAVAILABLE");
+  });
+
+  test("500 with 'high demand' → PROVIDER_UNAVAILABLE", () => {
+    const body = JSON.stringify({
+      error: { code: 500, message: "UNAVAILABLE: high demand spike", status: "UNAVAILABLE" },
+    });
+    expect(classifyGeminiError(500, body)).toBe("PROVIDER_UNAVAILABLE");
+  });
+
+  test("500 with 'overloaded' → PROVIDER_UNAVAILABLE", () => {
+    expect(classifyGeminiError(500, "The model is overloaded")).toBe("PROVIDER_UNAVAILABLE");
+  });
+
+  test("429 → PROVIDER_RATE_LIMIT", () => {
+    expect(classifyGeminiError(429, "Rate limit exceeded")).toBe("PROVIDER_RATE_LIMIT");
+  });
+
+  test("524 → PROVIDER_TIMEOUT", () => {
+    expect(classifyGeminiError(524, "")).toBe("PROVIDER_TIMEOUT");
+  });
+
+  test("500 generic → PROVIDER_INVALID_RESPONSE", () => {
+    expect(classifyGeminiError(500, "Internal server error")).toBe("PROVIDER_INVALID_RESPONSE");
+  });
+
+  test("502 → PROVIDER_INVALID_RESPONSE", () => {
+    expect(classifyGeminiError(502, "Bad gateway")).toBe("PROVIDER_INVALID_RESPONSE");
+  });
+
+  test("401 → INVALID_API_KEY", () => {
+    expect(classifyGeminiError(401, "Unauthorized")).toBe("INVALID_API_KEY");
+  });
+
+  test("404 with 'not found' → MODEL_NOT_FOUND", () => {
+    expect(classifyGeminiError(404, "Model does not exist")).toBe("MODEL_NOT_FOUND");
+  });
+});
+
+describe("isTransientProviderError", () => {
+  test("PROVIDER_UNAVAILABLE is transient", () => {
+    expect(isTransientProviderError("PROVIDER_UNAVAILABLE")).toBe(true);
+  });
+
+  test("PROVIDER_RATE_LIMIT is transient", () => {
+    expect(isTransientProviderError("PROVIDER_RATE_LIMIT")).toBe(true);
+  });
+
+  test("PROVIDER_TIMEOUT is transient", () => {
+    expect(isTransientProviderError("PROVIDER_TIMEOUT")).toBe(true);
+  });
+
+  test("INVALID_API_KEY is NOT transient", () => {
+    expect(isTransientProviderError("INVALID_API_KEY")).toBe(false);
+  });
+
+  test("MODEL_NOT_FOUND is NOT transient", () => {
+    expect(isTransientProviderError("MODEL_NOT_FOUND")).toBe(false);
+  });
+
+  test("PROVIDER_INVALID_RESPONSE is NOT transient", () => {
+    expect(isTransientProviderError("PROVIDER_INVALID_RESPONSE")).toBe(false);
+  });
+});
+
+describe("parseProviderError — structured diagnostics", () => {
+  test("parses 503 UNAVAILABLE with structured JSON body", () => {
+    const body = JSON.stringify({
+      error: {
+        code: 503,
+        message: "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+        status: "UNAVAILABLE",
+      },
+    });
+    const diag = parseProviderError(503, body);
+
+    expect(diag.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(diag.providerStatus).toBe(503);
+    expect(diag.providerCode).toBe(503);
+    expect(diag.providerMessage).toContain("high demand");
+    expect(diag.retryable).toBe(true);
+    expect(diag.userMessage).toContain("혼잡");
+  });
+
+  test("parses 429 rate limit", () => {
+    const body = JSON.stringify({ error: { code: 429, message: "Rate limit exceeded" } });
+    const diag = parseProviderError(429, body);
+
+    expect(diag.code).toBe("PROVIDER_RATE_LIMIT");
+    expect(diag.retryable).toBe(true);
+    expect(diag.userMessage).toContain("빈번");
+  });
+
+  test("parses raw text body gracefully", () => {
+    const diag = parseProviderError(500, "Internal Server Error");
+
+    expect(diag.providerMessage).toBe("Internal Server Error");
+    expect(diag.providerCode).toBeNull();
+    expect(diag.code).toBe("PROVIDER_INVALID_RESPONSE");
+  });
+
+  test("401 is not retryable", () => {
+    const diag = parseProviderError(401, "Unauthorized");
+    expect(diag.retryable).toBe(false);
+    expect(diag.code).toBe("INVALID_API_KEY");
   });
 });

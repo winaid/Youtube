@@ -503,12 +503,16 @@ function classifyGeminiError(status: number, body: string): string {
   if (status === 403 && /quota|RESOURCE_EXHAUSTED/i.test(body)) return "QUOTA_EXCEEDED";
   if (status === 403) return "PERMISSION_DENIED";
   if (status === 404 && /not found|deprecated|does not exist/i.test(body)) return "MODEL_NOT_FOUND";
-  if (status === 429) return "RATE_LIMITED";
-  if (status === 524 || /TIMEOUT/i.test(body)) return "TIMEOUT";
+  if (status === 429) return "PROVIDER_RATE_LIMIT";
+  if (status === 503 || (status === 500 && /UNAVAILABLE|overloaded|high demand/i.test(body))) return "PROVIDER_UNAVAILABLE";
+  if (status === 524 || /TIMEOUT/i.test(body)) return "PROVIDER_TIMEOUT";
   if (/MAX_TOKENS|truncat/i.test(body)) return "MAX_TOKENS_TRUNCATED";
-  if (status === 500 || status === 502 || status === 503) return "SERVER_ERROR";
+  if (status === 500 || status === 502) return "PROVIDER_INVALID_RESPONSE";
   return "UNKNOWN_ERROR";
 }
+
+// Re-export for use in analyze-script.ts
+export { classifyGeminiError };
 
 function getErrorHelp(code: string): string {
   switch (code) {
@@ -519,17 +523,74 @@ function getErrorHelp(code: string): string {
     case "MODEL_NOT_FOUND":
       return "모델이 deprecated되었거나 존재하지 않습니다. _gemini-keys.ts의 모델 상수를 확인하세요.";
     case "QUOTA_EXCEEDED":
-    case "RATE_LIMITED":
-      return "API 할당량 또는 요청 속도 제한 초과. 잠시 후 재시도하거나 GEMINI_API_KEY_2를 추가 설정하세요.";
+      return "API 할당량 초과. 잠시 후 재시도하거나 GEMINI_API_KEY_2를 추가 설정하세요.";
+    case "PROVIDER_RATE_LIMIT":
+      return "요청 속도 제한 초과. 잠시 후 자동 재시도됩니다. 지속되면 GEMINI_API_KEY_2를 추가하세요.";
+    case "PROVIDER_UNAVAILABLE":
+      return "분석 서버가 현재 혼잡합니다. 잠시 후 자동 재시도됩니다.";
+    case "PROVIDER_TIMEOUT":
+      return "분석 서버 응답 시간 초과. 대본을 줄이거나 잠시 후 다시 시도하세요.";
+    case "PROVIDER_INVALID_RESPONSE":
+      return "분석 서버에서 비정상 응답을 받았습니다. 잠시 후 다시 시도하세요.";
     case "PERMISSION_DENIED":
       return "API 키에 해당 모델 접근 권한이 없습니다. Google AI Studio에서 권한을 확인하세요.";
     case "MAX_TOKENS_TRUNCATED":
       return "Gemini 응답이 토큰 한도로 잘렸습니다. 컷 수를 줄이거나 스토리를 축소하세요. 이것은 API 키 문제가 아닙니다.";
-    case "TIMEOUT":
-      return "Gemini 요청이 타임아웃되었습니다. 컷 수를 줄이거나 잠시 후 다시 시도하세요.";
-    case "SERVER_ERROR":
-      return "Gemini 서버 일시 오류. 잠시 후 다시 시도하세요.";
     default:
       return "예상치 못한 오류입니다. 브라우저 콘솔과 Cloudflare 로그를 확인하세요.";
   }
+}
+
+// Re-export for use in analyze-script.ts
+export { getErrorHelp };
+
+// === Provider error classification ===
+
+/** Whether an error code represents a transient provider issue worth retrying */
+export function isTransientProviderError(code: string): boolean {
+  return code === "PROVIDER_UNAVAILABLE" || code === "PROVIDER_RATE_LIMIT" || code === "PROVIDER_TIMEOUT";
+}
+
+/** Parse provider error body into structured diagnostics */
+export function parseProviderError(status: number, rawBody: string): {
+  code: string;
+  providerStatus: number;
+  providerCode: number | null;
+  providerMessage: string;
+  retryable: boolean;
+  userMessage: string;
+  help: string;
+} {
+  const code = classifyGeminiError(status, rawBody);
+  const retryable = isTransientProviderError(code);
+  const help = getErrorHelp(code);
+
+  // Try to extract structured error from provider JSON
+  let providerCode: number | null = null;
+  let providerMessage = rawBody.slice(0, 500);
+  try {
+    const parsed = JSON.parse(rawBody);
+    if (parsed?.error) {
+      providerCode = parsed.error.code ?? null;
+      providerMessage = parsed.error.message ?? providerMessage;
+    } else if (parsed?.message) {
+      providerMessage = parsed.message;
+    }
+  } catch {
+    // raw text — use as-is
+  }
+
+  // User-safe Korean message
+  const userMessageMap: Record<string, string> = {
+    PROVIDER_UNAVAILABLE: "분석 서버가 현재 혼잡합니다. 잠시 후 다시 시도해주세요.",
+    PROVIDER_RATE_LIMIT: "요청이 너무 빈번합니다. 잠시 후 다시 시도해주세요.",
+    PROVIDER_TIMEOUT: "분석 서버 응답 시간이 초과되었습니다. 대본을 줄이거나 다시 시도해주세요.",
+    PROVIDER_INVALID_RESPONSE: "분석 서버에서 비정상 응답을 받았습니다. 다시 시도해주세요.",
+    INVALID_API_KEY: "API 키 설정에 문제가 있습니다. 관리자에게 문의하세요.",
+    QUOTA_EXCEEDED: "API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+    MODEL_NOT_FOUND: "분석 모델을 찾을 수 없습니다. 관리자에게 문의하세요.",
+  };
+  const userMessage = userMessageMap[code] ?? "분석 중 오류가 발생했습니다. 다시 시도해주세요.";
+
+  return { code, providerStatus: status, providerCode, providerMessage, retryable, userMessage, help };
 }

@@ -205,11 +205,25 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
   }, [scriptText, contentType, useLLM]);
 
   // ── Phase C: LLM Enhancement (non-blocking) ──
+  const [llmError, setLlmError] = useState<{
+    userMessage: string;
+    code: string;
+    retryable: boolean;
+  } | null>(null);
+  const llmRetryParamsRef = useRef<{
+    text: string;
+    effectiveType: ScriptContentType;
+    fallbackResult: ScriptAnalysisResult;
+  } | null>(null);
+
   const runLLMEnrichment = useCallback(async (
     text: string,
     effectiveType: ScriptContentType,
     fallbackResult: ScriptAnalysisResult,
   ) => {
+    setLlmError(null);
+    llmRetryParamsRef.current = { text, effectiveType, fallbackResult };
+
     try {
       const prompt = buildAnalysisPrompt(text, effectiveType);
       const res = await fetch("/api/analyze-script", {
@@ -222,21 +236,51 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json() as { success: boolean; analysis?: ScriptAnalysisResult };
-        if (data.success && data.analysis && !abortRef.current) {
-          const normalized = normalizeAnalysisResult(data.analysis);
-          setAnalysis(normalized);
-          setDetailedSeqs(new Set(normalized.sequences.map((_, i) => i)));
-          setDetailProgress({ done: normalized.sequences.length, total: normalized.sequences.length });
-        }
+      const data = await res.json() as {
+        success: boolean;
+        analysis?: ScriptAnalysisResult;
+        userMessage?: string;
+        code?: string;
+        retryable?: boolean;
+      };
+
+      if (res.ok && data.success && data.analysis && !abortRef.current) {
+        const normalized = normalizeAnalysisResult(data.analysis);
+        setAnalysis(normalized);
+        setDetailedSeqs(new Set(normalized.sequences.map((_, i) => i)));
+        setDetailProgress({ done: normalized.sequences.length, total: normalized.sequences.length });
+      } else if (!res.ok) {
+        // Surface provider error to user
+        const errInfo = {
+          userMessage: data.userMessage || "AI 심층 분석에 실패했습니다. 기본 분석 결과를 사용합니다.",
+          code: data.code || "UNKNOWN_ERROR",
+          retryable: data.retryable ?? true,
+        };
+        setLlmError(errInfo);
+        console.warn(`[ScriptAnalyzer] LLM enrichment failed: code=${errInfo.code}, status=${res.status}, message=${errInfo.userMessage}`);
       }
     } catch {
-      // LLM failed silently — heuristic result already visible
-      console.warn("[ScriptAnalyzer] LLM enrichment failed, keeping heuristic result");
+      setLlmError({
+        userMessage: "네트워크 오류로 AI 분석에 실패했습니다. 기본 분석 결과를 사용합니다.",
+        code: "NETWORK_ERROR",
+        retryable: true,
+      });
+      console.warn("[ScriptAnalyzer] LLM enrichment failed (network error), keeping heuristic result");
     } finally {
       if (!abortRef.current) setPhase("complete");
     }
+  }, []);
+
+  const handleRetryLLM = useCallback(() => {
+    const params = llmRetryParamsRef.current;
+    if (!params) return;
+    setPhase("enriching");
+    runLLMEnrichment(params.text, params.effectiveType, params.fallbackResult);
+  }, [runLLMEnrichment]);
+
+  const handleSkipLLM = useCallback(() => {
+    setLlmError(null);
+    setPhase("complete");
   }, []);
 
   // ── Apply to workflow ──
@@ -375,6 +419,34 @@ export default function ScriptAnalyzerPanel({ onApply }: ScriptAnalyzerPanelProp
             <p className="text-xs p-2 rounded" style={{ color: "#dc2626", background: "#dc262610" }}>
               {error}
             </p>
+          )}
+
+          {llmError && phase === "complete" && (
+            <div className="text-xs p-3 rounded space-y-2" style={{ color: "#d97706", background: "#d9770610", border: "1px solid #d9770620" }}>
+              <p>{llmError.userMessage}</p>
+              <div className="flex gap-2">
+                {llmError.retryable && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-[10px] h-6 px-2"
+                    style={{ borderColor: "#d97706", color: "#d97706" }}
+                    onClick={handleRetryLLM}
+                  >
+                    다시 시도
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[10px] h-6 px-2"
+                  style={{ borderColor: "#6b7280", color: "#6b7280" }}
+                  onClick={handleSkipLLM}
+                >
+                  바로 생성으로 진행
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
