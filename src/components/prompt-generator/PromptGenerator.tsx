@@ -66,7 +66,7 @@ export default function PromptGenerator() {
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 md:p-6 space-y-4">
-      {/* 탭 전환 */}
+      {/* 탭 전환 — 데모에서는 핵심 2탭만 노출 */}
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setActiveTab("prompt")}
@@ -77,7 +77,7 @@ export default function PromptGenerator() {
               : { background: "#787fff15", color: "#787fff" }
           }
         >
-          장면 프롬프트 생성
+          장면 설계 & 영상 생성
         </button>
         <button
           onClick={() => setActiveTab("story")}
@@ -89,28 +89,6 @@ export default function PromptGenerator() {
           }
         >
           시나리오 AI 생성
-        </button>
-        <button
-          onClick={() => setActiveTab("history")}
-          className="px-4 py-2 rounded-full text-sm font-medium transition-all"
-          style={
-            activeTab === "history"
-              ? { background: "#f97316", color: "white", boxShadow: "0 2px 8px #f9731640" }
-              : { background: "#f9731615", color: "#ea580c" }
-          }
-        >
-          프롬프트 히스토리
-        </button>
-        <button
-          onClick={() => setActiveTab("videos")}
-          className="px-4 py-2 rounded-full text-sm font-medium transition-all"
-          style={
-            activeTab === "videos"
-              ? { background: "#22c55e", color: "white", boxShadow: "0 2px 8px #22c55e40" }
-              : { background: "#22c55e15", color: "#16a34a" }
-          }
-        >
-          생성한 영상 히스토리
         </button>
       </div>
 
@@ -133,39 +111,7 @@ export default function PromptGenerator() {
         </div>
       ) : activeTab === "story" ? (
         <StoryChat onUseAsScenario={handleUseAsScenario} />
-      ) : activeTab === "history" ? (
-        <div className="max-w-2xl mx-auto">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold" style={{ color: "#222" }}>프롬프트 히스토리</h2>
-            <p className="text-xs mt-0.5" style={{ color: "#999" }}>
-              이전에 분석한 프롬프트를 불러와 바로 영상 생성에 사용하세요. 재분석 없이 즉시 복원됩니다.
-            </p>
-          </div>
-          <PromptHistoryPanel onRestore={handleRestoreHistory} />
-        </div>
-      ) : (
-        /* 내 영상 + 세션 히스토리 */
-        <div className="max-w-2xl mx-auto space-y-6">
-          <div>
-            <div className="mb-4">
-              <h2 className="text-base font-semibold" style={{ color: "#222" }}>내 영상</h2>
-              <p className="text-xs mt-0.5" style={{ color: "#999" }}>
-                생성 완료된 영상이 자동으로 기록됩니다. 개별 컷 단위로 조회·재생할 수 있습니다.
-              </p>
-            </div>
-            <MyVideosPanel />
-          </div>
-          <div>
-            <div className="mb-4">
-              <h2 className="text-base font-semibold" style={{ color: "#222" }}>세션 히스토리</h2>
-              <p className="text-xs mt-0.5" style={{ color: "#999" }}>
-                현재/이전 세션에서 생성한 영상을 묶어서 확인할 수 있습니다.
-              </p>
-            </div>
-            <VideoHistoryPanel />
-          </div>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

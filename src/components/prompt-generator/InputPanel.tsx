@@ -754,23 +754,25 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     <Card className="h-full border-2" style={{ borderColor: "#787fff40" }}>
       <CardHeader style={{ background: "linear-gradient(135deg, #787fff15, #fff78715)" }}>
         <CardTitle className="text-lg" style={{ color: "#5a5ecc" }}>
-          영상 프롬프트 설정
+          새 영상 만들기
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5 pt-5">
         {/* 시나리오 / 썰 입력 */}
         <div className="space-y-2">
-          <Label htmlFor="story">시나리오 / 썰</Label>
+          <Label htmlFor="story" className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>
+            STEP 1. 스토리 입력
+          </Label>
           <Textarea
             id="story"
-            placeholder="영상으로 만들고 싶은 이야기, 대본, 썰, 설명글을 입력하세요"
+            placeholder="영상으로 만들고 싶은 이야기를 자유롭게 입력하세요"
             value={storyText}
             onChange={(e) => setStoryText(e.target.value)}
             rows={5}
             className="resize-none focus-visible:ring-[#787fff]"
           />
           <p className="text-[10px] leading-relaxed" style={{ color: "#9ca3af" }}>
-            짧은 입력은 바로 시퀀스로 만들고, 긴 대본은 핵심 훅과 컷 구조를 분석해 설계합니다.
+            입력한 스토리를 기반으로 감독 AI가 장면을 설계합니다.
           </p>
         </div>
 
@@ -930,7 +932,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
         {/* 감독 검색 */}
         <div className="space-y-2">
-          <Label>감독 검색</Label>
+          <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>STEP 2. 감독 페르소나 선택</Label>
           <div className="relative">
             <input
               type="text"
@@ -1502,8 +1504,13 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           })()}
         </div>
 
-        {/* 영상 길이 + 시퀀스 수 + 화면 비율 */}
-        <div className="rounded-xl p-4 space-y-4" style={{ background: "#f8f9fc", border: "1px solid #e8e9f0" }}>
+        {/* 세부 설정 (접기 가능) */}
+        <details className="group">
+          <summary className="cursor-pointer text-xs font-medium py-1.5 px-2 rounded-lg transition-colors hover:bg-gray-50 list-none flex items-center gap-1.5" style={{ color: "#94a3b8" }}>
+            <span className="transition-transform group-open:rotate-90" style={{ fontSize: "10px" }}>&#9654;</span>
+            세부 설정 (영상 길이 / 컷 수 / 분석 깊이)
+          </summary>
+        <div className="rounded-xl p-4 space-y-4 mt-2" style={{ background: "#f8f9fc", border: "1px solid #e8e9f0" }}>
           {/* 영상 길이 */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>영상 길이</Label>
@@ -1874,15 +1881,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           ))}
         </div>
 
+        </details>
+
         {/* 생성 버튼 */}
         {(() => {
           const isAnalyzingScript = analysisPhase !== "idle" && analysisPhase !== "complete";
           const buttonLabel = isAnalyzingScript
-            ? analysisPhase === "structural" ? "구조 분석 중..."
-            : analysisPhase === "detailing" ? "시퀀스 상세 중..."
+            ? analysisPhase === "structural" ? "장면 구조 분석 중..."
+            : analysisPhase === "detailing" ? "컷 상세화 중..."
             : analysisPhase === "enriching" ? "AI 심층 분석 중..."
             : "분석 중..."
-            : "프롬프트 생성";
+            : "장면 설계 시작";
 
           return (
             <Button
@@ -1895,7 +1904,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               {(isLoading || isAnalyzingScript) ? (
                 <span className="flex items-center gap-2">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  {isAnalyzingScript ? buttonLabel : "프롬프트 생성 중..."}
+                  {isAnalyzingScript ? buttonLabel : "장면 설계 중..."}
                 </span>
               ) : buttonLabel}
             </Button>

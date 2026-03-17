@@ -270,12 +270,36 @@ export default function ResultPanel({
   if (status === "idle") {
     return (
       <Card className="h-full flex items-center justify-center border-2 border-dashed" style={{ borderColor: "#787fff30" }}>
-        <CardContent className="text-center py-16">
-          <div className="text-5xl mb-4" style={{ filter: "drop-shadow(0 4px 8px #787fff40)" }}>🎬</div>
-          <p className="text-muted-foreground text-sm">
-            시나리오를 입력하고 감독 스타일을 선택한 후
-            <br />
-            <span style={{ color: "#787fff", fontWeight: 600 }}>&quot;프롬프트 생성하기&quot;</span> 버튼을 눌러주세요.
+        <CardContent className="text-center py-12 max-w-sm mx-auto">
+          <div className="text-5xl mb-5" style={{ filter: "drop-shadow(0 4px 8px #787fff40)" }}>🎬</div>
+          <h3 className="text-base font-bold mb-4" style={{ color: "#5a5ecc" }}>
+            AI 영상 제작 3단계
+          </h3>
+          <div className="space-y-3 text-left">
+            <div className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#787fff" }}>1</span>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "#334155" }}>스토리 입력</p>
+                <p className="text-[11px] text-muted-foreground">영상으로 만들 이야기를 자유롭게 입력</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#787fff" }}>2</span>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "#334155" }}>감독 선택 & 장면 설계</p>
+                <p className="text-[11px] text-muted-foreground">감독 페르소나가 컷과 멀티샷을 자동 구조화</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "#22c55e" }}>3</span>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "#334155" }}>수정 & 영상 생성</p>
+                <p className="text-[11px] text-muted-foreground">컷별 프롬프트를 편집하고 바로 영상 생성</p>
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] mt-5" style={{ color: "#94a3b8" }}>
+            왼쪽 패널에서 <span style={{ color: "#787fff", fontWeight: 600 }}>스토리 입력</span>부터 시작하세요.
           </p>
         </CardContent>
       </Card>
@@ -288,12 +312,12 @@ export default function ResultPanel({
         <CardContent className="text-center py-16 space-y-3">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent mx-auto" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
           <p className="text-sm font-medium" style={{ color: "#787fff" }}>
-            Gemini AI가 시나리오를 분석하고 있습니다...
+            감독 AI가 장면을 설계하고 있습니다...
           </p>
           <div className="text-xs text-muted-foreground space-y-1">
-            <p>1. 캐릭터 외형 정의 (성별, 헤어, 의상, 체형...)</p>
-            <p>2. 감독 스타일 적용 & 장면 분할</p>
-            <p>3. Extend 프롬프트 생성 (캐릭터 일관성 보장)</p>
+            <p>1. 캐릭터 외형 정의</p>
+            <p>2. 감독 스타일로 장면 분할 & 컷 구조화</p>
+            <p>3. 멀티샷 프롬프트 생성</p>
           </div>
         </CardContent>
       </Card>
@@ -558,34 +582,7 @@ export default function ResultPanel({
                 </>
               );
             })()}
-            {/* 생성 모드 토글 */}
-            <Badge
-              style={{
-                background: genMode === "studio" ? "#7c3aed" : "#059669",
-                color: "white",
-                cursor: "pointer",
-              }}
-              onClick={() => {
-                videoGen.updateConfig({ generationMode: genMode === "studio" ? "batch" : "studio" });
-              }}
-            >
-              {genMode === "studio" ? "Studio Mode" : "Batch Mode"}
-            </Badge>
-            {/* 런타임 예산 */}
-            <Badge
-              variant="outline"
-              style={{
-                borderColor: budgetResult.severity === "over_budget" ? "#ef4444"
-                  : budgetResult.severity === "warning" ? "#f59e0b"
-                  : "#22c55e60",
-                color: budgetResult.severity === "over_budget" ? "#ef4444"
-                  : budgetResult.severity === "warning" ? "#b45309"
-                  : undefined,
-              }}
-            >
-              {budgetResult.totalRuntimeSec}s / {BATCH_BUDGET_SECONDS}s 예산
-              {budgetResult.severity === "over_budget" && ` (+${budgetResult.overBudgetSec}s 초과)`}
-            </Badge>
+            {/* 생성 모드 / 런타임 예산 — 데모에서는 숨김 */}
             <Badge variant="outline" style={{ borderColor: "#e09900" }}>
               캐릭터 {result.characterSeeds.length}명 시드 고정
             </Badge>
@@ -596,102 +593,18 @@ export default function ResultPanel({
             )}
           </div>
 
-          {/* 런타임 예산 초과 경고 */}
-          {budgetResult.severity !== "ok" && budgetResult.suggestions.length > 0 && (
-            <div
-              className="rounded-lg px-3 py-2 text-[11px] space-y-1"
-              style={{
-                background: budgetResult.severity === "over_budget" ? "#fef2f2" : "#fffbeb",
-                border: `1px solid ${budgetResult.severity === "over_budget" ? "#fecaca" : "#fde68a"}`,
-              }}
-            >
-              <p style={{ color: budgetResult.severity === "over_budget" ? "#dc2626" : "#b45309", fontWeight: 600 }}>
-                {budgetResult.message}
-              </p>
-              <ul className="list-disc pl-4 space-y-0.5" style={{ color: "#6b7280" }}>
-                {budgetResult.suggestions.map((s, i) => (
-                  <li key={i}>{s}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* 런타임 예산 초과 경고 — 데모에서는 숨김 */}
 
-          {/* 인라인 감독 변경 재생성 */}
-          {onUpdateResult && (
-            <div className="flex items-center gap-2 pt-1">
-              <select
-                value={altDirector}
-                onChange={(e) => setAltDirector(e.target.value)}
-                className="h-7 rounded-md border text-[11px] px-2 max-w-[160px]"
-              >
-                <option value="">다른 감독으로 재생성...</option>
-                {[
-                  { id: "wong-kar-wai", name: "왕가위" },
-                  { id: "bong-joon-ho", name: "봉준호" },
-                  { id: "park-chan-wook", name: "박찬욱" },
-                  { id: "wes-anderson", name: "웨스 앤더슨" },
-                  { id: "david-fincher", name: "데이비드 핀처" },
-                  { id: "christopher-nolan", name: "크리스토퍼 놀란" },
-                  { id: "hayao-miyazaki", name: "미야자키 하야오" },
-                  { id: "quentin-tarantino", name: "쿠엔틴 타란티노" },
-                  { id: "denis-villeneuve", name: "드니 빌뇌브" },
-                  { id: "greta-gerwig", name: "그레타 거윅" },
-                ].map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-              {altDirector && (
-                <Button
-                  size="sm"
-                  className="h-7 text-[11px] text-white"
-                  style={{ background: "#7c3aed" }}
-                  disabled={altGenerating}
-                  onClick={async () => {
-                    setAltGenerating(true);
-                    try {
-                      const res = await fetch("/api/generate-cuts", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          storyText: storyText || result.conceptSummary,
-                          directorName: altDirector,
-                          directorNameKo: altDirector,
-                          animationMode: animationMode || "2D 애니",
-                          aspectRatio: "9:16",
-                          region: region || "한국",
-                          cutCount: result.cuts.length,
-                        }),
-                      });
-                      if (res.ok) {
-                        const data = await res.json();
-                        if (data.cuts) {
-                          onUpdateResult({
-                            ...result,
-                            cuts: classifyCuts(densifyCuts(data.cuts)),
-                            characterSeeds: data.characterSeeds || result.characterSeeds,
-                            totalCuts: data.cuts.length,
-                          });
-                          setAltDirector("");
-                        }
-                      }
-                    } catch (err) { console.error("[generate-cuts alt]", err); }
-                    setAltGenerating(false);
-                  }}
-                >
-                  {altGenerating ? "재생성 중..." : "이 감독으로 전환"}
-                </Button>
-              )}
-            </div>
-          )}
+          {/* 인라인 감독 변경 재생성 — 데모에서는 숨김 */}
         </CardContent>
       </Card>
 
       {/* 섹션 탭 */}
       <div className="flex gap-2 sticky top-0 z-10 bg-background py-2">
         {([
-          { key: "prompts", label: "프롬프트", color: "#787fff" },
+          { key: "prompts", label: "컷 편집", color: "#787fff" },
           { key: "generate", label: "영상 생성", color: "#22c55e" },
-          { key: "sequence", label: "시퀀스", color: "#8b5cf6" },
+          { key: "sequence", label: "시퀀스 보기", color: "#8b5cf6" },
           { key: "timeline", label: "타임라인", color: "#c4b800" },
         ] as const).map((tab) => (
           <button
@@ -973,8 +886,12 @@ export default function ResultPanel({
             ))}
           </div>
 
-          {/* JSON 내보내기 */}
-          <Card className="overflow-hidden">
+          {/* JSON 내보내기 — 데모에서는 접기 */}
+          <details>
+            <summary className="cursor-pointer text-[11px] py-1 px-2 rounded-lg" style={{ color: "#94a3b8" }}>
+              내보내기 & 공유
+            </summary>
+          <Card className="overflow-hidden mt-2">
             <CardContent className="space-y-3 pt-4">
               <p className="text-xs font-medium" style={{ color: "#787fff" }}>내보내기 & 공유</p>
               <div className="flex gap-2 flex-wrap">
@@ -1004,6 +921,7 @@ export default function ResultPanel({
               )}
             </CardContent>
           </Card>
+          </details>
         </>
       )}
 
@@ -1071,65 +989,9 @@ export default function ResultPanel({
             />
           )}
 
-          {/* 영상 히스토리 */}
-          <VideoHistoryPanel />
+          {/* 영상 히스토리 — 데모에서는 숨김 */}
 
-          {/* 원클릭 파이프라인 */}
-          <OneClickPipeline
-            hasCuts={result.cuts.length > 0}
-            hasStoryboard={Object.keys(storyboardImages).length >= result.cuts.length}
-            hasVideo={videoGen.completedCount >= result.cuts.length}
-            hasSrt={!!srtContent}
-            hasBgm={false}
-            hasSeo={false}
-            onRunStoryboard={async () => {
-              const tasks = result.cuts
-                .filter((cut) => !storyboardImages[cut.cutNumber])
-                .map((cut) => {
-                  setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
-                  return fetch("/api/generate-image", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode }),
-                  })
-                    .then((res) => res.json().then((data) => ({ ok: res.ok, data, cutNumber: cut.cutNumber })))
-                    .then(({ ok, data, cutNumber }) => {
-                      if (ok && data.images?.[0]?.base64) {
-                        const newImage = data.images[0].base64;
-                        setStoryboardImages((prev) => ({ ...prev, [cutNumber]: newImage }));
-                        setStoryboardCandidates((prev) => ({
-                          ...prev,
-                          [cutNumber]: [...(prev[cutNumber] ?? []), newImage],
-                        }));
-                      }
-                    })
-                    .catch(() => { /* continue */ })
-                    .finally(() => setStoryboardLoading((prev) => ({ ...prev, [cut.cutNumber]: false })));
-                });
-              await Promise.all(tasks);
-            }}
-            onRunVideoGeneration={() => videoGen.startAutoGeneration()}
-            onRunSrt={async () => {
-              const res = await fetch("/api/generate-srt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  scenes: result.cuts.map((c) => ({
-                    cutNumber: c.cutNumber,
-                    sceneDescription: c.sceneDescription,
-                    durationSec: c.durationSec,
-                  })),
-                }),
-              });
-              if (res.ok) {
-                const data = await res.json();
-                if (data.srt) setSrtContent(data.srt);
-              }
-            }}
-            onRunBgm={async () => { /* BGM removed */ }}
-            onRunSeo={async () => {}}
-            onRunThumbnail={async () => {}}
-          />
+          {/* 원클릭 파이프라인 — 데모에서는 숨김 */}
 
         </>
       )}
