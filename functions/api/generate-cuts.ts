@@ -654,6 +654,10 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
       } else {
         throw new Error(`step1 TIMEOUT + ultra-compact retry failed: ${result.error.slice(0, 300)}`);
       }
+    } else if (result.status && result.status >= 500 || result.status === 429) {
+      // Provider-side error (503 UNAVAILABLE, 429 rate limit, 500 etc.)
+      // Mark clearly so outer handler doesn't misclassify as MAX_TOKENS
+      throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error.slice(0, 400)}`);
     } else {
       throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
     }
@@ -1087,6 +1091,10 @@ ${(() => {
 
   if (result.error) {
     console.error(`[cuts:${stepLabel}] error: ${result.error.slice(0, 500)}`);
+    // Provider 5xx/429 에러는 silent fallback 대신 throw → 상위에서 올바른 HTTP 상태 반환
+    if (result.status && (result.status >= 500 || result.status === 429)) {
+      throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error.slice(0, 400)}`);
+    }
     if (result.truncated && result.text) {
       console.warn(`[cuts:${stepLabel}] TRUNCATED after retry! partialLen=${result.text.length} rawTail500: ${result.text.slice(-500)}`);
       const partialArr = safeParseArr(result.text);
@@ -1645,9 +1653,67 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const isTruncation = msg.includes("MAX_TOKENS") || msg.includes("truncat");
+      const isProviderError = msg.startsWith("PROVIDER_ERROR:");
+      const isTruncation = !isProviderError && (msg.includes("MAX_TOKENS") || msg.includes("truncat"));
       const isTimeout = msg.includes("TIMEOUT") || msg.includes("524") || msg.includes("timed out");
-      console.error("[generate-cuts] step1 failed:", msg, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
+      console.error("[generate-cuts] step1 failed:", msg, "isProviderError:", isProviderError, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
+
+      // ── Provider error (503/429/5xx) — retry with backoff, then fallback ──
+      if (isProviderError && !isTimeout) {
+        const providerStatus = parseInt(msg.split(":")[1], 10) || 503;
+        console.warn(`[generate-cuts] step1 provider error (${providerStatus}) — retrying with backoff`);
+        step1Warnings.push(`step1 provider error: ${providerStatus}`);
+
+        let retrySuccess = false;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const backoffMs = attempt * 2000; // 2s, 4s
+          console.info(`[generate-cuts] provider retry ${attempt}/2 — waiting ${backoffMs}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+
+          try {
+            const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
+            ({ characterSeeds, outlines } = await step1Outlines(
+              context.env,
+              String(storyText),
+              String(directorNameKo || directorName),
+              String(directorPersona ?? ""),
+              targetCuts,
+              secPerCut,
+              contentMode,
+              generationPersonaBlock,
+              characterPersonaBlock,
+              editorialPlanningBlock,
+              scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
+            ));
+            retrySuccess = true;
+            step1Degraded = true;
+            step1DegradedReason = `provider ${providerStatus} → retry ${attempt} succeeded`;
+            step1Warnings.push(step1DegradedReason);
+            break;
+          } catch (retryErr) {
+            const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            console.warn(`[generate-cuts] provider retry ${attempt}/2 failed:`, retryMsg.slice(0, 200));
+          }
+        }
+
+        if (!retrySuccess) {
+          // All retries failed — return 503 with user-friendly message
+          const is429 = providerStatus === 429;
+          return Response.json({
+            ok: false,
+            degraded: false,
+            error: is429
+              ? "AI 모델 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요."
+              : "현재 AI 모델 서버가 일시적으로 혼잡합니다. 잠시 후 다시 시도해주세요.",
+            detail: msg.slice(0, 300),
+            step: 1,
+            cause: is429 ? "PROVIDER_RATE_LIMIT" : "PROVIDER_UNAVAILABLE",
+            source: "gemini",
+            retryable: true,
+            warnings: step1Warnings,
+          }, { status: providerStatus });
+        }
+      }
 
       if (isTruncation && !isTimeout) {
         // ── 자동 감축 재시도: cutCount 절반으로 줄여서 1회 재시도 ──
@@ -1917,9 +1983,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const isTruncation = msg.includes("MAX_TOKENS") || msg.includes("truncat");
+      const isProviderError = msg.startsWith("PROVIDER_ERROR:");
+      const isTruncation = !isProviderError && (msg.includes("MAX_TOKENS") || msg.includes("truncat"));
       const isTimeout = msg.includes("TIMEOUT") || msg.includes("524") || msg.includes("timed out");
-      console.error("[generate-cuts] step2/3 failed:", msg, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
+      console.error("[generate-cuts] step2/3 failed:", msg, "isProviderError:", isProviderError, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
+
+      if (isProviderError && !isTimeout) {
+        const providerStatus = parseInt(msg.split(":")[1], 10) || 503;
+        const is429 = providerStatus === 429;
+        return Response.json({
+          ok: false,
+          degraded: false,
+          error: is429
+            ? "AI 모델 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요."
+            : "현재 AI 모델 서버가 일시적으로 혼잡합니다. 잠시 후 다시 시도해주세요.",
+          detail: msg.slice(0, 300),
+          step: 2,
+          cause: is429 ? "PROVIDER_RATE_LIMIT" : "PROVIDER_UNAVAILABLE",
+          source: "gemini",
+          retryable: true,
+          warnings: step1Warnings,
+        }, { status: providerStatus });
+      }
 
       if (isTruncation && !isTimeout) {
         return Response.json({

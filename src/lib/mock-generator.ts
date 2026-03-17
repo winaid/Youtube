@@ -87,6 +87,15 @@ async function fetchGeminiCuts(
       if (code === "INVALID_API_KEY") {
         throw new Error(`INVALID_API_KEY: ${help || "API 키가 유효하지 않습니다."}`);
       }
+      // Provider 가용성 에러 → 사용자 친화적 메시지
+      if (cause === "PROVIDER_UNAVAILABLE" || cause === "PROVIDER_RATE_LIMIT") {
+        const retryHint = (eb as Record<string, unknown>).retryable ? " 잠시 후 다시 시도해주세요." : "";
+        throw new Error(
+          cause === "PROVIDER_RATE_LIMIT"
+            ? `AI 서버 요청 한도 초과.${retryHint}`
+            : `AI 모델 서버가 일시적으로 응답하지 않습니다.${retryHint}`,
+        );
+      }
       throw new Error(
         cause === "MAX_TOKENS"
           ? `토큰 한도 초과 (step ${eb.step || "?"}): ${detail}`
