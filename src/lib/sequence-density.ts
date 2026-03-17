@@ -81,7 +81,7 @@ const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
   { maxSec: 9,  min: 1, max: 2 },
   { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 3, max: 6 },
+  { maxSec: 15, min: 4, max: 6 },  // 숏폼 리듬: 13-15초는 최소 4컷 (느린 감독도 최소 4컷)
 ];
 
 /**
@@ -92,7 +92,7 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
   for (const preset of RANGE_PRESETS) {
     if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
   }
-  return { min: 1, max: 2 }; // 15초 = 1~2 (Kling 3.0 native)
+  return { min: 3, max: 6 }; // fallback: segDur > 15이면 multi-segment이므로 여기 도달하면 안 됨
 }
 
 /**
@@ -436,8 +436,12 @@ export function resolveSegmentPlan(opts: {
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  // 10초 이상이면 최소 3컷 (제품 규칙: 10s+ = min 3, typical 3-6)
-  if (totalDurationSec >= 10 && totalDurationSec <= KLING_SEGMENT_CAP) {
+  // 숏폼 리듬 규칙: 13-15초는 최소 4컷 (감독 스타일보다 플랫폼 리듬 우선)
+  if (totalDurationSec >= 13 && totalDurationSec <= KLING_SEGMENT_CAP) {
+    return 4;
+  }
+  // 10-12초이면 최소 3컷
+  if (totalDurationSec >= 10 && totalDurationSec < 13) {
     return 3;
   }
   if (totalDurationSec < 10) {

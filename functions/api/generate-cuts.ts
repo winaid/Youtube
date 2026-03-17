@@ -553,6 +553,13 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 - ❌ 나쁜 예: 48초를 3~4개로 뭉개서 12초+ 시퀀스 생성
 - ✅ 좋은 예: 48초를 ${cutCount}개 × ${secPerCut}초 시퀀스로 분할
 
+## ⚠️ 숏폼 리듬 > 감독 스타일 (최우선 규칙)
+- 이 영상은 유튜브/인스타 숏폼용이다. 빠른 컷 전환이 필수.
+- 감독 스타일은 카메라/조명/구도/질감/분위기에만 반영하라.
+- 감독이 롱테이크 성향이라도, 컷 수(${cutCount})를 절대 줄이지 마라.
+- "롱테이크 감독 = 컷 전환 없음"으로 해석 금지. "압축된 리듬의 롱테이크 해석"으로 제한.
+- ${cutCount}개 미만의 outlines를 생성하면 실패로 간주한다.
+
 JSON만 출력:
 {"characterSeeds":[...],"outlines":[...]}`;
 
@@ -611,6 +618,7 @@ ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/�
 characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
 outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w)}]
 ⚠️ 총 런타임 12초 초과면 1시퀀스 금지, 최소 2시퀀스로 분할. 각 시퀀스 ${secPerCut}초.
+⚠️ 숏폼 리듬 > 감독 스타일: 감독이 롱테이크 성향이어도 반드시 ${cutCount}개 시퀀스를 생성하라. 컷 수를 줄이지 마라.
 
 JSON만: {"characterSeeds":[...],"outlines":[...]}`;
 
@@ -1004,9 +1012,10 @@ ${(() => {
 - "multiShot" 필드는 출력하지 말 것.`;
     }
     if (maxShots <= 2) {
-      return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+      return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 ${maxShots}개)
 핵심 원칙: 모든 서브샷은 이전 샷과 반드시 다른 것을 보여줘야 한다.
-- ${secPerCut}초에서는 ${maxShots}개 서브샷을 생성하라.
+- ${secPerCut}초에서는 반드시 ${maxShots}개 서브샷을 생성하라. 1개만 생성하면 실패.
+- 숏폼 리듬 규칙: 감독 스타일이 정적이어도 내부 서브샷 수를 줄이지 마라.
 - 각 서브샷은 반드시: (1) 다른 shot size, (2) 다른 카메라 앵글, (3) 다른 시각적 정보를 사용
 - 같은 프레이밍에서 같은 액션을 반복하면 안 됨 = 가짜 분할
 - 각 서브샷에 "role" 필드 포함: "establish"|"resolve"
@@ -1022,7 +1031,10 @@ ${(() => {
       { role: "resolve",   desc: "PAYOFF — 시각적 해소. 에너지 릴리즈. WS로 빠지거나 CU로 마지막 감정 비트." },
     ];
     const roles = progressionRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
-    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최대 ${maxShots}개)
+    const minShots = Math.max(2, Math.min(3, maxShots)); // 숏폼 최소 2-3 서브샷
+    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최소 ${minShots}개 ~ 최대 ${maxShots}개)
+
+⚠️ 숏폼 필수: 각 시퀀스에 최소 ${minShots}개 서브샷. 감독이 롱테이크/정적 스타일이어도 서브샷 수를 줄이지 마라.
 
 핵심 원칙 — 이것은 숫자 규칙이 아니라 프로그레션 규칙이다:
 1. 모든 서브샷은 존재 이유가 있어야 한다 — 같은 화면을 나누는 것은 금지
@@ -1433,7 +1445,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       undefined, // sceneType — 컷 생성 시점에서는 미정
       editorial.preferredCutPace,
     );
-    const secPerCut = autoResult.duration;
+    let secPerCut = autoResult.duration;
 
     // ── targetCuts: resolveCutCount로 통합 결정 ──
     // 실제 totalDurationSec 사용. 없으면 segment cap × 추정 컷 수 기반.
@@ -1464,6 +1476,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       personaBias: pBias,
     });
     const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), CUT_COUNT_MAX);
+
+    // ── secPerCut ↔ targetCuts 정합성 보정 ──
+    // 핵심 문제: secPerCut은 감독 persona에서, targetCuts는 density에서 독립 계산.
+    // 곱(secPerCut × targetCuts)이 totalDuration과 불일치하면
+    // LLM이 "24초 기준 3컷" 프롬프트를 받고 15초 스토리에 2컷만 생성하는 원인이 됨.
+    // 숏폼 리듬 > 감독 스타일: secPerCut을 totalDuration/targetCuts 이하로 제한.
+    if (effectiveTotalForDensity > 0 && targetCuts > 1) {
+      const naturalPerCut = Math.max(DURATION_MIN, Math.round(effectiveTotalForDensity / targetCuts));
+      if (secPerCut > naturalPerCut) {
+        console.log(`[generate-cuts] secPerCut reconciliation: ${secPerCut}→${naturalPerCut} (${effectiveTotalForDensity}s / ${targetCuts}cuts, persona wanted ${secPerCut}s)`);
+        secPerCut = naturalPerCut;
+      }
+    }
 
     console.log("[generate-cuts] duration params", {
       rawCutDuration: cutDuration, secPerCut, targetCuts,
@@ -1912,8 +1937,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
-    // 아웃라인 정규화
+    // 아웃라인 정규화 — LLM이 targetCuts보다 적게 생성한 경우 패딩
     const shotCycle = ["MS", "CU", "WS", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+    if (outlines.length < targetCuts) {
+      console.warn(`[generate-cuts] outline padding: LLM produced ${outlines.length}/${targetCuts} outlines — padding ${targetCuts - outlines.length} more`);
+      step1Warnings.push(`LLM이 ${outlines.length}/${targetCuts}컷만 생성하여 나머지를 자동 보충했습니다`);
+    }
     while (outlines.length < targetCuts) {
       const n = outlines.length + 1;
       const prevShot = outlines[n - 2]?.shotType ?? "MS";
