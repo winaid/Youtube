@@ -88,7 +88,7 @@ export function checkShotDensity(
     const isExtreme = shotCount <= 1 && totalDurationSec >= 8;
     return {
       severity: isExtreme ? "warning" : "warning",
-      message: `${totalDurationSec}초에 ${shotCount}샷 — 리텐션을 위해 ${rec.min}–${rec.max}샷 권장. 단일 long-take가 의도적이라면 무시 가능.`,
+      message: `이 장면 ${totalDurationSec}초에 내부 멀티샷 ${shotCount}개 — 리텐션을 위해 ${rec.min}–${rec.max}개 권장. 의도적 원테이크라면 무시 가능.`,
       recommended: rec,
     };
   }

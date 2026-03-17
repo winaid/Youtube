@@ -5,7 +5,7 @@ import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarra
 import MultiShotEditor from "./MultiShotEditor";
 import { getMaxShots } from "@/lib/kling-capability";
 import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
-import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles } from "@/lib/multi-shot-planner";
+import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles, planRecommendedShotCount } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
 import { detectShotProgression, splitSingleShotSequence, type ShotBeatHint } from "@/lib/shot-splitting";
 import type { CutCardViewModel } from "@/lib/canonical-view-model";
@@ -381,21 +381,29 @@ export default function CutCard({
           beatHint,
         });
         if (splitResult.wasSplit && splitResult.shots.length >= 2) {
-          const roles = planShotRoles(splitResult.shots.length, sceneType);
-          const progressionMultiShot = splitResult.shots.map((shot, i) => {
-            const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
-              shot.camera.framing === "CU" ? "Close-up" :
-              shot.camera.framing === "MCU" ? "Medium close-up" :
-              `${shot.camera.framing} shot`;
-            return {
-              index: i + 1,
-              prompt: `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
-              duration: String(Math.round(shot.endSec - shot.startSec)),
-              role: roles[i] || ("develop" as const),
-            };
-          });
-          onUpdate({ ...cut, multiShot: progressionMultiShot });
-          return;
+          // ── 10s+ 최소 샷 수 강제 ──
+          // content-aware split이 duration 대비 너무 적은 샷을 만들면
+          // generic role-based split으로 대체하여 밀도 규칙 준수
+          const recommendedMin = planRecommendedShotCount(modelId, effectiveDurationSec, sceneType);
+          if (splitResult.shots.length < recommendedMin) {
+            // content-aware split 결과가 밀도 미달 → generic fallback으로 넘김
+          } else {
+            const roles = planShotRoles(splitResult.shots.length, sceneType);
+            const progressionMultiShot = splitResult.shots.map((shot, i) => {
+              const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
+                shot.camera.framing === "CU" ? "Close-up" :
+                shot.camera.framing === "MCU" ? "Medium close-up" :
+                `${shot.camera.framing} shot`;
+              return {
+                index: i + 1,
+                prompt: `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
+                duration: String(Math.round(shot.endSec - shot.startSec)),
+                role: roles[i] || ("develop" as const),
+              };
+            });
+            onUpdate({ ...cut, multiShot: progressionMultiShot });
+            return;
+          }
         }
       }
 

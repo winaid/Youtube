@@ -23,9 +23,27 @@ The core workflow: a user provides a story or scene description, the system plan
 
 **Two modes for two mindsets.** Studio Mode is for careful review. Batch Mode is for throughput. They enforce different levels of validation, and the user sees which mode they're in.
 
+## Critical Terminology — 컷 vs 멀티샷
+
+| 용어 | 의미 | 레이어 |
+|------|------|--------|
+| **컷 (Cut/장면)** | 하나의 서사 단위. 8-15초 Kling 생성 단위 | Layer 1-2 |
+| **멀티샷 (Multi-Shot)** | 한 컷 안의 내부 프레이밍 변화. role progression 적용 | Layer 3 |
+| **변형 (Variant)** | 같은 컷의 대안 시각적 해석. 새 컷 추가 아님 | — |
+
+**주의:** UI에서 "샷 추가"는 새 컷을 추가하는 것이 아니라, 한 컷 내부의 멀티샷을 추가하는 것.
+
+## Absolute Rules (절대 규칙)
+
+1. **10초 이상 영상 = 최소 3컷 이상** (어떤 이유로도 위반 불가)
+2. **일반적인 범위는 3-6컷**
+3. 각 컷(10-15초) 내부의 멀티샷은 **3-6개 권장** (리텐션 기반)
+4. 이 규칙은 추천/자동 조정/하드캡/예외 처리보다 우선
+5. 최종 출력에서 10초 이상 영상이 1-2컷으로 확정되면 안 됨
+
 ## Release Status
 
-Release-ready. All 54 test files pass (1556 tests). The system has been through multi-phase implementation and a final QA audit.
+V1 완성 단계. 핵심 파이프라인/프롬프트/규칙이 구현 완료되었으며, 브라우저 기반 실사용 검증 진행 중.
 
 ## Major Implemented Features
 
@@ -125,7 +143,7 @@ The client does not know the final resolved model. It passes `modelId: undefined
 
 3. **Video-edit workflow scaffolded but not wired.** The `kling-o3-video-edit` model is registered in the capability system but has no UI path for video editing workflows.
 
-4. **CutCard useEffect intentionally skips deps.** The auto-initialization effect for multi-shot excludes `onUpdate` and `cut.multiShot` from its dependency array (with eslint-disable) to prevent infinite update loops. This is a deliberate stability tradeoff.
+4. **CutCard useEffect intentionally skips deps.** The auto-initialization effect for multi-shot excludes `onUpdate` and `cut.multiShot` from its dependency array (with eslint-disable) to prevent infinite update loops. This is a deliberate stability tradeoff. Content-aware split results are validated against recommended minimum shot count and fall back to generic role-based split if density is insufficient.
 
 5. **`multiShotSummary` in sequence-assembler is debug-only.** Generated but not consumed by any user-facing UI component.
 

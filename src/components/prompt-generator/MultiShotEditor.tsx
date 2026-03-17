@@ -22,8 +22,10 @@ import {
   inferShotRole,
   autoAssignRoles,
   PROMPT_MAX_LENGTH,
+  getRecommendedShotRange,
   type MultiShotValidationResult,
 } from "@/lib/multishot-validation";
+import { ROLE_PROGRESSION_DIRECTIVE } from "@/lib/multi-shot-planner";
 
 // ── Shot change indicator — shows what changed from previous shot ──
 function describeShotChange(prev: MultiShotPrompt, current: MultiShotPrompt, prevRole: ShotRole, currentRole: ShotRole): string | null {
@@ -73,6 +75,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [addShotFeedback, setAddShotFeedback] = useState<string | null>(null);
 
   // ── Validation ──
   const validation: MultiShotValidationResult = useMemo(
@@ -90,8 +93,30 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
 
   const handleAddShot = useCallback(() => {
     const result = addShot(modelId, shots, totalDuration);
-    if (result) updateShots(result);
-  }, [modelId, shots, totalDuration, updateShots]);
+    if (result) {
+      // Pre-fill the new (last) shot with its role directive so it's not empty
+      const newShot = result[result.length - 1];
+      if (newShot && (!newShot.prompt || newShot.prompt.trim() === "")) {
+        const role = newShot.role ?? inferShotRole(result.length - 1, result.length);
+        const directive = ROLE_PROGRESSION_DIRECTIVE[role];
+        if (directive) {
+          newShot.prompt = `[${role}] ${directive.visualDirective}`;
+        }
+      }
+      updateShots(result);
+      setAddShotFeedback(`샷 ${result.length}개로 재구성됨`);
+      setTimeout(() => setAddShotFeedback(null), 2000);
+    } else {
+      // Explain why add failed
+      const rec = getRecommendedShotRange(totalDuration);
+      if (shots.length >= maxShots) {
+        setAddShotFeedback(`최대 ${maxShots}샷 — 더 추가할 수 없습니다`);
+      } else {
+        setAddShotFeedback(`마지막 샷이 너무 짧아 분할 불가 (${rec.min}–${rec.max}샷 권장)`);
+      }
+      setTimeout(() => setAddShotFeedback(null), 3000);
+    }
+  }, [modelId, shots, totalDuration, maxShots, updateShots]);
 
   const handleRemoveShot = useCallback(
     (shotIndex: number) => {
@@ -151,10 +176,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-medium" style={{ color: "#e85d04" }}>
-            릴 프로그레션 ({shots.length}샷)
+            이 장면의 멀티샷 ({shots.length}개 내부 샷)
           </span>
           <span className="text-[9px]" style={{ color: "#9ca3af" }}>
-            매 샷 다른 프레이밍 · 에스컬레이션 · 페이오프
+            한 장면 안에서 프레이밍 변화 · 에스컬레이션 · 페이오프
           </span>
         </div>
         <div className="flex gap-1">
@@ -183,6 +208,16 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
           )}
         </div>
       </div>
+
+      {/* Add Shot Feedback */}
+      {addShotFeedback && (
+        <div
+          className="text-[10px] px-2 py-1 rounded-md text-center animate-pulse"
+          style={{ background: "#e85d0415", color: "#e85d04", border: "1px solid #e85d0430" }}
+        >
+          {addShotFeedback}
+        </div>
+      )}
 
       {/* Shot Cards */}
       <div className="space-y-1.5">
@@ -376,13 +411,13 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
             <>
               <ValidationLine
                 ok={shots.length <= maxShots}
-                text={`shot 수: ${shots.length}/${maxShots}`}
+                text={`이 장면 내부 멀티샷 수: ${shots.length}/${maxShots}`}
               />
               <ValidationLine
                 ok={validation.aggregateIssues.every(
                   (i) => !i.message.includes("시간 합계"),
                 )}
-                text={`duration 합: ${shots.reduce((s, sh) => s + (parseFloat(sh.duration) || 0), 0)}초 = ${totalDuration}초`}
+                text={`멀티샷 duration 합: ${shots.reduce((s, sh) => s + (parseFloat(sh.duration) || 0), 0)}초 = 장면 전체 ${totalDuration}초`}
               />
               <ValidationLine
                 ok={!validation.shotIssues.some(
