@@ -92,11 +92,13 @@ export default function ResultPanel({
   });
 
   // animationMode를 videoGen config에 동기화
+  // videoGen은 매 렌더마다 새 객체 → deps에서 제외하여 무한 루프 방지
   useEffect(() => {
     if (animationMode && videoGen.config.animationMode !== animationMode) {
       videoGen.updateConfig({ animationMode });
     }
-  }, [animationMode, videoGen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animationMode]);
 
   // 프롬프트 생성 시 cutDuration → videoGen config에만 동기화
   // 주의: 부모(InputPanel) 슬라이더는 역동기화하지 않는다.

@@ -298,6 +298,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [blendDirector, setBlendDirector] = useState("");
   const [blendRatio, setBlendRatio] = useState(70); // 메인 감독 비율
 
+  // ── 사전 분석 캐시: 입력 시 미리 계산하여 submit 시 즉시 사용 ──
+  const analysisHintCacheRef = useRef<{ text: string; depth: string; hint: string | undefined } | null>(null);
+
   // 감독 추천 상태
   const [directorRecommendation, setDirectorRecommendation] = useState<{
     analysis: string;
@@ -335,7 +338,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   }, [prefillScenario, onPrefillConsumed]);
 
   const allDirectors = useMemo(() => [...directors, ...customDirectors], [customDirectors]);
-  const filteredDirectors = allDirectors.filter((d) => d.region === region);
+  const filteredDirectors = useMemo(() => allDirectors.filter((d) => d.region === region), [allDirectors, region]);
 
   // 로컬 검색
   const localResults = useMemo(() => {
@@ -377,7 +380,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     return results;
   }, [directorSearch, allDirectors]);
 
-  // 웹 검색 (항상 실행)
+  // 웹 검색 — localResults를 ref로 참조하여 useCallback 안정화
+  const localResultsRef = useRef(localResults);
+  localResultsRef.current = localResults;
+
   const searchWeb = useCallback(async (query: string) => {
     if (!query.trim()) return;
     setIsSearching(true);
@@ -394,8 +400,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       }
       const data = await res.json();
       if (data.directors && Array.isArray(data.directors)) {
-        // 로컬에 이미 있는 감독은 제외
-        const localIds = new Set(localResults.map((r) => r.director.id));
+        const localIds = new Set(localResultsRef.current.map((r) => r.director.id));
         setWebResults(data.directors.filter((d: WebDirectorResult) => !localIds.has(d.id)));
       }
     } catch (err) {
@@ -404,7 +409,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     } finally {
       setIsSearching(false);
     }
-  }, [localResults]);
+  }, []); // 안정적 참조 — localResults 변경 시 재생성 불필요
 
   // 디바운스된 웹 검색
   useEffect(() => {
@@ -543,6 +548,40 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     }
   }, [storyText]);
 
+  // ── 사전 분석 캐시 갱신: 입력 변경 시 백그라운드에서 Phase A/B를 미리 계산 ──
+  useEffect(() => {
+    if (analysisDepth === "none" || storyText.trim().length < 20) {
+      analysisHintCacheRef.current = null;
+      return;
+    }
+    const timer = setTimeout(() => {
+      try {
+        const detectedType = detectContentType(storyText);
+        const phaseA = analyzeScriptPhaseA(storyText, { contentTypeHint: detectedType });
+        let result = phaseA.result;
+        // Phase B: 시퀀스 상세화
+        for (let i = 0; i < result.sequences.length; i++) {
+          if (result.sequences[i].cuts.length > 0) continue;
+          try {
+            const enriched = enrichSequenceDetail(
+              result.sequences[i], phaseA.sequenceGroups, i, result.sequences.length,
+            );
+            result = { ...result, sequences: result.sequences.map((s, j) => j === i ? enriched : s) };
+          } catch { /* continue */ }
+        }
+        const hint = result.sequences.length > 0
+          ? result.sequences.map((seq, i) =>
+              `시퀀스${i + 1}: [${seq.beatType}] ${seq.title} (${seq.recommendedDurationSec}초) — ${seq.sourceText?.slice(0, 80) ?? ""}`
+            ).join("\n")
+          : undefined;
+        analysisHintCacheRef.current = { text: storyText, depth: analysisDepth, hint };
+      } catch {
+        analysisHintCacheRef.current = null;
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [storyText, analysisDepth]);
+
   // 영상 길이가 지정된 경우에만 AI 분석 — 자동이면 추천 없음
   useEffect(() => {
     if (duration === "auto") {
@@ -605,63 +644,66 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       finalStory = `[감독 스타일 블렌딩: ${selectedDir.nameKo} ${blendRatio}% + ${blendDir.nameKo} ${100 - blendRatio}%]\n\n${storyText}`;
     }
 
-    // ── 분석 깊이에 따라 사전 분석 실행 ──
+    // ── 분석 깊이에 따라 사전 분석 사용 ──
+    // basic 모드: 백그라운드 캐시에서 즉시 사용 (submit 차단 없음)
+    // deep 모드: Phase C (AI API)만 여기서 실행
     let scriptAnalysisHint: string | undefined;
     if (analysisDepth !== "none" && storyText.trim().length >= 20) {
-      try {
-        analysisAbortRef.current = false;
-        setAnalysisPhase("structural");
+      // 캐시 히트: 입력 시 미리 계산된 Phase A/B 결과 사용
+      const cache = analysisHintCacheRef.current;
+      if (cache && cache.text === storyText && cache.depth === analysisDepth) {
+        scriptAnalysisHint = cache.hint;
+      } else {
+        // 캐시 미스: 동기 계산 (첫 submit이거나 입력 직후 바로 클릭한 경우)
+        try {
+          const detectedType = detectContentType(storyText);
+          const phaseA = analyzeScriptPhaseA(storyText, { contentTypeHint: detectedType });
+          let result = phaseA.result;
+          for (let i = 0; i < result.sequences.length; i++) {
+            if (result.sequences[i].cuts.length > 0) continue;
+            try {
+              const enriched = enrichSequenceDetail(
+                result.sequences[i], phaseA.sequenceGroups, i, result.sequences.length,
+              );
+              result = { ...result, sequences: result.sequences.map((s, j) => j === i ? enriched : s) };
+            } catch { /* continue */ }
+          }
+          if (result.sequences.length > 0) {
+            scriptAnalysisHint = result.sequences.map((seq, i) =>
+              `시퀀스${i + 1}: [${seq.beatType}] ${seq.title} (${seq.recommendedDurationSec}초) — ${seq.sourceText?.slice(0, 80) ?? ""}`
+            ).join("\n");
+          }
+        } catch { /* proceed without hints */ }
+      }
 
-        const detectedType = detectContentType(storyText);
-        const phaseA = analyzeScriptPhaseA(storyText, { contentTypeHint: detectedType });
-        let result = phaseA.result;
-
-        // Phase B: 시퀀스 상세화
-        setAnalysisPhase("detailing");
-        for (let i = 0; i < result.sequences.length; i++) {
-          if (analysisAbortRef.current) break;
-          if (result.sequences[i].cuts.length > 0) continue;
-          try {
-            const enriched = enrichSequenceDetail(
-              result.sequences[i], phaseA.sequenceGroups, i, result.sequences.length,
-            );
-            result = { ...result, sequences: result.sequences.map((s, j) => j === i ? enriched : s) };
-          } catch { /* continue */ }
-        }
-
-        // Phase C: AI 심층 분석 (deep 모드만)
-        if (analysisDepth === "deep") {
+      // Phase C: AI 심층 분석 (deep 모드만 — 이 부분만 네트워크 대기)
+      if (analysisDepth === "deep") {
+        try {
+          analysisAbortRef.current = false;
           setAnalysisPhase("enriching");
-          try {
-            const prompt = buildAnalysisPrompt(storyText, detectedType);
-            const res = await fetch("/api/analyze-script", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ scriptText: storyText, analysisPrompt: prompt, contentTypeHint: detectedType }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.analysis && !data.incomplete) {
-                const llmResult = normalizeAnalysisResult(data.analysis);
-                if (llmResult.sequences.length > 0) result = llmResult;
+          const detectedType = detectContentType(storyText);
+          const prompt = buildAnalysisPrompt(storyText, detectedType);
+          const res = await fetch("/api/analyze-script", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scriptText: storyText, analysisPrompt: prompt, contentTypeHint: detectedType }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.analysis && !data.incomplete) {
+              const llmResult = normalizeAnalysisResult(data.analysis);
+              if (llmResult.sequences.length > 0) {
+                scriptAnalysisHint = llmResult.sequences.map((seq, i) =>
+                  `시퀀스${i + 1}: [${seq.beatType}] ${seq.title} (${seq.recommendedDurationSec}초) — ${seq.sourceText?.slice(0, 80) ?? ""}`
+                ).join("\n");
               }
             }
-          } catch (e) {
-            console.warn("[handleSubmit] Phase C failed, continuing with Phase A/B:", (e as Error).message);
           }
+          setAnalysisPhase("idle");
+        } catch (e) {
+          console.warn("[handleSubmit] Phase C failed:", (e as Error).message);
+          setAnalysisPhase("idle");
         }
-
-        // 분석 결과를 힌트 문자열로 변환
-        if (result.sequences.length > 0) {
-          scriptAnalysisHint = result.sequences.map((seq, i) =>
-            `시퀀스${i + 1}: [${seq.beatType}] ${seq.title} (${seq.recommendedDurationSec}초) — ${seq.sourceText?.slice(0, 80) ?? ""}`
-          ).join("\n");
-        }
-
-        setAnalysisPhase("idle");
-      } catch (err) {
-        console.warn("[handleSubmit] analysis failed, proceeding without hints:", err);
-        setAnalysisPhase("idle");
       }
     }
 

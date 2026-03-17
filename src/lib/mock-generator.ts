@@ -287,15 +287,32 @@ export async function generatePrompt(
 
   const storyWords = input.storyText.slice(0, 30);
 
-  // 1. 감독 페르소나 먼저 생성 (장면 생성에 필요)
-  const directorPersonaText = director && (!director.persona || input.customDirector)
-    ? await fetchGeminiPersona(director, input.storyText, input.animationMode)
-    : director?.persona ?? "";
+  // 1+2. 페르소나 생성과 장면 생성을 가능한 한 병렬화
+  // 내장 감독(persona 있음)은 persona fetch 건너뛰고 바로 cuts 호출
+  // 커스텀 감독(persona 없음)은 persona fetch와 cuts를 동시에 시작하되,
+  // cuts에는 빈 persona로 요청 (서버가 directorStyle/techniques로 보완)
+  const needsPersonaFetch = !!director && (!director.persona || !!input.customDirector);
+  const existingPersona = director?.persona ?? "";
 
-  // 2. 페르소나를 포함하여 장면 생성 (캐릭터 시드 + 감독 스타일 주입)
-  const cutsResult = director
-    ? await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration)
-    : { ...generateFallbackCuts(input, director ?? { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
+  let directorPersonaText: string;
+  let cutsResult: Awaited<ReturnType<typeof fetchGeminiCuts>>;
+
+  if (!director) {
+    directorPersonaText = "";
+    cutsResult = { ...generateFallbackCuts(input, { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
+  } else if (needsPersonaFetch) {
+    // 커스텀 감독: persona + cuts 병렬 호출
+    const [personaResult, cutsParallel] = await Promise.all([
+      fetchGeminiPersona(director, input.storyText, input.animationMode),
+      fetchGeminiCuts(input, director, existingPersona, cutCount, cutDuration, effectiveDuration),
+    ]);
+    directorPersonaText = personaResult;
+    cutsResult = cutsParallel;
+  } else {
+    // 내장 감독: persona 이미 있음 → cuts만 호출
+    directorPersonaText = existingPersona;
+    cutsResult = await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration);
+  }
   const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, degraded, degradedReason, sequencePlan, sequenceValidation } = cutsResult;
 
   // ── rhythm distribution: 서버 응답에 rhythmProfile이 없으면 클라이언트 측 분배 적용 ──
