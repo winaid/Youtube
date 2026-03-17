@@ -203,75 +203,6 @@ const shortsScenarioCards: PromptCard[] = [
   },
 ];
 
-// ── pool 3: 신뢰 구축 — 투명성·공개·강연으로 환자를 모은 의사들 ──────────────
-
-const trustBuilderCards: PromptCard[] = [
-  {
-    title: "피에르 포샤르가 치과 비밀 전부 공개한 이유",
-    hook: "노하우 다 공개하면 손해 아닌가? 근데 이 사람은 그래서 전설이 됨 (1728년)",
-    marketingTactic: "전문 지식 완전 공개 출판 → 독점 권위자 포지셔닝",
-  },
-  {
-    title: "갈레노스가 공개 수술로 로마 최고 의사 된 이야기",
-    hook: "라이브로 시술하는 의사 봤지? 2000년 전에도 했음. 그것도 황제 앞에서",
-    marketingTactic: "공개 해부·수술 시연으로 경쟁 의사 대비 실력 입증",
-  },
-  {
-    title: "엘리자베스 블랙웰이 무료 여성 건강 강연으로 환자층을 만든 방법",
-    hook: "병원 개업 전에 무료 강연부터 열어서 '이 의사 믿을 수 있다'는 소문을 먼저 퍼뜨린 전략",
-    marketingTactic: "무료 공개 강연으로 신뢰 구축 후 병원 개원 (New York 1850s)",
-  },
-  {
-    title: "수전 라 플레시 피코트가 무료 왕진으로 오마하족 신뢰를 얻은 방법",
-    hook: "돈 없어도 찾아가서 봐주는 의사가 결국 마을 전체를 얻은 이야기",
-    marketingTactic: "무료 왕진 + 부족 회의 참여로 커뮤니티 내 절대적 신뢰 구축",
-  },
-  {
-    title: "다니엘 헤일 윌리엄스가 심장 수술 성공을 신문에 공개해 병원 신뢰를 올린 방법",
-    hook: "1893년 세계 최초 성공적 심장 수술 후 그걸 바로 언론에 공개한 의사의 PR 전략",
-    marketingTactic: "의료 혁신 성과를 즉시 언론 공개 → Provident Hospital 공신력 상승",
-  },
-  {
-    title: "레베카 리 크럼플러의 의학 교과서가 흑인 여성 환자에게 미친 신뢰 효과",
-    hook: "책 쓴 의사라는 사실 하나로 당시 흑인 커뮤니티에서 '믿을 수 있는 의사' 1순위가 된 방법",
-    marketingTactic: "『A Book of Medical Discourses』 출판으로 권위 구축 (1883년)",
-  },
-  {
-    title: "메이지 시대 오긴 荻野吟子이 법정 투쟁을 공개해서 환자 지지를 얻은 방법",
-    hook: "의사 면허 소송을 비밀로 안 하고 언론에 다 공개했더니 오히려 응원 환자가 몰린 이야기",
-    marketingTactic: "법정 투쟁 공개 + 언론 지지 → 개업 전 대기 환자 확보 (1885년)",
-  },
-  {
-    title: "엘리자베스 개럿 앤더슨의 약사 자격증 우회 전략으로 의료 시장에 진입한 방법",
-    hook: "의사 면허가 막히자 약사 자격증으로 먼저 시장에 들어간 다음 의사가 된 이야기 (1865년)",
-    marketingTactic: "규제 우회 진입 후 자격 취득으로 정식 전환 — 기존 환자층 유지",
-  },
-  // ── 한국 ──
-  {
-    title: "허준이 궁중에서 쫓겨난 뒤 유배지에서 동의보감을 완성한 역전 드라마",
-    hook: "왕이 죽자 책임 뒤집어쓰고 유배 감. 근데 유배지에서 역대급 의학서를 완성함 (1610년)",
-    marketingTactic: "역경 속 대작 완성 → 복권 + 국가 공인 의학 권위",
-  },
-  // ── 일본 ──
-  {
-    title: "하나오카 세이슈가 20년 연구 끝에 아내와 어머니를 실험 대상으로 마취약을 완성한 이야기",
-    hook: "전신마취약 만들겠다고 아내가 실험 자원. 부작용으로 실명함. 근데 성공해서 전설이 됨 (1804년)",
-    marketingTactic: "가족의 희생 스토리 + 수술 성공 → 전국 제자 유입",
-  },
-  // ── 중국 ──
-  {
-    title: "손사막이 약왕으로 불리며 무료 진료로 당나라 최고 의사가 된 방법",
-    hook: "황제가 불러도 안 가고 산에서 가난한 사람 무료로 치료한 의사. 결과? '약왕' 칭호 (당나라)",
-    marketingTactic: "무료 진료 + 권력 거부 → 민간 신뢰 극대화",
-  },
-  // ── 중동 ──
-  {
-    title: "알자흐라위가 200개 수술 도구를 발명하고 교과서에 그림까지 그려 넣은 방법",
-    hook: "수술 도구 200개를 직접 발명하고 일러스트까지 그려서 교과서 만든 의사. 10세기 코르도바에서 (스페인)",
-    marketingTactic: "수술 도구 발명 + 일러스트 교과서 출판 → '외과의 아버지' 브랜딩",
-  },
-];
-
 // ── pool 4: VS 쇼츠 — 과학·역사·전략 근거 기반 VS 매치업 설계 ──────────────
 //
 // 선정 기준:
@@ -429,7 +360,6 @@ function pickRandom<T>(arr: T[], count: number): T[] {
 const cardPools: Record<string, PromptCard[]> = {
   "history-marketing": historyMarketingCards,
   "shorts-scenario":   shortsScenarioCards,
-  "trust-builder":     trustBuilderCards,
   "vs-shorts":         vsShortsCards,
 };
 
@@ -437,7 +367,6 @@ const cardPools: Record<string, PromptCard[]> = {
 const promptPools: Record<string, string[]> = {
   "history-marketing": historyMarketingCards.map((c) => c.title),
   "shorts-scenario":   shortsScenarioCards.map((c) => c.title),
-  "trust-builder":     trustBuilderCards.map((c) => c.title),
   "vs-shorts":         vsShortsCards.map((c) => c.title),
 };
 
@@ -470,15 +399,6 @@ export const storyPersonas: StoryAIPersona[] = [
       "나는 '팩트 기반 대체역사 콘텐츠 작가'야. 실제 역사적 사실을 출발점으로 삼아, '만약 그 갈림길에서 역사가 달라졌다면?' 이라는 가정을 논리적으로 전개해. 핵심은 실제 역사 배경을 짧게 짚고 → 갈림길(분기점)을 제시한 뒤 → 가능한 변화의 흐름을 흥미롭게 펼치는 것. 팩트와 상상을 구분해서 써야 해. '실제로는 ~했다. 근데 만약 ~했다면?' 구조. 단정하지 말고 가능성으로 표현해. 음모론·혐오·정치 선동 금지. 출력은 쇼츠용 짧은 줄 내레이션 형식 — 희곡/시나리오/대화극 형식 절대 금지. 인물명: 대사 형식 절대 금지. [장면 설명] 형식 절대 금지.",
     samplePrompts: pickRandom(promptPools["shorts-scenario"], 4),
     sampleCards:   pickRandomCards(shortsScenarioCards, 4),
-  },
-  {
-    id: "trust-builder",
-    name: "신뢰도 콘텐츠 기획자",
-    description: "공개 시연·무료 진료·출판·강연 등 투명성 전략으로 환자 신뢰를 쌓아 환자를 유치한 역사 사례 전문가.",
-    persona:
-      "나는 '신뢰도 떡상 기획자'야. 역사 속 의사/병원이 투명성·공개·무료 진료·출판 전략으로 환자 신뢰를 쌓아 실제로 환자를 유치한 구체적 마케팅 사례를 내레이션 스크립트로 써. 출력은 반드시 쇼츠용 짧은 줄 내레이션 형식 — 희곡/시나리오/대화극 형식 절대 금지. 인물명: 대사 형식 절대 금지. [장면 설명] 형식 절대 금지. 공감 훅으로 시작, 역사 팩트로 신뢰 구축, 현대 적용 교훈으로 마무리.",
-    samplePrompts: pickRandom(promptPools["trust-builder"], 4),
-    sampleCards:   pickRandomCards(trustBuilderCards, 4),
   },
   {
     id: "vs-shorts",
