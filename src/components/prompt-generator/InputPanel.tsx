@@ -301,6 +301,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   // ── 사전 분석 캐시: 입력 시 미리 계산하여 submit 시 즉시 사용 ──
   const analysisHintCacheRef = useRef<{ text: string; depth: string; hint: string | undefined } | null>(null);
 
+  // 감독 추천 캐시: 동일 스토리 텍스트에 대해 API 재호출 방지
+  const recommendCacheRef = useRef<{ storyKey: string; result: unknown } | null>(null);
+
   // 감독 추천 상태
   const [directorRecommendation, setDirectorRecommendation] = useState<{
     analysis: string;
@@ -599,6 +602,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     if (!storyText.trim() || storyText.length < 30 || isRecommending) return;
     setIsRecommending(true);
     setShowRecommendation(true);
+
+    // 캐시 히트: 동일 스토리 텍스트면 API 재호출 생략
+    const storyKey = storyText.trim().slice(0, 2000);
+    if (recommendCacheRef.current?.storyKey === storyKey) {
+      console.log("[recommend-director] 캐시 히트 — API 호출 생략");
+      setDirectorRecommendation(recommendCacheRef.current.result as typeof directorRecommendation);
+      setIsRecommending(false);
+      return;
+    }
+
     try {
       const localDirectorList = allDirectors.map((d) => ({
         id: d.id,
@@ -624,6 +637,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         throw new Error(msg);
       }
       const data = await res.json();
+      // 캐시 저장
+      recommendCacheRef.current = { storyKey, result: data };
       setDirectorRecommendation(data);
     } catch (err) {
       console.error("[recommend-director] 실패:", err);

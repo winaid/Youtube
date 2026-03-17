@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -28,7 +28,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const prompt = `당신은 세계 최고의 영화 연출 전문가이자 AI 영상 감독 매칭 시스템입니다.
 
 ## 분석할 시나리오
-${storyText.slice(0, 2000)}
+${storyText.slice(0, 1200)}
 
 ## 현재 보유 감독 목록 (로컬)
 ${localList}
@@ -85,34 +85,30 @@ ${localList}
   ]
 }`;
 
-    // ── A/B 진단 결과 기반 호출 설정 ──
-    // 원인: google_search 도구 + gemini-3.1-pro-preview 조합이 500 유발 가능.
-    // search-director.ts (정상 작동)와 동일하게 FLASH + responseMimeType으로 통일.
-    // PRO가 필요하면 google_search 없이 시도 후 실패 시 FLASH fallback.
+    // ── 감독 추천은 경량 태스크 → Flash 우선, 실패 시 PRO fallback ──
+    // 시나리오 분석 + 매칭은 간단한 추론이므로 Flash로 충분하고 3-5배 빠름.
 
     const requestBody = {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 2048,
         responseMimeType: "application/json" as const,
       },
     };
 
-    // 1차 시도: PRO (google_search 제거)
-    const model1 = GEMINI_MODEL_PRO;
-    console.log(`[recommend-director] 1차 시도: model=${model1}, tools=none, responseMimeType=application/json`);
-    let res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, model1), {
+    // 1차 시도: FLASH (빠른 응답 우선)
+    console.log(`[recommend-director] 1차 시도: model=${GEMINI_MODEL_FLASH}, tools=none`);
+    let res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
 
-    // 1차 실패 시 PRO 재시도 (모델 통일 — FLASH fallback 제거)
+    // 1차 실패 시 PRO fallback (품질은 높지만 느림)
     if (!res.ok) {
       const errText1 = await res.text();
-      console.warn(`[recommend-director] PRO 1차 실패(${res.status}), PRO 재시도. detail: ${errText1.slice(0, 300)}`);
-      console.log(`[recommend-director] 2차 시도: model=${GEMINI_MODEL_PRO}, tools=none, responseMimeType=application/json`);
+      console.warn(`[recommend-director] FLASH 실패(${res.status}), PRO fallback. detail: ${errText1.slice(0, 300)}`);
       res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
