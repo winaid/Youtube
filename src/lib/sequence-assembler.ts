@@ -1603,22 +1603,27 @@ export function assembleFromJSON(input: {
     // used by editor, preview, and submission.
     const sceneType = (effectiveSceneType || "default") as import("@/lib/multi-shot-planner").PlannerSceneType;
     const roles = planShotRoles(sequenceShots.length, sceneType);
+    // Math.round 반올림 합계가 durationSec과 달라지는 문제 방지:
+    // 마지막 shot에서 잔여 시간을 보정하여 합계 = dur 보장.
+    const shotRawDurations = sequenceShots.map(shot => Math.round(shot.endSec - shot.startSec));
+    const shotRawSum = shotRawDurations.reduce((s, d) => s + d, 0);
+    if (shotRawSum !== dur && shotRawDurations.length > 0) {
+      shotRawDurations[shotRawDurations.length - 1] += dur - shotRawSum;
+    }
+
     suggestedMultiShot = sequenceShots.map((shot, i) => {
       const role: ShotRole = roles[i] || "develop";
-      // Build a content-aware prompt from the split shot's actual content
-      // instead of generic role-based prompts that ignore the progression
       const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
         shot.camera.framing === "MS" ? "Medium shot" :
         shot.camera.framing === "CU" ? "Close-up" :
         shot.camera.framing === "MCU" ? "Medium close-up" :
         shot.camera.framing === "ECU" ? "Extreme close-up" :
         `${shot.camera.framing} shot`;
-      // Inject styleSuffix so style selection survives into multi-shot prompts
       const styleTag = normalizedDoc.reinforcement.styleSuffix
         ? `. ${normalizedDoc.reinforcement.styleSuffix}`
         : "";
       const prompt = `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}${styleTag}`.trim();
-      const duration = String(Math.round(shot.endSec - shot.startSec));
+      const duration = String(Math.max(1, shotRawDurations[i]));
       return { index: i + 1, prompt, duration, role };
     });
   }

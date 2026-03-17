@@ -165,10 +165,20 @@ export function canonicalToMultiShotViewModel(
   seq: StructuredSequenceDocument,
   maxShots: number,
 ): MultiShotViewModel {
-  const shots: MultiShotPrompt[] = (seq.shots || []).map((shot, i) => ({
+  const seqShots = seq.shots || [];
+
+  // Math.round 반올림 합계가 durationSec과 달라지는 문제 방지:
+  // 마지막 shot에서 잔여 시간을 보정하여 합계 = durationSec 보장.
+  const rawDurations = seqShots.map(shot => Math.round(shot.endSec - shot.startSec));
+  const rawSum = rawDurations.reduce((s, d) => s + d, 0);
+  if (rawSum !== seq.durationSec && rawDurations.length > 0) {
+    rawDurations[rawDurations.length - 1] += seq.durationSec - rawSum;
+  }
+
+  const shots: MultiShotPrompt[] = seqShots.map((shot, i) => ({
     index: i + 1,
     prompt: `${shot.camera.framing} shot. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
-    duration: String(Math.round(shot.endSec - shot.startSec)),
+    duration: String(Math.max(1, rawDurations[i])),
     role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots.length),
   }));
 
