@@ -527,7 +527,7 @@ export default function ResultPanel({
           <CardTitle className="text-lg" style={{ color: "#5a5ecc" }}>{result.projectTitle}</CardTitle>
           {videoGen.completedCount === 0 && (
             <p className="text-[11px] mt-1" style={{ color: "#94a3b8" }}>
-              아래 컷을 확인/수정한 뒤 <span style={{ color: "#22c55e", fontWeight: 600 }}>&ldquo;영상 생성&rdquo;</span> 탭에서 영상을 만드세요.
+              컷을 확인한 뒤 <span style={{ color: "#22c55e", fontWeight: 600 }}>영상 생성</span> 탭에서 바로 영상을 만들 수 있습니다.
             </p>
           )}
           {videoGen.completedCount > 0 && videoGen.completedCount < videoGen.totalCount && (
@@ -537,7 +537,7 @@ export default function ResultPanel({
           )}
           {videoGen.completedCount > 0 && videoGen.completedCount === videoGen.totalCount && (
             <p className="text-[11px] mt-1" style={{ color: "#16a34a" }}>
-              모든 영상이 생성되었습니다. 아래에서 결과를 확인하세요.
+              모든 영상이 완성되었습니다! 아래에서 결과를 확인해보세요.
             </p>
           )}
         </CardHeader>
@@ -548,9 +548,9 @@ export default function ResultPanel({
               border: "1px solid #3b82f630",
               color: "#1d4ed8",
             }}>
-              <strong>자동 최적화 적용</strong>
+              <strong>스토리에 맞게 구성을 조정했습니다</strong>
               <p className="text-xs mt-1 opacity-80">
-                {result.degradedReason || "최적의 결과를 위해 장면 수를 자동 조정했습니다."}
+                {result.degradedReason || "최적의 영상 품질을 위해 장면 구성을 자동으로 최적화했습니다."}
               </p>
             </div>
           )}
@@ -560,10 +560,10 @@ export default function ResultPanel({
               border: "1px solid #f59e0b40",
               color: "#b45309",
             }}>
-              <strong>기본 템플릿으로 생성되었습니다</strong>
+              <strong>기본 구성으로 시작합니다</strong>
               <p className="text-xs mt-1 opacity-80">
-                AI 분석이 일시적으로 실패하여 기본 템플릿이 적용되었습니다.
-                컷별 프롬프트를 직접 수정하여 사용하거나, 다시 생성해 주세요.
+                AI 분석이 일시적으로 제한되어 기본 구성이 적용되었습니다.
+                컷별 프롬프트를 직접 수정하거나, 다시 생성해보세요.
               </p>
             </div>
           )}

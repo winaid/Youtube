@@ -72,13 +72,7 @@ describe("planRecommendedShotCount", () => {
   });
 
   it("multiShot 미지원 모델 → 1", () => {
-    expect(planRecommendedShotCount("kling-o3-video-edit", 12)).toBe(1);
     expect(planRecommendedShotCount("kling-custom-element", 12)).toBe(1);
-  });
-
-  it("v3 모델 maxShots=3 제한 준수", () => {
-    const count = planRecommendedShotCount("kling-v3-text-to-video", 15);
-    expect(count).toBeLessThanOrEqual(3);
   });
 });
 
@@ -185,7 +179,7 @@ describe("shouldForceMultiShot", () => {
   });
 
   it("multiShot 미지원 모델 → 비강제", () => {
-    expect(shouldForceMultiShot("cinematic_sequence", 12, "kling-o3-video-edit")).toBe(false);
+    expect(shouldForceMultiShot("cinematic_sequence", 12, "kling-custom-element")).toBe(false);
   });
 });
 
@@ -273,7 +267,7 @@ describe("buildDefaultMultiShot", () => {
   it("multiShot 미지원 모델 → 빈 배열", () => {
     const shots = buildDefaultMultiShot({
       durationSec: 12,
-      modelId: "kling-o3-video-edit",
+      modelId: "kling-custom-element",
     });
     expect(shots).toEqual([]);
   });

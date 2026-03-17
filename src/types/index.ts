@@ -425,7 +425,6 @@ export type VideoWorkflowType =
   | "text-to-video"
   | "image-to-video"
   | "reference-to-video"
-  | "video-edit"
   | "custom-element";
 
 // ===== JSON-first 구조화된 시퀀스 문서 =====

@@ -5,10 +5,7 @@
  *   - kling-o3-text-to-video        (텍스트 → 영상)
  *   - kling-o3-image-to-video       (이미지 → 영상)
  *   - kling-o3-reference-to-video   (레퍼런스 기반 일관성)
- *   - kling-o3-video-edit           (영상 편집)
  *   - kling-custom-element          (캐릭터 에셋 생성)
- *
- * v3 = 레거시 fallback (text/image만 지원)
  *
  * multiShot duration policy:
  *   - secPerCut <= 3: multiShot 금지
@@ -26,7 +23,6 @@ import {
   KLING_DEFAULT_TEXT_MODEL,
   KLING_DEFAULT_IMAGE_MODEL,
   KLING_DEFAULT_REFERENCE_MODEL,
-  KLING_DEFAULT_EDIT_MODEL,
   KLING_ELEMENT_MODEL,
   KLING_MODELS,
   KLING_MODEL_REGISTRY,
@@ -48,9 +44,9 @@ import { recommendMinimumCutCount, recommendCutCountRange } from "@/lib/sequence
 // 1. O3 모델 패밀리 — 5개 모델 capability 기본 테스트
 // ═══════════════════════════════════════════════════════════════════
 
-describe("O3 모델 패밀리 — 5개 모델 capability", () => {
-  it("레지스트리에 O3 5개 + v3 2개 = 최소 7개 모델 등록", () => {
-    expect(Object.keys(KLING_MODEL_REGISTRY).length).toBeGreaterThanOrEqual(7);
+describe("O3 모델 패밀리 capability", () => {
+  it("레지스트리에 O3 모델 등록", () => {
+    expect(Object.keys(KLING_MODEL_REGISTRY).length).toBeGreaterThanOrEqual(4);
   });
 
   describe("kling-o3-text-to-video", () => {
@@ -115,26 +111,6 @@ describe("O3 모델 패밀리 — 5개 모델 capability", () => {
     });
   });
 
-  describe("kling-o3-video-edit", () => {
-    const cap = getCapability(KLING_DEFAULT_EDIT_MODEL);
-
-    it("기본 capability 값", () => {
-      expect(cap.modelId).toBe("kling-o3-video-edit");
-      expect(cap.workflowRole).toBe("video-edit");
-      expect(cap.maxShots).toBe(0);
-      expect(cap.supportsMultiShot).toBe(false);
-      expect(cap.supportsElements).toBe(false);
-      expect(cap.supportsVideoEdit).toBe(true);
-      expect(cap.supportsSound).toBe(true);
-      expect(cap.inputMode).toBe("video");
-      expect(cap.outputMode).toBe("video");
-    });
-
-    it("fallback 없음", () => {
-      expect(cap.fallbackModelId).toBeNull();
-    });
-  });
-
   describe("kling-custom-element", () => {
     const cap = getCapability(KLING_ELEMENT_MODEL);
 
@@ -159,7 +135,6 @@ describe("O3 모델 패밀리 — 5개 모델 capability", () => {
     expect(isVideoGenerationModel(KLING_DEFAULT_TEXT_MODEL)).toBe(true);
     expect(isVideoGenerationModel(KLING_DEFAULT_IMAGE_MODEL)).toBe(true);
     expect(isVideoGenerationModel(KLING_DEFAULT_REFERENCE_MODEL)).toBe(true);
-    expect(isVideoGenerationModel(KLING_DEFAULT_EDIT_MODEL)).toBe(true);
     expect(isVideoGenerationModel(KLING_ELEMENT_MODEL)).toBe(false);
   });
 });
@@ -181,10 +156,6 @@ describe("KLING_MODELS 상수", () => {
     expect(KLING_MODELS.REFERENCE_TO_VIDEO).toContain("-o3-");
   });
 
-  it("VIDEO_EDIT = O3", () => {
-    expect(KLING_MODELS.VIDEO_EDIT).toContain("-o3-");
-  });
-
   it("CUSTOM_ELEMENT", () => {
     expect(KLING_MODELS.CUSTOM_ELEMENT).toBe("kling-custom-element");
   });
@@ -199,7 +170,6 @@ describe("WorkflowType ↔ Model 매핑", () => {
     "text-to-video",
     "image-to-video",
     "reference-to-video",
-    "video-edit",
     "custom-element",
   ];
 
@@ -214,7 +184,6 @@ describe("WorkflowType ↔ Model 매핑", () => {
     expect(getWorkflowForModel("kling-o3-text-to-video")).toBe("text-to-video");
     expect(getWorkflowForModel("kling-o3-image-to-video")).toBe("image-to-video");
     expect(getWorkflowForModel("kling-o3-reference-to-video")).toBe("reference-to-video");
-    expect(getWorkflowForModel("kling-o3-video-edit")).toBe("video-edit");
     expect(getWorkflowForModel("kling-custom-element")).toBe("custom-element");
   });
 
@@ -222,10 +191,9 @@ describe("WorkflowType ↔ Model 매핑", () => {
     expect(getWorkflowForModel("unknown-model")).toBe("text-to-video");
   });
 
-  it("getModelsForWorkflow — text-to-video에 O3 + v3 포함", () => {
+  it("getModelsForWorkflow — text-to-video에 O3 포함", () => {
     const models = getModelsForWorkflow("text-to-video");
     expect(models).toContain("kling-o3-text-to-video");
-    expect(models).toContain("kling-v3-text-to-video");
   });
 
   it("getModelsForWorkflow — custom-element는 1개만", () => {
@@ -240,17 +208,12 @@ describe("WorkflowType ↔ Model 매핑", () => {
 
 describe("resolveModelForWorkflow — 워크플로우 기반 모델 선택", () => {
   it("명시적 모델 지정 시 그대로 사용", () => {
-    expect(resolveModelForWorkflow({ requestedModel: "kling-v3-text-to-video" })).toBe("kling-v3-text-to-video");
+    expect(resolveModelForWorkflow({ requestedModel: "kling-o3-text-to-video" })).toBe("kling-o3-text-to-video");
   });
 
   it("명시적 워크플로우 지정 → WORKFLOW_MODEL_MAP 조회", () => {
     expect(resolveModelForWorkflow({ workflow: "reference-to-video" })).toBe(KLING_MODELS.REFERENCE_TO_VIDEO);
-    expect(resolveModelForWorkflow({ workflow: "video-edit" })).toBe(KLING_MODELS.VIDEO_EDIT);
     expect(resolveModelForWorkflow({ workflow: "custom-element" })).toBe(KLING_MODELS.CUSTOM_ELEMENT);
-  });
-
-  it("sourceVideo 있음 → video-edit", () => {
-    expect(resolveModelForWorkflow({ hasSourceVideo: true })).toBe(KLING_MODELS.VIDEO_EDIT);
   });
 
   it("referenceImages 있음 → reference-to-video", () => {
@@ -268,8 +231,8 @@ describe("resolveModelForWorkflow — 워크플로우 기반 모델 선택", () 
   it("requestedModel 우선순위: model > workflow > context", () => {
     expect(resolveModelForWorkflow({
       requestedModel: "kling-o3-text-to-video",
-      workflow: "video-edit",
-      hasSourceVideo: true,
+      workflow: "reference-to-video",
+      hasReferenceImages: true,
     })).toBe("kling-o3-text-to-video");
   });
 
@@ -304,16 +267,16 @@ describe("resolveModel (하위 호환)", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("모델 fallback 체인", () => {
-  it("O3 text → v3 text", () => {
+  it("O3 text → fallback 없음 (자기 자신 반환)", () => {
     const [fallback, wasFallback] = resolveModelWithFallback("kling-o3-text-to-video");
-    expect(fallback).toBe("kling-v3-text-to-video");
-    expect(wasFallback).toBe(true);
+    expect(fallback).toBe("kling-o3-text-to-video");
+    expect(wasFallback).toBe(false);
   });
 
-  it("O3 image → v3 image", () => {
+  it("O3 image → fallback 없음 (자기 자신 반환)", () => {
     const [fallback, wasFallback] = resolveModelWithFallback("kling-o3-image-to-video");
-    expect(fallback).toBe("kling-v3-image-to-video");
-    expect(wasFallback).toBe(true);
+    expect(fallback).toBe("kling-o3-image-to-video");
+    expect(wasFallback).toBe(false);
   });
 
   it("O3 reference → O3 image (같은 O3 패밀리 내 fallback)", () => {
@@ -322,21 +285,9 @@ describe("모델 fallback 체인", () => {
     expect(wasFallback).toBe(true);
   });
 
-  it("O3 video-edit → fallback 없음", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-o3-video-edit");
-    expect(fallback).toBe("kling-o3-video-edit");
-    expect(wasFallback).toBe(false);
-  });
-
   it("custom-element → fallback 없음", () => {
     const [fallback, wasFallback] = resolveModelWithFallback("kling-custom-element");
     expect(fallback).toBe("kling-custom-element");
-    expect(wasFallback).toBe(false);
-  });
-
-  it("v3 fallback → null (최종 레거시, 자기 자신 반환)", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-v3-text-to-video");
-    expect(fallback).toBe("kling-v3-text-to-video");
     expect(wasFallback).toBe(false);
   });
 
@@ -359,11 +310,6 @@ describe("multiShot 지원 범위 — 모델별", () => {
     expect(getMaxShots("kling-o3-text-to-video", 15)).toBe(6);
     expect(getMaxShots("kling-o3-image-to-video", 15)).toBe(6);
     expect(getMaxShots("kling-o3-reference-to-video", 15)).toBe(6);
-  });
-
-  it("video-edit: multiShot 미지원", () => {
-    expect(getCapability("kling-o3-video-edit").supportsMultiShot).toBe(false);
-    expect(getMaxShots("kling-o3-video-edit", 15)).toBe(0);
   });
 
   it("custom-element: multiShot 미지원", () => {
@@ -413,40 +359,6 @@ describe("O3 getMaxShots — duration 기반 policy", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// 9. v3 모델 capability — 레거시 fallback
-// ═══════════════════════════════════════════════════════════════════
-
-describe("v3 모델 capability (레거시 fallback)", () => {
-  const v3 = "kling-v3-text-to-video";
-
-  it("v3 capability: maxShots=3, minShotDuration=3", () => {
-    const cap = getCapability(v3);
-    expect(cap.maxShots).toBe(3);
-    expect(cap.minShotDuration).toBe(3);
-    expect(cap.workflowRole).toBe("text-to-video");
-  });
-
-  it("v3 getMaxShots: 3초 이하 금지", () => {
-    expect(getMaxShots(v3, 3)).toBe(0);
-  });
-
-  it("v3 getMaxShots: 4~5초 최대 1개", () => {
-    expect(getMaxShots(v3, 4)).toBe(1);
-    expect(getMaxShots(v3, 5)).toBe(1);
-  });
-
-  it("v3 getMaxShots: 6~15초 최대 3개 제한", () => {
-    expect(getMaxShots(v3, 6)).toBe(2);
-    expect(getMaxShots(v3, 9)).toBe(3);
-    expect(getMaxShots(v3, 10)).toBe(3);
-    expect(getMaxShots(v3, 15)).toBe(3);
-  });
-
-  it("v3 fallbackModelId = null (최종 레거시)", () => {
-    expect(getCapability(v3).fallbackModelId).toBeNull();
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════
 // 10. normalizeMultiShots — 정규화 + index 재정렬 + duration 보정
@@ -501,10 +413,6 @@ describe("normalizeMultiShots", () => {
     expect(total).toBe(8);
   });
 
-  it("video-edit 모델: normalizeMultiShots 빈 배열", () => {
-    const shots = [{ index: 1, prompt: "A", duration: "5" }];
-    expect(normalizeMultiShots("kling-o3-video-edit", shots, 5)).toHaveLength(0);
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

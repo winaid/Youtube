@@ -206,10 +206,10 @@ export default function VideoGenerationPanel({
                 color: preflight.blockingCount > 0 ? "#991B1B" : preflight.warningCount > 0 ? "#92400E" : "#166534",
               }}>
                 {preflight.blockingCount > 0
-                  ? `생성 불가 — ${preflight.blockingCount}건의 문제`
+                  ? `생성 전 확인이 필요합니다 (${preflight.blockingCount}건)`
                   : preflight.warningCount > 0
-                    ? `주의 ${preflight.warningCount}건`
-                    : "참고"}
+                    ? `참고 사항 ${preflight.warningCount}건`
+                    : "준비 완료"}
               </span>
             </div>
             {preflight.issues.map((issue, i) => (
@@ -229,10 +229,10 @@ export default function VideoGenerationPanel({
             completedCount === totalCount && totalCount > 0 ? (
               <div className="rounded-lg p-3 text-center" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <p className="text-sm font-semibold" style={{ color: "#16a34a" }}>
-                  전체 {totalCount}개 영상 생성 완료
+                  {totalCount}개 영상 모두 완성!
                 </p>
                 <p className="text-[11px] mt-0.5" style={{ color: "#22c55e" }}>
-                  위로 스크롤하여 결과를 확인하세요.
+                  아래에서 각 영상을 확인하고 내보낼 수 있습니다.
                 </p>
               </div>
             ) : (
@@ -256,7 +256,7 @@ export default function VideoGenerationPanel({
               </Button>
               <div className="flex items-center gap-1.5 text-sm" style={{ color: "#16a34a" }}>
                 <span className="h-2.5 w-2.5 rounded-full animate-pulse bg-green-500" />
-                <span className="font-medium">영상 생성 중... {completedCount}/{totalCount}</span>
+                <span className="font-medium">영상을 만들고 있습니다 {completedCount}/{totalCount}</span>
               </div>
             </div>
           )}
@@ -317,7 +317,7 @@ export default function VideoGenerationPanel({
                         </Badge>
                       ) : (
                         <Badge className="text-[10px] text-white" style={{ background: "#aaa" }}>
-                          {clip.status === "idle" ? "엔진 대기" : "생성 중"}
+                          {clip.status === "idle" ? "대기 중" : "생성 중"}
                         </Badge>
                       )}
 

@@ -795,17 +795,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           )}
           {storyText.trim() && storyText.trim().length < 30 && (
             <p className="text-[10px] leading-relaxed" style={{ color: "#f59e0b" }}>
-              30자 이상 입력하면 감독 AI 추천이 활성화됩니다. (현재 {storyText.trim().length}자)
+              조금만 더 작성해주세요 — AI 감독 추천이 곧 활성화됩니다 ({storyText.trim().length}/30자)
             </p>
           )}
           {storyText.trim().length >= 30 && !directorPersona && (
             <p className="text-[10px] leading-relaxed" style={{ color: "#22c55e" }}>
-              아래에서 감독을 추천받거나 직접 선택하세요.
+              좋은 스토리네요! 어울리는 감독을 추천받아보세요.
             </p>
           )}
           {storyText.trim().length >= 30 && directorPersona && (
             <p className="text-[10px] leading-relaxed" style={{ color: "#9ca3af" }}>
-              감독 선택 완료. 아래 <span style={{ color: "#787fff", fontWeight: 600 }}>&ldquo;장면 설계 시작&rdquo;</span> 버튼을 눌러주세요.
+              준비 완료! <span style={{ color: "#787fff", fontWeight: 600 }}>장면 설계 시작</span>을 누르면 AI가 컷을 구성합니다.
             </p>
           )}
         </div>
@@ -828,7 +828,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               {isRecommending ? (
                 <>
                   <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-                  AI가 시나리오를 분석해 감독을 찾는 중...
+                  시나리오에 맞는 감독을 찾고 있습니다...
                 </>
               ) : (
                 <>{showRecommendation && directorRecommendation ? "✨ 감독 다시 추천받기" : "✨ 이 시나리오에 어울리는 감독 AI 추천"}</>
@@ -1885,10 +1885,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             return (
               <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <p className="font-semibold" style={{ color: "#15803d" }}>
-                  예상: {plan.cutCount}장면 × {plan.cutDuration}초 = 약 {timeLabel}
+                  예상 구성: {plan.cutCount}장면 × {plan.cutDuration}초 = 약 {timeLabel}
                 </p>
                 <p style={{ color: "#166534" }}>
-                  AI가 스토리에 맞게 장면 수를 최적화합니다
+                  스토리에 맞춰 장면 수와 길이를 자동으로 구성합니다
                 </p>
               </div>
             );
@@ -1957,7 +1957,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               </Button>
               {!isReady && !isLoading && !isAnalyzingScript && (
                 <p className="text-[10px] text-center" style={{ color: "#94a3b8" }}>
-                  {!storyText.trim() ? "스토리를 먼저 입력하세요" : "감독을 선택하면 시작할 수 있습니다"}
+                  {!storyText.trim() ? "어떤 영상을 만들고 싶으세요?" : "감독을 선택하면 바로 시작됩니다"}
                 </p>
               )}
             </div>

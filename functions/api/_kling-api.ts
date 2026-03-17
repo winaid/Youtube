@@ -14,7 +14,6 @@
  *
  * Models:
  *   O3 = 기본 모델 (6샷, minShotDuration 2초)
- *   v3 = 레거시 fallback (3샷, minShotDuration 3초)
  *   모델 상수와 capability는 _kling-capability.ts에서 중앙 관리
  */
 

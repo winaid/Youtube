@@ -516,7 +516,7 @@ export default function CutCard({
                     className="text-[9px] px-2 py-0.5 rounded transition-colors"
                     style={{ color: "#6b7280", border: "1px solid #e5e7eb" }}
                   >
-                    의도적 원테이크로 전환
+                    단일 샷으로 전환
                   </button>
                 )}
               </div>
@@ -529,7 +529,7 @@ export default function CutCard({
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-[9px]" style={{ borderColor: "#6b7280", color: "#6b7280" }}>
-                    의도적 원테이크
+                    단일 샷
                   </Badge>
                   <button
                     onClick={() => {
@@ -557,7 +557,7 @@ export default function CutCard({
           if (forced || maxShots >= 2) {
             return (
               <div className="text-[9px] py-2" style={{ color: "#6b7280" }}>
-                {forced ? "멀티샷 필수" : "멀티샷 추천"} — 자동 생성 대기 중...
+                샷 구성을 자동으로 설정하고 있습니다...
               </div>
             );
           }

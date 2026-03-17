@@ -3,7 +3,7 @@
  *
  * 단일 shot summary를 진짜 sequence(2~6 shots)로 분리.
  * "A → B → C → D → E → F" progression을 감지하고 자동으로 shot 분할.
- * O3 모델 기준 최대 6샷, v3 fallback 시 3샷.
+ * O3 모델 기준 최대 6샷.
  *
  * grep: detectShotProgression, splitSingleShotSequence,
  *       enforceMinimumShotCount, isSingleShotException,

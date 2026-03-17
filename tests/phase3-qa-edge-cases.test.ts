@@ -257,12 +257,12 @@ describe("Case D: 30 × 12s 배치 예산 초과", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("Case E: 미지원 모델", () => {
-  it("video-edit 모델 → multi-shot ineligible", () => {
-    expect(isMultiShotEligible("kling-o3-video-edit", 12)).toBe(false);
+  it("custom-element 모델 → multi-shot ineligible", () => {
+    expect(isMultiShotEligible("kling-custom-element", 12)).toBe(false);
   });
 
-  it("video-edit 모델 → maxShots = 0", () => {
-    expect(getMaxShots("kling-o3-video-edit", 12)).toBe(0);
+  it("custom-element 모델 → maxShots = 0", () => {
+    expect(getMaxShots("kling-custom-element", 12)).toBe(0);
   });
 
   it("3s duration → multi-shot ineligible", () => {

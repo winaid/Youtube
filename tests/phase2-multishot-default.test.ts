@@ -294,8 +294,8 @@ describe("isMultiShotEligible", () => {
     expect(isMultiShotEligible(MODEL, 3)).toBe(false);
   });
 
-  it("video-edit + 12s → false", () => {
-    expect(isMultiShotEligible("kling-o3-video-edit", 12)).toBe(false);
+  it("custom-element + 12s → false", () => {
+    expect(isMultiShotEligible("kling-custom-element", 12)).toBe(false);
   });
 
   it("O3 text + 5s → true (maxShots=2)", () => {

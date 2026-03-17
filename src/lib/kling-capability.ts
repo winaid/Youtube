@@ -12,7 +12,6 @@
  *   - kling-o3-text-to-video        (텍스트 → 영상, 메인 생성 경로)
  *   - kling-o3-image-to-video       (이미지 → 영상, 스토리보드/Scene Extension)
  *   - kling-o3-reference-to-video   (레퍼런스 기반 생성, 일관성 워크플로우)
- *   - kling-o3-video-edit           (영상 편집/수정)
  *   - kling-custom-element          (캐릭터/주체 일관성 에셋 생성)
  *
  * grep: KlingModelCapability, WorkflowType, getCapability, getMaxShots,
@@ -30,14 +29,12 @@
  * - text-to-video:      스토리 → 컷 분할 → 프롬프트 생성 → 영상 (메인 경로)
  * - image-to-video:     스토리보드/참조 이미지 → 영상 (Scene Extension, firstFrame 기반)
  * - reference-to-video: 레퍼런스 이미지/영상 기반 일관성 생성 (스타일/캐릭터 일관성)
- * - video-edit:         기존 영상 수정 (리터칭, 부분 재생성, 스타일 변환)
  * - custom-element:     캐릭터/주체 에셋 등록 (Kling Custom Element API)
  */
 export type WorkflowType =
   | "text-to-video"
   | "image-to-video"
   | "reference-to-video"
-  | "video-edit"
   | "custom-element";
 
 /** 입력 모드 — 모델이 요구하는 primary input 타입 */
@@ -88,20 +85,17 @@ export interface KlingModelCapability {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Model Registry — O3 모델 패밀리 (5개) + v3 레거시 fallback
+// Model Registry — O3 모델 패밀리
 // ═══════════════════════════════════════════════════════════════════
 
 /**
  * 모델 capability 레지스트리.
  *
- * O3 모델 패밀리 (5개):
+ * O3 모델 패밀리:
  *   text-to-video      — 텍스트 프롬프트 → 영상
  *   image-to-video     — 이미지 + 프롬프트 → 영상
  *   reference-to-video — 레퍼런스 기반 일관성 생성
- *   video-edit         — 기존 영상 수정
  *   custom-element     — 캐릭터/주체 에셋 생성
- *
- * v3 = 레거시 fallback (text/image만 지원)
  */
 export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
   // ── O3 모델 패밀리 ──────────────────────────────────────────────
@@ -121,7 +115,7 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsVideoEdit: false,
     inputMode: "text",
     outputMode: "video",
-    fallbackModelId: "kling-v3-text-to-video",
+    fallbackModelId: null,
     supportsImageToVideo: false,
   },
 
@@ -140,7 +134,7 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsVideoEdit: false,
     inputMode: "image",
     outputMode: "video",
-    fallbackModelId: "kling-v3-image-to-video",
+    fallbackModelId: null,
     supportsImageToVideo: true,
   },
 
@@ -163,26 +157,6 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsImageToVideo: false,
   },
 
-  // NOTE: video-edit은 capability 등록만 완료. UI/서버 실행 경로 미연결 (scaffolded).
-  "kling-o3-video-edit": {
-    modelId: "kling-o3-video-edit",
-    displayName: "Kling O3 (Edit)",
-    workflowRole: "video-edit",
-    maxShots: 0,
-    minShotDuration: 0,
-    maxDuration: 15,
-    minDuration: 3,
-    supportsMultiShot: false,
-    supportsSound: true,
-    supportsElements: false,
-    supportsReferenceInput: false,
-    supportsVideoEdit: true,
-    inputMode: "video",
-    outputMode: "video",
-    fallbackModelId: null,
-    supportsImageToVideo: false,
-  },
-
   "kling-custom-element": {
     modelId: "kling-custom-element",
     displayName: "Kling Custom Element",
@@ -202,45 +176,6 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsImageToVideo: false,
   },
 
-  // ── v3 레거시 fallback ──────────────────────────────────────────
-
-  "kling-v3-text-to-video": {
-    modelId: "kling-v3-text-to-video",
-    displayName: "Kling v3 (Text)",
-    workflowRole: "text-to-video",
-    maxShots: 3,
-    minShotDuration: 3,
-    maxDuration: 15,
-    minDuration: 3,
-    supportsMultiShot: true,
-    supportsSound: true,
-    supportsElements: true,
-    supportsReferenceInput: false,
-    supportsVideoEdit: false,
-    inputMode: "text",
-    outputMode: "video",
-    fallbackModelId: null,
-    supportsImageToVideo: false,
-  },
-
-  "kling-v3-image-to-video": {
-    modelId: "kling-v3-image-to-video",
-    displayName: "Kling v3 (Image)",
-    workflowRole: "image-to-video",
-    maxShots: 3,
-    minShotDuration: 3,
-    maxDuration: 15,
-    minDuration: 3,
-    supportsMultiShot: true,
-    supportsSound: true,
-    supportsElements: true,
-    supportsReferenceInput: false,
-    supportsVideoEdit: false,
-    inputMode: "image",
-    outputMode: "video",
-    fallbackModelId: null,
-    supportsImageToVideo: true,
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -256,9 +191,6 @@ export const KLING_DEFAULT_IMAGE_MODEL = "kling-o3-image-to-video";
 /** 기본 reference-to-video 모델 (O3) */
 export const KLING_DEFAULT_REFERENCE_MODEL = "kling-o3-reference-to-video";
 
-/** 기본 video-edit 모델 (O3) */
-export const KLING_DEFAULT_EDIT_MODEL = "kling-o3-video-edit";
-
 /** 기본 custom-element 모델 */
 export const KLING_ELEMENT_MODEL = "kling-custom-element";
 
@@ -272,7 +204,6 @@ export const KLING_MODELS = {
   TEXT_TO_VIDEO: KLING_DEFAULT_TEXT_MODEL,
   IMAGE_TO_VIDEO: KLING_DEFAULT_IMAGE_MODEL,
   REFERENCE_TO_VIDEO: KLING_DEFAULT_REFERENCE_MODEL,
-  VIDEO_EDIT: KLING_DEFAULT_EDIT_MODEL,
   CUSTOM_ELEMENT: KLING_ELEMENT_MODEL,
 } as const;
 
@@ -290,7 +221,6 @@ export const WORKFLOW_MODEL_MAP: Record<WorkflowType, string> = {
   "text-to-video":      KLING_MODELS.TEXT_TO_VIDEO,
   "image-to-video":     KLING_MODELS.IMAGE_TO_VIDEO,
   "reference-to-video": KLING_MODELS.REFERENCE_TO_VIDEO,
-  "video-edit":         KLING_MODELS.VIDEO_EDIT,
   "custom-element":     KLING_MODELS.CUSTOM_ELEMENT,
 };
 
@@ -426,7 +356,6 @@ export function normalizeMultiShots(
  *   1. 명시적 모델 지정 → 그대로 사용
  *   2. 명시적 워크플로우 지정 → WORKFLOW_MODEL_MAP 조회
  *   3. 컨텍스트 기반 자동 판단:
- *      - sourceVideo 있음 → video-edit
  *      - referenceImages 있음 → reference-to-video
  *      - image 있음 → image-to-video
  *      - 그 외 → text-to-video
@@ -445,7 +374,6 @@ export function resolveModelForWorkflow(opts: {
   if (opts.workflow) return getModelForWorkflow(opts.workflow);
 
   // 3. 컨텍스트 기반 자동 판단
-  if (opts.hasSourceVideo) return KLING_MODELS.VIDEO_EDIT;
   if (opts.hasReferenceImages) return KLING_MODELS.REFERENCE_TO_VIDEO;
   if (opts.hasImage) return KLING_MODELS.IMAGE_TO_VIDEO;
   return KLING_MODELS.TEXT_TO_VIDEO;
@@ -482,9 +410,10 @@ export function isO3Model(modelId: string): boolean {
 
 /**
  * 모델이 v3 (레거시) 계열인지 판정한다.
+ * 현재 v3 모델은 사용하지 않으므로 항상 false를 반환한다.
  */
-export function isV3Model(modelId: string): boolean {
-  return modelId.includes("-v3-");
+export function isV3Model(_modelId: string): boolean {
+  return false;
 }
 
 /**

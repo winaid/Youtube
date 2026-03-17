@@ -411,7 +411,7 @@ interface GenerateVideoRequest {
   sourceVideo?: string;
   cutNumber?: number;
   /** 워크플로우 타입 — 모델 자동 선택에 사용. 미지정 시 컨텍스트 기반 판단. */
-  workflowType?: "text-to-video" | "image-to-video" | "reference-to-video" | "video-edit" | "custom-element";
+  workflowType?: "text-to-video" | "image-to-video" | "reference-to-video" | "custom-element";
   // ── JSON-first source of truth (최우선) ───────────────────────────────────
   structuredSequence?: StructuredSequencePayload;
   // ── JSON 프롬프트 (structuredSequence 없으면 fallback) ─────────────────────
@@ -605,7 +605,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       workflow: req.workflowType,
       hasImage: !!validFirst || !!validLast,
       hasReferenceImages: !!hasRefImages,
-      hasSourceVideo: false, // video-edit은 별도 경로로 분리 예정
+      // video-edit은 현재 사용하지 않음
     });
 
     console.log("[Kling] 모델 선택", {

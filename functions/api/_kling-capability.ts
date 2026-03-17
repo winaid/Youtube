@@ -10,7 +10,6 @@
  *   - kling-o3-text-to-video
  *   - kling-o3-image-to-video
  *   - kling-o3-reference-to-video
- *   - kling-o3-video-edit
  *   - kling-custom-element
  */
 
@@ -22,7 +21,6 @@ export type WorkflowType =
   | "text-to-video"
   | "image-to-video"
   | "reference-to-video"
-  | "video-edit"
   | "custom-element";
 
 export type InputMode = "text" | "image" | "reference" | "video" | "image_refer" | "video_refer";
@@ -53,7 +51,7 @@ export interface KlingModelCapability {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Model Registry — O3 모델 패밀리 (5개) + v3 레거시 fallback
+// Model Registry — O3 모델 패밀리
 // ═══════════════════════════════════════════════════════════════════
 
 export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
@@ -66,7 +64,7 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsMultiShot: true, supportsSound: true, supportsElements: true,
     supportsReferenceInput: false, supportsVideoEdit: false,
     inputMode: "text", outputMode: "video",
-    fallbackModelId: "kling-v3-text-to-video",
+    fallbackModelId: null,
     supportsImageToVideo: false,
   },
   "kling-o3-image-to-video": {
@@ -77,7 +75,7 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsMultiShot: true, supportsSound: true, supportsElements: true,
     supportsReferenceInput: false, supportsVideoEdit: false,
     inputMode: "image", outputMode: "video",
-    fallbackModelId: "kling-v3-image-to-video",
+    fallbackModelId: null,
     supportsImageToVideo: true,
   },
   "kling-o3-reference-to-video": {
@@ -89,18 +87,6 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsReferenceInput: true, supportsVideoEdit: false,
     inputMode: "reference", outputMode: "video",
     fallbackModelId: "kling-o3-image-to-video",
-    supportsImageToVideo: false,
-  },
-  // NOTE: video-edit은 capability 등록만 완료. UI/서버 실행 경로 미연결 (scaffolded).
-  "kling-o3-video-edit": {
-    modelId: "kling-o3-video-edit",
-    displayName: "Kling O3 (Edit)",
-    workflowRole: "video-edit",
-    maxShots: 0, minShotDuration: 0, maxDuration: 15, minDuration: 3,
-    supportsMultiShot: false, supportsSound: true, supportsElements: false,
-    supportsReferenceInput: false, supportsVideoEdit: true,
-    inputMode: "video", outputMode: "video",
-    fallbackModelId: null,
     supportsImageToVideo: false,
   },
   "kling-custom-element": {
@@ -115,29 +101,6 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
     supportsImageToVideo: false,
   },
 
-  // ── v3 레거시 fallback ──
-  "kling-v3-text-to-video": {
-    modelId: "kling-v3-text-to-video",
-    displayName: "Kling v3 (Text)",
-    workflowRole: "text-to-video",
-    maxShots: 3, minShotDuration: 3, maxDuration: 15, minDuration: 3,
-    supportsMultiShot: true, supportsSound: true, supportsElements: true,
-    supportsReferenceInput: false, supportsVideoEdit: false,
-    inputMode: "text", outputMode: "video",
-    fallbackModelId: null,
-    supportsImageToVideo: false,
-  },
-  "kling-v3-image-to-video": {
-    modelId: "kling-v3-image-to-video",
-    displayName: "Kling v3 (Image)",
-    workflowRole: "image-to-video",
-    maxShots: 3, minShotDuration: 3, maxDuration: 15, minDuration: 3,
-    supportsMultiShot: true, supportsSound: true, supportsElements: true,
-    supportsReferenceInput: false, supportsVideoEdit: false,
-    inputMode: "image", outputMode: "video",
-    fallbackModelId: null,
-    supportsImageToVideo: true,
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -147,7 +110,6 @@ export const KLING_MODEL_REGISTRY: Record<string, KlingModelCapability> = {
 export const KLING_DEFAULT_TEXT_MODEL = "kling-o3-text-to-video";
 export const KLING_DEFAULT_IMAGE_MODEL = "kling-o3-image-to-video";
 export const KLING_DEFAULT_REFERENCE_MODEL = "kling-o3-reference-to-video";
-export const KLING_DEFAULT_EDIT_MODEL = "kling-o3-video-edit";
 export const KLING_ELEMENT_MODEL = "kling-custom-element";
 export const KLING_DEFAULT_MODEL = KLING_DEFAULT_TEXT_MODEL;
 
@@ -155,7 +117,6 @@ export const KLING_MODELS = {
   TEXT_TO_VIDEO: KLING_DEFAULT_TEXT_MODEL,
   IMAGE_TO_VIDEO: KLING_DEFAULT_IMAGE_MODEL,
   REFERENCE_TO_VIDEO: KLING_DEFAULT_REFERENCE_MODEL,
-  VIDEO_EDIT: KLING_DEFAULT_EDIT_MODEL,
   CUSTOM_ELEMENT: KLING_ELEMENT_MODEL,
 } as const;
 
@@ -169,7 +130,6 @@ export const WORKFLOW_MODEL_MAP: Record<WorkflowType, string> = {
   "text-to-video":      KLING_MODELS.TEXT_TO_VIDEO,
   "image-to-video":     KLING_MODELS.IMAGE_TO_VIDEO,
   "reference-to-video": KLING_MODELS.REFERENCE_TO_VIDEO,
-  "video-edit":         KLING_MODELS.VIDEO_EDIT,
   "custom-element":     KLING_MODELS.CUSTOM_ELEMENT,
 };
 
@@ -246,11 +206,9 @@ export function resolveModelForWorkflow(opts: {
   workflow?: WorkflowType;
   hasImage?: boolean;
   hasReferenceImages?: boolean;
-  hasSourceVideo?: boolean;
 }): string {
   if (opts.requestedModel) return opts.requestedModel;
   if (opts.workflow) return getModelForWorkflow(opts.workflow);
-  if (opts.hasSourceVideo) return KLING_MODELS.VIDEO_EDIT;
   if (opts.hasReferenceImages) return KLING_MODELS.REFERENCE_TO_VIDEO;
   if (opts.hasImage) return KLING_MODELS.IMAGE_TO_VIDEO;
   return KLING_MODELS.TEXT_TO_VIDEO;
