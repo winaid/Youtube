@@ -1989,24 +1989,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.error("[generate-cuts] step2/3 failed:", msg, "isProviderError:", isProviderError, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
 
       if (isProviderError && !isTimeout) {
+        // Provider 503/429는 전체 실패 대신 outline-only fallback으로 graceful degradation
         const providerStatus = parseInt(msg.split(":")[1], 10) || 503;
         const is429 = providerStatus === 429;
-        return Response.json({
-          ok: false,
-          degraded: false,
-          error: is429
-            ? "AI 모델 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요."
-            : "현재 AI 모델 서버가 일시적으로 혼잡합니다. 잠시 후 다시 시도해주세요.",
-          detail: msg.slice(0, 300),
-          step: 2,
-          cause: is429 ? "PROVIDER_RATE_LIMIT" : "PROVIDER_UNAVAILABLE",
-          source: "gemini",
-          retryable: true,
-          warnings: step1Warnings,
-        }, { status: providerStatus });
-      }
-
-      if (isTruncation && !isTimeout) {
+        const providerReason = is429
+          ? "AI 서버 요청 한도 초과로 세부 장면 보강을 건너뛰었습니다"
+          : "AI 서버 일시 혼잡으로 세부 장면 보강을 건너뛰었습니다";
+        console.warn(`[generate-cuts] step2/3 provider error (${providerStatus}) — falling back to outline-only`);
+        step1Warnings.push(`step2/3 provider ${providerStatus}: ${providerReason}`);
+        step1Degraded = true;
+        step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + providerReason;
+        // details1, details2 remain empty → cuts will use outline-based fallback prompts
+      } else if (isTruncation && !isTimeout) {
         return Response.json({
           ok: false,
           degraded: false,
@@ -2017,15 +2011,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           source: "gemini",
           warnings: step1Warnings,
         }, { status: 422 });
+      } else {
+        // step2/3 실패 (timeout/기타) → details는 비워서 outline 기반 fallback만 사용
+        console.warn("[generate-cuts] step2/3 failed — proceeding with outline-only fallback");
+        step1Warnings.push(`step2/3 failed: ${msg.slice(0, 200)}`);
+        step1Warnings.push("proceeding with outline-only cuts (no detailed prompts)");
+        step1Degraded = true;
+        step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + `step2/3 failed: ${msg.slice(0, 100)}`;
+        // details1, details2 remain empty → cuts will use fallback prompts
       }
-
-      // step2/3 실패 → details는 비워서 outline 기반 fallback만 사용
-      console.warn("[generate-cuts] step2/3 failed — proceeding with outline-only fallback");
-      step1Warnings.push(`step2/3 failed: ${msg.slice(0, 200)}`);
-      step1Warnings.push("proceeding with outline-only cuts (no detailed prompts)");
-      step1Degraded = true;
-      step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + `step2/3 failed: ${msg.slice(0, 100)}`;
-      // details1, details2 remain empty → cuts will use fallback prompts
     }
 
     // ── 병합 ──────────────────────────────────────────────────────────────────

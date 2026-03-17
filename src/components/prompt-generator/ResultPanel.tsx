@@ -544,18 +544,23 @@ export default function ResultPanel({
           )}
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
-          {result.degraded && !result.usedFallback && (
-            <div className="p-3 rounded-lg text-sm" style={{
-              background: "#3b82f610",
-              border: "1px solid #3b82f630",
-              color: "#1d4ed8",
-            }}>
-              <strong>스토리에 맞게 구성을 조정했습니다</strong>
-              <p className="text-xs mt-1 opacity-80">
-                {result.degradedReason || "최적의 영상 품질을 위해 장면 구성을 자동으로 최적화했습니다."}
-              </p>
-            </div>
-          )}
+          {result.degraded && !result.usedFallback && (() => {
+            const isProviderDegraded = result.degradedReason?.includes("서버") || result.degradedReason?.includes("요청 한도");
+            return (
+              <div className="p-3 rounded-lg text-sm" style={{
+                background: isProviderDegraded ? "#f59e0b10" : "#3b82f610",
+                border: `1px solid ${isProviderDegraded ? "#f59e0b30" : "#3b82f630"}`,
+                color: isProviderDegraded ? "#92400e" : "#1d4ed8",
+              }}>
+                <strong>{isProviderDegraded
+                  ? "세부 장면 보강 중 일부가 지연되어 기본 구조로 표시합니다"
+                  : "스토리에 맞게 구성을 조정했습니다"}</strong>
+                <p className="text-xs mt-1 opacity-80">
+                  {result.degradedReason || "최적의 영상 품질을 위해 장면 구성을 자동으로 최적화했습니다."}
+                </p>
+              </div>
+            );
+          })()}
           {result.usedFallback && (
             <div className="p-3 rounded-lg text-sm" style={{
               background: "#f59e0b15",
