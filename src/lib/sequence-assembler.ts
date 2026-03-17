@@ -200,7 +200,7 @@ const ENVIRONMENT_BANNED_MOTIONS = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*
 /** Environment positive 키워드 (반드시 포함) */
 const ENVIRONMENT_POSITIVE_KEYWORDS = [
   "photorealistic", "cinematic", "live-action",
-  "subject-focused composition", "natural diegetic sound", "ambient audio",
+  "subject-focused composition",
 ];
 
 /** Environment negative 키워드 (반드시 배제) */
@@ -464,7 +464,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
       characterRef: continuityCharRef,
       environment: continuityEnv,
       lightingDirection: continuityLight,
-      ambient: "natural diegetic sound, ambient audio",
+      ambient: "",
       colorAnchor: json?.moodLighting?.match(/\b(golden|warm|cold|blue|amber|neutral|desaturated|saturated|muted|vivid|sepia)\b/i)?.[0] || "neutral",
       mustPersist: [continuityCharRef, continuityEnv].filter(Boolean) as string[],
     },
@@ -1651,14 +1651,14 @@ export function assembleFromJSON(input: {
     ? videoPromptJsonToShotPlan(
         input.cut.videoPromptJson,
         input.cut.cutNumber - 1,
-        input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8,
+        dur,
         0,
         { shotCategory: input.cut.shotCategory, characterRole: input.cut.characterRole },
       )
     : {
         shotId: `shot_${input.cut.cutNumber}`,
         startSec: 0,
-        endSec: input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8,
+        endSec: dur,
         shotType: "medium_action" as const,
         camera: { framing: normalizedDoc.camera.framing as "MS", angle: "eye_level" as const, motion: normalizedDoc.camera.motion },
         subject: { primary: normalizedDoc.subject.primary },

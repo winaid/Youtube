@@ -775,7 +775,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
+  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no watermark, no captions`;
 
   // 전체 시퀀스 컨텍스트 (이전 씬 상태 파악용)
   const sequenceContext = allOutlines
@@ -1170,7 +1170,7 @@ function buildDeterministicCuts(
         ];
 
   const editorialTag = editorialPersona ? `. ${buildCompactEditorialSummary(editorialPersona)}` : "";
-  const noTextSuffix = `${videoStyle}, directed by ${directorName}, with natural diegetic sound and ambient audio, no text, no watermark, no captions${editorialTag}`;
+  const noTextSuffix = `${videoStyle}, directed by ${directorName}, no text, no watermark, no captions${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
@@ -1948,7 +1948,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (det && typeof det.cutNumber === "number") detailMap.set(det.cutNumber, det);
     }
 
-    const noTextSuffix = `${videoStyle}, directed by ${String(directorName)}, with natural diegetic sound and ambient audio, no text, no watermark, no captions`;
+    const noTextSuffix = `${videoStyle}, directed by ${String(directorName)}, no text, no watermark, no captions`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);

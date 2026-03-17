@@ -241,30 +241,37 @@ export function resolveSegmentPlan(opts: {
   const perSegRange = singleSegmentRange(cap);
 
   if (exactCutCount && exactCutCount > 0) {
-    const cutsPerSeg = Math.max(1, Math.round(exactCutCount / segmentCount));
+    // 10s+ 규칙 강제: exactCutCount도 density minimum 이하로 내려갈 수 없음
+    const totalDensityMin = recommendMinimumCutCount(effectiveTotal);
+    const enforcedCutCount = Math.max(exactCutCount, totalDensityMin);
+    const cutsPerSeg = Math.max(1, Math.round(enforcedCutCount / segmentCount));
     const segments: SegmentCutBudget[] = segmentDurations.map((dur, i) => {
       const isLast = i === segmentCount - 1;
       const segCuts = isLast
-        ? exactCutCount - cutsPerSeg * (segmentCount - 1)
+        ? enforcedCutCount - cutsPerSeg * (segmentCount - 1)
         : cutsPerSeg;
+      const densMin = recommendMinimumCutCount(dur);
       return {
         segmentIndex: i,
         segmentDurationSec: dur,
-        cutRange: { min: segCuts, max: segCuts },
-        preferredCutTarget: Math.max(1, segCuts),
-        densityMinimum: recommendMinimumCutCount(dur),
+        cutRange: { min: Math.max(segCuts, densMin), max: Math.max(segCuts, densMin) },
+        preferredCutTarget: Math.max(densMin, segCuts),
+        densityMinimum: densMin,
       };
     });
 
     const currentSeg = segments[Math.min(currentSegmentIndex, segments.length - 1)];
-    notes.push(`exact cutCount=${exactCutCount}, distributed ~${cutsPerSeg}/segment`);
+    if (enforcedCutCount > exactCutCount) {
+      notes.push(`exact cutCount(${exactCutCount}) < density minimum(${totalDensityMin}), enforced to ${enforcedCutCount}`);
+    }
+    notes.push(`exact cutCount=${enforcedCutCount}, distributed ~${cutsPerSeg}/segment`);
 
     return {
       totalDurationSec: effectiveTotal,
       segmentDurationCap: cap,
       segmentCount,
       currentPlanningScope: isMultiSegment ? "segment" : "full_sequence",
-      totalTargetCuts: exactCutCount,
+      totalTargetCuts: enforcedCutCount,
       currentSegmentTargetCuts: Math.min(currentSeg.preferredCutTarget, cap),
       totalCutRange: { min: exactCutCount, max: exactCutCount },
       perSegmentCutRange: { min: cutsPerSeg, max: cutsPerSeg },
