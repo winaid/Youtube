@@ -6,7 +6,7 @@
  * - densityPresetToRange 프리셋→범위 변환
  * - resolveCutCount 우선순위 (exact > range > density > fallback)
  * - density minimum이 hard floor로 작동
- * - 15s → 1~2 cuts 기본값 (Kling VIDEO 3.0 native 15s)
+ * - 15s → 4~6 cuts 기본값 (숏폼 리듬: 13-15s min 4)
  */
 
 import { describe, it, expect } from "vitest";
@@ -32,9 +32,9 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. recommendCutCountRange", () => {
-  it("1) 15s → { min: 2, max: 4 }", () => {
+  it("1) 15s → { min: 4, max: 6 }", () => {
     const r = recommendCutCountRange(15);
-    expect(r).toEqual({ min: 2, max: 4 });
+    expect(r).toEqual({ min: 4, max: 6 });
   });
 
   it("2) 5s → { min: 1, max: 2 }", () => {
@@ -45,13 +45,13 @@ describe("A. recommendCutCountRange", () => {
     expect(recommendCutCountRange(8)).toEqual({ min: 1, max: 2 });
   });
 
-  it("4) 12s → { min: 2, max: 3 }", () => {
-    expect(recommendCutCountRange(12)).toEqual({ min: 2, max: 3 });
+  it("4) 12s → { min: 3, max: 4 }", () => {
+    expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
   });
 
   it("5) 20s → segment-aware (15s segment + 5s remainder)", () => {
-    // 15s → {2,4}, 5s → {1,2} → total = {3,6}
-    expect(recommendCutCountRange(20)).toEqual({ min: 3, max: 6 });
+    // 15s → {4,6}, 5s → {1,2} → total = {5,8}
+    expect(recommendCutCountRange(20)).toEqual({ min: 5, max: 8 });
   });
 
   it("6) 0 or negative → { min: 1, max: 2 }", () => {
@@ -116,14 +116,14 @@ describe("C. resolveCutCount priority chain", () => {
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("13) exact cutCount ≥ density minimum → exact wins (density min=1 for 15s)", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 1 (single sequence)
-    expect(densityMin).toBe(1);
+  it("13) exact cutCount ≥ density minimum → exact wins (density min=4 for 15s)", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 4 (숏폼 리듬: 13-15s min 4)
+    expect(densityMin).toBe(4);
     const result = resolveCutCount({
       exactCutCount: 5,
       totalDurationSec: 15,
     });
-    // 3-layer model: densityMin=1 for 15s (single sequence). exactCutCount=5 >= 1, so exact wins.
+    // densityMin=4 for 15s. exactCutCount=5 >= 4, so exact wins.
     expect(result.cutCount).toBe(5);
     expect(result.source).toBe("exact_cutCount");
   });
@@ -134,9 +134,9 @@ describe("C. resolveCutCount priority chain", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. range vs density minimum conflict", () => {
-  it("14) range.min ≥ density minimum (density min=1 for 15s) → range used as-is", () => {
-    const densityMin = recommendMinimumCutCount(15); // = 1 (single sequence)
-    expect(densityMin).toBe(1);
+  it("14) range.min ≥ density minimum (density min=4 for 15s) → range used as-is", () => {
+    const densityMin = recommendMinimumCutCount(15); // = 4 (숏폼 리듬: 13-15s min 4)
+    expect(densityMin).toBe(4);
     const result = resolveCutCount({
       preferredRange: { min: 4, max: 6 },
       totalDurationSec: 15,

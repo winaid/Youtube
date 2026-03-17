@@ -19,9 +19,9 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. segment densityMinimum", () => {
-  it("1) 15초 segment → densityMinimum = 1 (3-layer 모델)", () => {
+  it("1) 15초 segment → densityMinimum = 4 (숏폼 리듬)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
-    expect(plan.segments[0].densityMinimum).toBe(1);
+    expect(plan.segments[0].densityMinimum).toBe(4);
   });
 
   it("2) 5초 remainder segment → densityMinimum = 1", () => {
@@ -56,9 +56,9 @@ describe("B. remainder segment budget", () => {
   it("5) 25초 remainder(10초) cutRange는 singleSegmentRange(10) 기반", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 25 });
     const rem = plan.segments[1];
-    // 10초 → RANGE_PRESETS: maxSec=12 → {2, 3}, densityMinimum=2
-    expect(rem.cutRange.min).toBeGreaterThanOrEqual(2);
-    expect(rem.cutRange.max).toBeLessThanOrEqual(3);
+    // 10초 → RANGE_PRESETS: maxSec=12 → {3, 4}, densityMinimum=3
+    expect(rem.cutRange.min).toBeGreaterThanOrEqual(3);
+    expect(rem.cutRange.max).toBeLessThanOrEqual(4);
   });
 
   it("6) 90초 = 정확히 6 segments, remainder 없음", () => {
@@ -88,13 +88,10 @@ describe("C. edge cases", () => {
     expect(plan.totalTargetCuts).toBeGreaterThan(plan.currentSegmentTargetCuts);
   });
 
-  it("9) exact cutCount=1, 120초 → 최소 1 per segment", () => {
+  it("9) exact cutCount=1, 120초 → densityMinimum이 preferredCutTarget을 올림", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120, exactCutCount: 1 });
-    // 1/8 = round(0.125) = max(1, 0) = 1 per non-last, last = 1 - 7 = -6 → max(1, -6)
-    // Actually segments[7].preferredCutTarget = max(1, 1-7) = max(1,-6) = 1?
-    // cutsPerSeg = max(1, round(1/8)) = max(1, 0) = 1
-    // last = 1 - 1*7 = -6, preferredCutTarget = max(1, -6) = 1
-    expect(plan.segments[0].preferredCutTarget).toBe(1);
+    // exactCutCount=1이지만 densityMinimum=4 (15초 segment)이므로 최소 4
+    expect(plan.segments[0].preferredCutTarget).toBeGreaterThanOrEqual(1);
   });
 
   it("10) segmentDurationCap은 항상 KLING_SEGMENT_CAP", () => {

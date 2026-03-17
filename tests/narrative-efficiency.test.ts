@@ -101,8 +101,8 @@ describe("B. 120초 서사형 — 효율적 컷 구조", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. recommendMinimumCutCount 새 정책", () => {
-  it("15초 → minimum 1", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
+  it("15초 → minimum 4 (숏폼 리듬)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
   });
 
   it("210초 → minimum 14 (ceil(210 / 15))", () => {
@@ -123,18 +123,18 @@ describe("C. recommendMinimumCutCount 새 정책", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. recommendCutCountRange 서사 친화적 범위", () => {
-  it("15초 → {2, 4}", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 2, max: 4 });
+  it("15초 → {4, 6}", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
-  it("120초 → {16, 32}", () => {
-    // 8 × {2, 4} = {16, 32}
-    expect(recommendCutCountRange(120)).toEqual({ min: 16, max: 32 });
+  it("120초 → {32, 48}", () => {
+    // 8 × {4, 6} = {32, 48}
+    expect(recommendCutCountRange(120)).toEqual({ min: 32, max: 48 });
   });
 
-  it("210초 → {28, 56}", () => {
-    // 14 × {2, 4} = {28, 56}
-    expect(recommendCutCountRange(210)).toEqual({ min: 28, max: 56 });
+  it("210초 → {56, 84}", () => {
+    // 14 × {4, 6} = {56, 84}
+    expect(recommendCutCountRange(210)).toEqual({ min: 56, max: 84 });
   });
 });
 
@@ -192,9 +192,9 @@ describe("F. dense 프리셋으로 빠른 편집 선택 가능", () => {
     expect(dense.min).toBeGreaterThanOrEqual(32);
   });
 
-  it("sparse(120초) → 15~16컷 추천", () => {
+  it("sparse(120초) → 31~32컷 추천", () => {
     const sparse = densityPresetToRange("sparse", 120);
-    expect(sparse.min).toBeGreaterThanOrEqual(15);
-    expect(sparse.max).toBeLessThanOrEqual(16);
+    expect(sparse.min).toBeGreaterThanOrEqual(31);
+    expect(sparse.max).toBeLessThanOrEqual(32);
   });
 });

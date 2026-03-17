@@ -46,17 +46,17 @@ describe("recommendMinimumCutCount", () => {
     expect(recommendMinimumCutCount(7)).toBe(1);
     expect(recommendMinimumCutCount(8)).toBe(1);
     expect(recommendMinimumCutCount(9)).toBe(1);
-    expect(recommendMinimumCutCount(10)).toBe(1);
-    expect(recommendMinimumCutCount(12)).toBe(1);
-    expect(recommendMinimumCutCount(13)).toBe(1);
-    expect(recommendMinimumCutCount(15)).toBe(1);
+    expect(recommendMinimumCutCount(10)).toBe(3);  // 10-12초: 숏폼 리듬 min 3
+    expect(recommendMinimumCutCount(12)).toBe(3);  // 10-12초: 숏폼 리듬 min 3
+    expect(recommendMinimumCutCount(13)).toBe(4);  // 13-15초: 숏폼 리듬 min 4
+    expect(recommendMinimumCutCount(15)).toBe(4);  // 13-15초: 숏폼 리듬 min 4
   });
 
-  it("should return ceil(total/15) for > 15 seconds (3-layer: sequence count)", () => {
-    // 20s = ceil(20/15) = 2 sequences
-    expect(recommendMinimumCutCount(20)).toBe(2);
-    // 30s = ceil(30/15) = 2 sequences
-    expect(recommendMinimumCutCount(30)).toBe(2);
+  it("should return max(3, ceil(total/15)) for > 15 seconds", () => {
+    // 20s = max(3, ceil(20/15)) = max(3,2) = 3
+    expect(recommendMinimumCutCount(20)).toBe(3);
+    // 30s = max(3, ceil(30/15)) = max(3,2) = 3
+    expect(recommendMinimumCutCount(30)).toBe(3);
     // 48s = ceil(48/15) = 4 sequences
     expect(recommendMinimumCutCount(48)).toBe(4);
     // 120s = ceil(120/15) = 8 sequences
@@ -74,12 +74,12 @@ describe("recommendMinimumCutCount", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("needsDensityBoost", () => {
-  it("should return false for 15s single cut (1 cut ≥ minimum 1, 3-layer)", () => {
-    expect(needsDensityBoost([{ durationSec: 15 }])).toBe(false);
+  it("should return true for 15s single cut (1 cut < minimum 4, 숏폼 리듬)", () => {
+    expect(needsDensityBoost([{ durationSec: 15 }])).toBe(true);
   });
 
-  it("should return false for 12s single cut (1 cut ≥ minimum 1, 3-layer)", () => {
-    expect(needsDensityBoost([{ durationSec: 12 }])).toBe(false);
+  it("should return true for 12s single cut (1 cut < minimum 3, 숏폼 리듬)", () => {
+    expect(needsDensityBoost([{ durationSec: 12 }])).toBe(true);
   });
 
   it("should return false for 8s single cut (1 cut ≥ minimum 1, 3-layer)", () => {
@@ -90,12 +90,12 @@ describe("needsDensityBoost", () => {
     expect(needsDensityBoost([{ durationSec: 4 }])).toBe(false);
   });
 
-  it("should return false for 15s with 3 cuts (3 ≥ minimum 1, 3-layer)", () => {
+  it("should return true for 15s with 3 cuts (3 < minimum 4, 숏폼 리듬)", () => {
     expect(needsDensityBoost([
       { durationSec: 5 },
       { durationSec: 5 },
       { durationSec: 5 },
-    ])).toBe(false);
+    ])).toBe(true);
   });
 
   it("should return false for 15s with 5 cuts (5 ≥ minimum 1)", () => {
@@ -118,15 +118,15 @@ describe("needsDensityBoost", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — 15s single cut", () => {
-  it("should NOT split 15s single cut (3-layer: min=1, 7s < SEQUENCE_MIN_DURATION)", () => {
+  it("should split 15s single cut into 4 (숏폼 리듬: min=4)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 15, sceneDescription: "테스트 장면" }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(4);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(15);
   });
 
-  it("should preserve original text fields (no split occurs)", () => {
+  it("should preserve sceneDescription in split cuts", () => {
     const cuts = [{
       cutNumber: 1,
       durationSec: 15,
@@ -137,8 +137,11 @@ describe("densifyCuts — 15s single cut", () => {
       imagePrompt: "original image",
     }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(1);
-    expect(result[0].sceneDescription).toBe("원본 장면 설명");
+    expect(result.length).toBe(4);
+    // 분할된 컷들이 원본 필드를 보존
+    for (const cut of result) {
+      expect(cut.sceneDescription).toBe("원본 장면 설명");
+    }
   });
 });
 
@@ -147,10 +150,10 @@ describe("densifyCuts — 15s single cut", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — 12s single cut", () => {
-  it("should NOT split 12s single cut (3-layer: min=1, 6s < SEQUENCE_MIN_DURATION)", () => {
+  it("should split 12s single cut into 3 (숏폼 리듬: 10-12초 min=3)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 12 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(3);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(12);
   });
@@ -217,13 +220,13 @@ describe("densifyCuts — already sufficient cuts", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — splitting prefers longest cuts (multi-segment)", () => {
-  it("should NOT split 10s total with 2 cuts (min=1, 3-layer: single sequence)", () => {
+  it("should split 10s total with 2 cuts into 3 (숏폼 리듬: 10-12초 min=3)", () => {
     const cuts = [
       { cutNumber: 1, durationSec: 3 },
       { cutNumber: 2, durationSec: 7, durationClass: "sequence-like" as const },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(2); // 2 >= 1, no split
+    expect(result.length).toBe(3); // 10초 → min=3
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(10);
   });
@@ -245,7 +248,7 @@ describe("densifyCuts — splitting prefers longest cuts (multi-segment)", () =>
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts — field preservation", () => {
-  it("should preserve fields when no split occurs (10s, min=1, 3-layer)", () => {
+  it("should preserve fields in split (10s, min=3, 숏폼 리듬)", () => {
     const cuts = [{
       cutNumber: 1,
       durationSec: 10,
@@ -255,10 +258,12 @@ describe("densifyCuts — field preservation", () => {
       videoPromptJson: { shotSize: "MS" },
     }];
     const result = densifyCuts(cuts);
-    // 10초 → min=1, no split (5s < SEQUENCE_MIN_DURATION anyway)
-    expect(result.length).toBe(1);
-    expect(result[0].subjectAction).toBe("walks forward");
-    expect(result[0].shotCategory).toBe("character-driven");
+    // 10초 → min=3, split occurs
+    expect(result.length).toBe(3);
+    for (const cut of result) {
+      expect(cut.subjectAction).toBe("walks forward");
+      expect(cut.shotCategory).toBe("character-driven");
+    }
   });
 
   it("should preserve subjectAction, shotCategory in split (32s, 2 cuts → 3)", () => {
@@ -304,24 +309,24 @@ describe("densifyCuts — no groupId generation", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("densifyCuts + classifyCuts pipeline", () => {
-  it("should produce classified cuts for 15s (no split, min=1)", () => {
+  it("should produce classified cuts for 15s (split into 4, 숏폼 리듬)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 15 }];
     const densified = densifyCuts(cuts);
     const classified = classifyCuts(densified);
 
-    expect(classified.length).toBe(1); // 3-layer: no split for single ≤15s
+    expect(classified.length).toBe(4); // 숏폼 리듬: min=4
     for (const cut of classified) {
       expect(cut.structureType).toBeDefined();
       expect(cut.durationClass).toBeDefined();
     }
   });
 
-  it("should classify 12s cut correctly (no split, min=1)", () => {
+  it("should classify 12s cut correctly (split into 3, 숏폼 리듬)", () => {
     const cuts = [{ cutNumber: 1, durationSec: 12 }];
     const densified = densifyCuts(cuts);
     const classified = classifyCuts(densified);
 
-    expect(classified.length).toBe(1); // 3-layer: no split
+    expect(classified.length).toBe(3); // 숏폼 리듬: 10-12초 min=3
     const total = classified.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(12);
     for (const cut of classified) {

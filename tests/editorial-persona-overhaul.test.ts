@@ -192,32 +192,32 @@ describe("multi-cut montage density", () => {
     expect(recommendMinimumCutCount(8)).toBe(1);
   });
 
-  it("10s input → 1 sequence minimum (3-layer model: single sequence)", () => {
-    expect(recommendMinimumCutCount(10)).toBe(1);
+  it("10s input → 3 minimum (shortform rhythm: 10-12s min 3)", () => {
+    expect(recommendMinimumCutCount(10)).toBe(3);
   });
 
-  it("12s input → 1 sequence minimum (3-layer model: single sequence)", () => {
-    expect(recommendMinimumCutCount(12)).toBe(1);
+  it("12s input → 3 minimum (shortform rhythm: 10-12s min 3)", () => {
+    expect(recommendMinimumCutCount(12)).toBe(3);
   });
 
-  it("15s input → 1 sequence minimum (3-layer model: single sequence)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
+  it("15s input → 4 minimum (shortform rhythm: 13-15s min 4)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
   });
 
   it("single 8s cut does NOT need density boost (3-layer model, minCuts=1)", () => {
     expect(needsDensityBoost([{ durationSec: 8 }])).toBe(false);
   });
 
-  it("densifyCuts: single 12s cut → stays 1 cut (not split, 6s < SEQUENCE_MIN_DURATION)", () => {
+  it("densifyCuts: single 12s cut → split into 3 (숏폼 리듬: 10-12초 min=3)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 12 }]);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(3);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(12);
   });
 
-  it("densifyCuts: single 15s cut → stays 1 cut (not split, 7s < SEQUENCE_MIN_DURATION)", () => {
+  it("densifyCuts: single 15s cut → split into 4 (숏폼 리듬: 13-15초 min=4)", () => {
     const result = densifyCuts([{ cutNumber: 1, durationSec: 15 }]);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(4);
   });
 
   it("single 8s cut stays 1 cut (not split, 4s < SEQUENCE_MIN_DURATION)", () => {
@@ -773,12 +773,12 @@ describe("regression — auto duration unchanged", () => {
   });
 });
 
-describe("regression — multi-cut density policy (3-layer sequence model)", () => {
-  it("8s → 1 sequence minimum (single sequence, internal shots via multi-shot-planner)", () => {
+describe("regression — multi-cut density policy (shortform rhythm model)", () => {
+  it("8s → 1 minimum (< 10s: single sequence)", () => {
     expect(recommendMinimumCutCount(8)).toBe(1);
   });
-  it("15s → 1 sequence minimum (single sequence, internal shots via multi-shot-planner)", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
+  it("15s → 4 minimum (13-15s: shortform rhythm, min 4 cuts)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
   });
 });
 

@@ -61,24 +61,24 @@ describe("B. 120초 segment-aware density", () => {
     expect(Math.ceil(120 / KLING_SEGMENT_CAP)).toBe(8);
   });
 
-  it("5) recommendCutCountRange(120) = 8 × range(15) = {16, 32}", () => {
+  it("5) recommendCutCountRange(120) = 8 × range(15) = {32, 48}", () => {
     const range = recommendCutCountRange(120);
-    // 8 full segments of 15s → 8 × {2, 4} = {16, 32}
-    expect(range).toEqual({ min: 16, max: 32 });
+    // 8 full segments of 15s → 8 × {4, 6} = {32, 48}
+    expect(range).toEqual({ min: 32, max: 48 });
   });
 
   it("6) recommendMinimumCutCount(120) = ceil(120/15) = 8 sequences", () => {
     expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
-  it("7) 60초 → 4 segments → {8, 16}", () => {
+  it("7) 60초 → 4 segments → {16, 24}", () => {
     const range = recommendCutCountRange(60);
-    expect(range).toEqual({ min: 8, max: 16 });
+    expect(range).toEqual({ min: 16, max: 24 });
   });
 
-  it("8) 90초 → 6 segments (15×6=90) → {12, 24}", () => {
+  it("8) 90초 → 6 segments (15×6=90) → {24, 36}", () => {
     const range = recommendCutCountRange(90);
-    expect(range).toEqual({ min: 12, max: 24 });
+    expect(range).toEqual({ min: 24, max: 36 });
   });
 });
 
@@ -110,8 +110,8 @@ describe("C. resolveCutCount with totalDurationSec=120", () => {
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("11) 15초 기본 추천이 {2, 4}으로 변경 (숏폼 리텐션)", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 2, max: 4 });
+  it("11) 15초 기본 추천이 {4, 6}으로 변경 (숏폼 리텐션)", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
   it("12) fast density면 상단, sparse면 하단", () => {
@@ -136,7 +136,7 @@ describe("D. server/client segment-aware parity", () => {
 
   it("15) resolveCutCount parity for 120s + preferred range", () => {
     const opts = {
-      preferredRange: { min: 16, max: 32 },
+      preferredRange: { min: 32, max: 48 },
       totalDurationSec: 120,
       personaBias: "neutral" as const,
     };

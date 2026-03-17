@@ -54,11 +54,11 @@ describe("A. segment 분해 기본", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. per-segment cut budget", () => {
-  it("5) 15초 segment → cutRange {2, 4}", () => {
+  it("5) 15초 segment → cutRange {4, 6}", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
     const seg = plan.segments[0];
-    expect(seg.cutRange.min).toBeGreaterThanOrEqual(2);
-    expect(seg.cutRange.max).toBeLessThanOrEqual(4);
+    expect(seg.cutRange.min).toBeGreaterThanOrEqual(4);
+    expect(seg.cutRange.max).toBeLessThanOrEqual(6);
   });
 
   it("6) 120초 → totalTargetCuts = sum of all segment targets", () => {
@@ -99,15 +99,15 @@ describe("C. exact cutCount 분배", () => {
     expect(plan.currentSegmentTargetCuts).toBe(10);
   });
 
-  it("10) exactCutCount=3, 30초 → 2 segments, ~2+1 분배", () => {
+  it("10) exactCutCount=3, 30초 → 2 segments, densityMinimum이 올림", () => {
     const plan = resolveSegmentPlan({
       totalDurationSec: 30,
       exactCutCount: 3,
     });
     expect(plan.totalTargetCuts).toBe(3);
-    // 3/2 = round(1.5) = 2 per segment, last = 3-2 = 1
-    expect(plan.segments[0].preferredCutTarget).toBe(2);
-    expect(plan.segments[1].preferredCutTarget).toBe(1);
+    // exactCutCount=3이지만 각 segment의 densityMinimum=4 (15초 숏폼 리듬)
+    expect(plan.segments[0].preferredCutTarget).toBeGreaterThanOrEqual(4);
+    expect(plan.segments[1].preferredCutTarget).toBeGreaterThanOrEqual(4);
   });
 });
 

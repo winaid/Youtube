@@ -32,11 +32,11 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
     expect(KLING_SEGMENT_CAP).toBe(15);
   });
 
-  it("15초 이하 → 1 시퀀스", () => {
+  it("15초 이하 → 숏폼 리듬 정책 반영", () => {
     expect(recommendMinimumCutCount(8)).toBe(1);
-    expect(recommendMinimumCutCount(10)).toBe(1);
-    expect(recommendMinimumCutCount(12)).toBe(1);
-    expect(recommendMinimumCutCount(15)).toBe(1);
+    expect(recommendMinimumCutCount(10)).toBe(3);  // 10-12초: min 3
+    expect(recommendMinimumCutCount(12)).toBe(3);  // 10-12초: min 3
+    expect(recommendMinimumCutCount(15)).toBe(4);  // 13-15초: min 4
   });
 
   it("48초 → 4 시퀀스 (ceil(48/15))", () => {
@@ -51,8 +51,8 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
     expect(recommendMinimumCutCount(60)).toBe(4);
   });
 
-  it("30초 → 2 시퀀스", () => {
-    expect(recommendMinimumCutCount(30)).toBe(2);
+  it("30초 → 최소 3 (segment-aware: max(3, ceil(30/15)))", () => {
+    expect(recommendMinimumCutCount(30)).toBe(3);
   });
 
   it("300초 → 20 시퀀스 (5분 = 배치 예산 한도)", () => {
@@ -61,23 +61,23 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
 });
 
 describe("Layer 1→2: recommendCutCountRange", () => {
-  it("15초 → {2, 4} 시퀀스 내부 밀도 범위", () => {
+  it("15초 → {4, 6} 시퀀스 내부 밀도 범위 (숏폼 리듬)", () => {
     const range = recommendCutCountRange(15);
-    expect(range.min).toBe(2);
-    expect(range.max).toBe(4);
+    expect(range.min).toBe(4);
+    expect(range.max).toBe(6);
   });
 
-  it("48초 → 4 segments × per-segment range", () => {
+  it("48초 → 3 full segments × {4,6} + 1 remainder (3s, {1,2})", () => {
     const range = recommendCutCountRange(48);
-    // 3 full segments (15s each, range {2,4}) + 1 remainder (3s, range {1,2})
-    expect(range.min).toBe(3 * 2 + 1); // 7
-    expect(range.max).toBe(3 * 4 + 2); // 14
+    // 3 full segments (15s each, range {4,6}) + 1 remainder (3s, range {1,2})
+    expect(range.min).toBe(3 * 4 + 1); // 13
+    expect(range.max).toBe(3 * 6 + 2); // 20
   });
 
-  it("120초 → 8 segments × {2,4}", () => {
+  it("120초 → 8 segments × {4,6}", () => {
     const range = recommendCutCountRange(120);
-    expect(range.min).toBe(8 * 2); // 16
-    expect(range.max).toBe(8 * 4); // 32
+    expect(range.min).toBe(8 * 4); // 32
+    expect(range.max).toBe(8 * 6); // 48
   });
 });
 
@@ -85,43 +85,42 @@ describe("Layer 1→2: recommendCutCountRange", () => {
 // densifyCuts: 시퀀스를 SEQUENCE_MIN_DURATION 미만으로 분할하지 않음
 // ═══════════════════════════════════════════════════════════════════
 
-describe("densifyCuts: 시퀀스 최소 길이 보호", () => {
-  it("단일 15초 시퀀스 → 분할 안 함 (7.5s < 8s)", () => {
+describe("densifyCuts: 숏폼 리듬 분할", () => {
+  it("단일 15초 시퀀스 → 4컷 분할 (숏폼 리듬: min=4)", () => {
     const cuts = [{ durationSec: 15 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(1);
-    expect(result[0].durationSec).toBe(15);
+    expect(result.length).toBe(4);
+    const total = result.reduce((s, c) => s + c.durationSec, 0);
+    expect(total).toBe(15);
   });
 
-  it("단일 12초 시퀀스 → 분할 안 함 (6s < 8s)", () => {
+  it("단일 12초 시퀀스 → 3컷 분할 (숏폼 리듬: 10-12초 min=3)", () => {
     const cuts = [{ durationSec: 12 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(3);
   });
 
-  it("단일 8초 시퀀스 → 분할 안 함 (4s < 8s)", () => {
+  it("단일 8초 시퀀스 → 분할 안 함 (min=1)", () => {
     const cuts = [{ durationSec: 8 }];
     const result = densifyCuts(cuts);
     expect(result.length).toBe(1);
   });
 
-  it("단일 16초 시퀀스 → 분할 가능 (8s + 8s ≥ 8s)", () => {
+  it("단일 16초 시퀀스 → 3컷 분할 (max(3, ceil(16/15))=3)", () => {
     const cuts = [{ durationSec: 16 }];
     const result = densifyCuts(cuts, 16);
-    // recommendMinimumCutCount(16) = ceil(16/15) = 2
-    expect(result.length).toBe(2);
-    expect(result[0].durationSec).toBe(8);
-    expect(result[1].durationSec).toBe(8);
+    expect(result.length).toBe(3);
+    const total = result.reduce((s, c) => s + c.durationSec, 0);
+    expect(total).toBe(16);
   });
 
-  it("단일 20초 시퀀스 → 분할 (10s + 10s)", () => {
+  it("단일 20초 시퀀스 → 3컷 분할 (max(3, ceil(20/15))=3)", () => {
     const cuts = [{ durationSec: 20 }];
     const result = densifyCuts(cuts, 20);
-    // recommendMinimumCutCount(20) = ceil(20/15) = 2
-    expect(result.length).toBe(2);
+    expect(result.length).toBe(3);
   });
 
-  it("3 × 15s = 45s → 분할 불필요 (3 ≥ ceil(45/15)=3)", () => {
+  it("3 × 15s = 45s → 분할 불필요 (3 ≥ max(3, ceil(45/15))=3)", () => {
     const cuts = [
       { durationSec: 15 },
       { durationSec: 15 },
@@ -131,10 +130,10 @@ describe("densifyCuts: 시퀀스 최소 길이 보호", () => {
     expect(result.length).toBe(3);
   });
 
-  it("2 × 15s = 30s, 필요 최소=2 → 분할 불필요", () => {
+  it("2 × 15s = 30s, 필요 최소=3 → 1컷 추가 분할", () => {
     const cuts = [{ durationSec: 15 }, { durationSec: 15 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(2);
+    expect(result.length).toBe(3);
   });
 });
 

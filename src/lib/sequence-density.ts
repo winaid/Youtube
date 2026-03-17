@@ -504,12 +504,11 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
     scoredIndices.sort((a, b) => b.priority - a.priority);
     const target = scoredIndices[0];
 
-    // 분할 후 양쪽 모두 SEQUENCE_MIN_DURATION 이상인지 확인.
-    // 불가능하면 중단 — 시퀀스를 마이크로 컷으로 쪼개지 않음.
-    // 내부 리듬은 multi-shot-planner가 담당.
+    // 2초 이하면 더 이상 분할 불가
+    if (target.duration <= 2) break;
+
     const halfDuration = Math.round(target.duration / 2);
     const remainDuration = target.duration - halfDuration;
-    if (halfDuration < SEQUENCE_MIN_DURATION || remainDuration < SEQUENCE_MIN_DURATION) break;
 
     const original = working[target.index];
     const firstHalf = { ...original, durationSec: halfDuration } as T;

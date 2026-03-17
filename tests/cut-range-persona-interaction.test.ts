@@ -111,12 +111,12 @@ describe("C. same range + different persona → different cut counts", () => {
 // D. 15s → 1~2 기본 추천값
 // ═══════════════════════════════════════════════════════════════════
 
-describe("D. 15s → 2~4 default recommendation", () => {
-  it("8) 15s 기본 추천이 { min: 2, max: 4 }", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 2, max: 4 });
+describe("D. 15s → 4~6 default recommendation", () => {
+  it("8) 15s 기본 추천이 { min: 4, max: 6 }", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
-  it("9) 15s + 기본 persona → 2~4 범위 내 컷 수", () => {
+  it("9) 15s + 기본 persona → 4~6 범위 내 컷 수", () => {
     const range = recommendCutCountRange(15);
     const bias = personaCutCountBias(DEFAULT_EDITORIAL_PERSONA);
     const result = resolveCutCount({
@@ -124,8 +124,8 @@ describe("D. 15s → 2~4 default recommendation", () => {
       totalDurationSec: 15,
       personaBias: bias,
     });
-    expect(result.cutCount).toBeGreaterThanOrEqual(2);
-    expect(result.cutCount).toBeLessThanOrEqual(4);
+    expect(result.cutCount).toBeGreaterThanOrEqual(4);
+    expect(result.cutCount).toBeLessThanOrEqual(6);
   });
 });
 
@@ -156,9 +156,9 @@ describe("E. editorial persona regression check", () => {
     expect(ep.motionBias).toBe("minimal");
   });
 
-  it("13) density policy = 3-layer sequence model (≤15s: 1 sequence, >15s: ceil(total/15))", () => {
-    expect(recommendMinimumCutCount(15)).toBe(1);
-    expect(recommendMinimumCutCount(12)).toBe(1);
+  it("13) density policy = shortform rhythm model (13-15s: 4, 10-12s: 3, <10s: 1)", () => {
+    expect(recommendMinimumCutCount(15)).toBe(4);
+    expect(recommendMinimumCutCount(12)).toBe(3);
     expect(recommendMinimumCutCount(9)).toBe(1);
     expect(recommendMinimumCutCount(7)).toBe(1);
     expect(recommendMinimumCutCount(4)).toBe(1);

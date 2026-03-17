@@ -197,12 +197,14 @@ describe("addShot", () => {
     expect(result).toBeNull();
   });
 
-  it("분할 불가 (마지막 샷이 너무 짧음) → null", () => {
+  it("분할 불가 (모든 샷이 최소 길이) → null", () => {
     const shots: MultiShotPrompt[] = [
-      { index: 1, prompt: "A", duration: "8" },
-      { index: 2, prompt: "B", duration: "2" }, // minDur=2, can't split further
+      { index: 1, prompt: "A", duration: "2" },
+      { index: 2, prompt: "B", duration: "2" },
+      { index: 3, prompt: "C", duration: "2" },
+      { index: 4, prompt: "D", duration: "2" }, // maxShots=4 for 8s, can't add more
     ];
-    const result = addShot(MODEL, shots, 10);
+    const result = addShot(MODEL, shots, 8);
     expect(result).toBeNull();
   });
 
@@ -405,7 +407,7 @@ describe("checkShotDensity", () => {
     const result = checkShotDensity(12, 1);
     expect(result).not.toBeNull();
     expect(result!.severity).toBe("warning");
-    expect(result!.message).toContain("3–4샷 권장");
+    expect(result!.message).toContain("3–4개 권장");
   });
 
   it("12s + 3 shots → OK", () => {
@@ -419,7 +421,7 @@ describe("checkShotDensity", () => {
   it("8s + 1 shot → warning", () => {
     const result = checkShotDensity(8, 1);
     expect(result).not.toBeNull();
-    expect(result!.message).toContain("2–3샷 권장");
+    expect(result!.message).toContain("2–3개 권장");
   });
 
   it("15s + 4 shots → OK", () => {
