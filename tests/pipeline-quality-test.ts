@@ -207,14 +207,14 @@ console.log("\n═══ TEST 5: Prompt 구조 검증 ═══");
 
 // scene-type-rules에서 audio 키워드 제거 확인
 const personRules = getSceneTypeRule("person");
-const hasAudioKeyword = personRules.positiveKeywords.some(
+const hasAudioKeyword = (personRules.positiveKeywords ?? []).some(
   kw => kw.includes("diegetic") || kw.includes("ambient audio")
 );
 assert(!hasAudioKeyword, "scene-type-rules person: audio 키워드 제거됨");
 
 // crowd 타입도 확인
 const crowdRules = getSceneTypeRule("crowd");
-const crowdHasAudio = crowdRules.positiveKeywords.some(
+const crowdHasAudio = (crowdRules.positiveKeywords ?? []).some(
   kw => kw.includes("diegetic") || kw.includes("ambient audio")
 );
 assert(!crowdHasAudio, "scene-type-rules crowd: audio 키워드 제거됨");
