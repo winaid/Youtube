@@ -1038,6 +1038,13 @@ export default function ResultPanel({
             onSelectVariant={videoGen.selectVariant}
             recoverableJobs={videoGen.recoverableJobs}
             onResumeJob={videoGen.resumeJob}
+            canonicalMultiShots={(() => {
+              const map = new Map<number, import("@/types").MultiShotPrompt[]>();
+              for (const [num, vm] of canonicalViewModels) {
+                if (vm.multiShot.length > 0) map.set(num, vm.multiShot);
+              }
+              return map;
+            })()}
           />
 
           {/* AI 리뷰 패널 */}

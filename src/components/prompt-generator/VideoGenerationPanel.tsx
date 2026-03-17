@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META } from "@/types";
+import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } from "@/types";
 import { inferShotRole } from "@/lib/multishot-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,8 @@ interface VideoGenerationPanelProps {
   recoverableJobs?: VideoJobRecord[];
   /** 미완료 작업 polling 재개 */
   onResumeJob?: (job: VideoJobRecord) => void;
+  /** Canonical multiShot per cut (cutNumber → multiShot[]) — source of truth */
+  canonicalMultiShots?: Map<number, MultiShotPrompt[]>;
 }
 
 function ElapsedTime({ startedAt }: { startedAt?: number }) {
@@ -87,6 +89,7 @@ export default function VideoGenerationPanel({
   onSelectVariant,
   recoverableJobs,
   onResumeJob,
+  canonicalMultiShots,
 }: VideoGenerationPanelProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadResult, setDownloadResult] = useState<{ downloaded: number; failed: number } | null>(null);
@@ -363,11 +366,14 @@ export default function VideoGenerationPanel({
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                       {cut.sceneDescription}
                     </p>
-                    {/* 멀티샷 서브샷 목록 */}
-                    {cut.multiShot && cut.multiShot.length > 0 && (
+                    {/* 멀티샷 서브샷 목록 — canonical-first */}
+                    {(() => {
+                      const effectiveShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
+                      if (effectiveShots.length === 0) return null;
+                      return (
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {cut.multiShot.map((s) => {
-                          const role = s.role ?? inferShotRole(s.index - 1, cut.multiShot!.length);
+                        {effectiveShots.map((s) => {
+                          const role = s.role ?? inferShotRole(s.index - 1, effectiveShots.length);
                           const meta = SHOT_ROLE_META[role];
                           return (
                             <span key={s.index} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25` }}>
@@ -378,7 +384,8 @@ export default function VideoGenerationPanel({
                           );
                         })}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
