@@ -13,6 +13,7 @@ import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
 import {
   getStyleUiState, getStyleBadgeText, getStyleBadgeColor,
   isStyleSelectable, getStyleCapability,
+  getRecommendedStyleIds, sortStylesByTier, getTierDescriptionKo,
   type StyleUiState,
 } from "@/lib/style-capability-matrix";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
@@ -67,7 +68,8 @@ const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "�
 
 // ─── 카탈로그 기반 스타일 시스템 ───────────────────────────────────
 
-const FAMILY_TABS: { key: StyleFamily; label: string; hint: string }[] = [
+const FAMILY_TABS: { key: StyleFamily | "recommended"; label: string; hint: string }[] = [
+  { key: "recommended",   label: "추천",       hint: "가장 안정적인 스타일" },
   { key: "all",           label: "전체",       hint: "모든 스타일" },
   { key: "live_action",   label: "실사",       hint: "카메라 기반" },
   { key: "animation_2d",  label: "2D 애니",    hint: "셀/수채/잉크" },
@@ -270,7 +272,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
   const [animationMode, setAnimationMode] = useState<AnimationMode>("tv-anime");
-  const [styleFamily, setStyleFamily] = useState<StyleFamily>("all");
+  const [styleFamily, setStyleFamily] = useState<StyleFamily | "recommended">("recommended");
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const generationPersona: GenerationPersona = DEFAULT_GENERATION_PERSONA;
   const [duration, setDuration] = useState<Duration>("auto");
@@ -1239,7 +1241,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   className="text-[10px] px-2 py-0.5 rounded-full transition-all"
                   style={
                     styleFamily === tab.key
-                      ? { background: cat?.color ?? "#787fff", color: "white", fontWeight: 600 }
+                      ? { background: tab.key === "recommended" ? "#16a34a" : (cat?.color ?? "#787fff"), color: "white", fontWeight: 600 }
                       : { background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" }
                   }
                   title={tab.hint}
@@ -1252,9 +1254,63 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
           {/* 카테고리 아코디언 + 스타일 그리드 */}
           <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
-            {STYLE_CATALOG
+            {/* ── 추천 스타일 탭 ── */}
+            {styleFamily === "recommended" && (() => {
+              const recIds = getRecommendedStyleIds();
+              const allStyles = STYLE_CATALOG.flatMap(c => c.styles.map(s => ({ style: s, cat: c })));
+              const recStyles = recIds
+                .map(id => allStyles.find(x => x.style.id === id))
+                .filter((x): x is NonNullable<typeof x> => !!x);
+              return (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] px-1" style={{ color: "#787fff" }}>
+                    V1에서 가장 안정적인 스타일입니다. 어떤 장면에서도 일관된 품질을 기대할 수 있습니다.
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {recStyles.map(({ style: s, cat }) => {
+                      const isSelected = animationMode === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          className="text-left p-2.5 rounded-lg transition-all hover:shadow-sm relative"
+                          style={
+                            isSelected
+                              ? { background: cat.color, color: "white", boxShadow: `0 2px 8px ${cat.color}30` }
+                              : { background: "white", color: "#333", border: "1px solid #e2e8f0" }
+                          }
+                          onClick={() => setAnimationMode(s.id)}
+                        >
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: isSelected ? "white" : cat.color }} />
+                            <p className="text-[11px] font-semibold leading-tight">{s.nameKo}</p>
+                          </div>
+                          <p className="text-[9px] leading-snug" style={{ opacity: isSelected ? 0.85 : 0.5 }}>
+                            {s.descKo}
+                          </p>
+                          <div className="flex flex-wrap gap-0.5 mt-1">
+                            <span
+                              className="inline-block text-[8px] px-1 py-0 rounded leading-tight"
+                              style={isSelected ? { background: "rgba(255,255,255,0.25)", color: "white" } : { background: cat.color + "10", color: cat.color }}
+                            >{s.badge}</span>
+                            <span
+                              className="inline-block text-[8px] px-1 py-0 rounded leading-tight font-medium"
+                              style={isSelected ? { background: "rgba(255,255,255,0.3)", color: "white" } : { background: "#DCFCE7", color: "#166534" }}
+                            >추천</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── 카테고리별 스타일 그리드 ── */}
+            {styleFamily !== "recommended" && STYLE_CATALOG
               .filter((cat) => styleFamily === "all" || cat.id === styleFamily)
               .map((cat) => {
+                const sortedStyles = sortStylesByTier(cat.styles.map(s => s.id));
+                const styles = sortedStyles.map(id => cat.styles.find(s => s.id === id)!);
                 const isExpanded = styleFamily !== "all" || expandedCategory === cat.id;
                 const hasSelected = cat.styles.some(s => s.id === animationMode);
                 const selectedStyle = cat.styles.find(s => s.id === animationMode);
@@ -1297,10 +1353,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       </div>
                     </button>
 
-                    {/* 스타일 그리드 (펼침 시) — capability matrix 기반 UI 분기 */}
+                    {/* 스타일 그리드 (펼침 시) — capability matrix 기반 UI 분기, tier 순 정렬 */}
                     {isExpanded && (
                       <div className="grid grid-cols-2 gap-1 p-1.5 pt-0" style={{ background: "#fafafa" }}>
-                        {cat.styles.map((s) => {
+                        {styles.map((s) => {
                           const isSelected = animationMode === s.id;
                           const uiState = getStyleUiState(s.id);
                           const badgeText = getStyleBadgeText(s.id);
@@ -1308,6 +1364,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                           const selectable = isStyleSelectable(s.id);
                           const cap = getStyleCapability(s.id);
                           const isComingSoon = uiState === "coming-soon";
+                          const isLowTier = uiState === "labs" || isComingSoon;
+                          const isBeta = uiState === "beta";
+                          const recIds = getRecommendedStyleIds();
+                          const isRec = recIds.includes(s.id);
                           return (
                             <button
                               key={s.id}
@@ -1315,8 +1375,13 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                               style={{
                                 ...(isSelected
                                   ? { background: cat.color, color: "white", boxShadow: `0 2px 8px ${cat.color}30` }
-                                  : { background: "white", color: "#333", border: "1px solid #e8e8e8" }),
+                                  : {
+                                      background: isLowTier ? "#f9f9f9" : "white",
+                                      color: "#333",
+                                      border: `1px solid ${isLowTier ? "#e0e0e0" : "#e8e8e8"}`,
+                                    }),
                                 ...(isComingSoon ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                                ...(isBeta && !isSelected ? { opacity: 0.85 } : {}),
                               }}
                               onClick={() => { if (selectable) setAnimationMode(s.id); }}
                               disabled={!selectable}
@@ -1347,6 +1412,18 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                                 >
                                   리얼리즘 {s.realism}
                                 </span>
+                                {isRec && !badgeText && (
+                                  <span
+                                    className="inline-block text-[8px] px-1 py-0 rounded leading-tight font-medium"
+                                    style={
+                                      isSelected
+                                        ? { background: "rgba(255,255,255,0.3)", color: "white" }
+                                        : { background: "#DCFCE7", color: "#166534" }
+                                    }
+                                  >
+                                    추천
+                                  </span>
+                                )}
                                 {badgeText && badgeColor && (
                                   <span
                                     className="inline-block text-[8px] px-1 py-0 rounded leading-tight font-bold"
@@ -1370,24 +1447,26 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               })}
           </div>
 
-          {/* 선택된 스타일 capability 경고 */}
+          {/* 선택된 스타일 capability 경고 + tier 안내 */}
           {(() => {
             const cap = getStyleCapability(animationMode);
-            if (!cap.warningKo) return null;
+            const tierDesc = getTierDescriptionKo(animationMode);
+            const displayText = cap.warningKo || tierDesc;
+            if (!displayText) return null;
             const uiState = getStyleUiState(animationMode);
             const badgeText = getStyleBadgeText(animationMode);
             const badgeColor = getStyleBadgeColor(animationMode);
             const warningBg = uiState === "labs" ? "#EDE9FE" : uiState === "beta" ? "#FEF3C7" : uiState === "gated" ? "#DBEAFE" : "#FFF7ED";
             const warningBorder = uiState === "labs" ? "#C4B5FD" : uiState === "beta" ? "#FCD34D" : uiState === "gated" ? "#93C5FD" : "#FDBA74";
-            const warningText = uiState === "labs" ? "#5B21B6" : uiState === "beta" ? "#92400E" : uiState === "gated" ? "#1E40AF" : "#9A3412";
+            const warningTextColor = uiState === "labs" ? "#5B21B6" : uiState === "beta" ? "#92400E" : uiState === "gated" ? "#1E40AF" : "#9A3412";
             return (
-              <div className="flex items-start gap-1.5 p-2 rounded-lg text-[10px]" style={{ background: warningBg, border: `1px solid ${warningBorder}`, color: warningText }}>
+              <div className="flex items-start gap-1.5 p-2 rounded-lg text-[10px]" style={{ background: warningBg, border: `1px solid ${warningBorder}`, color: warningTextColor }}>
                 {badgeText && badgeColor && (
                   <span className="text-[8px] px-1.5 py-0.5 rounded font-bold shrink-0" style={{ background: badgeColor.bg, color: badgeColor.text }}>
                     {badgeText}
                   </span>
                 )}
-                <span>{cap.warningKo}</span>
+                <span>{cap.warningKo ?? tierDesc}</span>
               </div>
             );
           })()}

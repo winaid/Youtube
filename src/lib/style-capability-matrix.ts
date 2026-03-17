@@ -1389,3 +1389,90 @@ export function getStylesWithUpgradePath(): Array<{ styleId: string; tier: Style
       difficulty: c.upgradePath!.difficulty,
     }));
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Recommended Styles & Tier Sort — UI 정렬/추천에 사용
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 추천 스타일 목록.
+ * 기준: full-supported + stabilityScore ≥ 4 + 카테고리 분산.
+ * source of truth(STYLE_CAPABILITY_MAP)에서 계산.
+ */
+export function getRecommendedStyleIds(): string[] {
+  const candidates = Object.values(STYLE_CAPABILITY_MAP)
+    .filter(c => c.tier === "full-supported" && c.stabilityScore >= 4)
+    .sort((a, b) => {
+      // 안정성 높은 순 → 기대치 괴리 작은 순
+      if (b.stabilityScore !== a.stabilityScore) return b.stabilityScore - a.stabilityScore;
+      return a.expectationGap - b.expectationGap;
+    })
+    .map(c => c.styleId);
+
+  // 카테고리 분산: 같은 카테고리에서 최대 2개
+  const allStyles = getAllStyles();
+  const catCount: Record<string, number> = {};
+  const result: string[] = [];
+  for (const id of candidates) {
+    const entry = allStyles.find(s => s.id === id);
+    const cat = entry?.categoryId ?? "unknown";
+    if ((catCount[cat] ?? 0) < 2) {
+      result.push(id);
+      catCount[cat] = (catCount[cat] ?? 0) + 1;
+    }
+  }
+  return result;
+}
+
+/** tier 정렬 우선순위 (낮을수록 먼저 표시) */
+const TIER_SORT_ORDER: Record<StyleSupportTier, number> = {
+  "full-supported": 0,
+  "supported-with-warning": 1,
+  "beta-supported": 2,
+  "gated": 3,
+  "reference-required": 4,
+  "postprocess-required": 5,
+  "pipeline-upgrade-required": 6,
+  "temporarily-hidden": 7,
+};
+
+export function getTierSortOrder(tier: StyleSupportTier): number {
+  return TIER_SORT_ORDER[tier] ?? 99;
+}
+
+/**
+ * 카테고리 내 스타일을 tier + stabilityScore 기준으로 정렬.
+ * full-supported가 앞, 실험적 스타일이 뒤.
+ */
+export function sortStylesByTier(styleIds: string[]): string[] {
+  return [...styleIds].sort((a, b) => {
+    const capA = getStyleCapability(a);
+    const capB = getStyleCapability(b);
+    const orderDiff = getTierSortOrder(capA.tier) - getTierSortOrder(capB.tier);
+    if (orderDiff !== 0) return orderDiff;
+    return capB.stabilityScore - capA.stabilityScore;
+  });
+}
+
+/** tier별 사용자 안내 문구 (한국어, 짧고 정직) */
+export function getTierDescriptionKo(styleId: string): string | null {
+  const cap = getStyleCapability(styleId);
+  switch (cap.tier) {
+    case "full-supported":
+      return null; // 기본 상태 — 별도 문구 불필요
+    case "supported-with-warning":
+      return "대체로 가능하지만 장면에 따라 품질 편차가 있을 수 있습니다.";
+    case "beta-supported":
+      return "실험적 지원입니다. 결과가 스타일에 따라 흔들릴 수 있습니다.";
+    case "reference-required":
+      return "레퍼런스 이미지가 필요합니다.";
+    case "gated":
+      return "특정 조건 충족 시 사용 가능합니다.";
+    case "postprocess-required":
+      return "현재는 근사 생성 방식입니다. 후처리 추가 시 개선됩니다.";
+    case "pipeline-upgrade-required":
+      return "현재는 유사 스타일로 대체 생성됩니다.";
+    case "temporarily-hidden":
+      return "준비 중인 스타일입니다.";
+  }
+}
