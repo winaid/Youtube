@@ -519,7 +519,7 @@ export default function ResultPanel({
           <CardTitle className="text-lg" style={{ color: "#5a5ecc" }}>{result.projectTitle}</CardTitle>
           {videoGen.completedCount === 0 && (
             <p className="text-[11px] mt-1" style={{ color: "#94a3b8" }}>
-              아래 컷을 확인/수정한 뒤 <span style={{ color: "#22c55e", fontWeight: 600 }}>"영상 생성"</span> 탭에서 영상을 만드세요.
+              아래 컷을 확인/수정한 뒤 <span style={{ color: "#22c55e", fontWeight: 600 }}>&ldquo;영상 생성&rdquo;</span> 탭에서 영상을 만드세요.
             </p>
           )}
           {videoGen.completedCount > 0 && videoGen.completedCount < videoGen.totalCount && (

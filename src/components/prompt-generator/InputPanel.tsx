@@ -805,7 +805,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           )}
           {storyText.trim().length >= 30 && directorPersona && (
             <p className="text-[10px] leading-relaxed" style={{ color: "#9ca3af" }}>
-              감독 선택 완료. 아래 <span style={{ color: "#787fff", fontWeight: 600 }}>"장면 설계 시작"</span> 버튼을 눌러주세요.
+              감독 선택 완료. 아래 <span style={{ color: "#787fff", fontWeight: 600 }}>&ldquo;장면 설계 시작&rdquo;</span> 버튼을 눌러주세요.
             </p>
           )}
         </div>
