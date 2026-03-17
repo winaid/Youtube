@@ -311,6 +311,7 @@ type CharacterRole = "protagonist" | "background" | "silhouette" | "partial" | "
 interface CutOutline {
   cutNumber: number;
   sceneKo: string;         // 한국어 장면 요약 ≤35자
+  narrativeFunction?: string;  // English ≤8 words — 이 시퀀스의 서사 역할 (e.g. "reveal cause of failure")
   emotion: string;         // English emotion keyword
   emotionalDelta: string;  // "prev→this" e.g. "calm→tense" (CUT1: "opening→[emotion]")
   purpose: string;         // establish | develop | climax | resolve
@@ -467,6 +468,37 @@ ${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 Kling 1회 생성 단위(8–15초). 시퀀스 내부 멀티샷은 별도 처리.
 
+## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
+장면 설계 순서: 의미 분석 → 장면 기능 결정 → 시각화
+절대로 "명사/배경/소품 키워드"에서 시작하지 마라. "이 텍스트가 무슨 이야기를 하는가"에서 시작하라.
+
+### 1단계: 입력 텍스트의 서사 구조 파악
+먼저 이야기를 읽고 아래를 판별하라:
+- 이 텍스트의 유형: 사건 서사 / 설명·논지 / 역사·인과 / 감정·회상 / 정보 전달 / 추상 에세이
+- 핵심 주장 또는 핵심 변화가 무엇인가
+- 인과 관계: 무엇 때문에 무엇이 일어나는가
+- 전환점: 어디서 상황/관점/감정이 바뀌는가
+
+### 2단계: 각 시퀀스의 서사 기능 결정
+각 시퀀스가 전체 이야기에서 맡는 기능을 먼저 결정하라:
+- 배경 설정 (어떤 세계/상황인가)
+- 문제 제기 (무엇이 잘못되었거나 부족한가)
+- 원인 제시 (왜 이런 일이 일어나는가)
+- 변화 발생 (무엇이 달라지는가)
+- 갈등/긴장 (무엇이 충돌하는가)
+- 결과/귀결 (어떤 결과가 나타나는가)
+- 반전 (기대와 다른 결과)
+- 결론/의미 (이 이야기가 남기는 것)
+시퀀스는 이 서사 기능 단위로 분할하라. 사물/장소 단위로 분할하지 마라.
+
+### 3단계: 서사 기능을 시각적으로 표현
+서사 기능이 결정된 후에 시각화하라:
+- "문제 제기" → 문제의 결과가 보이는 구체적 장면 (빈 가게, 쌓인 서류, 닫힌 문)
+- "원인 제시" → 원인이 작동하는 장면 (경쟁자의 행동, 정책 변화, 자연재해)
+- "변화 발생" → 이전과 이후의 대비가 보이는 장면
+- "결과/귀결" → 결과의 증거가 보이는 장면
+상징/분위기 샷은 서사 기능을 보조할 때만 사용. 서사를 대체하지 마라.
+
 ## 시나리오
 ${storyExcerpt}
 ${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}
@@ -480,37 +512,38 @@ characterSeeds (최대 3명):
 
 outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시퀀스):
 
-## ⚠️ 핵심 원칙: "즉시 인식 가능성" (Instant Readability)
+## 시각화 기준: "즉시 인식 가능성" (Instant Readability)
 시청자가 장면을 보고 바로 이해해야 합니다:
-- "아, 치과구나" (장소)
-- "아, 손님이 없구나" (상황)
-- "아, 원장이 힘들구나" (감정)
-설명을 읽어야 이해되는 장면이 아니라, 시각적 단서만으로 즉시 의미가 전달되는 scene.
-"멋있어 보이는 무드 샷"보다 "보자마자 의미가 읽히는 서사 샷"을 우선합니다.
+- "아, 여기가 어디구나" (장소)
+- "아, 이런 상황이구나" (상황)
+- "아, 이 사람이 이런 상태구나" (감정)
+단, 이 세 가지는 서사 기능을 시각으로 번역한 결과여야 한다.
+"서사와 무관한 멋있는 비주얼"은 금지.
 
-각 씬 설계 시 반드시 아래 세 가지를 먼저 정의하세요:
-1. locationCue: 보자마자 어디인지 아는 핵심 오브젝트 (치과 → dental chair, 식당 → dining tables, 사무실 → office desk)
-2. situationCue: 보자마자 상황을 아는 증거 (한산함 → empty waiting chairs, 성공 → packed customers, 위기 → warning notice)
-3. emotionalAnchor: 감정이 집약되는 시각 포인트 (원장 한숨 → doctor slumps at desk, 결심 → hand grips phone tightly)
-이 세 가지가 없으면 씬을 다시 설계하세요.
+각 씬 설계 시 반드시 아래를 먼저 정의하세요:
+1. narrativeFunction: 이 시퀀스가 전체 이야기에서 맡는 역할 (영어 ≤8 words — 예: "reveal cause of failure", "show consequence of decision", "establish world before change")
+2. locationCue: 서사 기능을 뒷받침하는 장소 단서 (영어 ≤8 words)
+3. situationCue: 서사 기능을 뒷받침하는 상황 증거 (영어 ≤8 words)
+4. emotionalAnchor: 감정이 집약되는 시각 포인트 (영어 ≤8 words)
 
 - cutNumber: 순번
 - sceneKo: ≤30자
+- narrativeFunction: 영어 ≤8 words — 이 시퀀스가 전체 이야기에서 맡는 서사 역할 (예: "reveal cause of decline", "show turning point decision", "contrast before and after")
 - emotion: 영어 키워드
 - emotionalDelta: "이전→현재" (CUT1: "opening→[emotion]")
-- purpose: establish | develop | climax | resolve
+- purpose: establish | develop | climax | resolve (편집상 위치)
 - shotType: ${shotGuide} (연속 동일 금지 — 씬 시작 시점의 오프닝 샷)
 - cameraMovement: ≤10 words 영어
-- subjectAction: 영어 ≤12 words — 이 씬에서 일어나는 핵심 행동/변화 (금지: stands, watches, feels)
+- subjectAction: 영어 ≤15 words — 이 씬의 서사 기능이 시각적으로 드러나는 핵심 행동/변화 (금지: stands, watches, feels. 필수: 누가 무엇을 해서 무엇이 바뀌는가)
 - transitionHint: ≤10자
 - shotCategory: "character-driven" | "environment" | "object-detail" | "map-graphic" | "transition-atmosphere"
   (먼저 결정: 이 씬에 캐릭터가 꼭 필요한가? 정보/분위기/공간/지도 씬은 인물 없이 설계. 지도/항공/인포그래픽 씬은 "map-graphic" 사용)
 - characterRole: "protagonist" | "background" | "silhouette" | "partial" | "absent"
   ⚠️ shotCategory가 environment/object-detail/map-graphic/transition-atmosphere이면 characterRole="absent" 권장
   ⚠️ characterRole이 "absent"가 아닌 경우 subjectAction은 반드시 구체적 행동 포함 (standing/motionless 금지)
-- locationCue: 영어 ≤8 words — 장소를 즉시 인식시키는 핵심 시각 오브젝트 (예: "dental chair and overhead lamp", "restaurant kitchen with steel counters")
-- situationCue: 영어 ≤8 words — 현재 상황을 즉시 보여주는 증거 (예: "empty waiting room, no patients", "long queue outside the door")
-- emotionalAnchor: 영어 ≤8 words — 감정/갈등이 집약되는 시각 요소 (예: "doctor alone slumping at desk", "hand crumpling printed notice")
+- locationCue: 영어 ≤8 words — 서사 기능을 뒷받침하는 장소 시각 단서
+- situationCue: 영어 ≤8 words — 서사 기능이 드러나는 상황 증거 (원인/변화/결과가 보이는 시각적 사실)
+- emotionalAnchor: 영어 ≤8 words — 이 서사 기능의 감정적 무게가 집약되는 시각 포인트
 
 ## ⚠️ 시퀀스 밀도 규칙
 - 총 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 시퀀스(outlines)를 작성하라
@@ -769,7 +802,9 @@ async function step23DetailBatch(
   Camera progression: ${o.cameraMovement}
   Core action across scene: ${o.subjectAction}
   Scene summary: ${o.sceneKo}
-  ── INSTANT READABILITY (시청자가 바로 이해해야 하는 3가지) ──
+  ── NARRATIVE FUNCTION (이 시퀀스가 전체 이야기에서 맡는 역할) ──
+  STORY ROLE: ${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose}
+  ── INSTANT READABILITY (서사 기능의 시각적 번역) ──
   WHERE (장소 단서): ${o.locationCue}
   WHAT (상황 단서): ${o.situationCue}
   WHO/EMOTION (감정 앵커): ${o.emotionalAnchor}
@@ -795,13 +830,14 @@ ${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
 - 시퀀스의 각 비트(sceneBeat)는 서로 다른 구도/앵글/피사체를 가진다.
 - ${secPerCut}초가 끝났을 때 시청자는 "어디서, 무슨 상황이고, 누가 어떤 감정인지"를 바로 알아야 한다.
 
-## ⚠️ 최우선 기준: "즉시 인식 가능성" (Instant Readability)
+## ⚠️ 최우선 기준: 서사 기능의 시각적 번역
+- 각 컷의 STORY ROLE을 먼저 확인하고, 그 서사 기능이 시각적으로 즉시 전달되도록 설계한다.
 - 모든 장면은 보자마자 아래가 이해되어야 한다:
-  1. 어디인가? (장소 정체성 — 치과면 치과답게, 식당이면 식당답게)
-  2. 무슨 상황인가? (비어있음, 북적임, 위기, 성공 등)
-  3. 누가 핵심인가? (인물이 있다면 무슨 역할/감정인지)
-- "멋있어 보이는 분위기 샷"보다 "보자마자 의미가 읽히는 서사 샷"을 우선한다.
-- 장소는 장소답게: 추상적 무드보다 장소 정체성(location-defining objects)이 먼저다.
+  1. 이 장면이 이야기에서 무슨 역할인가? (원인 제시, 변화 발생, 결과 증거 등)
+  2. 어디인가? (서사 기능을 뒷받침하는 장소)
+  3. 무슨 상황인가? (서사 기능이 드러나는 시각적 증거)
+- "서사와 무관한 멋있는 비주얼"보다 "이야기의 의미가 보이는 장면"을 우선한다.
+- 상징/분위기 샷은 서사 기능을 보조할 때만 허용. 이야기 본체를 대체하면 안 된다.
 - 상황은 증거로: 추상적 설명 대신 시각적 증거(빈 의자, 줄 선 사람, 꺼진 조명)로 보여준다.
 캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
 ⚠️ 단, shotCategory에 따라 캐릭터 사용 여부가 달라짐 — 아래 SHOT CATEGORY RULES 참조
@@ -2021,6 +2057,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         cutNumber:     outline.cutNumber,
         durationSec:   secPerCut,
         purpose:       outline.purpose,
+        narrativeFunction: outline.narrativeFunction || outline.purpose,
         sceneDescription: outline.sceneKo,
         shotType:      outline.shotType,
         subjectAction: outline.subjectAction,

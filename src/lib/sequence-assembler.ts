@@ -373,7 +373,11 @@ export function enrichEnvironmentPositives(globalStyle: string): string {
 export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocument {
   const { cut, config, prevCut } = input;
   const json = cut.videoPromptJson;
-  const dur = config.durationSeconds && config.durationSeconds > 0 ? config.durationSeconds : 8;
+  // Duration source of truth: cut.durationSec (per-cut, from API) > config.durationSeconds (global)
+  // rhythm distribution 등으로 컷마다 다른 duration이 설정될 수 있으므로 cut 단위 값을 우선
+  const dur = (cut.durationSec && cut.durationSec > 0)
+    ? cut.durationSec
+    : (config.durationSeconds && config.durationSeconds > 0 ? config.durationSeconds : 8);
 
   const styleEntry = getStyleById(config.animationMode || "") ?? getStyleByLegacyMode(config.animationMode || "");
   const styleId = styleEntry?.id || config.animationMode || "live-action";
@@ -1373,7 +1377,10 @@ export function assembleFromJSON(input: {
   ];
 
   // ── Dense Sequence Fields (v2) ─────────────────────────────────────────
-  const dur = input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8;
+  // Duration source of truth: cut.durationSec (per-cut) > config.durationSeconds (global)
+  const dur = (input.cut.durationSec && input.cut.durationSec > 0)
+    ? input.cut.durationSec
+    : (input.config.durationSeconds && input.config.durationSeconds > 0 ? input.config.durationSeconds : 8);
   const effectiveSceneType = normalizedDoc.scene.shotCategory || input.cut.shotCategory || "unknown";
   const isEnvScene = effectiveSceneType === "environment";
 

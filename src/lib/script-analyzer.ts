@@ -304,11 +304,27 @@ const SETUP_MARKERS = /(?:배경|상황|당시|그\s*때|시작|원래|기존에
 /** 메커니즘/원리 감지 키워드 */
 const MECHANISM_MARKERS = /(?:원리|메커니즘|작동|구조|시스템|방법|방식|과정|절차|원인|핵심|이유는|비결|비밀은|작용|원동력|동력)/;
 
-/** 비트 타입 감지 — 주제 불문, 서사 구조 기반 */
+/** 변화/대비 감지 — 이전 상태와 이후 상태가 명시된 문장 */
+const CHANGE_MARKERS = /(?:바뀌|달라지|변화[하했]|전환[되하]|역전[되하]|부터|이후[로]?|그때부터|전에는.*지금|과거에는.*현재|했지만.*지금|였으나.*되었|에서.*으로\s*(?:바뀌|변))/;
+
+/** 문제/갈등 제기 감지 */
+const PROBLEM_MARKERS = /(?:문제[는가]|위기[에가]|실패[했하]|부족[하했]|잃[었고]|무너[지졌]|사라[지졌]|감소[하했]|하락[하했]|악화[되했]|갈등|대립|충돌|반발|저항|거부|거절)/;
+
+/** 비트 타입 감지 — 서사 기능 기반 (키워드 + 문맥 위치) */
 function detectBeatType(text: string, index: number, isFirst: boolean): SequenceBeatType {
   if (isFirst && HOOK_MARKERS.test(text)) return "hook";
   if (isFirst) return "hook"; // 첫 비트는 항상 훅으로 시작
+
+  // 서사 기능 우선 감지: 변화 > 인과 > 문제 > 강도
+  // 변화/대비가 명시된 문장은 서사 전환점
+  if (CHANGE_MARKERS.test(text)) return "reveal";
+
+  // 결론 + 강도 = 역설적 결말
   if (CONCLUSION_MARKERS.test(text) && INTENSITY_MARKERS.test(text)) return "paradox";
+
+  // 문제/갈등 제기는 이야기의 핵심 구동력
+  if (PROBLEM_MARKERS.test(text) && !CONCLUSION_MARKERS.test(text)) return "consequence";
+
   if (CONCLUSION_MARKERS.test(text)) return "payoff";
   if (INTENSITY_MARKERS.test(text)) return "reveal";
   if (CAUSAL_MARKERS.test(text)) return "consequence";
@@ -631,31 +647,50 @@ function describeCutChange(prevRole: ShotRole, currentRole: ShotRole, _beatType:
   return changes[key] || `${prevRole}에서 ${currentRole}로 — 시각적 전환`;
 }
 
-/** 컷의 서사적 기능 설명 */
+/** 컷의 서사적 기능 설명 — 편집 역할이 아닌 이야기 내 기능 기준 */
 function describeNarrativeFunction(
   role: ShotRole,
   beatType: SequenceBeatType,
   isFirst: boolean,
   isLast: boolean,
 ): string {
-  if (isFirst && beatType === "hook") return "시청자의 시선을 붙잡는 첫 이미지 — 스크롤 멈춤";
-  if (isFirst) return "이 시퀀스의 시각적 컨텍스트 설정";
+  // 서사 기능(beatType)을 우선 반영, 편집 역할(role)은 보조
+  if (isFirst && beatType === "hook") return "시청자의 시선을 붙잡는 핵심 질문/갈등/상황 제시";
+  if (isFirst && beatType === "setup") return "이야기의 배경과 출발 상황 설정";
+  if (isFirst) return "이 이야기가 시작되는 세계/상황 설정";
 
+  // beatType 기반 서사 기능 우선
+  switch (beatType) {
+    case "consequence":
+      return "원인→결과 인과 관계 시각화 — 왜 이런 일이 일어나는가";
+    case "reveal":
+      return "핵심 변화/전환점 시각화 — 무엇이 달라지는가";
+    case "paradox":
+      return "기대와 결과의 역설적 대비 — 예상 전복";
+    case "mechanism":
+      return "작동 원리/과정 시각화 — 어떻게 이것이 작동하는가";
+    case "payoff":
+      if (isLast) return "이야기의 결론과 의미 — 최종 귀결";
+      return "축적된 서사의 보상 — 의미 전달";
+    case "transition":
+      return "관점/시간/공간 전환 — 이야기의 방향 변화";
+    default:
+      break;
+  }
+
+  // beatType이 일반적일 때 편집 역할(role) 보조
   switch (role) {
     case "develop":
-      return "새로운 시각적 증거 도입 — 논거 확장";
+      return "새로운 증거/정보 도입 — 이야기 논거 확장";
     case "insert":
-      return "핵심 디테일 극대화 — 텐션 상승 전 축적";
+      return "핵심 디테일 집중 — 서사 긴장 축적";
     case "peak":
-      if (beatType === "reveal") return "충격적 정보 시각화 — '이걸 몰랐어?' 순간";
-      if (beatType === "paradox") return "역설적 진실 시각화 — 기대 전복";
-      return "감정/논리적 클라이맥스 — 최대 임팩트";
+      return "감정/논리적 절정 — 이야기의 최대 임팩트";
     case "resolve":
-      if (isLast && beatType === "consequence") return "결과의 시각적 증거 — 인과 관계 완결";
-      if (isLast) return "시각적 보상과 의미 착지";
-      return "해소와 전환 — 다음 시퀀스로의 연결";
+      if (isLast) return "결과의 시각적 증거 — 이야기 완결";
+      return "부분 해소 — 다음 전개로의 연결";
     default:
-      return "시각적 정보 확장";
+      return "이야기 정보 확장";
   }
 }
 
