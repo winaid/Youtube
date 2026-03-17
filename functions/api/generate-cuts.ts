@@ -654,7 +654,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
       } else {
         throw new Error(`step1 TIMEOUT + ultra-compact retry failed: ${result.error.slice(0, 300)}`);
       }
-    } else if (result.status && result.status >= 500 || result.status === 429) {
+    } else if (result.status && (result.status >= 500 || result.status === 429)) {
       // Provider-side error (503 UNAVAILABLE, 429 rate limit, 500 etc.)
       // Mark clearly so outer handler doesn't misclassify as MAX_TOKENS
       throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error.slice(0, 400)}`);
