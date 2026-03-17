@@ -35,12 +35,14 @@ describe("긴 storyText → project total 60초 이상", () => {
     expect(result.estimatedTotalSec).toBeGreaterThanOrEqual(60);
   });
 
-  it("20문장 한국어 스토리 → 최소 120초", () => {
+  it("20문장 한국어 스토리 → 최소 80초", () => {
+    // 상수 조정 (v2): 4.5 chars/sec, 1.15 multiplier, 5 sec/sentence
+    // 20문장 × 5 = 100초, char-based ≈ 105초 → max 105초
     const sentences = Array.from({ length: 20 }, (_, i) =>
       `장면 ${i + 1}에서 주인공은 새로운 도전에 직면한다.`
     ).join(" ");
     const result = estimateProjectDuration(sentences);
-    expect(result.estimatedTotalSec).toBeGreaterThanOrEqual(120);
+    expect(result.estimatedTotalSec).toBeGreaterThanOrEqual(80);
   });
 });
 

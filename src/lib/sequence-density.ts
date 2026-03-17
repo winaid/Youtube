@@ -58,10 +58,10 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
 export const KLING_SEGMENT_CAP = 15;
 
 /**
- * 최대 허용 컷 수. 5분(300초) 영상까지 지원하기 위해 30컷 상한.
- * 모든 resolveCutCount 경로에서 이 상수를 사용.
+ * 최대 허용 컷 수.
+ * 데모 안정화: 30 → 10. generate-cuts 토큰 초과 방지.
  */
-export const CUT_COUNT_MAX = 30;
+export const CUT_COUNT_MAX = 10;
 
 /**
  * 시퀀스당 런타임 → 시퀀스 내부 내러티브 밀도 권장 범위.

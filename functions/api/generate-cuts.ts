@@ -1612,17 +1612,43 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.error("[generate-cuts] step1 failed:", msg, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
 
       if (isTruncation && !isTimeout) {
-        // MAX_TOKENS는 서버 에러(502)가 아니라 요청 크기 문제 → 422 + 명확한 원인
-        return Response.json({
-          ok: false,
-          degraded: false,
-          error: "Step 1 출력이 토큰 한도를 초과했습니다. 컷 수를 줄이거나 스토리를 축소해주세요.",
-          detail: msg,
-          step: 1,
-          cause: "MAX_TOKENS",
-          source: "gemini",
-          warnings: [],
-        }, { status: 422 });
+        // ── 자동 감축 재시도: cutCount 절반으로 줄여서 1회 재시도 ──
+        const reducedCuts = Math.max(4, Math.floor(targetCuts / 2));
+        console.warn(`[generate-cuts] step1 MAX_TOKENS — auto-retry with reduced cutCount: ${targetCuts} → ${reducedCuts}`);
+
+        try {
+          const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
+          const retryResult = await step1Outlines(
+            context.env,
+            String(storyText).slice(0, 600), // 스토리도 축약
+            String(directorNameKo || directorName),
+            String(directorPersona ?? ""),
+            reducedCuts,
+            secPerCut,
+            contentMode,
+            generationPersonaBlock,
+            characterPersonaBlock,
+            editorialPlanningBlock,
+          );
+          characterSeeds = retryResult.characterSeeds;
+          outlines = retryResult.outlines;
+          step1Degraded = true;
+          step1DegradedReason = `토큰 초과 → 자동 감축 (${targetCuts}→${reducedCuts}컷)`;
+          step1Warnings.push(step1DegradedReason);
+        } catch (retryErr) {
+          const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          console.error("[generate-cuts] auto-retry also failed:", retryMsg);
+          return Response.json({
+            ok: false,
+            degraded: false,
+            error: `장면 설계 토큰 초과 — 자동 감축(${reducedCuts}컷)도 실패. 스토리를 축소해주세요.`,
+            detail: retryMsg,
+            step: 1,
+            cause: "MAX_TOKENS",
+            source: "gemini",
+            warnings: [`원본 ${targetCuts}컷 실패`, `감축 ${reducedCuts}컷도 실패`],
+          }, { status: 422 });
+        }
       }
 
       // ── Timeout/API error → ultra-compact retry → deterministic fallback ──

@@ -28,14 +28,33 @@ export interface StoryDurationEstimate {
 
 // ── 상수 ────────────────────────────────────────────────────────────────────────
 
-/** 한국어 기준 1초당 약 3.2글자 자연 나레이션 속도 (다큐/해설 기준) */
-const CHARS_PER_SECOND_KO = 3.2;
+/**
+ * 한국어 기준 1초당 글자 수 (공백 제외 순수 글자).
+ *
+ * 변경 이력:
+ *   v1: 3.2 chars/sec (다큐멘터리/해설 기준 — 느린 편)
+ *   v2: 4.5 chars/sec (유튜브 쇼츠/해설 기준)
+ *
+ * 근거: 한국어 유튜브 나레이션은 분당 270~300자(공백 제외).
+ *   4.5 chars/sec = 270 chars/min → 캐주얼~보통 속도.
+ *   기존 3.2는 다큐멘터리 느린 화자 기준으로 과대 추정의 주 원인.
+ */
+const CHARS_PER_SECOND_KO = 4.5;
 
 /** 영어 기준 1초당 약 2.5단어 나레이션 속도 */
 const WORDS_PER_SECOND_EN = 2.5;
 
-/** 나레이션 대비 영상은 약 1.35배 (비주얼 여유 + 구두점/수사적 포즈) */
-const VISUAL_MULTIPLIER = 1.35;
+/**
+ * 나레이션 시간 → 영상 시간 변환 배율.
+ *
+ * 변경 이력:
+ *   v1: 1.35 (비주얼 여유 + 포즈)
+ *   v2: 1.15 (유튜브 쇼츠에선 여백이 적음)
+ *
+ * 근거: 쇼츠/숏폼에서는 빈 화면 시간이 거의 없음.
+ *   1.15 = 나레이션 대비 약 15% 비주얼 여유만 추가.
+ */
+const VISUAL_MULTIPLIER = 1.15;
 
 /** 최소 project total (너무 짧은 글이라도 최소 30초) */
 const MIN_PROJECT_TOTAL_SEC = 30;
@@ -43,8 +62,18 @@ const MIN_PROJECT_TOTAL_SEC = 30;
 /** 최대 project total (현실적 상한) */
 const MAX_PROJECT_TOTAL_SEC = 300;
 
-/** 문장 기반 추정 — 문장당 평균 영상 시간 (초) */
-const SEC_PER_SENTENCE = 8;
+/**
+ * 문장 기반 추정 — 문장당 평균 영상 시간 (초).
+ *
+ * 변경 이력:
+ *   v1: 8초/문장 (장문 중심 가정)
+ *   v2: 5초/문장 (한국어 구어체/쇼츠 기준 — 문장이 짧음)
+ *
+ * 근거: 한국어 유튜브 대본의 문장은 평균 30~40자 → 나레이션 7~9초.
+ *   하지만 구어체 종결('~임', '~음')로 끝나는 짧은 문장이 많아
+ *   실질 평균은 4~6초. 5초가 보수적 중앙값.
+ */
+const SEC_PER_SENTENCE = 5;
 
 // ── 유틸 ────────────────────────────────────────────────────────────────────────
 
@@ -175,9 +204,12 @@ export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
     cutDuration = 5;
   }
 
-  // cutCount = totalSec / cutDuration, 4~30 범위
+  // cutCount = totalSec / cutDuration, 4~10 범위
+  // 데모 안정화: 상한 10컷. generate-cuts 토큰 초과 방지 + 영상 생성 비용 절감.
+  // 기존 상한 30은 5분 장편용이었으나, 현 데모 대상(쇼츠~2분)에서 과도함.
+  const DEMO_CUT_CAP = 10;
   const rawCutCount = Math.round(totalSec / cutDuration);
-  const cutCount = Math.min(30, Math.max(4, rawCutCount));
+  const cutCount = Math.min(DEMO_CUT_CAP, Math.max(4, rawCutCount));
 
   // cutDuration 재조정: cutCount × cutDuration ≈ totalSec
   // Kling VIDEO 3.0은 최대 15초를 지원하므로 상한을 15초로 설정.

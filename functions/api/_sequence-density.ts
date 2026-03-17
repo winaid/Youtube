@@ -30,10 +30,11 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
 ];
 
 /**
- * Maximum allowed cut count. Matches client CUT_COUNT_MAX.
- * Supports videos up to 5 minutes (300 seconds) with 30 cuts.
+ * Maximum allowed cut count.
+ * 데모 안정화: 30 → 10. generate-cuts 토큰 초과 방지 + 시연 안정성 확보.
+ * 쇼츠~2분 영상 기준 10컷이면 충분. 장편 지원은 추후 복원.
  */
-export const CUT_COUNT_MAX = 30;
+export const CUT_COUNT_MAX = 10;
 
 // ═══════════════════════════════════════════════════════════════════
 // Duration → Recommended Cut Count Range Presets

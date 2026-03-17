@@ -466,15 +466,17 @@ describe("대표 시퀀스 1회 — end-to-end 메타 검증", () => {
     expect(segmentPlan.segmentDurationCap).toBe(KLING_SEGMENT_CAP);
   });
 
-  it("20문장 스토리 → 120초+ project total → 8+ segments", () => {
+  it("20문장 스토리 → 80초+ project total → 6+ segments", () => {
+    // 상수 조정 (v2): 4.5 chars/sec, 1.15 multiplier, 5 sec/sentence
+    // 20문장 → ~105초 → ceil(105/15) = 7 segments
     const longStory = Array.from({ length: 20 }, (_, i) =>
       `장면 ${i + 1}에서 주인공은 새로운 도전에 직면한다.`
     ).join(" ");
     const estimate = estimateProjectDuration(longStory);
-    expect(estimate.estimatedTotalSec).toBeGreaterThanOrEqual(120);
+    expect(estimate.estimatedTotalSec).toBeGreaterThanOrEqual(80);
 
     const plan = resolveSegmentPlan({ totalDurationSec: estimate.estimatedTotalSec });
-    expect(plan.segmentCount).toBeGreaterThanOrEqual(8);
-    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(32);
+    expect(plan.segmentCount).toBeGreaterThanOrEqual(6);
+    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(18);
   });
 });
