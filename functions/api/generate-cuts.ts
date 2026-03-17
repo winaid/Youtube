@@ -842,7 +842,9 @@ ${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
 캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
 ⚠️ 단, shotCategory에 따라 캐릭터 사용 여부가 달라짐 — 아래 SHOT CATEGORY RULES 참조
 
-## 연출 엔진 (이 철학이 모든 컷의 구조를 지배한다 — 단순 스타일 태그가 아닌 설계 원칙)
+## 연출 엔진 (서사 기능이 결정된 후, 이 철학으로 시각 표현 방식을 결정한다)
+⚠️ 연출 엔진은 서사 기능에 종속된다. 감독 스타일이 서사 기능과 충돌하면 서사 기능이 우선한다.
+예: 감독이 "느린 정적 화면"을 선호해도, 서사 기능이 "급격한 변화 시각화"이면 변화가 보여야 한다.
 ${directorEngine}
 ${editorialSummary ? `\n## ⚠️ EDITORIAL PERSONA REMINDER (step1에서 결정된 편집 기조 — 모든 컷에 적용)\n${editorialSummary}\n- complexity budget 유지: max 1 subject, 1 action, 1 camera motion per cut.` : ""}
 
@@ -1500,7 +1502,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "수채화 애니":       "watercolor animation, soft translucent washes, pastel tones, gentle bleeding edges, subject as focal point",
 
       // ═══ animation_3d ═══
-      "pixar-style":       "Pixar-style 3D animation. Smooth subsurface scattering on skin. Expressive stylized character designs. Rich global illumination. Cinematic depth of field.",
+      "pixar-style":       "Pixar-style 3D animation. Smooth warm skin tones. Expressive stylized character designs. Rich soft lighting. Cinematic depth of field.",
       "dreamworks-style":  "DreamWorks-style 3D animation. Bold exaggerated character proportions. Dynamic action-oriented poses. Saturated vivid color palette with dramatic lighting. Energetic camera.",
       "stylized-3d":       "Stylized 3D animation with toon shading. Bold outlines over 3D geometry. Flat color zones with sharp shadow edges — cel-shaded look in 3D. Vibrant cartoon palette.",
       "semi-real-3d":      "Semi-realistic 3D animation. Anime-influenced character proportions within detailed realistic environments. Cinematic lighting with ray-traced reflections.",

@@ -602,12 +602,19 @@ export default function VideoGenerationPanel({
                         )}
                       </summary>
                       <div className="mt-1 space-y-1">
-                        {/* 1급: Structured Sequence JSON */}
+                        {/* 1급: Structured Sequence JSON — 전체 컷 기준 */}
                         {clip.structuredSequence && (
                           <details className="ml-1" open>
-                            <summary className="text-[9px] cursor-pointer font-medium" style={{ color: "#16a34a" }}>구조화된 시퀀스 (source of truth)</summary>
+                            <summary className="text-[9px] cursor-pointer font-medium" style={{ color: "#16a34a" }}>
+                              전체 컷 구조 (source of truth) — {clip.structuredSequence.durationSec}초
+                              {clip.structuredSequence.shots && Array.isArray(clip.structuredSequence.shots) && clip.structuredSequence.shots.length > 1
+                                ? ` / ${clip.structuredSequence.shots.length}샷`
+                                : " / 1샷"
+                              }
+                            </summary>
                             <pre className="bg-green-50 rounded p-2 text-[9px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#333", maxHeight: 200, overflowY: "auto" }}>
                               {JSON.stringify({
+                                durationSec: clip.structuredSequence.durationSec,
                                 shotId: clip.structuredSequence.shotId,
                                 shotPlan: {
                                   camera: clip.structuredSequence.shotPlan?.camera,
@@ -616,6 +623,7 @@ export default function VideoGenerationPanel({
                                   environment: clip.structuredSequence.shotPlan?.environment,
                                   moodLighting: clip.structuredSequence.shotPlan?.moodLighting,
                                 },
+                                temporalBeats: clip.structuredSequence.temporalBeats,
                                 validation: clip.structuredSequence.validation,
                               }, null, 2)}
                             </pre>
@@ -688,7 +696,7 @@ export default function VideoGenerationPanel({
                           className="text-[10px] px-2.5 py-1 rounded-md"
                           style={{ background: "#787fff15", color: "#5a5ecc", border: "1px solid #787fff30" }}
                         >
-                          컷 추가 생성
+                          변형 생성
                         </button>
                       )}
                       <button

@@ -128,7 +128,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(haze|fog|mist|dust|smoke|particle|vapor|steam|atmosphere|atmospheric|condensation|diffusion)\b/i, fallback: "subtle atmospheric depth" },
       { check: /\b(ground|floor|terrain|soil|rock|grass|sand|concrete|stone|asphalt|cobble|gravel|pave|tile|carpet|wood\s+floor|marble)\b/i, fallback: "textured surface" },
     ],
-    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound", "ambient audio"],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition"],
   },
 
   crowd: {
@@ -151,7 +151,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(flag|banner|smoke|dust|confetti|torch|lantern|sign|placard)\b/i, fallback: "flags and dust in the air" },
       { check: /\b(above|below|within|amid|through|over|across|surrounding|encircl)\b/i, fallback: "camera positioned above the crowd" },
     ],
-    positiveKeywords: ["photorealistic", "cinematic", "natural diegetic sound"],
+    positiveKeywords: ["photorealistic", "cinematic"],
   },
 
   map_visualization: {
@@ -229,7 +229,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(smoke|dust|fire|flame|debris|explosion|spark|flash)\b/i, fallback: "smoke and dust filling the air" },
       { check: /\b(weapon|sword|spear|rifle|cannon|shield|arrow|blade)\b/i, fallback: "" },
     ],
-    positiveKeywords: ["photorealistic", "cinematic", "natural diegetic sound"],
+    positiveKeywords: ["photorealistic", "cinematic"],
   },
 
   person: {
@@ -245,7 +245,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(standing|sitting|kneeling|crouching|leaning|hunched|upright|slumped|expression|gaze|stare|frown|smile|stern|weary|determined)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden\s+hour|blue\s+hour)\b/i, fallback: "" },
     ],
-    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound"],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition"],
   },
 
   "character-driven": {
@@ -262,7 +262,7 @@ const SCENE_RULES: Record<string, SceneTypeRule> = {
       { check: /\b(standing|sitting|kneeling|crouching|leaning|hunched|upright|slumped|expression|gaze|stare|frown|smile|stern|weary|determined|posture)\b/i, fallback: "" },
       { check: /\b(light|backlit|sidelit|rim[\s-]?light|shadow|silhouett|illuminat|golden\s+hour|blue\s+hour)\b/i, fallback: "" },
     ],
-    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition", "natural diegetic sound"],
+    positiveKeywords: ["photorealistic", "cinematic", "subject-focused composition"],
   },
 
   "object-detail": {
