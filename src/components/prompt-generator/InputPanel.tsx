@@ -357,8 +357,15 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.analysis) {
-            result = normalizeAnalysisResult(data.analysis);
+          if (data.analysis && !data.incomplete) {
+            const llmResult = normalizeAnalysisResult(data.analysis);
+            // Only use LLM result if it produced sequences;
+            // otherwise keep the heuristic Phase A/B result
+            if (llmResult.sequences.length > 0) {
+              result = llmResult;
+            } else {
+              console.warn("[analyze-script] LLM returned 0 sequences, keeping heuristic result");
+            }
           }
         } else {
           // Log structured error from backend for debugging
@@ -375,6 +382,29 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       }
 
       if (analysisAbortRef.current) { setAnalysisPhase("idle"); return; }
+
+      // If heuristic also produced 0 sequences, force a single fallback sequence
+      if (result.sequences.length === 0) {
+        console.warn("[analyze-then-generate] 0 sequences after all phases, creating fallback");
+        result = {
+          ...result,
+          sequences: [{
+            id: 1,
+            title: result.thesis || "흑사병 시퀀스",
+            purpose: result.sourceSummary || storyText.slice(0, 100),
+            beatType: "hook" as const,
+            sourceText: storyText,
+            recommendedDurationSec: 10,
+            recommendedCutCount: 1,
+            rationale: "전체 대본 단일 시퀀스 (자동 복구)",
+            endingMode: "close" as const,
+            retentionStrategy: { curiosityPoint: "", informationGain: "", escalation: "", payoff: "" },
+            visualStrategy: { primaryDriver: "concept-reveal" as const, finalFrameLanding: "unresolved-curiosity" as const, toneHint: "" },
+            cuts: [],
+          }],
+          suggestedSequenceCount: 1,
+        };
+      }
 
       // Convert to PromptOutput and apply
       const cuts = convertToCuts(result);
