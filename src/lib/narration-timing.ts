@@ -3,13 +3,13 @@
  *
  * Pacing model based on Korean broadcast/YouTube narration analysis:
  *
- *   Natural narration:  ~3.2 chars/sec  (다큐, 해설, 교육)
- *   Fast shorts:        ~4.0 chars/sec  (빠른 쇼츠, 밈 해설)
- *   News anchor:        ~4.5 chars/sec  (뉴스, 급한 톤)
+ *   Natural narration:  ~4.0 chars/sec  (다큐, 해설, 교육 — YouTube 기준)
+ *   Fast shorts:        ~5.0 chars/sec  (빠른 쇼츠, 밈 해설)
+ *   News anchor:        ~5.5 chars/sec  (뉴스, 급한 톤)
  *
- * The previous estimator used 4.5 chars/sec (news anchor speed) with a flat
- * 1.2x multiplier, producing unrealistically short estimates that forced
- * dense scripts into compressed sequences.
+ * v2 변경 (데모 안정화):
+ *   story-duration-estimator.ts와 일관성 유지.
+ *   v1의 3.2 chars/sec은 과대 추정의 원인 — 4.0으로 상향.
  *
  * This module adds:
  *   1. Punctuation pause weights (마침표, 쉼표, 물음표, 줄임표)
@@ -24,14 +24,14 @@
 // ═══════════════════════════════════════════════════════════════════
 
 /** Natural Korean narration: documentary, educational shorts, story narration */
-const KO_NATURAL_CHARS_PER_SEC = 3.2;
+const KO_NATURAL_CHARS_PER_SEC = 4.0;
 
 /** Fast shorts pacing: rapid-fire commentary, meme/pop-culture shorts */
-const KO_FAST_CHARS_PER_SEC = 4.0;
+const KO_FAST_CHARS_PER_SEC = 5.0;
 
 /** Visual breathing room multiplier — time for the viewer to absorb imagery */
-const VISUAL_BREATH_NATURAL = 1.3;
-const VISUAL_BREATH_FAST = 1.12;
+const VISUAL_BREATH_NATURAL = 1.15;
+const VISUAL_BREATH_FAST = 1.08;
 
 // ═══════════════════════════════════════════════════════════════════
 // Punctuation Pause Model

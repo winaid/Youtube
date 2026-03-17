@@ -412,12 +412,12 @@ describe("estimateRuntime", () => {
     expect(estimateRuntime("")).toBe(0);
   });
 
-  it("한국어 100자 → 대략 35-50초 (자연 나레이션 기준)", () => {
+  it("한국어 100자 → 대략 25-35초 (자연 나레이션 기준)", () => {
     const text = "가".repeat(100);
     const runtime = estimateRuntime(text);
-    // 100자 / 3.2 chars/sec = 31.25s base + 1.3x visual = ~41s
-    expect(runtime).toBeGreaterThanOrEqual(35);
-    expect(runtime).toBeLessThanOrEqual(50);
+    // v2: 100자 / 4.0 chars/sec = 25s base * 1.15 breathing ≈ 29s
+    expect(runtime).toBeGreaterThanOrEqual(25);
+    expect(runtime).toBeLessThanOrEqual(35);
   });
 
   it("긴 텍스트 > 짧은 텍스트 런타임", () => {

@@ -309,15 +309,15 @@ export default function ResultPanel({
   if (status === "loading") {
     return (
       <Card className="h-full flex items-center justify-center">
-        <CardContent className="text-center py-16 space-y-3">
+        <CardContent className="text-center py-16 space-y-4">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent mx-auto" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-          <p className="text-sm font-medium" style={{ color: "#787fff" }}>
-            감독 AI가 장면을 설계하고 있습니다...
-          </p>
-          <div className="text-xs text-muted-foreground space-y-1">
-            <p>1. 캐릭터 외형 정의</p>
-            <p>2. 감독 스타일로 장면 분할 & 컷 구조화</p>
-            <p>3. 멀티샷 프롬프트 생성</p>
+          <div className="space-y-1">
+            <p className="text-sm font-medium" style={{ color: "#787fff" }}>
+              장면을 설계하고 있습니다
+            </p>
+            <p className="text-xs text-muted-foreground">
+              보통 10~20초 정도 소요됩니다
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -325,19 +325,27 @@ export default function ResultPanel({
   }
 
   if (status === "error") {
+    const isTokenError = error?.includes("토큰") || error?.includes("MAX_TOKENS");
     return (
       <Card className="h-full flex items-center justify-center">
-        <CardContent className="text-center py-16">
-          <div className="text-4xl mb-4">⚠️</div>
-          <p className="text-destructive text-sm font-medium">
-            장면 설계 중 오류가 발생했습니다.
+        <CardContent className="text-center py-16 space-y-3">
+          <div className="h-10 w-10 rounded-full flex items-center justify-center mx-auto" style={{ background: "#fee2e2" }}>
+            <span className="text-lg">!</span>
+          </div>
+          <p className="text-sm font-medium" style={{ color: "#dc2626" }}>
+            {isTokenError ? "스토리가 너무 길어 처리할 수 없었습니다" : "장면 설계 중 문제가 발생했습니다"}
           </p>
-          <p className="text-xs text-muted-foreground mt-2">
-            {error ?? "알 수 없는 오류"}
+          <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+            {isTokenError
+              ? "컷 수를 줄이거나 스토리를 축약한 뒤 다시 시도해 주세요."
+              : "잠시 후 다시 시도해 주세요."}
           </p>
-          <p className="text-xs mt-3" style={{ color: "#787fff" }}>
-            왼쪽 패널에서 다시 시도해 주세요.
-          </p>
+          {error && (
+            <details className="text-[10px] text-muted-foreground mt-2">
+              <summary className="cursor-pointer">상세 정보</summary>
+              <p className="mt-1 text-left max-w-xs mx-auto break-all">{error}</p>
+            </details>
+          )}
         </CardContent>
       </Card>
     );
@@ -534,6 +542,18 @@ export default function ResultPanel({
           )}
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
+          {result.degraded && !result.usedFallback && (
+            <div className="p-3 rounded-lg text-sm" style={{
+              background: "#3b82f610",
+              border: "1px solid #3b82f630",
+              color: "#1d4ed8",
+            }}>
+              <strong>자동 최적화 적용</strong>
+              <p className="text-xs mt-1 opacity-80">
+                {result.degradedReason || "최적의 결과를 위해 장면 수를 자동 조정했습니다."}
+              </p>
+            </div>
+          )}
           {result.usedFallback && (
             <div className="p-3 rounded-lg text-sm" style={{
               background: "#f59e0b15",

@@ -204,10 +204,10 @@ export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
     cutDuration = 5;
   }
 
-  // cutCount = totalSec / cutDuration, 4~10 범위
-  // 데모 안정화: 상한 10컷. generate-cuts 토큰 초과 방지 + 영상 생성 비용 절감.
-  // 기존 상한 30은 5분 장편용이었으나, 현 데모 대상(쇼츠~2분)에서 과도함.
-  const DEMO_CUT_CAP = 10;
+  // cutCount = totalSec / cutDuration, 4~8 범위
+  // 데모 안정화: 상한 8컷. generate-cuts 토큰 안정 + 시연 품질 집중.
+  // 8컷 = 유튜브 쇼츠~2분 분량에 최적. 각 컷이 충분한 연출 여유를 가짐.
+  const DEMO_CUT_CAP = 8;
   const rawCutCount = Math.round(totalSec / cutDuration);
   const cutCount = Math.min(DEMO_CUT_CAP, Math.max(4, rawCutCount));
 

@@ -378,6 +378,10 @@ export interface PromptOutput {
   fallbackReason?: string;
   /** 구조화된 실패 원인 분류 */
   fallbackCause?: FallbackCause;
+  /** AI가 자동 조정(컷 수 감축 등)을 적용한 경우 true */
+  degraded?: boolean;
+  /** 자동 조정 사유 (사용자 안내용) */
+  degradedReason?: string;
   /** 시퀀스 플랜 — generate-cuts에서 구축, shot plan 구조 */
   sequencePlan?: import("@/lib/sequence-plan").SequencePlan;
   /** 시퀀스 검증 결과 */

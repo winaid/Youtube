@@ -1877,13 +1877,18 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             if (hasResult) return null;
 
             const plan = estimateAutoEditPlan(storyText);
+            const totalMin = Math.floor(plan.totalSec / 60);
+            const totalRemSec = plan.totalSec % 60;
+            const timeLabel = totalMin > 0
+              ? `${totalMin}분 ${totalRemSec > 0 ? totalRemSec + "초" : ""}`
+              : `${plan.totalSec}초`;
             return (
               <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <p className="font-semibold" style={{ color: "#15803d" }}>
-                  생성 계획: 약 {plan.cutCount}시퀀스 × {plan.cutDuration}초 ≈ {plan.totalSec}초
+                  예상: {plan.cutCount}장면 × {plan.cutDuration}초 = 약 {timeLabel}
                 </p>
                 <p style={{ color: "#166534" }}>
-                  스토리 기반 추정 · 밀도 보정으로 최종 컷 수가 변경될 수 있음
+                  AI가 스토리에 맞게 장면 수를 최적화합니다
                 </p>
               </div>
             );

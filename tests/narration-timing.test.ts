@@ -53,20 +53,20 @@ describe("estimateNarrationDuration", () => {
     expect(long.totalWithBreathingSec).toBeGreaterThan(short.totalWithBreathingSec);
   });
 
-  it("100 pure Korean chars → ~40s at natural pace", () => {
+  it("100 pure Korean chars → ~29s at natural pace", () => {
     const text = "가".repeat(100);
     const est = estimateNarrationDuration(text, "natural");
-    // 100 / 3.2 = 31.25s base * 1.3 breathing ≈ 40.6s
-    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(38);
-    expect(est.totalWithBreathingSec).toBeLessThanOrEqual(44);
+    // v2: 100 / 4.0 = 25s base * 1.15 breathing ≈ 28.75s
+    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(27);
+    expect(est.totalWithBreathingSec).toBeLessThanOrEqual(33);
   });
 
-  it("100 pure Korean chars → ~28s at fast pace", () => {
+  it("100 pure Korean chars → ~22s at fast pace", () => {
     const text = "가".repeat(100);
     const est = estimateNarrationDuration(text, "fast");
-    // 100 / 4.0 = 25s base * 1.12 breathing ≈ 28s
-    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(26);
-    expect(est.totalWithBreathingSec).toBeLessThanOrEqual(32);
+    // v2: 100 / 5.0 = 20s base * 1.08 breathing ≈ 21.6s
+    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(20);
+    expect(est.totalWithBreathingSec).toBeLessThanOrEqual(26);
   });
 });
 
@@ -239,16 +239,16 @@ describe("estimateNarrationRuntime", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("realistic Korean script scenarios", () => {
-  it("dense history script estimated at ≥50s at natural pace", () => {
+  it("dense history script estimated at ≥35s at natural pace", () => {
     const est = estimateNarrationDuration(DENSE_PARAGRAPH, "natural");
-    // ~160 Korean chars + numbers + punctuation → should be 50+ seconds
-    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(45);
+    // v2: faster base rate → ~35-40s for ~160 Korean chars with overhead
+    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(35);
   });
 
-  it("dense history script does NOT fit in 38s", () => {
-    const result = evaluateNarrationFit(DENSE_PARAGRAPH, 38);
+  it("dense history script does NOT fit in 30s", () => {
+    // v2: faster pacing → use tighter budget to ensure overflow
+    const result = evaluateNarrationFit(DENSE_PARAGRAPH, 30);
     expect(result.fit).not.toBe("fits");
-    // Should be overflow or at least tight
     expect(["tight", "overflow"]).toContain(result.fit);
   });
 
