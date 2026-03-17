@@ -330,10 +330,13 @@ export default function ResultPanel({
         <CardContent className="text-center py-16">
           <div className="text-4xl mb-4">⚠️</div>
           <p className="text-destructive text-sm font-medium">
-            프롬프트 생성 중 오류가 발생했습니다.
+            장면 설계 중 오류가 발생했습니다.
           </p>
           <p className="text-xs text-muted-foreground mt-2">
             {error ?? "알 수 없는 오류"}
+          </p>
+          <p className="text-xs mt-3" style={{ color: "#787fff" }}>
+            왼쪽 패널에서 다시 시도해 주세요.
           </p>
         </CardContent>
       </Card>
@@ -514,39 +517,33 @@ export default function ResultPanel({
       <Card className="overflow-hidden">
         <CardHeader className="pb-3" style={{ background: "linear-gradient(135deg, #787fff15, #fff78725)" }}>
           <CardTitle className="text-lg" style={{ color: "#5a5ecc" }}>{result.projectTitle}</CardTitle>
+          {videoGen.completedCount === 0 && (
+            <p className="text-[11px] mt-1" style={{ color: "#94a3b8" }}>
+              아래 컷을 확인/수정한 뒤 <span style={{ color: "#22c55e", fontWeight: 600 }}>"영상 생성"</span> 탭에서 영상을 만드세요.
+            </p>
+          )}
+          {videoGen.completedCount > 0 && videoGen.completedCount < videoGen.totalCount && (
+            <p className="text-[11px] mt-1" style={{ color: "#22c55e" }}>
+              영상 생성 중 — {videoGen.completedCount}/{videoGen.totalCount} 컷 완료
+            </p>
+          )}
+          {videoGen.completedCount > 0 && videoGen.completedCount === videoGen.totalCount && (
+            <p className="text-[11px] mt-1" style={{ color: "#16a34a" }}>
+              모든 영상이 생성되었습니다. 아래에서 결과를 확인하세요.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
           {result.usedFallback && (
             <div className="p-3 rounded-lg text-sm" style={{
-              background: result.fallbackReason?.includes("토큰 한도") || result.fallbackReason?.includes("MAX_TOKENS") || result.fallbackReason?.includes("truncat")
-                ? "#f59e0b20" : "#ff634720",
-              border: result.fallbackReason?.includes("토큰 한도") || result.fallbackReason?.includes("MAX_TOKENS") || result.fallbackReason?.includes("truncat")
-                ? "1px solid #f59e0b60" : "1px solid #ff634760",
-              color: result.fallbackReason?.includes("토큰 한도") || result.fallbackReason?.includes("MAX_TOKENS") || result.fallbackReason?.includes("truncat")
-                ? "#d97706" : "#ff6347",
+              background: "#f59e0b15",
+              border: "1px solid #f59e0b40",
+              color: "#b45309",
             }}>
-              <strong>
-                {result.fallbackReason?.includes("토큰 한도") || result.fallbackReason?.includes("MAX_TOKENS") || result.fallbackReason?.includes("truncat")
-                  ? "Gemini 응답 토큰 한도 초과 — 임시 프롬프트 사용 중"
-                  : "API 연결 실패 — 임시 프롬프트 사용 중"}
-              </strong>
+              <strong>기본 템플릿으로 생성되었습니다</strong>
               <p className="text-xs mt-1 opacity-80">
-                {result.fallbackReason?.includes("토큰 한도") || result.fallbackReason?.includes("MAX_TOKENS") || result.fallbackReason?.includes("truncat")
-                  ? "Gemini 응답이 토큰 한도로 잘려 JSON 파싱이 실패했습니다. compact retry 후에도 실패하여 기본 템플릿이 사용되었습니다."
-                  : "Gemini API 호출이 실패하여 기본 템플릿으로 장면이 생성되었습니다."}
-                {" "}프롬프트가 모두 동일하게 보일 수 있습니다.
-                {result.fallbackReason && <span className="block mt-0.5">사유: {result.fallbackReason}</span>}
-              </p>
-              <p className="text-xs mt-1 opacity-80">
-                {result.fallbackReason?.includes("토큰 한도") || result.fallbackReason?.includes("MAX_TOKENS") || result.fallbackReason?.includes("truncat")
-                  ? "해결: 컷 수를 줄이거나 (8개 이하 권장) 스토리 텍스트를 축소하세요. 이것은 API 키 문제가 아닙니다."
-                  : result.fallbackReason?.includes("MODEL_NOT_FOUND") || result.fallbackReason?.includes("deprecated")
-                  ? "원인: 모델명이 변경되었습니다. _gemini-keys.ts의 모델 상수를 최신 버전으로 업데이트하세요."
-                  : result.fallbackReason?.includes("MISSING_API_KEY") || result.fallbackReason?.includes("No auth")
-                  ? "원인: GEMINI_API_KEY가 설정되지 않았습니다. Cloudflare Pages 환경변수에서 설정하세요."
-                  : result.fallbackReason?.includes("429") || result.fallbackReason?.includes("quota")
-                  ? "원인: API 할당량 초과입니다. 잠시 후 다시 시도하거나 GEMINI_API_KEY_2를 추가 설정하세요."
-                  : "확인사항: ① GEMINI_API_KEY 환경변수 설정 여부 ② API 할당량 ③ 모델명이 최신인지 확인"}
+                AI 분석이 일시적으로 실패하여 기본 템플릿이 적용되었습니다.
+                컷별 프롬프트를 직접 수정하여 사용하거나, 다시 생성해 주세요.
               </p>
             </div>
           )}
@@ -604,8 +601,6 @@ export default function ResultPanel({
         {([
           { key: "prompts", label: "컷 편집", color: "#787fff" },
           { key: "generate", label: "영상 생성", color: "#22c55e" },
-          { key: "sequence", label: "시퀀스 보기", color: "#8b5cf6" },
-          { key: "timeline", label: "타임라인", color: "#c4b800" },
         ] as const).map((tab) => (
           <button
             key={tab.key}

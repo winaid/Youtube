@@ -172,7 +172,7 @@ export default function VideoGenerationPanel({
       <CardHeader className="pb-3" style={{ background: "linear-gradient(135deg, #22c55e15, #787fff10)" }}>
         <div className="flex items-center justify-between">
           <CardTitle className="text-base" style={{ color: "#16a34a" }}>
-            Kling 영상 생성
+            영상 생성
           </CardTitle>
           <Badge variant="outline" className="text-xs" style={{ borderColor: "#22c55e" }}>
             {completedCount}/{totalCount} 완료
@@ -224,27 +224,41 @@ export default function VideoGenerationPanel({
         )}
 
         {/* 전체 생성 / 중단 */}
-        <div className="flex gap-2">
+        <div className="space-y-2">
           {!isAutoMode ? (
-            <Button
-              size="sm"
-              onClick={onStartAuto}
-              className="text-white"
-              disabled={completedCount === totalCount || (preflight != null && !preflight.canGenerate)}
-              style={{ background: (preflight != null && !preflight.canGenerate) ? "#ccc" : "linear-gradient(135deg, #22c55e, #16a34a)" }}
-            >
-              전체 자동 생성
-            </Button>
+            completedCount === totalCount && totalCount > 0 ? (
+              <div className="rounded-lg p-3 text-center" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                <p className="text-sm font-semibold" style={{ color: "#16a34a" }}>
+                  전체 {totalCount}개 영상 생성 완료
+                </p>
+                <p className="text-[11px] mt-0.5" style={{ color: "#22c55e" }}>
+                  위로 스크롤하여 결과를 확인하세요.
+                </p>
+              </div>
+            ) : (
+              <Button
+                onClick={onStartAuto}
+                className="w-full text-white font-semibold text-sm"
+                disabled={completedCount === totalCount || (preflight != null && !preflight.canGenerate)}
+                style={{
+                  background: (preflight != null && !preflight.canGenerate) ? "#d1d5db" : "linear-gradient(135deg, #22c55e, #16a34a)",
+                  boxShadow: (preflight == null || preflight.canGenerate) ? "0 4px 16px #22c55e40" : "none",
+                  height: "44px",
+                }}
+              >
+                전체 자동 생성 ({totalCount}컷)
+              </Button>
+            )
           ) : (
-            <Button size="sm" variant="destructive" onClick={onStopAuto}>
-              자동 생성 중단
-            </Button>
-          )}
-          {isAutoMode && (
-            <span className="flex items-center text-xs text-muted-foreground gap-1">
-              <span className="h-2 w-2 rounded-full animate-pulse bg-green-500" />
-              자동 생성 진행 중...
-            </span>
+            <div className="flex items-center gap-3">
+              <Button variant="destructive" onClick={onStopAuto} className="flex-shrink-0">
+                중단
+              </Button>
+              <div className="flex items-center gap-1.5 text-sm" style={{ color: "#16a34a" }}>
+                <span className="h-2.5 w-2.5 rounded-full animate-pulse bg-green-500" />
+                <span className="font-medium">영상 생성 중... {completedCount}/{totalCount}</span>
+              </div>
+            </div>
           )}
         </div>
 

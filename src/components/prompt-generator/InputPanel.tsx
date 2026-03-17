@@ -771,9 +771,43 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             rows={5}
             className="resize-none focus-visible:ring-[#787fff]"
           />
-          <p className="text-[10px] leading-relaxed" style={{ color: "#9ca3af" }}>
-            입력한 스토리를 기반으로 감독 AI가 장면을 설계합니다.
-          </p>
+          {/* 예시 입력 바로 시작 */}
+          {!storyText.trim() && (
+            <div className="space-y-1.5">
+              <p className="text-[10px]" style={{ color: "#94a3b8" }}>예시로 바로 시작해 보세요:</p>
+              <div className="flex flex-col gap-1">
+                {[
+                  { label: "역사 다큐", text: "임진왜란 당시 이순신 장군이 명량해협에서 13척의 배로 133척의 왜군 함대를 상대한 전투. 조선 수군의 전략과 이순신의 리더십을 중심으로 긴장감 있는 전투 장면을 재현한다." },
+                  { label: "감성 브이로그", text: "비 오는 도쿄의 골목길을 걷는 여행자. 낡은 이자카야에 들어가 따뜻한 라멘 한 그릇을 먹으며 창밖의 네온사인을 바라본다. 혼자만의 시간이 주는 위로를 담는다." },
+                ].map((ex) => (
+                  <button
+                    key={ex.label}
+                    onClick={() => setStoryText(ex.text)}
+                    className="text-left px-2.5 py-2 rounded-lg text-[11px] transition-all hover:shadow-sm"
+                    style={{ background: "#787fff08", border: "1px solid #787fff20", color: "#5a5ecc" }}
+                  >
+                    <span className="font-semibold">{ex.label}</span>
+                    <span className="text-muted-foreground ml-1.5">{ex.text.slice(0, 35)}...</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {storyText.trim() && storyText.trim().length < 30 && (
+            <p className="text-[10px] leading-relaxed" style={{ color: "#f59e0b" }}>
+              30자 이상 입력하면 감독 AI 추천이 활성화됩니다. (현재 {storyText.trim().length}자)
+            </p>
+          )}
+          {storyText.trim().length >= 30 && !directorPersona && (
+            <p className="text-[10px] leading-relaxed" style={{ color: "#22c55e" }}>
+              아래에서 감독을 추천받거나 직접 선택하세요.
+            </p>
+          )}
+          {storyText.trim().length >= 30 && directorPersona && (
+            <p className="text-[10px] leading-relaxed" style={{ color: "#9ca3af" }}>
+              감독 선택 완료. 아래 <span style={{ color: "#787fff", fontWeight: 600 }}>"장면 설계 시작"</span> 버튼을 눌러주세요.
+            </p>
+          )}
         </div>
 
         {/* AI 감독 추천 버튼 */}
@@ -797,7 +831,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   AI가 시나리오를 분석해 감독을 찾는 중...
                 </>
               ) : (
-                <>✨ 이 시나리오에 어울리는 감독 AI 추천</>
+                <>{showRecommendation && directorRecommendation ? "✨ 감독 다시 추천받기" : "✨ 이 시나리오에 어울리는 감독 AI 추천"}</>
               )}
             </button>
 
@@ -1886,6 +1920,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         {/* 생성 버튼 */}
         {(() => {
           const isAnalyzingScript = analysisPhase !== "idle" && analysisPhase !== "complete";
+          const isReady = !!(storyText.trim() && directorPersona && !isLoading && !isAnalyzingScript);
           const buttonLabel = isAnalyzingScript
             ? analysisPhase === "structural" ? "장면 구조 분석 중..."
             : analysisPhase === "detailing" ? "컷 상세화 중..."
@@ -1894,20 +1929,33 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             : "장면 설계 시작";
 
           return (
-            <Button
-              onClick={handleSubmit}
-              disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
-              className="w-full text-white font-semibold"
-              size="lg"
-              style={{ background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }}
-            >
-              {(isLoading || isAnalyzingScript) ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  {isAnalyzingScript ? buttonLabel : "장면 설계 중..."}
-                </span>
-              ) : buttonLabel}
-            </Button>
+            <div className="space-y-1.5">
+              <Button
+                onClick={handleSubmit}
+                disabled={!isReady}
+                className="w-full text-white font-semibold text-base"
+                size="lg"
+                style={{
+                  background: isReady
+                    ? "linear-gradient(135deg, #787fff, #6366f1)"
+                    : "#d1d5db",
+                  boxShadow: isReady ? "0 4px 20px #787fff50" : "none",
+                  height: "48px",
+                }}
+              >
+                {(isLoading || isAnalyzingScript) ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    {isAnalyzingScript ? buttonLabel : "장면 설계 중..."}
+                  </span>
+                ) : buttonLabel}
+              </Button>
+              {!isReady && !isLoading && !isAnalyzingScript && (
+                <p className="text-[10px] text-center" style={{ color: "#94a3b8" }}>
+                  {!storyText.trim() ? "스토리를 먼저 입력하세요" : "감독을 선택하면 시작할 수 있습니다"}
+                </p>
+              )}
+            </div>
           );
         })()}
       </CardContent>
