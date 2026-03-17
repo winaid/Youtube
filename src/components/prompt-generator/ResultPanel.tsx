@@ -1045,6 +1045,19 @@ export default function ResultPanel({
               }
               return map;
             })()}
+            canonicalDurations={(() => {
+              const map = new Map<number, number>();
+              for (const [num, vm] of canonicalViewModels) {
+                map.set(num, vm.durationSec);
+              }
+              return map;
+            })()}
+            styleId={animationMode}
+            modelId={resolveModelForWorkflow({
+              workflow: videoGen.config.workflowType,
+              hasImage: false,
+              hasReferenceImages: (videoGen.config.referenceImages?.length ?? 0) > 0,
+            })}
           />
 
           {/* AI 리뷰 패널 */}

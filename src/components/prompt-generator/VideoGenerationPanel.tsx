@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useMemo } from "react";
 import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } from "@/types";
 import { inferShotRole } from "@/lib/multishot-validation";
+import { runPreflightValidation, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,12 @@ interface VideoGenerationPanelProps {
   onResumeJob?: (job: VideoJobRecord) => void;
   /** Canonical multiShot per cut (cutNumber → multiShot[]) — source of truth */
   canonicalMultiShots?: Map<number, MultiShotPrompt[]>;
+  /** Canonical durationSec per cut (cutNumber → durationSec) */
+  canonicalDurations?: Map<number, number>;
+  /** 선택된 영상 스타일 ID */
+  styleId?: string;
+  /** 사용 중인 Kling 모델 ID */
+  modelId?: string;
 }
 
 function ElapsedTime({ startedAt }: { startedAt?: number }) {
@@ -90,7 +98,22 @@ export default function VideoGenerationPanel({
   recoverableJobs,
   onResumeJob,
   canonicalMultiShots,
+  canonicalDurations,
+  styleId,
+  modelId: propModelId,
 }: VideoGenerationPanelProps) {
+  // ── Preflight validation ──
+  const preflight: PreflightResult | null = useMemo(() => {
+    if (!propModelId || !styleId || cuts.length === 0) return null;
+    return runPreflightValidation({
+      cuts,
+      canonicalMultiShots: canonicalMultiShots ?? new Map(),
+      canonicalDurations: canonicalDurations ?? new Map(),
+      styleId,
+      modelId: propModelId,
+    });
+  }, [cuts, canonicalMultiShots, canonicalDurations, styleId, propModelId]);
+
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadResult, setDownloadResult] = useState<{ downloaded: number; failed: number } | null>(null);
   const [stitchCapability, setStitchCapability] = useState<StitchCapability>("not_available");
@@ -264,6 +287,34 @@ export default function VideoGenerationPanel({
           </div>
         )}
 
+        {/* Preflight Validation Summary */}
+        {preflight && preflight.issues.length > 0 && (
+          <div className="rounded-lg p-3 space-y-1.5" style={{
+            background: preflight.blockingCount > 0 ? "#FEF2F2" : preflight.warningCount > 0 ? "#FFFBEB" : "#F0FDF4",
+            border: `1px solid ${preflight.blockingCount > 0 ? "#FECACA" : preflight.warningCount > 0 ? "#FDE68A" : "#BBF7D0"}`,
+          }}>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold" style={{
+                color: preflight.blockingCount > 0 ? "#991B1B" : preflight.warningCount > 0 ? "#92400E" : "#166534",
+              }}>
+                {preflight.blockingCount > 0
+                  ? `생성 불가 — ${preflight.blockingCount}건의 문제`
+                  : preflight.warningCount > 0
+                    ? `주의 ${preflight.warningCount}건`
+                    : "참고"}
+              </span>
+            </div>
+            {preflight.issues.map((issue, i) => (
+              <p key={i} className="text-[10px] leading-relaxed" style={{
+                color: issue.severity === "blocking" ? "#DC2626" : issue.severity === "warning" ? "#D97706" : "#6B7280",
+              }}>
+                {issue.severity === "blocking" ? "⛔ " : issue.severity === "warning" ? "⚠️ " : "ℹ️ "}
+                {issue.messageKo}
+              </p>
+            ))}
+          </div>
+        )}
+
         {/* 전체 생성 / 중단 */}
         <div className="flex gap-2">
           {!isAutoMode ? (
@@ -271,8 +322,8 @@ export default function VideoGenerationPanel({
               size="sm"
               onClick={onStartAuto}
               className="text-white"
-              disabled={completedCount === totalCount}
-              style={{ background: "linear-gradient(135deg, #22c55e, #16a34a)" }}
+              disabled={completedCount === totalCount || (preflight != null && !preflight.canGenerate)}
+              style={{ background: (preflight != null && !preflight.canGenerate) ? "#ccc" : "linear-gradient(135deg, #22c55e, #16a34a)" }}
             >
               전체 자동 생성
             </Button>
