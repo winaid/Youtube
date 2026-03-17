@@ -508,7 +508,7 @@ export default function CutCard({
           if (hasMultiShot) {
             return (
               <div className="space-y-1">
-                <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} />
+                <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} effectiveMultiShot={effectiveMultiShot} effectiveDurationSec={effectiveDurationSec} />
                 {/* 의도적 원테이크 전환 — 강제 멀티샷 클립에서도 예외 허용 */}
                 {forced && (
                   <button

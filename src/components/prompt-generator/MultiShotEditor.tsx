@@ -56,15 +56,19 @@ interface MultiShotEditorProps {
   cut: Cut;
   modelId: string;
   onUpdate: (updated: Cut) => void;
+  /** Canonical-derived multiShot (overrides cut.multiShot when provided) */
+  effectiveMultiShot?: MultiShotPrompt[];
+  /** Canonical-derived durationSec (overrides cut.durationSec when provided) */
+  effectiveDurationSec?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Component
 // ═══════════════════════════════════════════════════════════════════
 
-export default function MultiShotEditor({ cut, modelId, onUpdate }: MultiShotEditorProps) {
-  const shots = cut.multiShot ?? [];
-  const totalDuration = cut.durationSec;
+export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMultiShot, effectiveDurationSec }: MultiShotEditorProps) {
+  const shots = effectiveMultiShot ?? cut.multiShot ?? [];
+  const totalDuration = effectiveDurationSec ?? cut.durationSec;
   const maxShots = getMaxShots(modelId, totalDuration);
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
