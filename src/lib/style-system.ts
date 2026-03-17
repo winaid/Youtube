@@ -73,6 +73,19 @@ const ANTI_PHOTO = [
 
 import { STYLE_CATALOG, getAllStyles, getStyleByLegacyMode, getStyleById, buildStyleEnforcementBlock, getStyleRenderingRules } from "@/data/style-catalog";
 import { assemblePromptV2, type ContinuityInput } from "@/lib/prompt-architecture";
+import { getStylePromptOverride, type StylePromptOverride } from "@/lib/style-capability-matrix";
+
+/**
+ * capability matrix에서 스타일 프롬프트 override를 가져온다.
+ * import 실패 시에도 안전하게 null 반환 (backward compat).
+ */
+function _getCapabilityStylePromptOverride(styleId: string): StylePromptOverride | null {
+  try {
+    return getStylePromptOverride(styleId);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 카탈로그의 positivePrompt에서 StylePreset의 각 블록을 파생.
@@ -677,16 +690,27 @@ function getCachedRenderingRules(styleId: string) {
  * - 장르별 실패 패턴 자동 감지 + negative 주입
  */
 export function assemblePrompt(input: PromptAssemblyInput): AssembledPrompt {
-  const preset = input.animationMode ? STYLE_PRESETS[input.animationMode] : undefined;
+  // ── capability matrix 기반 스타일 해석 ──────────────────────
+  const capOverride = input.animationMode
+    ? _getCapabilityStylePromptOverride(input.animationMode)
+    : null;
+
+  // fallback 적용: resolvedStyleId가 원본과 다르면 fallback 스타일의 preset 사용
+  const effectiveStyleId = capOverride?.resolvedStyleId ?? input.animationMode;
+  const preset = effectiveStyleId ? STYLE_PRESETS[effectiveStyleId] : undefined;
   const isMapScene = input.shotCategory === "map-graphic";
 
   // ── 6계층 아키텍처로 위임 ──────────────────────────────────
 
-  // 스타일 힌트 (최소화 — 첫 문장만)
+  // 스타일 힌트 (최소화 — 첫 문장만) + capability reinforcement 합산
   let styleHint = "";
   if (preset && !isMapScene) {
     const sentences = preset.globalStyleBlock.split(". ").filter(Boolean);
     styleHint = sentences[0] || "";
+    // capability matrix의 promptReinforcement가 있으면 스타일 힌트에 추가
+    if (capOverride?.promptReinforcement) {
+      styleHint += ". " + capOverride.promptReinforcement;
+    }
   }
 
   // continuity 입력 구성 (객체 기반)

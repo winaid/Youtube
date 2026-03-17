@@ -10,6 +10,11 @@ import {
 import { recommendCutCountRange, densityPresetToRange } from "@/lib/sequence-density";
 import { directors, workToDirectorMap } from "@/data/directors";
 import { STYLE_CATALOG, getStyleById } from "@/data/style-catalog";
+import {
+  getStyleUiState, getStyleBadgeText, getStyleBadgeColor,
+  isStyleSelectable, getStyleCapability,
+  type StyleUiState,
+} from "@/lib/style-capability-matrix";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import {
@@ -1292,21 +1297,30 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       </div>
                     </button>
 
-                    {/* 스타일 그리드 (펼침 시) */}
+                    {/* 스타일 그리드 (펼침 시) — capability matrix 기반 UI 분기 */}
                     {isExpanded && (
                       <div className="grid grid-cols-2 gap-1 p-1.5 pt-0" style={{ background: "#fafafa" }}>
                         {cat.styles.map((s) => {
                           const isSelected = animationMode === s.id;
+                          const uiState = getStyleUiState(s.id);
+                          const badgeText = getStyleBadgeText(s.id);
+                          const badgeColor = getStyleBadgeColor(s.id);
+                          const selectable = isStyleSelectable(s.id);
+                          const cap = getStyleCapability(s.id);
+                          const isComingSoon = uiState === "coming-soon";
                           return (
                             <button
                               key={s.id}
-                              className="text-left p-2 rounded-lg transition-all hover:shadow-sm"
-                              style={
-                                isSelected
+                              className="text-left p-2 rounded-lg transition-all hover:shadow-sm relative"
+                              style={{
+                                ...(isSelected
                                   ? { background: cat.color, color: "white", boxShadow: `0 2px 8px ${cat.color}30` }
-                                  : { background: "white", color: "#333", border: "1px solid #e8e8e8" }
-                              }
-                              onClick={() => setAnimationMode(s.id)}
+                                  : { background: "white", color: "#333", border: "1px solid #e8e8e8" }),
+                                ...(isComingSoon ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                              }}
+                              onClick={() => { if (selectable) setAnimationMode(s.id); }}
+                              disabled={!selectable}
+                              title={cap.warningKo ?? undefined}
                             >
                               <p className="text-[11px] font-semibold leading-tight">{s.nameKo}</p>
                               <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: isSelected ? 0.85 : 0.5 }}>
@@ -1333,6 +1347,18 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                                 >
                                   리얼리즘 {s.realism}
                                 </span>
+                                {badgeText && badgeColor && (
+                                  <span
+                                    className="inline-block text-[8px] px-1 py-0 rounded leading-tight font-bold"
+                                    style={
+                                      isSelected
+                                        ? { background: "rgba(255,255,255,0.3)", color: "white" }
+                                        : { background: badgeColor.bg, color: badgeColor.text }
+                                    }
+                                  >
+                                    {badgeText}
+                                  </span>
+                                )}
                               </div>
                             </button>
                           );
@@ -1343,6 +1369,28 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 );
               })}
           </div>
+
+          {/* 선택된 스타일 capability 경고 */}
+          {(() => {
+            const cap = getStyleCapability(animationMode);
+            if (!cap.warningKo) return null;
+            const uiState = getStyleUiState(animationMode);
+            const badgeText = getStyleBadgeText(animationMode);
+            const badgeColor = getStyleBadgeColor(animationMode);
+            const warningBg = uiState === "labs" ? "#EDE9FE" : uiState === "beta" ? "#FEF3C7" : uiState === "gated" ? "#DBEAFE" : "#FFF7ED";
+            const warningBorder = uiState === "labs" ? "#C4B5FD" : uiState === "beta" ? "#FCD34D" : uiState === "gated" ? "#93C5FD" : "#FDBA74";
+            const warningText = uiState === "labs" ? "#5B21B6" : uiState === "beta" ? "#92400E" : uiState === "gated" ? "#1E40AF" : "#9A3412";
+            return (
+              <div className="flex items-start gap-1.5 p-2 rounded-lg text-[10px]" style={{ background: warningBg, border: `1px solid ${warningBorder}`, color: warningText }}>
+                {badgeText && badgeColor && (
+                  <span className="text-[8px] px-1.5 py-0.5 rounded font-bold shrink-0" style={{ background: badgeColor.bg, color: badgeColor.text }}>
+                    {badgeText}
+                  </span>
+                )}
+                <span>{cap.warningKo}</span>
+              </div>
+            );
+          })()}
 
           {/* 선택된 스타일 추천 감독 */}
           {(() => {

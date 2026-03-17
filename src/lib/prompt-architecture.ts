@@ -13,6 +13,7 @@
  */
 
 import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
+import { getStylePromptOverride } from "@/lib/style-capability-matrix";
 
 /** Lazy style lookup for negative constraints — avoids tight coupling */
 function _getStyleForNegatives(animationMode: string): { negativePrompt: string } | null {
@@ -558,6 +559,23 @@ export function buildNegativePrompt(input: PromptLayerInput): string {
         .map((s: string) => s.trim())
         .filter(Boolean)
         .forEach((n: string) => negatives.add(n));
+    }
+  }
+
+  // Layer 2.5: capability matrix 기반 스타일 보정 negative
+  if (input.animationMode) {
+    try {
+      const capOverride = getStylePromptOverride(input.animationMode);
+      if (capOverride.additionalNegatives.length > 0) {
+        capOverride.additionalNegatives.forEach(n => negatives.add(n));
+      }
+      // motionConstraint가 있으면 해당 제한 키워드도 negative에 추가
+      if (capOverride.motionConstraint) {
+        // motionConstraint는 positive에서 처리하므로 여기서는 반대 키워드만
+        // (이미 additionalNegatives에 포함됨)
+      }
+    } catch {
+      // capability matrix 로드 실패 시 무시 (backward compat)
     }
   }
 
