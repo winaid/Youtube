@@ -46,9 +46,9 @@ export const CUT_COUNT_MAX = 10;
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 8,  min: 1, max: 2 },
-  { maxSec: 12, min: 2, max: 3 },
-  { maxSec: 15, min: 2, max: 4 },
+  { maxSec: 9,  min: 1, max: 2 },
+  { maxSec: 12, min: 3, max: 4 },
+  { maxSec: 15, min: 3, max: 6 },
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {
@@ -82,9 +82,10 @@ export function densityPresetToRange(
   totalDurationSec: number,
 ): { min: number; max: number } {
   const base = recommendCutCountRange(totalDurationSec);
+  const floor = recommendMinimumCutCount(totalDurationSec);
   switch (preset) {
     case "sparse":
-      return { min: Math.max(1, base.min - 1), max: base.min };
+      return { min: Math.max(floor, base.min - 1), max: Math.max(floor, base.min) };
     case "dense":
       return { min: base.max, max: base.max + 2 };
     case "normal":
@@ -335,11 +336,15 @@ export function resolveSegmentPlan(opts: {
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+  // 10초 이상이면 최소 3컷 (제품 규칙: 10s+ = min 3, typical 3-6)
+  if (totalDurationSec >= 10 && totalDurationSec <= KLING_SEGMENT_CAP) {
+    return 3;
+  }
+  if (totalDurationSec < 10) {
     return 1;
   }
-  // segment-aware: 총 런타임을 15초 segment로 분할
-  return Math.ceil(totalDurationSec / KLING_SEGMENT_CAP);
+  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 3
+  return Math.max(3, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
 }
 
 export function needsDensityBoost(

@@ -70,18 +70,18 @@ export const CUT_COUNT_MAX = 10;
  * "이 길이의 시퀀스는 내부적으로 몇 개의 서사 비트/샷을 가져야 하는가"의 가이드.
  * multi-shot-planner와 연동되어 Layer 3 샷 수 결정에 사용.
  *
- *   8–12s:  2–3 internal shots (short hooks/counterfactuals — beat-driven, not noun-fragmented)
- *   13–15s: 2–4 internal shots
+ *   10–12s: 3–4 internal shots (10s+ = 최소 3컷 규칙)
+ *   13–15s: 3–6 internal shots
  *
- * 8s 미만 시퀀스는 특수 케이스 (의도적 원테이크 또는 짧은 컷):
+ * 10s 미만 시퀀스는 특수 케이스 (의도적 원테이크 또는 짧은 컷):
  *   3–5s:  1–2 shots
- *   6–8s:  1–2 shots
+ *   6–9s:  1–2 shots
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 8,  min: 1, max: 2 },
-  { maxSec: 12, min: 2, max: 3 },
-  { maxSec: 15, min: 2, max: 4 },
+  { maxSec: 9,  min: 1, max: 2 },
+  { maxSec: 12, min: 3, max: 4 },
+  { maxSec: 15, min: 3, max: 6 },
 ];
 
 /**
@@ -130,9 +130,10 @@ export function densityPresetToRange(
   totalDurationSec: number,
 ): { min: number; max: number } {
   const base = recommendCutCountRange(totalDurationSec);
+  const floor = recommendMinimumCutCount(totalDurationSec);
   switch (preset) {
     case "sparse":
-      return { min: Math.max(1, base.min - 1), max: base.min };
+      return { min: Math.max(floor, base.min - 1), max: Math.max(floor, base.min) };
     case "dense":
       return { min: base.max, max: base.max + 2 };
     case "normal":
@@ -429,13 +430,15 @@ export function resolveSegmentPlan(opts: {
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  if (totalDurationSec <= KLING_SEGMENT_CAP) {
-    // 단일 segment 내에서는 1 시퀀스.
-    // 내부 샷 분할은 multi-shot-planner가 담당.
+  // 10초 이상이면 최소 3컷 (제품 규칙: 10s+ = min 3, typical 3-6)
+  if (totalDurationSec >= 10 && totalDurationSec <= KLING_SEGMENT_CAP) {
+    return 3;
+  }
+  if (totalDurationSec < 10) {
     return 1;
   }
-  // segment-aware: 총 런타임을 15초 segment로 분할
-  return Math.ceil(totalDurationSec / KLING_SEGMENT_CAP);
+  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 3
+  return Math.max(3, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
 }
 
 /**
