@@ -329,9 +329,12 @@ export function autoAssignRoles(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 새 샷 추가 — 마지막 샷에서 시간 분할.
+ * 새 샷 추가 — 분할 가능한 가장 긴 샷에서 시간 분할.
  *
- * @returns 업데이트된 shots 배열 (불변)
+ * 분할 대상 선택: duration이 가장 긴 샷 우선 (minDur × 2 이상이어야 분할 가능).
+ * 새 샷은 분할 대상 바로 뒤에 삽입.
+ *
+ * @returns 업데이트된 shots 배열 (불변), null if can't add
  */
 export function addShot(
   modelId: string,
@@ -344,11 +347,7 @@ export function addShot(
   const cap = getCapability(modelId);
   const minDur = cap.minShotDuration;
 
-  // 마지막 샷에서 시간 분할
-  const updated = shots.map((s) => ({ ...s }));
-  const lastIdx = updated.length - 1;
-
-  if (updated.length === 0) {
+  if (shots.length === 0) {
     // 첫 샷 추가
     const newShot: MultiShotPrompt = {
       index: 1,
@@ -359,24 +358,43 @@ export function addShot(
     return [newShot];
   }
 
-  const lastDur = parseFloat(updated[lastIdx].duration) || 0;
-  const newShotDur = Math.max(minDur, Math.floor(lastDur / 2));
-  const remainDur = lastDur - newShotDur;
+  // 분할 가능한 가장 긴 샷 찾기 (duration >= minDur * 2)
+  const updated = shots.map((s) => ({ ...s }));
+  let bestIdx = -1;
+  let bestDur = 0;
+  for (let i = 0; i < updated.length; i++) {
+    const dur = parseFloat(updated[i].duration) || 0;
+    if (dur >= minDur * 2 && dur > bestDur) {
+      bestIdx = i;
+      bestDur = dur;
+    }
+  }
 
-  // 분할 후 마지막 샷이 minDur 미만이면 추가 불가
+  // 분할 가능한 샷이 없으면 추가 불가
+  if (bestIdx < 0) return null;
+
+  const splitDur = bestDur;
+  const newShotDur = Math.max(minDur, Math.floor(splitDur / 2));
+  const remainDur = splitDur - newShotDur;
+
   if (remainDur < minDur) return null;
 
-  updated[lastIdx] = { ...updated[lastIdx], duration: String(remainDur) };
+  updated[bestIdx] = { ...updated[bestIdx], duration: String(remainDur) };
 
   const newTotal = updated.length + 1;
   const newShot: MultiShotPrompt = {
-    index: newTotal,
+    index: 0, // will be re-indexed below
     prompt: "",
     duration: String(newShotDur),
     role: inferShotRole(newTotal - 1, newTotal),
   };
 
-  const result = [...updated, newShot];
+  // 분할 대상 바로 뒤에 삽입
+  const result = [
+    ...updated.slice(0, bestIdx + 1),
+    newShot,
+    ...updated.slice(bestIdx + 1),
+  ];
   // re-index
   return result.map((s, i) => ({ ...s, index: i + 1 }));
 }

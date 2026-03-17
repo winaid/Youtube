@@ -94,13 +94,14 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
   const handleAddShot = useCallback(() => {
     const result = addShot(modelId, shots, totalDuration);
     if (result) {
-      // Pre-fill the new (last) shot with its role directive so it's not empty
-      const newShot = result[result.length - 1];
-      if (newShot && (!newShot.prompt || newShot.prompt.trim() === "")) {
-        const role = newShot.role ?? inferShotRole(result.length - 1, result.length);
+      // Find the new shot (the one with empty prompt)
+      const newShot = result.find(s => !s.prompt || s.prompt.trim() === "");
+      if (newShot) {
+        const role = newShot.role ?? inferShotRole(newShot.index - 1, result.length);
         const directive = ROLE_PROGRESSION_DIRECTIVE[role];
         if (directive) {
-          newShot.prompt = `[${role}] ${directive.visualDirective}`;
+          // Use shotSize + function as a concise hint, not the full verbose directive
+          newShot.prompt = `${directive.shotSize} — ${directive.function}`;
         }
       }
       updateShots(result);
@@ -112,7 +113,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
       if (shots.length >= maxShots) {
         setAddShotFeedback(`최대 ${maxShots}샷 — 더 추가할 수 없습니다`);
       } else {
-        setAddShotFeedback(`마지막 샷이 너무 짧아 분할 불가 (${rec.min}–${rec.max}샷 권장)`);
+        setAddShotFeedback(`모든 샷이 최소 길이라 분할 불가 (${rec.min}–${rec.max}샷 권장)`);
       }
       setTimeout(() => setAddShotFeedback(null), 3000);
     }
@@ -203,7 +204,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
               style={{ color: "#e85d04" }}
               onClick={handleAddShot}
             >
-              + 샷 추가
+              + 내부 샷 추가
             </Button>
           )}
         </div>
