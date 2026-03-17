@@ -203,13 +203,37 @@ export function parseScriptBeats(scriptText: string): ScriptBeat[] {
   const text = scriptText.trim();
   if (!text) return [];
 
-  // 1단계: 문장 분리 (마침표, 물음표, 느낌표, 줄바꿈 기준)
-  const sentences = text
-    .split(/(?<=[.!?…])\s+|\n{2,}|\n(?=[가-힣])/g)
+  // 1단계: 문장 분리 (다단계 전략)
+  // Tier 1: 마침표/물음표/느낌표 뒤 공백, 빈 줄, 한글 앞 줄바꿈
+  let sentences = text
+    .split(/(?<=[.!?…。])\s+|\n{2,}|\n(?=[가-힣A-Z])/g)
     .map(s => s.trim())
     .filter(s => s.length > 2);
 
-  if (sentences.length === 0) return [];
+  // Tier 2: Tier 1으로 1개 이하면 → 한국어 종결어미 기반 분리
+  // ~다. ~요. ~음. ~죠. ~까. 등의 종결 패턴 + 쉼표 절 분리
+  if (sentences.length <= 1 && text.length > 30) {
+    sentences = text
+      .split(/(?<=[다요음죠까니라임])[\.\s]\s*|(?<=[.!?…。])\s*|,\s+(?=[가-힣])/g)
+      .map(s => s.trim())
+      .filter(s => s.length > 2);
+  }
+
+  // Tier 3: 여전히 1개 이하면 → 일정 글자 수 단위로 강제 분리
+  if (sentences.length <= 1 && text.length > 50) {
+    const CHUNK_SIZE = 80; // ~2-3문장 분량
+    sentences = [];
+    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+      const chunk = text.slice(i, i + CHUNK_SIZE).trim();
+      if (chunk.length > 2) sentences.push(chunk);
+    }
+  }
+
+  if (sentences.length === 0) {
+    // 최소 보장: 텍스트 자체를 단일 문장으로
+    if (text.length > 2) sentences = [text];
+    else return [];
+  }
 
   // 2단계: 문장을 논점 비트로 그룹핑
   const beats: ScriptBeat[] = [];

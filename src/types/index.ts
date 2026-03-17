@@ -48,6 +48,8 @@ export interface PromptInput {
   // 페르소나 시스템
   generationPersona?: GenerationPersona;      // 영상 생성 규칙 세트
   characterPersonas?: CharacterPersonaInput[]; // 캐릭터별 행동/감정 규칙
+  /** 대본 사전 분석 힌트 — 분석 깊이 옵션 활성 시 Phase A/B/C 결과 요약 */
+  scriptAnalysisHint?: string;
 }
 
 // ===== 컷 수 범위 =====

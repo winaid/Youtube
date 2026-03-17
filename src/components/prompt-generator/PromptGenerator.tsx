@@ -53,13 +53,6 @@ export default function PromptGenerator() {
     }
   };
 
-  // 분석 후 생성 — InputPanel의 inline script analysis가 결과를 반환
-  const handleAnalyzeApply = useCallback((output: PromptOutput) => {
-    setResult(output);
-    setStatus("success");
-    setError(null);
-  }, []);
-
   const handleCanvasExport = useCallback((output: PromptOutput) => {
     setResult(output);
     setStatus("success");
@@ -160,7 +153,6 @@ export default function PromptGenerator() {
               secondsPerScene={secondsPerScene}
               onSecondsPerSceneChange={setSecondsPerScene}
               hasResult={result !== null}
-              onAnalyzeApply={handleAnalyzeApply}
             />
           </div>
           <div className="min-w-0">

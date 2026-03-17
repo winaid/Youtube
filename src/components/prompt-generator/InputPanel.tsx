@@ -15,12 +15,11 @@ import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-durat
 import {
   analyzeScriptPhaseA,
   enrichSequenceDetail,
-  convertToCuts,
   detectContentType,
   buildAnalysisPrompt,
 } from "@/lib/script-analyzer";
 import { normalizeAnalysisResult } from "@/lib/normalize";
-import type { ScriptAnalysisResult, AnalysisPhase, PhaseAResult, ScriptContentType } from "@/types/script-analysis";
+import type { AnalysisPhase } from "@/types/script-analysis";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -57,8 +56,6 @@ interface InputPanelProps {
   onSecondsPerSceneChange: (v: number) => void;
   /** 결과가 이미 생성되었는지 여부 — 사전 계획 요약 표시 제어 */
   hasResult?: boolean;
-  /** 분석 후 생성 결과를 워크플로우에 적용 */
-  onAnalyzeApply?: (output: PromptOutput) => void;
 }
 
 const regions: Region[] = ["한국", "일본", "중국", "유럽", "미국", "인도", "중동", "동남아", "중남미", "아프리카", "오세아니아"];
@@ -263,7 +260,7 @@ function persistCustomDirectors(dirs: DirectorPersona[]) {
   } catch { /* storage full */ }
 }
 
-export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult, onAnalyzeApply }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -307,127 +304,14 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [isRecommending, setIsRecommending] = useState(false);
   const [showRecommendation, setShowRecommendation] = useState(false);
 
-  // ── 분석 후 생성 (inline script analysis) ──
+  // ── 분석 깊이 옵션 (바로 생성에 통합) ──
+  type AnalysisDepth = "none" | "basic" | "deep";
+  const [analysisDepth, setAnalysisDepth] = useState<AnalysisDepth>("basic");
   const [analysisPhase, setAnalysisPhase] = useState<AnalysisPhase>("idle");
   const analysisAbortRef = useRef(false);
   const isLongForm = storyText.replace(/\s/g, "").length >= 300;
 
-  const handleAnalyzeThenGenerate = useCallback(async () => {
-    if (!storyText.trim()) return;
-    analysisAbortRef.current = false;
-    setAnalysisPhase("structural");
-
-    try {
-      const detectedType = detectContentType(storyText);
-      const phaseA = analyzeScriptPhaseA(storyText, { contentTypeHint: detectedType });
-
-      setAnalysisPhase("detailing");
-      let result = phaseA.result;
-
-      // Phase B: progressive sequence detail enrichment
-      for (let i = 0; i < result.sequences.length; i++) {
-        if (analysisAbortRef.current) break;
-        if (result.sequences[i].cuts.length > 0) continue;
-        try {
-          const enriched = enrichSequenceDetail(
-            result.sequences[i],
-            phaseA.sequenceGroups,
-            i,
-            result.sequences.length,
-          );
-          result = {
-            ...result,
-            sequences: result.sequences.map((s, j) => j === i ? enriched : s),
-          };
-        } catch { /* continue */ }
-      }
-
-      // Phase C: optional LLM enrichment
-      setAnalysisPhase("enriching");
-      try {
-        const prompt = buildAnalysisPrompt(storyText, detectedType);
-        const res = await fetch("/api/analyze-script", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            scriptText: storyText,
-            analysisPrompt: prompt,
-            contentTypeHint: detectedType,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.analysis && !data.incomplete) {
-            const llmResult = normalizeAnalysisResult(data.analysis);
-            // Only use LLM result if it produced sequences;
-            // otherwise keep the heuristic Phase A/B result
-            if (llmResult.sequences.length > 0) {
-              result = llmResult;
-            } else {
-              console.warn("[analyze-script] LLM returned 0 sequences, keeping heuristic result");
-            }
-          }
-        } else {
-          // Log structured error from backend for debugging
-          try {
-            const errData = await res.json();
-            console.warn(`[analyze-script] ${res.status} at stage:${errData.stage ?? "unknown"} — ${errData.error}`, errData.detail ?? "");
-          } catch {
-            console.warn(`[analyze-script] ${res.status} (no structured error)`);
-          }
-          // Continue with heuristic result — LLM enrichment is optional
-        }
-      } catch (fetchErr) {
-        console.warn("[analyze-script] Network error, continuing with heuristic:", (fetchErr as Error).message);
-      }
-
-      if (analysisAbortRef.current) { setAnalysisPhase("idle"); return; }
-
-      // If heuristic also produced 0 sequences, force a single fallback sequence
-      if (result.sequences.length === 0) {
-        console.warn("[analyze-then-generate] 0 sequences after all phases, creating fallback");
-        result = {
-          ...result,
-          sequences: [{
-            id: 1,
-            title: result.thesis || "흑사병 시퀀스",
-            purpose: result.sourceSummary || storyText.slice(0, 100),
-            beatType: "hook" as const,
-            sourceText: storyText,
-            recommendedDurationSec: 10,
-            recommendedCutCount: 1,
-            rationale: "전체 대본 단일 시퀀스 (자동 복구)",
-            endingMode: "close" as const,
-            retentionStrategy: { curiosityPoint: "", informationGain: "", escalation: "", payoff: "" },
-            visualStrategy: { primaryDriver: "concept-reveal" as const, finalFrameLanding: "unresolved-curiosity" as const, toneHint: "" },
-            cuts: [],
-          }],
-          suggestedSequenceCount: 1,
-        };
-      }
-
-      // Convert to PromptOutput and apply
-      const cuts = convertToCuts(result);
-      const output: PromptOutput = {
-        projectTitle: result.thesis || "대본 분석 프로젝트",
-        conceptSummary: result.sourceSummary,
-        globalStylePrompt: "대본 분석 기반 시퀀스",
-        directorPersonaPrompt: "",
-        totalCuts: cuts.length,
-        characterSeeds: [],
-        continuityRules: [],
-        cuts,
-      };
-
-      setAnalysisPhase("complete");
-      if (onAnalyzeApply) {
-        onAnalyzeApply(output);
-      }
-    } catch (err) {
-      console.error("[analyze-then-generate]", err);
-      setAnalysisPhase("idle");
-    }
-  }, [storyText, onAnalyzeApply]);
+  // handleAnalyzeThenGenerate 제거됨 — 분석 깊이가 handleSubmit에 통합됨
 
   const analysisAbortRefForCleanup = analysisAbortRef;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -703,7 +587,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     }
   }, [storyText, allDirectors, isRecommending]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!storyText.trim() || !directorPersona) return;
     const selectedDir = allDirectors.find((d) => d.id === directorPersona);
     const blendDir = blendDirector ? allDirectors.find((d) => d.id === blendDirector) : undefined;
@@ -714,10 +598,67 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       finalStory = `[감독 스타일 블렌딩: ${selectedDir.nameKo} ${blendRatio}% + ${blendDir.nameKo} ${100 - blendRatio}%]\n\n${storyText}`;
     }
 
+    // ── 분석 깊이에 따라 사전 분석 실행 ──
+    let scriptAnalysisHint: string | undefined;
+    if (analysisDepth !== "none" && storyText.trim().length >= 20) {
+      try {
+        analysisAbortRef.current = false;
+        setAnalysisPhase("structural");
+
+        const detectedType = detectContentType(storyText);
+        const phaseA = analyzeScriptPhaseA(storyText, { contentTypeHint: detectedType });
+        let result = phaseA.result;
+
+        // Phase B: 시퀀스 상세화
+        setAnalysisPhase("detailing");
+        for (let i = 0; i < result.sequences.length; i++) {
+          if (analysisAbortRef.current) break;
+          if (result.sequences[i].cuts.length > 0) continue;
+          try {
+            const enriched = enrichSequenceDetail(
+              result.sequences[i], phaseA.sequenceGroups, i, result.sequences.length,
+            );
+            result = { ...result, sequences: result.sequences.map((s, j) => j === i ? enriched : s) };
+          } catch { /* continue */ }
+        }
+
+        // Phase C: AI 심층 분석 (deep 모드만)
+        if (analysisDepth === "deep") {
+          setAnalysisPhase("enriching");
+          try {
+            const prompt = buildAnalysisPrompt(storyText, detectedType);
+            const res = await fetch("/api/analyze-script", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ scriptText: storyText, analysisPrompt: prompt, contentTypeHint: detectedType }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.analysis && !data.incomplete) {
+                const llmResult = normalizeAnalysisResult(data.analysis);
+                if (llmResult.sequences.length > 0) result = llmResult;
+              }
+            }
+          } catch (e) {
+            console.warn("[handleSubmit] Phase C failed, continuing with Phase A/B:", (e as Error).message);
+          }
+        }
+
+        // 분석 결과를 힌트 문자열로 변환
+        if (result.sequences.length > 0) {
+          scriptAnalysisHint = result.sequences.map((seq, i) =>
+            `시퀀스${i + 1}: [${seq.beatType}] ${seq.title} (${seq.recommendedDurationSec}초) — ${seq.sourceText?.slice(0, 80) ?? ""}`
+          ).join("\n");
+        }
+
+        setAnalysisPhase("idle");
+      } catch (err) {
+        console.warn("[handleSubmit] analysis failed, proceeding without hints:", err);
+        setAnalysisPhase("idle");
+      }
+    }
+
     // ── preferredCutCountRange 계산 ──
-    // duration="auto"일 때도 editingDensity가 반드시 payload에 실려야 한다.
-    // effectiveTotalSec: 명시 duration > 0이면 그대로, auto이면 스토리 길이 기반 project total 추정.
-    // 주의: 이 값은 project total duration이다. current segment cap(15초)과 혼동하지 말 것.
     const totalSec = typeof duration === "number" ? duration : 0;
     const storyEstimate = estimateProjectDuration(storyText);
     const effectiveTotalSec = totalSec > 0
@@ -747,6 +688,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       payloadCutDuration,
       payloadCutCount,
       payloadPreferredRange: null as CutCountRange | null, // set below
+      analysisDepth,
     });
 
     let resolvedRange: CutCountRange | undefined;
@@ -755,7 +697,6 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     } else if (editingDensity !== "auto") {
       resolvedRange = densityPresetToRange(editingDensity, effectiveTotalSec);
     } else {
-      // auto 밀도: effectiveTotalSec 기준으로 항상 range 추천
       resolvedRange = recommendCutCountRange(effectiveTotalSec);
     }
 
@@ -777,6 +718,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         ? selectedDir
         : undefined,
       generationPersona,
+      scriptAnalysisHint,
     };
 
     // ── 진단 로그: 최종 payload 요약 ──
@@ -787,6 +729,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       preferredCutCountRange: finalPayload.preferredCutCountRange,
       effectiveTotalSec,
       storyTextLength: storyText.length,
+      hasAnalysisHint: !!scriptAnalysisHint,
       warning: duration === "auto" && !finalPayload.cutCount && !finalPayload.cutDuration
         ? "⚠ auto 모드에서 cutCount·cutDuration 모두 undefined — mock-generator fallback 경로 진입"
         : undefined,
@@ -1781,59 +1724,54 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           return null;
         })()}
 
-        {/* 생성 버튼 — 항상 두 액션 모두 표시, 입력 길이에 따라 강조만 변경 */}
+        {/* 분석 깊이 선택 */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-medium" style={{ color: "#666" }}>분석 깊이</span>
+          {([
+            { key: "none" as const, label: "없음", hint: "감독 스타일만" },
+            { key: "basic" as const, label: "기본", hint: "구조 분석" },
+            { key: "deep" as const, label: "심층", hint: "+AI 분석" },
+          ]).map(({ key, label, hint }) => (
+            <button
+              key={key}
+              onClick={() => setAnalysisDepth(key)}
+              className="px-2.5 py-1 rounded-full text-[10px] font-medium transition-all"
+              style={analysisDepth === key
+                ? { background: key === "deep" ? "#e09500" : "#787fff", color: "white" }
+                : { background: "#f5f5f5", color: "#888" }
+              }
+              title={hint}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* 생성 버튼 */}
         {(() => {
           const isAnalyzingScript = analysisPhase !== "idle" && analysisPhase !== "complete";
-          const analysisLabel = isAnalyzingScript
+          const buttonLabel = isAnalyzingScript
             ? analysisPhase === "structural" ? "구조 분석 중..."
-            : analysisPhase === "detailing" ? "시퀀스 상세 생성 중..."
+            : analysisPhase === "detailing" ? "시퀀스 상세 중..."
             : analysisPhase === "enriching" ? "AI 심층 분석 중..."
             : "분석 중..."
-            : "분석 후 생성";
-
-          // isLongForm: >=300 non-whitespace chars → recommend "분석 후 생성"
-          // otherwise → recommend "바로 생성"
-          const directIsPrimary = !isLongForm;
+            : "프롬프트 생성";
 
           return (
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSubmit}
-                disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
-                className={directIsPrimary ? "flex-1 text-white font-semibold" : "text-sm font-medium flex-shrink-0"}
-                size="lg"
-                variant={directIsPrimary ? "default" : "outline"}
-                style={directIsPrimary
-                  ? { background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }
-                  : { borderColor: "#787fff60", color: "#787fff" }
-                }
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className={`${directIsPrimary ? "h-4 w-4" : "h-3.5 w-3.5"} animate-spin rounded-full border-2 border-current border-t-transparent`} />
-                    {directIsPrimary ? "프롬프트 생성 중..." : "생성 중..."}
-                  </span>
-                ) : "바로 생성"}
-              </Button>
-              <Button
-                onClick={handleAnalyzeThenGenerate}
-                disabled={!storyText.trim() || isLoading || isAnalyzingScript}
-                className={directIsPrimary ? "text-sm font-medium flex-shrink-0" : "flex-1 text-white font-semibold"}
-                size="lg"
-                variant={directIsPrimary ? "outline" : "default"}
-                style={directIsPrimary
-                  ? { borderColor: "#e0950060", color: "#b87700" }
-                  : { background: "linear-gradient(135deg, #e09500, #ea580c)", boxShadow: "0 4px 14px #e0950040" }
-                }
-              >
-                {isAnalyzingScript ? (
-                  <span className="flex items-center gap-2">
-                    <span className={`${directIsPrimary ? "h-3.5 w-3.5" : "h-4 w-4"} animate-spin rounded-full border-2 border-current border-t-transparent`} />
-                    {analysisLabel}
-                  </span>
-                ) : analysisLabel}
-              </Button>
-            </div>
+            <Button
+              onClick={handleSubmit}
+              disabled={!storyText.trim() || !directorPersona || isLoading || isAnalyzingScript}
+              className="w-full text-white font-semibold"
+              size="lg"
+              style={{ background: "linear-gradient(135deg, #787fff, #9b8fff)", boxShadow: "0 4px 14px #787fff40" }}
+            >
+              {(isLoading || isAnalyzingScript) ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  {isAnalyzingScript ? buttonLabel : "프롬프트 생성 중..."}
+                </span>
+              ) : buttonLabel}
+            </Button>
           );
         })()}
       </CardContent>

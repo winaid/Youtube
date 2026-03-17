@@ -66,6 +66,8 @@ async function fetchGeminiCuts(
         // 페르소나 시스템
         generationPersona: input.generationPersona ?? null,
         characterPersonas: input.characterPersonas ?? [],
+        // 대본 사전 분석 힌트 (분석 깊이 옵션 활성 시)
+        scriptAnalysisHint: input.scriptAnalysisHint ?? null,
       }),
     });
 

@@ -414,6 +414,7 @@ async function step1Outlines(
   generationPersonaBlock: string,
   characterPersonaBlock: string,
   editorialPlanningBlock: string,
+  scriptAnalysisHint?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
@@ -468,7 +469,7 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ed
 
 ## 시나리오
 ${storyExcerpt}
-
+${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}
 ## 출력 JSON 스키마
 
 characterSeeds (최대 3명):
@@ -1348,6 +1349,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       totalDurationSeconds: rawTotalDuration,
       generationPersona,
       characterPersonas,
+      scriptAnalysisHint,
     } = await context.request.json() as Record<string, string | number | object>;
 
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
@@ -1601,6 +1603,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         generationPersonaBlock,
         characterPersonaBlock,
         editorialPlanningBlock,
+        scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
