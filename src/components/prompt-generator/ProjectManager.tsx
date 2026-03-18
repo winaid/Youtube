@@ -26,6 +26,7 @@ import {
   type DraftProject,
   type DraftGenerationMeta,
   type SaveStatus,
+  type OwnerSessionNote,
 } from "@/lib/draft-store";
 import { SAMPLE_PROJECTS } from "@/data/sample-projects";
 
@@ -43,7 +44,7 @@ interface Props {
   lastSavedAt: number | null;
   hasUnsavedChanges: boolean;
   /** Callbacks */
-  onLoad: (input: PromptInput, output: PromptOutput | null, draftId: string, meta?: DraftGenerationMeta) => void;
+  onLoad: (input: PromptInput, output: PromptOutput | null, draftId: string, meta?: DraftGenerationMeta, notes?: OwnerSessionNote) => void;
   onSampleLoad?: (sample: typeof SAMPLE_PROJECTS[0]) => void;
   onNew: () => void;
   onSave: () => void;
@@ -107,7 +108,7 @@ export default function ProjectManager({
 
   // ── Load draft ──
   const handleLoad = useCallback(async (draft: DraftProject) => {
-    onLoad(draft.input, draft.output, draft.id, draft.generationMeta);
+    onLoad(draft.input, draft.output, draft.id, draft.generationMeta, draft.ownerNotes);
     setShowPanel(false);
   }, [onLoad]);
 
@@ -143,7 +144,7 @@ export default function ProjectManager({
         return;
       }
       await saveDraft(draft);
-      onLoad(draft.input, draft.output, draft.id, draft.generationMeta);
+      onLoad(draft.input, draft.output, draft.id, draft.generationMeta, draft.ownerNotes);
       await refreshDrafts();
     } catch {
       alert("파일을 읽을 수 없습니다.");

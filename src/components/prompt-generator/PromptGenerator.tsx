@@ -5,7 +5,7 @@ import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
-import { saveDraft, buildDraft, type DraftGenerationMeta, type SaveStatus } from "@/lib/draft-store";
+import { saveDraft, buildDraft, type DraftGenerationMeta, type SaveStatus, type OwnerSessionNote } from "@/lib/draft-store";
 import type { SampleProject } from "@/data/sample-projects";
 import InputPanel from "./InputPanel";
 import ResultPanel from "./ResultPanel";
@@ -13,6 +13,7 @@ import StoryChat from "./StoryChat";
 import ProjectManager from "./ProjectManager";
 import QualityDebugPanel from "./QualityDebugPanel";
 import OwnerChecklist from "./OwnerChecklist";
+import SessionNotePanel from "./SessionNotePanel";
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
@@ -35,6 +36,9 @@ export default function PromptGenerator() {
 
   // ── Sample verification hint ──
   const [sampleHint, setSampleHint] = useState<{ verifyPoint: string; suspectOnFail: string } | null>(null);
+
+  // ── Owner session notes ──
+  const [ownerNotes, setOwnerNotes] = useState<OwnerSessionNote | null>(null);
 
   // Track changes after last save
   const lastSavedSnapshotRef = useRef<string>("");
@@ -172,7 +176,7 @@ export default function PromptGenerator() {
   }, []);
 
   // ── Draft load ──
-  const handleDraftLoad = useCallback((input: PromptInput, output: PromptOutput | null, draftId: string, meta?: DraftGenerationMeta) => {
+  const handleDraftLoad = useCallback((input: PromptInput, output: PromptOutput | null, draftId: string, meta?: DraftGenerationMeta, notes?: OwnerSessionNote) => {
     setPrefillInput(input);
     setLastInput(input);
     if (output) {
@@ -189,6 +193,7 @@ export default function PromptGenerator() {
     setHasUnsavedChanges(false);
     setSaveStatus("idle");
     setSampleHint(null);
+    setOwnerNotes(notes ?? null);
     if (draftId) {
       setLastSavedAt(Date.now());
       lastSavedSnapshotRef.current = JSON.stringify({ input, totalCuts: output?.totalCuts });
@@ -216,6 +221,7 @@ export default function PromptGenerator() {
       verifyPoint: sample.verifyPoint,
       suspectOnFail: sample.suspectOnFail,
     });
+    setOwnerNotes(null);
   }, []);
 
   // ── New project ──
@@ -234,7 +240,24 @@ export default function PromptGenerator() {
     setLastSavedAt(null);
     lastSavedSnapshotRef.current = "";
     setSampleHint(null);
+    setOwnerNotes(null);
   }, []);
+
+  // ── Owner notes save ──
+  const handleNoteChange = useCallback(async (note: OwnerSessionNote) => {
+    setOwnerNotes(note);
+    // Persist to draft if we have an active draft
+    if (activeDraftId && lastInput) {
+      const draft = buildDraft({
+        id: activeDraftId,
+        input: lastInput,
+        output: result,
+        generationMeta: generationMeta ?? undefined,
+      });
+      draft.ownerNotes = note;
+      await saveDraft(draft);
+    }
+  }, [activeDraftId, lastInput, result, generationMeta]);
 
   // ── Keyboard shortcut: Cmd+S ──
   useEffect(() => {
@@ -322,6 +345,14 @@ export default function PromptGenerator() {
             />
             {/* Quality Debug Panel — 결과 아래에 표시 */}
             <QualityDebugPanel output={result} meta={generationMeta} sampleHint={sampleHint} />
+            {/* Session Notes — 실패 유형 태깅 + 메모 */}
+            <SessionNotePanel
+              draftId={activeDraftId}
+              scenario={result?.projectTitle ?? lastInput?.storyText?.slice(0, 40) ?? "unknown"}
+              fallbackUsed={!!result?.usedFallback}
+              savedNote={ownerNotes}
+              onNoteChange={handleNoteChange}
+            />
             {/* Owner Verification Checklist */}
             <OwnerChecklist />
           </div>

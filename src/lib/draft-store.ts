@@ -33,6 +33,51 @@ export interface DraftProject {
   thumbnail?: string;
   /** Cut count at save time (for list UI without parsing full output) */
   cutCount?: number;
+  /** Owner session notes — lightweight test-session annotations */
+  ownerNotes?: OwnerSessionNote;
+}
+
+// ─── Owner Session Notes ───
+
+/** Failure taxonomy — standard failure types for quick classification */
+export type FailureTag =
+  | "too-slow"
+  | "too-sparse"
+  | "too-generic"
+  | "style-too-weak"
+  | "style-overrides-rhythm"
+  | "fallback-degraded"
+  | "save-reopen-confusion"
+  | "ok";
+
+export const FAILURE_TAG_LABELS: Record<FailureTag, string> = {
+  "too-slow": "느림",
+  "too-sparse": "빈약",
+  "too-generic": "뻔함",
+  "style-too-weak": "스타일약",
+  "style-overrides-rhythm": "스타일>리듬",
+  "fallback-degraded": "폴백열화",
+  "save-reopen-confusion": "저장혼란",
+  "ok": "OK",
+};
+
+export interface OwnerSessionNote {
+  /** Scenario label (auto-filled from title or sample id) */
+  scenario: string;
+  /** Quick first impression after viewing result */
+  firstImpression?: string;
+  /** Rhythm verdict — free-form or tag */
+  rhythmVerdict?: string;
+  /** Style verdict — free-form or tag */
+  styleVerdict?: string;
+  /** Failure tag(s) for quick taxonomy */
+  failureTags: FailureTag[];
+  /** Whether fallback was used at generation time */
+  fallbackUsed: boolean;
+  /** Next fix guess — what should be changed */
+  nextFixGuess?: string;
+  /** Timestamp of the note */
+  notedAt: number;
 }
 
 export interface DraftGenerationMeta {
@@ -273,6 +318,56 @@ export function importDraftJSON(json: string): DraftProject | null {
 export function isDraftStale(draft: DraftProject, staleDays: number = 30): boolean {
   const staleMs = staleDays * 24 * 60 * 60 * 1000;
   return Date.now() - draft.updatedAt > staleMs;
+}
+
+// ─── Session Log (localStorage) ───
+
+const SESSION_LOG_KEY = "owner-session-log-v1";
+const SESSION_LOG_MAX = 100;
+
+export interface SessionLogEntry {
+  draftId: string;
+  scenario: string;
+  failureTags: FailureTag[];
+  firstImpression?: string;
+  nextFixGuess?: string;
+  fallbackUsed: boolean;
+  timestamp: number;
+}
+
+/** Load session log from localStorage */
+export function loadSessionLog(): SessionLogEntry[] {
+  try {
+    const raw = localStorage.getItem(SESSION_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+/** Append entry to session log */
+export function appendSessionLog(entry: SessionLogEntry): void {
+  try {
+    const log = loadSessionLog();
+    log.unshift(entry);
+    if (log.length > SESSION_LOG_MAX) log.length = SESSION_LOG_MAX;
+    localStorage.setItem(SESSION_LOG_KEY, JSON.stringify(log));
+  } catch { /* ignore */ }
+}
+
+/** Clear session log */
+export function clearSessionLog(): void {
+  try { localStorage.removeItem(SESSION_LOG_KEY); } catch { /* ignore */ }
+}
+
+/** Summary stats from session log */
+export function sessionLogStats(log: SessionLogEntry[]): Record<FailureTag, number> {
+  const counts: Record<string, number> = {};
+  for (const tag of Object.keys(FAILURE_TAG_LABELS)) counts[tag] = 0;
+  for (const entry of log) {
+    for (const tag of entry.failureTags) {
+      counts[tag] = (counts[tag] || 0) + 1;
+    }
+  }
+  return counts as Record<FailureTag, number>;
 }
 
 /** Format relative time for display */

@@ -243,6 +243,14 @@ const durations: { value: Duration; label: string }[] = [
   { value: 300, label: "5분" },
 ];
 
+const shortformDurations: { value: Duration; label: string; band: string }[] = [
+  { value: 10, label: "10초", band: "base" },
+  { value: 12, label: "12초", band: "base" },
+  { value: 13, label: "13초", band: "critical" },
+  { value: 15, label: "15초", band: "critical" },
+  { value: 30, label: "30초", band: "medium" },
+];
+
 const CUSTOM_DIRECTORS_KEY = "kling-custom-directors";
 
 function loadCustomDirectors(): DirectorPersona[] {
@@ -1638,6 +1646,24 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                     duration === d.value
                       ? { background: "#787fff", color: "white", boxShadow: "0 2px 8px #787fff30" }
                       : { background: "white", color: "#64748b", border: "1px solid #e2e8f0" }
+                  }
+                  onClick={() => setDuration(d.value)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+            {/* 숏폼 검증 프리셋 */}
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span className="text-[10px] font-medium shrink-0" style={{ color: "#94a3b8" }}>숏폼</span>
+              {shortformDurations.map((d) => (
+                <button
+                  key={String(d.value)}
+                  className="h-6 px-2 rounded text-[10px] font-medium transition-all"
+                  style={
+                    duration === d.value
+                      ? { background: d.band === "critical" ? "#ef4444" : "#787fff", color: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
+                      : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
                   }
                   onClick={() => setDuration(d.value)}
                 >
