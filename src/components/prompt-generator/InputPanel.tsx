@@ -327,6 +327,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   } | null>(null);
   const [isRecommending, setIsRecommending] = useState(false);
   const [showRecommendation, setShowRecommendation] = useState(false);
+  const [recommendError, setRecommendError] = useState<string | null>(null);
 
   // ── 분석 깊이 옵션 (바로 생성에 통합) ──
   type AnalysisDepth = "none" | "basic" | "deep";
@@ -634,6 +635,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     if (!storyText.trim() || storyText.length < 30 || isRecommending) return;
     setIsRecommending(true);
     setShowRecommendation(true);
+    setRecommendError(null);
 
     // 캐시 히트: 동일 스토리 텍스트면 API 재호출 생략
     const storyKey = storyText.trim().slice(0, 2000);
@@ -672,9 +674,11 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       // 캐시 저장
       recommendCacheRef.current = { storyKey, result: data };
       setDirectorRecommendation(data);
+      setRecommendError(null);
     } catch (err) {
       console.error("[recommend-director] 실패:", err);
       setDirectorRecommendation(null);
+      setRecommendError(err instanceof Error ? err.message : "추천 중 오류가 발생했습니다");
     } finally {
       setIsRecommending(false);
     }
@@ -920,18 +924,66 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   시나리오에 맞는 감독을 찾고 있습니다...
                 </>
               ) : (
-                <>{showRecommendation && directorRecommendation ? "✨ 감독 다시 추천받기" : "✨ 이 시나리오에 어울리는 감독 AI 추천"}</>
+                <>{showRecommendation && (directorRecommendation || recommendError) ? "✨ 감독 다시 추천받기" : "✨ 이 시나리오에 어울리는 감독 AI 추천"}</>
               )}
             </button>
 
+            {/* 추천 에러 상태 */}
+            {showRecommendation && !isRecommending && recommendError && (
+              <div className="rounded-xl border p-3 space-y-2" style={{ background: "#fef2f2", borderColor: "#fca5a530" }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs" style={{ color: "#dc2626" }}>추천 실패</span>
+                </div>
+                <p className="text-[10px] leading-relaxed" style={{ color: "#991b1b" }}>
+                  {recommendError}
+                </p>
+                <p className="text-[9px]" style={{ color: "#b91c1c" }}>
+                  네트워크 연결 또는 API 키를 확인하세요. 버튼을 다시 눌러 재시도할 수 있습니다.
+                </p>
+                <button
+                  onClick={() => { setShowRecommendation(false); setRecommendError(null); }}
+                  className="w-full text-[10px] py-1 rounded text-center transition-colors hover:bg-red-50"
+                  style={{ color: "#999" }}
+                >
+                  닫기
+                </button>
+              </div>
+            )}
+
             {/* 추천 결과 */}
-            {showRecommendation && directorRecommendation && (
+            {showRecommendation && !isRecommending && directorRecommendation && !recommendError && (
               <div className="rounded-xl border p-3 space-y-3" style={{ background: "#fafbff", borderColor: "#787fff30" }}>
+                {/* 결과 건수 표시 */}
+                {(() => {
+                  const localCount = directorRecommendation.localMatches.length;
+                  const webCount = directorRecommendation.webSuggestions.length;
+                  const totalCount = localCount + webCount;
+                  return totalCount > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold" style={{ color: "#787fff" }}>
+                        {totalCount}명 추천됨
+                      </span>
+                      {localCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff10", color: "#787fff" }}>보유 {localCount}</span>}
+                      {webCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>신규 {webCount}</span>}
+                    </div>
+                  ) : null;
+                })()}
+
                 {/* 분석 요약 */}
                 {directorRecommendation.analysis && (
                   <p className="text-[10px] leading-relaxed" style={{ color: "#5a5ecc" }}>
                     {directorRecommendation.analysis}
                   </p>
+                )}
+
+                {/* 빈 결과 상태 */}
+                {directorRecommendation.localMatches.length === 0 && directorRecommendation.webSuggestions.length === 0 && (
+                  <div className="text-center py-3">
+                    <p className="text-[11px] font-medium" style={{ color: "#9ca3af" }}>추천 결과 없음</p>
+                    <p className="text-[10px] mt-1" style={{ color: "#b0b0b0" }}>
+                      시나리오를 더 구체적으로 작성하거나, 다른 장르/무드를 시도해보세요.
+                    </p>
+                  </div>
                 )}
 
                 {/* 로컬 감독 매칭 */}
