@@ -42,7 +42,7 @@ async function fetchGeminiCuts(
   cutCount: number,
   cutDuration: number,
   projectTotalDurationSec: number,
-): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; degraded?: boolean; degradedReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown; generationMeta?: Record<string, unknown> }> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; degraded?: boolean; degradedReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown; generationMeta?: Record<string, unknown>; _latency?: unknown }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
