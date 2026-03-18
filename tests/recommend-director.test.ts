@@ -328,3 +328,119 @@ describe("감독 추천: region/style filter 과도 필터링 방지", () => {
     expect(resp.webSuggestions.every(s => s.id && s.nameKo)).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// No-cache 정책 (owner-only V0.9)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("감독 추천: no-cache 정책 (owner-only V0.9)", () => {
+  // Simulates the no-cache recommendation flow
+  // Each call creates a fresh state and always invokes the "API"
+
+  let apiCallCount: number;
+
+  function simulateNoCacheRecommend(
+    fetchFn: () => { ok: boolean; data: unknown },
+    storyText: string = "아주 긴 시나리오 텍스트입니다. 최소 30자 이상이어야 합니다."
+  ): RecommendState {
+    const state = initialState();
+    if (!storyText.trim() || storyText.length < 30) return state;
+
+    state.isRecommending = true;
+    state.showRecommendation = true;
+    state.recommendError = null;
+
+    // No cache check — always call API
+    apiCallCount++;
+    const fetchResult = fetchFn();
+
+    try {
+      if (!fetchResult.ok) {
+        throw new Error("API error");
+      }
+      state.directorRecommendation = fetchResult.data as RecommendResponse;
+      // No cache save — results are not stored
+    } catch (err) {
+      state.directorRecommendation = null;
+      state.recommendError = err instanceof Error ? err.message : "추천 중 오류가 발생했습니다";
+    } finally {
+      state.isRecommending = false;
+    }
+
+    return state;
+  }
+
+  it("같은 입력으로 연속 클릭해도 매번 API 호출 발생", () => {
+    apiCallCount = 0;
+    const storyText = "서울 한복판에서 벌어지는 스릴러. 비 오는 밤, 택시 안에서 시작되는 이야기.";
+
+    // Click 1
+    simulateNoCacheRecommend(() => ({ ok: true, data: mockSuccessResponse() }), storyText);
+    expect(apiCallCount).toBe(1);
+
+    // Click 2 — same input, should NOT use cache
+    simulateNoCacheRecommend(() => ({ ok: true, data: mockSuccessResponse() }), storyText);
+    expect(apiCallCount).toBe(2);
+
+    // Click 3 — same input again
+    simulateNoCacheRecommend(() => ({ ok: true, data: mockSuccessResponse() }), storyText);
+    expect(apiCallCount).toBe(3);
+  });
+
+  it("0건 결과는 캐시에 저장되지 않음 (no-cache이므로 항상 새 호출)", () => {
+    apiCallCount = 0;
+
+    // First call returns empty
+    const state1 = simulateNoCacheRecommend(() => ({ ok: true, data: mockEmptyResponse() }));
+    expect(state1.directorRecommendation?.localMatches.length).toBe(0);
+
+    // Second call — should still call API (not reuse empty result)
+    const state2 = simulateNoCacheRecommend(() => ({ ok: true, data: mockSuccessResponse() }));
+    expect(apiCallCount).toBe(2);
+    expect(state2.directorRecommendation?.localMatches.length).toBe(2);
+  });
+
+  it("에러 응답은 캐시에 저장되지 않음", () => {
+    apiCallCount = 0;
+
+    // First call errors
+    const state1 = simulateNoCacheRecommend(() => ({ ok: false, data: mockErrorResponse() }));
+    expect(state1.recommendError).toBeTruthy();
+
+    // Second call — should still call API
+    const state2 = simulateNoCacheRecommend(() => ({ ok: true, data: mockSuccessResponse() }));
+    expect(apiCallCount).toBe(2);
+    expect(state2.directorRecommendation).not.toBeNull();
+  });
+
+  it("매 호출마다 최신 결과로 UI 갱신", () => {
+    const response1 = mockSuccessResponse();
+    response1.analysis = "첫 번째 분석 결과";
+
+    const response2 = mockSuccessResponse();
+    response2.analysis = "두 번째 분석 결과 — 업데이트됨";
+
+    const state1 = simulateNoCacheRecommend(() => ({ ok: true, data: response1 }));
+    expect(state1.directorRecommendation?.analysis).toBe("첫 번째 분석 결과");
+
+    const state2 = simulateNoCacheRecommend(() => ({ ok: true, data: response2 }));
+    expect(state2.directorRecommendation?.analysis).toBe("두 번째 분석 결과 — 업데이트됨");
+  });
+
+  it("기존 success / empty / error UI 조건은 유지됨", () => {
+    // Success
+    const s1 = simulateNoCacheRecommend(() => ({ ok: true, data: mockSuccessResponse() }));
+    expect(shouldShowResults(s1)).toBe(true);
+    expect(shouldShowError(s1)).toBe(false);
+
+    // Empty
+    const s2 = simulateNoCacheRecommend(() => ({ ok: true, data: mockEmptyResponse() }));
+    expect(shouldShowResults(s2)).toBe(true);
+    expect(shouldShowEmpty(s2)).toBe(true);
+
+    // Error
+    const s3 = simulateNoCacheRecommend(() => ({ ok: false, data: mockErrorResponse() }));
+    expect(shouldShowError(s3)).toBe(true);
+    expect(shouldShowResults(s3)).toBe(false);
+  });
+});

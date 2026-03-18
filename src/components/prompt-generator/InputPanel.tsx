@@ -314,7 +314,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const analysisHintCacheRef = useRef<{ text: string; depth: string; hint: string | undefined } | null>(null);
 
   // 감독 추천 캐시: 동일 스토리 텍스트에 대해 API 재호출 방지
-  const recommendCacheRef = useRef<{ storyKey: string; result: unknown } | null>(null);
+  // NOTE: 추천 캐시는 owner-only V0.9/V1 단계에서 비활성화.
+  // 추천 버튼은 "조회"가 아니라 "분석"이므로 매 클릭마다 실시간 재분석 수행.
+  // 향후 공개 단계에서 재도입 검토 가능.
+  // const recommendCacheRef = useRef<{ storyKey: string; result: unknown } | null>(null);
 
   // 감독 추천 상태
   const [directorRecommendation, setDirectorRecommendation] = useState<{
@@ -631,7 +634,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     return () => clearTimeout(timer);
   }, [storyText, duration, analyzeStory]);
 
-  // 감독 추천 함수
+  // 감독 추천 함수 — owner-only V0.9: 매 클릭마다 실시간 재분석 (no-cache)
   const recommendDirector = useCallback(async () => {
     if (!storyText.trim() || storyText.length < 30 || isRecommending) return;
     setIsRecommending(true);
@@ -642,23 +645,11 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     const storySnippet = storyText.trim().slice(0, 80);
     const directorPoolSize = allDirectors.length;
 
-    // 캐시 히트: 동일 스토리 텍스트면 API 재호출 생략
-    const storyKey = storyText.trim().slice(0, 2000);
-    if (recommendCacheRef.current?.storyKey === storyKey) {
-      console.log("[recommend-director] 캐시 히트 — API 호출 생략");
-      const cached = recommendCacheRef.current.result as typeof directorRecommendation;
-      setDirectorRecommendation(cached);
-      setIsRecommending(false);
-      appendRecommendLog({
-        timestamp: Date.now(), storySnippet, storyLength: storyText.length,
-        outcome: "cache-hit", localMatchCount: cached?.localMatches?.length ?? 0,
-        webSuggestionCount: cached?.webSuggestions?.length ?? 0,
-        localMatchIds: cached?.localMatches?.map((m: { id: string }) => m.id) ?? [],
-        webSuggestionIds: cached?.webSuggestions?.map((s: { id: string }) => s.id) ?? [],
-        latencyMs: Date.now() - startTime, activeRegion: region, directorPoolSize,
-      });
-      return;
-    }
+    console.log("[recommend-director] recommendation requested", {
+      storyLength: storyText.length,
+      directorPoolSize,
+      cachePolicy: "no-cache (owner-only V0.9)",
+    });
 
     try {
       const localDirectorList = allDirectors.map((d) => ({
@@ -668,6 +659,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         region: d.region,
         style: d.style,
       }));
+
+      console.log("[recommend-director] API invoked — cache bypassed");
+
       const res = await fetch("/api/recommend-director", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -686,8 +680,6 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       }
       const data = await res.json();
 
-      // 캐시 저장
-      recommendCacheRef.current = { storyKey, result: data };
       setDirectorRecommendation(data);
       setRecommendError(null);
 
@@ -695,6 +687,15 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       const localCount = data.localMatches?.length ?? 0;
       const webCount = data.webSuggestions?.length ?? 0;
       const outcome: RecommendLogEntry["outcome"] = (localCount + webCount > 0) ? "success" : "empty";
+
+      console.log("[recommend-director] result:", {
+        outcome,
+        resultCount: localCount + webCount,
+        localMatches: localCount,
+        webSuggestions: webCount,
+        latencyMs: Date.now() - startTime,
+      });
+
       appendRecommendLog({
         timestamp: Date.now(), storySnippet, storyLength: storyText.length,
         outcome, localMatchCount: localCount, webSuggestionCount: webCount,
@@ -708,6 +709,11 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       const errorMessage = err instanceof Error ? err.message : "추천 중 오류가 발생했습니다";
       setDirectorRecommendation(null);
       setRecommendError(errorMessage);
+
+      console.log("[recommend-director] result: error", {
+        errorMessage,
+        latencyMs: Date.now() - startTime,
+      });
 
       // 로그: 에러
       appendRecommendLog({
