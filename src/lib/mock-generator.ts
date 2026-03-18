@@ -42,7 +42,7 @@ async function fetchGeminiCuts(
   cutCount: number,
   cutDuration: number,
   projectTotalDurationSec: number,
-): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; degraded?: boolean; degradedReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown }> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; degraded?: boolean; degradedReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown; generationMeta?: Record<string, unknown> }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
@@ -144,6 +144,7 @@ async function fetchGeminiCuts(
       degradedReason: typeof data.reason === "string" ? data.reason : undefined,
       sequencePlan: data.sequencePlan ?? undefined,
       sequenceValidation: data.sequenceValidation ?? undefined,
+      generationMeta: data.generationMeta ?? undefined,
     };
   } catch (error) {
     const errStr = String(error);
@@ -322,7 +323,7 @@ export async function generatePrompt(
     directorPersonaText = existingPersona;
     cutsResult = await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration);
   }
-  const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, degraded, degradedReason, sequencePlan, sequenceValidation } = cutsResult;
+  const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, degraded, degradedReason, sequencePlan, sequenceValidation, generationMeta: serverMeta } = cutsResult;
 
   // ── rhythm distribution: 서버 응답에 rhythmProfile이 없으면 클라이언트 측 분배 적용 ──
   const needsClientRhythm = !cutsResult.sequencePlan || usedFallback;
@@ -396,5 +397,6 @@ export async function generatePrompt(
     degradedReason,
     sequencePlan: sequencePlan as PromptOutput["sequencePlan"],
     sequenceValidation: sequenceValidation as PromptOutput["sequenceValidation"],
+    serverGenerationMeta: serverMeta as PromptOutput["serverGenerationMeta"],
   };
 }

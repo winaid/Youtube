@@ -6,6 +6,7 @@ import { generatePrompt } from "@/lib/mock-generator";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
 import { saveDraft, buildDraft, type DraftGenerationMeta, type SaveStatus } from "@/lib/draft-store";
+import type { SampleProject } from "@/data/sample-projects";
 import InputPanel from "./InputPanel";
 import ResultPanel from "./ResultPanel";
 import StoryChat from "./StoryChat";
@@ -31,6 +32,9 @@ export default function PromptGenerator() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // ── Sample verification hint ──
+  const [sampleHint, setSampleHint] = useState<{ verifyPoint: string; suspectOnFail: string } | null>(null);
 
   // Track changes after last save
   const lastSavedSnapshotRef = useRef<string>("");
@@ -91,19 +95,34 @@ export default function PromptGenerator() {
       setResult(output);
       setStatus("success");
 
-      // Build generation meta for debug panel
-      const totalDur = output.cuts.reduce((s, c) => s + c.durationSec, 0);
+      // Build generation meta from server engine truth (or fallback to client computation)
+      const sm = output.serverGenerationMeta;
+      const totalDur = sm?.totalDurationSec ?? output.cuts.reduce((s, c) => s + c.durationSec, 0);
       const meta: DraftGenerationMeta = {
         totalDurationSec: totalDur,
-        targetCuts: output.totalCuts,
-        reconciledSecPerCut: output.totalCuts > 0 ? +(totalDur / output.totalCuts).toFixed(1) : 0,
-        shotCount: output.cuts.reduce((s, c) => s + (c.multiShot?.length || 1), 0),
+        targetCuts: sm?.targetCuts ?? output.totalCuts,
+        reconciledSecPerCut: sm?.reconciledSecPerCut ?? (output.totalCuts > 0 ? +(totalDur / output.totalCuts).toFixed(1) : 0),
+        shotCount: sm?.totalShotCount ?? output.cuts.reduce((s, c) => s + (c.multiShot?.length || 1), 0),
         usedFallback: output.usedFallback,
         degraded: output.degraded,
         degradedReason: output.degradedReason,
         sequenceValidationErrors: output.sequenceValidation?.summary?.errors,
         sequenceValidationWarnings: output.sequenceValidation?.summary?.warnings,
-        directorRequested: input.directorPersona,
+        directorRequested: sm?.directorRequested ?? input.directorPersona,
+        directorPaceResult: sm?.directorAppliedPace != null ? `${sm.directorAppliedPace}s/cut` : undefined,
+        directorPaceDownWeight: sm?.directorPaceDownWeighted,
+        directorWeakenReason: sm?.directorWeakenReason,
+        outlineOnly: sm?.outlineOnly,
+        genericSplitFallback: sm?.genericSplitFallback,
+        providerError: sm?.providerError,
+        densityPolicy: sm?.densityPolicy,
+        rationale: sm?.rationale,
+        narrativeFunction: sm?.narrativeFunctions?.slice(0, 3).join(", "),
+        shortformRhythm: sm?.shortformPolicyApplied ? {
+          band: sm.durationBand ?? "unknown",
+          minCuts: sm.minimumCuts ?? 1,
+          is13to15Special: sm.specialHandling13to15 ?? false,
+        } : undefined,
       };
       setGenerationMeta(meta);
 
@@ -169,6 +188,7 @@ export default function PromptGenerator() {
     setActiveTab("prompt");
     setHasUnsavedChanges(false);
     setSaveStatus("idle");
+    setSampleHint(null);
     if (draftId) {
       setLastSavedAt(Date.now());
       lastSavedSnapshotRef.current = JSON.stringify({ input, totalCuts: output?.totalCuts });
@@ -176,6 +196,26 @@ export default function PromptGenerator() {
       setLastSavedAt(null);
       lastSavedSnapshotRef.current = "";
     }
+  }, []);
+
+  // ── Sample load (with verification hints) ──
+  const handleSampleLoad = useCallback((sample: SampleProject) => {
+    setPrefillInput(sample.input);
+    setLastInput(sample.input);
+    setResult(null);
+    setStatus("idle");
+    setGenerationMeta(null);
+    setActiveDraftId(null);
+    setError(null);
+    setActiveTab("prompt");
+    setHasUnsavedChanges(false);
+    setSaveStatus("idle");
+    setLastSavedAt(null);
+    lastSavedSnapshotRef.current = "";
+    setSampleHint({
+      verifyPoint: sample.verifyPoint,
+      suspectOnFail: sample.suspectOnFail,
+    });
   }, []);
 
   // ── New project ──
@@ -193,6 +233,7 @@ export default function PromptGenerator() {
     setSaveStatus("idle");
     setLastSavedAt(null);
     lastSavedSnapshotRef.current = "";
+    setSampleHint(null);
   }, []);
 
   // ── Keyboard shortcut: Cmd+S ──
@@ -220,6 +261,7 @@ export default function PromptGenerator() {
           lastSavedAt={lastSavedAt}
           hasUnsavedChanges={hasUnsavedChanges}
           onLoad={handleDraftLoad}
+          onSampleLoad={handleSampleLoad}
           onNew={handleNewProject}
           onSave={performSave}
         />
@@ -279,7 +321,7 @@ export default function PromptGenerator() {
               onSecondsPerSceneChange={setSecondsPerScene}
             />
             {/* Quality Debug Panel — 결과 아래에 표시 */}
-            <QualityDebugPanel output={result} meta={generationMeta} />
+            <QualityDebugPanel output={result} meta={generationMeta} sampleHint={sampleHint} />
             {/* Owner Verification Checklist */}
             <OwnerChecklist />
           </div>

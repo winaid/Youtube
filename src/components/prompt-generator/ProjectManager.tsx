@@ -44,6 +44,7 @@ interface Props {
   hasUnsavedChanges: boolean;
   /** Callbacks */
   onLoad: (input: PromptInput, output: PromptOutput | null, draftId: string, meta?: DraftGenerationMeta) => void;
+  onSampleLoad?: (sample: typeof SAMPLE_PROJECTS[0]) => void;
   onNew: () => void;
   onSave: () => void;
 }
@@ -57,6 +58,7 @@ export default function ProjectManager({
   lastSavedAt,
   hasUnsavedChanges,
   onLoad,
+  onSampleLoad,
   onNew,
   onSave,
 }: Props) {
@@ -151,10 +153,14 @@ export default function ProjectManager({
 
   // ── Load sample ──
   const handleLoadSample = useCallback((sample: typeof SAMPLE_PROJECTS[0]) => {
-    onLoad(sample.input, null, "", undefined);
+    if (onSampleLoad) {
+      onSampleLoad(sample);
+    } else {
+      onLoad(sample.input, null, "", undefined);
+    }
     setShowSamples(false);
     setShowPanel(false);
-  }, [onLoad]);
+  }, [onLoad, onSampleLoad]);
 
   // ── New project ──
   const handleNew = useCallback(() => {

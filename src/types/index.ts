@@ -386,6 +386,35 @@ export interface PromptOutput {
   sequencePlan?: import("@/lib/sequence-plan").SequencePlan;
   /** 시퀀스 검증 결과 */
   sequenceValidation?: import("@/lib/sequence-plan").SequenceValidationResult;
+  /** 엔진 생성 메타 — generate-cuts API의 실제 의사결정 결과 (QualityDebugPanel용) */
+  serverGenerationMeta?: ServerGenerationMeta;
+}
+
+/** generate-cuts API가 반환하는 엔진 truth 메타 */
+export interface ServerGenerationMeta {
+  totalDurationSec?: number;
+  durationBand?: string;
+  targetCuts?: number;
+  minimumCuts?: number;
+  reconciledSecPerCut?: number;
+  shortformPolicyApplied?: boolean;
+  specialHandling13to15?: boolean;
+  directorRequested?: string;
+  directorRequestedPace?: number;
+  directorAppliedPace?: number;
+  directorPaceDownWeighted?: boolean;
+  directorWeakenReason?: string;
+  narrativeFunctions?: string[];
+  cutDurations?: number[];
+  cutShotCounts?: number[];
+  totalShotCount?: number;
+  fallbackUsed?: boolean;
+  outlineOnly?: boolean;
+  genericSplitFallback?: boolean;
+  providerError?: string;
+  densityPolicy?: string;
+  reconciliationNotes?: string[];
+  rationale?: string[];
 }
 
 // ===== 채팅 타입 =====

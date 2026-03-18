@@ -21,6 +21,7 @@ import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recomme
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
 import { getMaxShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-capability";
+import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -1387,6 +1388,41 @@ function buildUltraCompactStep1Prompt(
 "outlines":[{"cutNumber":1,"sceneKo":"≤20자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w"}]}`;
 }
 
+// ─── generationMeta rationale builder ─────────────────────────────────────────
+
+function buildRationale(opts: {
+  bandPolicy: { band: string; isShortformBand: boolean; is13to15Special: boolean; minCuts: number };
+  shortformPlan: { directorPaceDownweighted: boolean; reconciliationNotes: string[] };
+  directorPaceWasDownweighted: boolean;
+  step1Degraded: boolean;
+  step1DegradedReason: string;
+  outlineOnly: boolean;
+  targetCuts: number;
+  secPerCut: number;
+}): string[] {
+  const r: string[] = [];
+  if (opts.bandPolicy.is13to15Special) {
+    r.push(`13-15초 숏폼 리듬을 위해 최소 ${opts.bandPolicy.minCuts}컷을 유지했습니다.`);
+  } else if (opts.bandPolicy.isShortformBand) {
+    r.push(`${opts.bandPolicy.band} 밴드 정책: 최소 ${opts.bandPolicy.minCuts}컷.`);
+  }
+  if (opts.directorPaceWasDownweighted || opts.shortformPlan.directorPaceDownweighted) {
+    r.push("감독 페이스보다 장면 전개 리듬을 우선해 컷 길이를 압축했습니다.");
+  }
+  if (opts.step1Degraded) {
+    r.push(`자동 조정됨: ${opts.step1DegradedReason.slice(0, 100)}`);
+  }
+  if (opts.outlineOnly) {
+    r.push("Outline-only path로 생성됨 — 디테일이 제한적일 수 있습니다.");
+  }
+  for (const note of opts.shortformPlan.reconciliationNotes) {
+    if (!r.some(existing => existing.includes(note.slice(0, 30)))) {
+      r.push(note);
+    }
+  }
+  return r;
+}
+
 // ─── 메인 핸들러 ──────────────────────────────────────────────────────────────
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
@@ -1490,11 +1526,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
+    // ── shortform reconciliation (full structured plan) ──
+    const shortformPlan = reconcileShortformPlan({
+      totalDurationSec: effectiveTotalForDensity,
+      densityTargetCuts: cutDecision.cutCount,
+      personaSecPerCut: autoResult.duration,
+      personaBias: pBias,
+      exactCutCount: rawCutCount > 0 ? rawCutCount : undefined,
+    });
+    const bandPolicy = resolveShortformBandPolicy(effectiveTotalForDensity);
+
+    // Track whether director pace was downweighted in the inline reconciliation above
+    const directorPaceWasDownweighted = secPerCut < autoResult.duration;
+    const directorWeakenReason = directorPaceWasDownweighted
+      ? `secPerCut ${autoResult.duration}→${secPerCut} (shortform rhythm > director pace)`
+      : undefined;
+
     console.log("[generate-cuts] duration params", {
       rawCutDuration: cutDuration, secPerCut, targetCuts,
       totalDurationSec, estimatedSegmentCount,
       basis: autoResult.basis, editorial: editorial.preferredCutPace,
       cutDecision, parsedRange,
+      shortformPlan: { band: bandPolicy.band, reconciled: shortformPlan.reconciled, downweighted: shortformPlan.directorPaceDownweighted },
     });
 
     if (!storyText || !directorName) {
@@ -2317,6 +2370,41 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         inputTotalDuration: totalDurationSec || undefined,
         inputCutDuration: rawSecPerCut || undefined,
         inputCutCount: rawCutCount || undefined,
+      },
+      // ── generationMeta: engine truth for QualityDebugPanel ──
+      generationMeta: {
+        totalDurationSec: effectiveTotalForDensity,
+        durationBand: bandPolicy.band,
+        targetCuts,
+        minimumCuts: bandPolicy.minCuts,
+        reconciledSecPerCut: secPerCut,
+        shortformPolicyApplied: bandPolicy.isShortformBand,
+        specialHandling13to15: bandPolicy.is13to15Special,
+        directorRequested: String(directorNameKo || directorName || ""),
+        directorRequestedPace: autoResult.duration,
+        directorAppliedPace: secPerCut,
+        directorPaceDownWeighted: directorPaceWasDownweighted || shortformPlan.directorPaceDownweighted,
+        directorWeakenReason: directorWeakenReason || (shortformPlan.directorPaceDownweighted ? shortformPlan.reconciliationNotes.find(n => n.includes("director")) : undefined),
+        narrativeFunctions: outlines.map(o => o.narrativeFunction || o.purpose).filter(Boolean),
+        cutDurations: finalizedCuts.map(c => c.durationSec),
+        cutShotCounts: finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 1),
+        totalShotCount: finalizedCuts.reduce((s, c) => s + (Array.isArray(c.multiShot) ? c.multiShot.length : 1), 0),
+        fallbackUsed: step1Degraded && step1DegradedReason.includes("fallback"),
+        outlineOnly: details1.length === 0 && details2.length === 0 && outlines.length > 0,
+        genericSplitFallback: false,
+        providerError: step1Warnings.find(w => w.includes("provider")) || undefined,
+        densityPolicy: cutDecision.source,
+        reconciliationNotes: shortformPlan.reconciliationNotes,
+        rationale: buildRationale({
+          bandPolicy,
+          shortformPlan,
+          directorPaceWasDownweighted,
+          step1Degraded,
+          step1DegradedReason,
+          outlineOnly: details1.length === 0 && details2.length === 0 && outlines.length > 0,
+          targetCuts,
+          secPerCut,
+        }),
       },
     });
 

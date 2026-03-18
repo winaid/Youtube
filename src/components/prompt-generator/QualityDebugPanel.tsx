@@ -14,9 +14,10 @@ import type { DraftGenerationMeta } from "@/lib/draft-store";
 interface Props {
   output: PromptOutput | null;
   meta?: DraftGenerationMeta | null;
+  sampleHint?: { verifyPoint: string; suspectOnFail: string } | null;
 }
 
-export default function QualityDebugPanel({ output, meta }: Props) {
+export default function QualityDebugPanel({ output, meta, sampleHint }: Props) {
   const [open, setOpen] = useState(false);
 
   if (!output) return null;
@@ -118,6 +119,19 @@ export default function QualityDebugPanel({ output, meta }: Props) {
             </div>
           )}
 
+          {/* ── Sample verification hint ── */}
+          {sampleHint && (
+            <div className="bg-violet-900/20 border border-violet-700/30 rounded px-2.5 py-2 space-y-1">
+              <div className="text-[10px] text-violet-400 uppercase tracking-widest">검증 포인트</div>
+              <div className="text-zinc-300 text-[11px] leading-relaxed">
+                확인: {sampleHint.verifyPoint}
+              </div>
+              <div className="text-zinc-500 text-[10px]">
+                실패 시 의심: {sampleHint.suspectOnFail}
+              </div>
+            </div>
+          )}
+
           {/* ── 1. Duration / Rhythm ── */}
           <Section title="1. Duration / Rhythm">
             <Row label="totalDuration" value={`${totalDuration}s`} />
@@ -156,7 +170,7 @@ export default function QualityDebugPanel({ output, meta }: Props) {
           {/* ── 3. Director / Style ── */}
           <Section title="3. Director / Style">
             <Row label="director requested" value={meta?.directorRequested ?? "—"} />
-            <Row label="director pace result" value={meta?.directorPaceResult ?? "—"} />
+            <Row label="director pace requested" value={meta?.directorPaceResult ? `→ ${meta.directorPaceResult}` : "—"} />
             <Row
               label="paceDownWeight"
               value={meta?.directorPaceDownWeight ? "ACTIVE (감독 pace 하향)" : "off"}
