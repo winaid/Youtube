@@ -333,6 +333,13 @@ export interface SessionLogEntry {
   nextFixGuess?: string;
   fallbackUsed: boolean;
   timestamp: number;
+  /** Engine context — captured at note time for cross-referencing */
+  durationBand?: string;
+  directorRequested?: string;
+  degraded?: boolean;
+  directorPaceDownWeighted?: boolean;
+  outlineOnly?: boolean;
+  totalDurationSec?: number;
 }
 
 /** Load session log from localStorage */
@@ -368,6 +375,226 @@ export function sessionLogStats(log: SessionLogEntry[]): Record<FailureTag, numb
     }
   }
   return counts as Record<FailureTag, number>;
+}
+
+// ─── Session Log Analysis ───
+
+/** Failure interpretation guide — maps tag to suspect and action */
+export const FAILURE_INTERPRETATIONS: Record<FailureTag, { suspect: string; action: string }> = {
+  "too-slow": {
+    suspect: "secPerCut이 너무 길거나, shortform band 정책이 적용 안 됨",
+    action: "reconcileShortformPlan의 secPerCut 상한 확인, duration band 정책 점검",
+  },
+  "too-sparse": {
+    suspect: "targetCuts가 낮거나, multiShot 밀도 부족",
+    action: "resolveCutCount의 densityMinimum 확인, densifyCuts 로직 점검",
+  },
+  "too-generic": {
+    suspect: "감독 persona가 프롬프트에 반영 안 되거나, 스토리 분석이 얕음",
+    action: "step1Outlines의 directorPersona 주입 확인, editorialPlanningBlock 점검",
+  },
+  "style-too-weak": {
+    suspect: "감독 signatureTechniques가 누락되거나, buildDirectorEngine에서 톤이 약함",
+    action: "directors.ts의 signatureTechniques 보강, step2/3 directorEngine 가중치 점검",
+  },
+  "style-overrides-rhythm": {
+    suspect: "감독 pace가 shortform 리듬보다 우선 적용됨 (down-weight 실패)",
+    action: "secPerCut reconciliation 로직 확인, directorPaceDownWeighted가 true인지 점검",
+  },
+  "fallback-degraded": {
+    suspect: "Provider 에러/timeout으로 deterministic fallback 또는 outline-only 경로 사용",
+    action: "API 키 유효성, 모델 가용성, timeout 설정 확인",
+  },
+  "save-reopen-confusion": {
+    suspect: "Draft 저장/복원 시 meta 또는 ownerNotes 누락",
+    action: "buildDraft에서 generationMeta/ownerNotes 포함 확인, migrateDraft 호환성 점검",
+  },
+  "ok": {
+    suspect: "문제 없음",
+    action: "성공 패턴 유지",
+  },
+};
+
+/** Cross-reference: failure tags grouped by duration band */
+export function tagsByDurationBand(log: SessionLogEntry[]): Record<string, Record<FailureTag, number>> {
+  const result: Record<string, Record<string, number>> = {};
+  for (const entry of log) {
+    const band = entry.durationBand || "unknown";
+    if (!result[band]) {
+      result[band] = {};
+      for (const tag of Object.keys(FAILURE_TAG_LABELS)) result[band][tag] = 0;
+    }
+    for (const tag of entry.failureTags) {
+      result[band][tag] = (result[band][tag] || 0) + 1;
+    }
+  }
+  return result as Record<string, Record<FailureTag, number>>;
+}
+
+/** Cross-reference: failure tags grouped by director */
+export function tagsByDirector(log: SessionLogEntry[]): Record<string, Record<FailureTag, number>> {
+  const result: Record<string, Record<string, number>> = {};
+  for (const entry of log) {
+    const dir = entry.directorRequested || "unknown";
+    if (!result[dir]) {
+      result[dir] = {};
+      for (const tag of Object.keys(FAILURE_TAG_LABELS)) result[dir][tag] = 0;
+    }
+    for (const tag of entry.failureTags) {
+      result[dir][tag] = (result[dir][tag] || 0) + 1;
+    }
+  }
+  return result as Record<string, Record<FailureTag, number>>;
+}
+
+/** Owner summary: top issues + patterns */
+export interface OwnerSessionSummary {
+  totalSessions: number;
+  okCount: number;
+  failCount: number;
+  /** Most frequent failure tag (excluding 'ok') */
+  topFailure: { tag: FailureTag; count: number } | null;
+  /** Second most frequent failure tag */
+  secondFailure: { tag: FailureTag; count: number } | null;
+  /** Duration band with most failures */
+  worstBand: { band: string; failCount: number } | null;
+  /** Director with most style issues */
+  worstDirectorStyle: { director: string; count: number } | null;
+  /** Fallback rate */
+  fallbackRate: number;
+  /** Director down-weight rate */
+  downWeightRate: number;
+  /** Save/reopen confusion count */
+  saveConfusionCount: number;
+  /** Shortform critical band (13-15s) failure count */
+  criticalBandFailCount: number;
+  /** Recent nextFixGuess entries (latest 5) */
+  recentFixGuesses: string[];
+}
+
+export function buildOwnerSummary(log: SessionLogEntry[]): OwnerSessionSummary {
+  if (log.length === 0) {
+    return {
+      totalSessions: 0, okCount: 0, failCount: 0,
+      topFailure: null, secondFailure: null, worstBand: null,
+      worstDirectorStyle: null, fallbackRate: 0, downWeightRate: 0,
+      saveConfusionCount: 0, criticalBandFailCount: 0, recentFixGuesses: [],
+    };
+  }
+
+  const stats = sessionLogStats(log);
+  const okCount = stats["ok"];
+  const failCount = log.filter(e => !e.failureTags.includes("ok") && e.failureTags.length > 0).length;
+
+  // Top failures (excluding ok)
+  const failurePairs = (Object.entries(stats) as [FailureTag, number][])
+    .filter(([tag]) => tag !== "ok")
+    .sort(([, a], [, b]) => b - a);
+  const topFailure = failurePairs[0]?.[1] > 0 ? { tag: failurePairs[0][0], count: failurePairs[0][1] } : null;
+  const secondFailure = failurePairs[1]?.[1] > 0 ? { tag: failurePairs[1][0], count: failurePairs[1][1] } : null;
+
+  // Worst duration band
+  const bandStats = tagsByDurationBand(log);
+  let worstBand: { band: string; failCount: number } | null = null;
+  for (const [band, tagCounts] of Object.entries(bandStats)) {
+    const bandFails = Object.entries(tagCounts)
+      .filter(([t]) => t !== "ok")
+      .reduce((s, [, c]) => s + c, 0);
+    if (bandFails > 0 && (!worstBand || bandFails > worstBand.failCount)) {
+      worstBand = { band, failCount: bandFails };
+    }
+  }
+
+  // Director with most style issues
+  const dirStats = tagsByDirector(log);
+  let worstDirectorStyle: { director: string; count: number } | null = null;
+  for (const [dir, tagCounts] of Object.entries(dirStats)) {
+    const styleIssues = (tagCounts["style-too-weak"] || 0) + (tagCounts["style-overrides-rhythm"] || 0);
+    if (styleIssues > 0 && (!worstDirectorStyle || styleIssues > worstDirectorStyle.count)) {
+      worstDirectorStyle = { director: dir, count: styleIssues };
+    }
+  }
+
+  // Rates
+  const fallbackRate = log.filter(e => e.fallbackUsed).length / log.length;
+  const downWeightRate = log.filter(e => e.directorPaceDownWeighted).length / log.length;
+
+  // Save confusion count
+  const saveConfusionCount = stats["save-reopen-confusion"];
+
+  // Critical band (13-15s) failures
+  const criticalEntries = log.filter(e => e.durationBand === "shortform-critical");
+  const criticalBandFailCount = criticalEntries.filter(e =>
+    e.failureTags.some(t => t !== "ok")
+  ).length;
+
+  // Recent fix guesses
+  const recentFixGuesses = log
+    .filter(e => e.nextFixGuess)
+    .slice(0, 5)
+    .map(e => e.nextFixGuess!);
+
+  return {
+    totalSessions: log.length,
+    okCount,
+    failCount,
+    topFailure,
+    secondFailure,
+    worstBand,
+    worstDirectorStyle,
+    fallbackRate,
+    downWeightRate,
+    saveConfusionCount,
+    criticalBandFailCount,
+    recentFixGuesses,
+  };
+}
+
+/** Generate prioritized action items from summary */
+export function deriveActionItems(summary: OwnerSessionSummary): string[] {
+  const items: string[] = [];
+
+  if (summary.totalSessions === 0) return ["세션 데이터가 없습니다. 먼저 10-20개 시나리오를 돌려주세요."];
+
+  if (summary.topFailure) {
+    const interp = FAILURE_INTERPRETATIONS[summary.topFailure.tag];
+    items.push(`[P0] "${FAILURE_TAG_LABELS[summary.topFailure.tag]}" ${summary.topFailure.count}회 — ${interp.action}`);
+  }
+
+  if (summary.secondFailure && summary.secondFailure.count >= 2) {
+    const interp = FAILURE_INTERPRETATIONS[summary.secondFailure.tag];
+    items.push(`[P1] "${FAILURE_TAG_LABELS[summary.secondFailure.tag]}" ${summary.secondFailure.count}회 — ${interp.action}`);
+  }
+
+  if (summary.criticalBandFailCount > 0) {
+    items.push(`[P0] 13-15초 critical band에서 ${summary.criticalBandFailCount}회 실패 — shortform 리듬 정책 최우선 점검`);
+  }
+
+  if (summary.worstDirectorStyle && summary.worstDirectorStyle.count >= 2) {
+    items.push(`[P1] ${summary.worstDirectorStyle.director} 감독에서 스타일 문제 ${summary.worstDirectorStyle.count}회 — persona/techniques 보강`);
+  }
+
+  if (summary.fallbackRate > 0.2) {
+    items.push(`[P0] Fallback 비율 ${(summary.fallbackRate * 100).toFixed(0)}% — API 안정성/키 점검 시급`);
+  }
+
+  if (summary.downWeightRate > 0.5) {
+    items.push(`[P1] 감독 pace down-weight 비율 ${(summary.downWeightRate * 100).toFixed(0)}% — 감독 pace 설정이 현실적인지 확인`);
+  }
+
+  if (summary.saveConfusionCount > 0) {
+    items.push(`[P2] 저장/복원 혼란 ${summary.saveConfusionCount}회 — draft persistence 점검`);
+  }
+
+  if (summary.okCount > 0 && summary.failCount === 0) {
+    items.push("모든 테스트 통과 — 다음 단계로 이동 가능");
+  }
+
+  if (items.length === 0) {
+    items.push("뚜렷한 패턴 없음 — 더 많은 시나리오로 테스트 필요");
+  }
+
+  return items;
 }
 
 /** Format relative time for display */

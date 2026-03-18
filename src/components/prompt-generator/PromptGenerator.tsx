@@ -351,6 +351,7 @@ export default function PromptGenerator() {
               scenario={result?.projectTitle ?? lastInput?.storyText?.slice(0, 40) ?? "unknown"}
               fallbackUsed={!!result?.usedFallback}
               savedNote={ownerNotes}
+              generationMeta={generationMeta}
               onNoteChange={handleNoteChange}
             />
             {/* Owner Verification Checklist */}

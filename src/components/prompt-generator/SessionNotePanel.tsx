@@ -7,17 +7,22 @@
  * 하루 10~20개 시나리오를 돌릴 때 빠른 분류/기록용.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   type FailureTag,
   type OwnerSessionNote,
   type SessionLogEntry,
   FAILURE_TAG_LABELS,
+  FAILURE_INTERPRETATIONS,
   appendSessionLog,
   loadSessionLog,
   clearSessionLog,
   sessionLogStats,
+  buildOwnerSummary,
+  deriveActionItems,
+  tagsByDurationBand,
 } from "@/lib/draft-store";
+import type { DraftGenerationMeta } from "@/lib/draft-store";
 
 interface Props {
   draftId: string | null;
@@ -25,6 +30,8 @@ interface Props {
   fallbackUsed: boolean;
   /** Current saved note (from draft) */
   savedNote?: OwnerSessionNote | null;
+  /** Engine meta context — for enriched log entries */
+  generationMeta?: DraftGenerationMeta | null;
   /** Callback when note changes — parent should persist to draft */
   onNoteChange: (note: OwnerSessionNote) => void;
 }
@@ -51,7 +58,7 @@ const TAG_COLORS: Record<FailureTag, string> = {
   "save-reopen-confusion": "bg-slate-700/40 text-slate-300 border-slate-600/40",
 };
 
-export default function SessionNotePanel({ draftId, scenario, fallbackUsed, savedNote, onNoteChange }: Props) {
+export default function SessionNotePanel({ draftId, scenario, fallbackUsed, savedNote, generationMeta, onNoteChange }: Props) {
   const [open, setOpen] = useState(false);
   const [showLog, setShowLog] = useState(false);
 
@@ -108,7 +115,7 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
     };
     onNoteChange(note);
 
-    // Also append to session log
+    // Also append to session log with engine context
     if (draftId) {
       appendSessionLog({
         draftId,
@@ -118,10 +125,16 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
         nextFixGuess: nextFixGuess || undefined,
         fallbackUsed,
         timestamp: Date.now(),
+        durationBand: generationMeta?.shortformRhythm?.band,
+        directorRequested: generationMeta?.directorRequested,
+        degraded: generationMeta?.degraded,
+        directorPaceDownWeighted: generationMeta?.directorPaceDownWeight,
+        outlineOnly: generationMeta?.outlineOnly,
+        totalDurationSec: generationMeta?.totalDurationSec,
       });
       if (showLog) setLogEntries(loadSessionLog());
     }
-  }, [scenario, firstImpression, rhythmVerdict, styleVerdict, tags, fallbackUsed, nextFixGuess, onNoteChange, draftId, showLog]);
+  }, [scenario, firstImpression, rhythmVerdict, styleVerdict, tags, fallbackUsed, nextFixGuess, onNoteChange, draftId, showLog, generationMeta]);
 
   const handleClearLog = useCallback(() => {
     clearSessionLog();
@@ -130,6 +143,9 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
 
   const stats = sessionLogStats(logEntries);
   const totalLogged = logEntries.length;
+  const summary = useMemo(() => buildOwnerSummary(logEntries), [logEntries]);
+  const actionItems = useMemo(() => deriveActionItems(summary), [summary]);
+  const bandBreakdown = useMemo(() => tagsByDurationBand(logEntries), [logEntries]);
 
   return (
     <div className="border border-zinc-700 rounded-lg overflow-hidden text-xs font-mono">
@@ -224,52 +240,178 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
             </button>
           </div>
 
-          {/* ── Session Log Summary ── */}
+          {/* ── Session Log + Owner Summary ── */}
           {showLog && (
-            <div className="bg-zinc-800/60 rounded px-2.5 py-2 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-widest">세션 로그 요약</div>
-                <button
-                  onClick={handleClearLog}
-                  className="px-1.5 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-500 text-[9px] transition-colors"
-                >
-                  초기화
-                </button>
-              </div>
-
-              {/* Tag distribution */}
-              <div className="flex flex-wrap gap-1.5">
-                {(Object.entries(stats) as [FailureTag, number][])
-                  .filter(([, count]) => count > 0)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([tag, count]) => (
-                    <span key={tag} className={`px-1.5 py-0.5 rounded text-[9px] border ${TAG_COLORS[tag]}`}>
-                      {FAILURE_TAG_LABELS[tag]} ×{count}
-                    </span>
+            <div className="space-y-2">
+              {/* ── Action Items (가장 중요 — 맨 위) ── */}
+              {actionItems.length > 0 && (
+                <div className="bg-indigo-900/20 border border-indigo-700/30 rounded px-2.5 py-2 space-y-1">
+                  <div className="text-[10px] text-indigo-400 uppercase tracking-widest">다음 수정 우선순위</div>
+                  {actionItems.map((item, i) => (
+                    <div key={i} className={`text-[11px] leading-relaxed ${
+                      item.startsWith("[P0]") ? "text-red-300" : item.startsWith("[P1]") ? "text-amber-300" : "text-zinc-300"
+                    }`}>
+                      {item}
+                    </div>
                   ))}
-                {totalLogged === 0 && (
-                  <span className="text-zinc-600 text-[10px]">기록 없음</span>
+                </div>
+              )}
+
+              {/* ── Summary Stats ── */}
+              <div className="bg-zinc-800/60 rounded px-2.5 py-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest">세션 요약</div>
+                  <button
+                    onClick={handleClearLog}
+                    className="px-1.5 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-500 text-[9px] transition-colors"
+                  >
+                    초기화
+                  </button>
+                </div>
+
+                {totalLogged === 0 ? (
+                  <span className="text-zinc-600 text-[10px]">기록 없음 — 먼저 시나리오를 돌리고 메모를 저장하세요</span>
+                ) : (
+                  <>
+                    {/* Overview bar */}
+                    <div className="flex items-center gap-3 text-[10px]">
+                      <span className="text-zinc-400">{summary.totalSessions}회 테스트</span>
+                      <span className="text-green-400">{summary.okCount} OK</span>
+                      <span className={summary.failCount > 0 ? "text-red-400" : "text-zinc-600"}>{summary.failCount} 실패</span>
+                      {summary.fallbackRate > 0 && (
+                        <span className="text-purple-400">fallback {(summary.fallbackRate * 100).toFixed(0)}%</span>
+                      )}
+                      {summary.downWeightRate > 0 && (
+                        <span className="text-amber-400">pace↓ {(summary.downWeightRate * 100).toFixed(0)}%</span>
+                      )}
+                    </div>
+
+                    {/* Tag distribution */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {(Object.entries(stats) as [FailureTag, number][])
+                        .filter(([, count]) => count > 0)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([tag, count]) => {
+                          const isTop = summary.topFailure?.tag === tag;
+                          return (
+                            <span key={tag} className={`px-1.5 py-0.5 rounded text-[9px] border ${TAG_COLORS[tag]} ${isTop ? "ring-1 ring-white/20" : ""}`}>
+                              {FAILURE_TAG_LABELS[tag]} ×{count}
+                              {isTop && " ★"}
+                            </span>
+                          );
+                        })}
+                    </div>
+
+                    {/* Duration band breakdown */}
+                    {Object.keys(bandBreakdown).length > 1 && (
+                      <div className="space-y-1">
+                        <div className="text-[9px] text-zinc-600 uppercase tracking-wider">밴드별 실패</div>
+                        {Object.entries(bandBreakdown).map(([band, tagCounts]) => {
+                          const fails = Object.entries(tagCounts).filter(([t, c]) => t !== "ok" && c > 0);
+                          if (fails.length === 0) return null;
+                          const isCritical = band === "shortform-critical";
+                          return (
+                            <div key={band} className="flex items-center gap-2 text-[10px]">
+                              <span className={`w-28 shrink-0 ${isCritical ? "text-red-400 font-medium" : "text-zinc-500"}`}>
+                                {band}
+                              </span>
+                              <span className="flex gap-1 flex-wrap">
+                                {fails.map(([tag, count]) => (
+                                  <span key={tag} className={`px-1 py-0 rounded text-[8px] ${TAG_COLORS[tag as FailureTag]}`}>
+                                    {FAILURE_TAG_LABELS[tag as FailureTag]} ×{count}
+                                  </span>
+                                ))}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Recent fix guesses */}
+                    {summary.recentFixGuesses.length > 0 && (
+                      <div className="space-y-0.5">
+                        <div className="text-[9px] text-zinc-600 uppercase tracking-wider">최근 수정 추측</div>
+                        {summary.recentFixGuesses.map((guess, i) => (
+                          <div key={i} className="text-[10px] text-zinc-400 pl-2">→ {guess}</div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* Recent entries */}
-              {logEntries.slice(0, 8).map((entry, i) => (
-                <div key={i} className="flex items-center gap-2 text-[10px] text-zinc-500">
-                  <span className="text-zinc-600 w-12 shrink-0">
-                    {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                  <span className="truncate flex-1">{entry.scenario}</span>
-                  <span className="flex gap-0.5">
-                    {entry.failureTags.map(t => (
-                      <span key={t} className={`px-1 py-0 rounded text-[8px] ${TAG_COLORS[t]}`}>
-                        {FAILURE_TAG_LABELS[t]}
+              {/* ── Recent Log Entries ── */}
+              {logEntries.length > 0 && (
+                <div className="bg-zinc-800/40 rounded px-2.5 py-2 space-y-1">
+                  <div className="text-[9px] text-zinc-600 uppercase tracking-wider">최근 기록</div>
+                  {logEntries.slice(0, 10).map((entry, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[10px] text-zinc-500">
+                      <span className="text-zinc-600 w-10 shrink-0">
+                        {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
                       </span>
-                    ))}
-                  </span>
+                      <span className="truncate flex-1">{entry.scenario}</span>
+                      {entry.durationBand && (
+                        <span className={`text-[8px] px-1 rounded ${entry.durationBand === "shortform-critical" ? "bg-red-900/30 text-red-400" : "bg-zinc-700/50 text-zinc-500"}`}>
+                          {entry.durationBand}
+                        </span>
+                      )}
+                      <span className="flex gap-0.5 shrink-0">
+                        {entry.failureTags.map(t => (
+                          <span key={t} className={`px-1 py-0 rounded text-[8px] ${TAG_COLORS[t]}`}>
+                            {FAILURE_TAG_LABELS[t]}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* ── Interpretation Guide (접이식) ── */}
+              <InterpretationGuide activeTags={Object.entries(stats).filter(([, c]) => c > 0).map(([t]) => t as FailureTag)} />
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InterpretationGuide({ activeTags }: { activeTags: FailureTag[] }) {
+  const [guideOpen, setGuideOpen] = useState(false);
+  const relevantTags = activeTags.filter(t => t !== "ok");
+
+  if (relevantTags.length === 0) return null;
+
+  return (
+    <div className="bg-zinc-800/30 rounded overflow-hidden">
+      <button
+        onClick={() => setGuideOpen(!guideOpen)}
+        className="w-full px-2.5 py-1.5 flex items-center gap-1.5 text-[10px] text-zinc-500 hover:text-zinc-400 transition-colors"
+      >
+        <span>{guideOpen ? "▼" : "▶"}</span>
+        <span className="uppercase tracking-wider">해석 가이드</span>
+        <span className="text-zinc-600">— 발생한 실패 유형의 원인과 대응</span>
+      </button>
+      {guideOpen && (
+        <div className="px-2.5 pb-2 space-y-2">
+          {relevantTags.map(tag => {
+            const interp = FAILURE_INTERPRETATIONS[tag];
+            return (
+              <div key={tag} className="space-y-0.5">
+                <div className={`text-[10px] font-medium ${TAG_COLORS[tag].split(" ")[1]}`}>
+                  {FAILURE_TAG_LABELS[tag]}
+                </div>
+                <div className="text-[10px] text-zinc-500 pl-2">
+                  의심: {interp.suspect}
+                </div>
+                <div className="text-[10px] text-zinc-400 pl-2">
+                  대응: {interp.action}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
