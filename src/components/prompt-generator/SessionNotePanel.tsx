@@ -136,6 +136,9 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
         directorPaceDownWeighted: generationMeta?.directorPaceDownWeight,
         outlineOnly: generationMeta?.outlineOnly,
         totalDurationSec: generationMeta?.totalDurationSec,
+        fastPathUsed: generationMeta?.fastPathUsed,
+        totalLatencyMs: generationMeta?.totalLatencyMs,
+        totalShotCount: generationMeta?.totalShotCount,
       });
       if (showLog) setLogEntries(loadSessionLog());
     }
@@ -279,7 +282,7 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
                 ) : (
                   <>
                     {/* Overview bar */}
-                    <div className="flex items-center gap-3 text-[10px]">
+                    <div className="flex items-center gap-3 text-[10px] flex-wrap">
                       <span className="text-zinc-400">{summary.totalSessions}회 테스트</span>
                       <span className="text-green-400">{summary.okCount} OK</span>
                       <span className={summary.failCount > 0 ? "text-red-400" : "text-zinc-600"}>{summary.failCount} 실패</span>
@@ -290,6 +293,8 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
                         <span className="text-amber-400">pace↓ {(summary.downWeightRate * 100).toFixed(0)}%</span>
                       )}
                     </div>
+                    {/* Fast path comparison */}
+                    <FastPathSummary entries={logEntries} />
 
                     {/* Tag distribution */}
                     <div className="flex flex-wrap gap-1.5">
@@ -356,6 +361,15 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
                         {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
                       </span>
                       <span className="truncate flex-1">{entry.scenario}</span>
+                      {entry.fastPathUsed && (
+                        <span className="text-[8px] px-1 rounded bg-cyan-900/30 text-cyan-400">FP</span>
+                      )}
+                      {entry.totalLatencyMs != null && (
+                        <span className="text-[8px] text-zinc-600 shrink-0">{(entry.totalLatencyMs / 1000).toFixed(1)}s</span>
+                      )}
+                      {entry.totalShotCount != null && (
+                        <span className="text-[8px] text-zinc-600 shrink-0">{entry.totalShotCount}sh</span>
+                      )}
                       {entry.durationBand && (
                         <span className={`text-[8px] px-1 rounded ${entry.durationBand === "shortform-critical" ? "bg-red-900/30 text-red-400" : "bg-zinc-700/50 text-zinc-500"}`}>
                           {entry.durationBand}
@@ -496,6 +510,66 @@ function RecommendDiagnostics() {
               </button>
             </>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FastPathSummary({ entries }: { entries: SessionLogEntry[] }) {
+  const fpEntries = entries.filter(e => e.fastPathUsed);
+  const nonFpEntries = entries.filter(e => !e.fastPathUsed && e.totalLatencyMs != null);
+  if (fpEntries.length === 0 && nonFpEntries.length === 0) return null;
+
+  const avgLatency = (list: SessionLogEntry[]) => {
+    const withLatency = list.filter(e => e.totalLatencyMs != null);
+    return withLatency.length > 0 ? Math.round(withLatency.reduce((s, e) => s + (e.totalLatencyMs ?? 0), 0) / withLatency.length) : null;
+  };
+  const avgShots = (list: SessionLogEntry[]) => {
+    const withShots = list.filter(e => e.totalShotCount != null);
+    return withShots.length > 0 ? (withShots.reduce((s, e) => s + (e.totalShotCount ?? 0), 0) / withShots.length).toFixed(1) : null;
+  };
+  const failRate = (list: SessionLogEntry[]) => {
+    if (list.length === 0) return null;
+    const fails = list.filter(e => e.failureTags.some(t => t !== "ok"));
+    return Math.round((fails.length / list.length) * 100);
+  };
+
+  // Quality concern tags for fast path
+  const fpQualityFails = fpEntries.filter(e =>
+    e.failureTags.some(t => t === "too-generic" || t === "style-too-weak" || t === "too-sparse")
+  ).length;
+
+  const fpLatency = avgLatency(fpEntries);
+  const nonFpLatency = avgLatency(nonFpEntries);
+
+  return (
+    <div className="bg-zinc-800/40 rounded px-2.5 py-1.5 space-y-1">
+      <div className="text-[9px] text-zinc-600 uppercase tracking-wider">fast path vs normal 비교</div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+        <span className="text-zinc-500">구분</span>
+        <span className="text-zinc-500 flex gap-4"><span className="w-16">Fast Path</span><span>Normal</span></span>
+        <span className="text-zinc-500">건수</span>
+        <span className="text-zinc-400 flex gap-4"><span className="w-16">{fpEntries.length}</span><span>{nonFpEntries.length}</span></span>
+        <span className="text-zinc-500">평균 latency</span>
+        <span className="text-zinc-400 flex gap-4">
+          <span className="w-16">{fpLatency != null ? `${(fpLatency / 1000).toFixed(1)}s` : "-"}</span>
+          <span>{nonFpLatency != null ? `${(nonFpLatency / 1000).toFixed(1)}s` : "-"}</span>
+        </span>
+        <span className="text-zinc-500">평균 shots</span>
+        <span className="text-zinc-400 flex gap-4">
+          <span className="w-16">{avgShots(fpEntries) ?? "-"}</span>
+          <span>{avgShots(nonFpEntries) ?? "-"}</span>
+        </span>
+        <span className="text-zinc-500">실패율</span>
+        <span className="text-zinc-400 flex gap-4">
+          <span className="w-16">{failRate(fpEntries) != null ? `${failRate(fpEntries)}%` : "-"}</span>
+          <span>{failRate(nonFpEntries) != null ? `${failRate(nonFpEntries)}%` : "-"}</span>
+        </span>
+      </div>
+      {fpQualityFails > 0 && (
+        <div className="text-[10px] text-amber-400">
+          fast path 품질 문제 {fpQualityFails}건 (generic/style-weak/sparse)
         </div>
       )}
     </div>

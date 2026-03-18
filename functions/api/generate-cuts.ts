@@ -1394,6 +1394,66 @@ function buildUltraCompactStep1Prompt(
 "outlines":[{"cutNumber":1,"sceneKo":"≤20자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w"}]}`;
 }
 
+// ─── Fast path eligibility evaluator ──────────────────────────────────────────
+
+interface FastPathEligibility {
+  eligible: boolean;
+  reason: string;
+  checks: {
+    durationOk: boolean;
+    cutCountOk: boolean;
+    outlineQualityOk: boolean;
+    step1Healthy: boolean;
+    storyComplexityOk: boolean;
+    narrativeFunctionsClear: boolean;
+  };
+}
+
+function evaluateFastPathEligibility(opts: {
+  totalDurationSec: number;
+  targetCuts: number;
+  outlines: { sceneKo?: string; shotType?: string; cameraMovement?: string; subjectAction?: string; sceneBeat1?: string; sceneBeat2?: string; sceneBeat3?: string; narrativeFunction?: string; purpose?: string }[];
+  step1Degraded: boolean;
+  storyText: string;
+}): FastPathEligibility {
+  const durationOk = opts.totalDurationSec <= FAST_PATH_MAX_DURATION_SEC;
+  const cutCountOk = opts.targetCuts <= FAST_PATH_MAX_CUTS;
+
+  const outlineQualityOk = opts.outlines.length > 0 && opts.outlines.every(o =>
+    o.sceneKo && o.shotType && o.cameraMovement && o.subjectAction && o.sceneBeat1 && o.sceneBeat2 && o.sceneBeat3
+  );
+
+  const step1Healthy = !opts.step1Degraded;
+
+  // Story complexity heuristic: multiple dialogue markers, scene transitions, or character names
+  // suggest higher complexity that benefits from step2/3 detail enrichment
+  const dialogueMarkers = (opts.storyText.match(/["""「」『』]/g) || []).length;
+  const sceneTransitions = (opts.storyText.match(/[—\-]{2,}|장면|씬|전환|그러나|하지만|그때/g) || []).length;
+  const storyComplexityOk = dialogueMarkers <= 6 && sceneTransitions <= 4;
+
+  // Check if narrative functions are clearly identified (non-empty and distinct)
+  const narrativeFns = opts.outlines.map(o => o.narrativeFunction || o.purpose || "").filter(Boolean);
+  const narrativeFunctionsClear = narrativeFns.length >= opts.outlines.length * 0.7;
+
+  const checks = { durationOk, cutCountOk, outlineQualityOk, step1Healthy, storyComplexityOk, narrativeFunctionsClear };
+  const eligible = durationOk && cutCountOk && outlineQualityOk && step1Healthy && storyComplexityOk;
+
+  let reason: string;
+  if (eligible) {
+    reason = "shortform + simple story + quality outlines";
+  } else {
+    const fails: string[] = [];
+    if (!durationOk) fails.push(`duration ${opts.totalDurationSec}s > ${FAST_PATH_MAX_DURATION_SEC}s`);
+    if (!cutCountOk) fails.push(`cuts ${opts.targetCuts} > ${FAST_PATH_MAX_CUTS}`);
+    if (!outlineQualityOk) fails.push("outline quality insufficient");
+    if (!step1Healthy) fails.push("step1 degraded");
+    if (!storyComplexityOk) fails.push(`story too complex (dialogue=${dialogueMarkers}, transitions=${sceneTransitions})`);
+    reason = fails.join("; ");
+  }
+
+  return { eligible, reason, checks };
+}
+
 // ─── generationMeta rationale builder ─────────────────────────────────────────
 
 function buildRationale(opts: {
@@ -1719,8 +1779,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const skippedSteps: string[] = [];
     let fastPathUsed = false;
 
-    // ── Fast path 판정 ──────────────────────────────────────────────────────
-    // 짧은 shortform(≤15초, ≤5컷)이면 step2/3 skip 후보
+    // ── Timeout tracking ──────────────────────────────────────────────────────
+    let timedOutAtStep1 = false;
+    let timedOutAtUltra = false;
+    let timeoutPathUsed: "none" | "ultra-compact" | "deterministic" = "none";
+
+    // ── Pre-step1 fast path candidate check (duration/cuts only) ─────────
     const isFastPathCandidate =
       effectiveTotalForDensity <= FAST_PATH_MAX_DURATION_SEC
       && targetCuts <= FAST_PATH_MAX_CUTS;
@@ -1865,6 +1929,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // ── Timeout/API error → ultra-compact retry → deterministic fallback ──
       if (isTimeout) {
+        timedOutAtStep1 = true;
         console.warn("[generate-cuts] step1 timeout — attempting ultra-compact retry");
         step1Warnings.push(`step1 timed out: ${msg.slice(0, 200)}`);
 
@@ -1889,6 +1954,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               step1Warnings.push("step1 recovered via ultra-compact retry");
               step1Degraded = true;
               step1DegradedReason = "step1 timeout → ultra-compact retry succeeded";
+              timeoutPathUsed = "ultra-compact";
               // Parse outlines/seeds from ultra-compact (reuse existing parsing logic inline)
               characterSeeds = Array.isArray(parsed.characterSeeds)
                 ? (parsed.characterSeeds as Array<Partial<CharacterSeed>>).map(s => ({
@@ -1925,6 +1991,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               throw new Error("ultra-compact parse failed");
             }
           } else {
+            timedOutAtUltra = !!retryResult.timedOut;
             throw new Error(`ultra-compact also failed: ${retryResult.error?.slice(0, 200) ?? "timeout"}`);
           }
         } catch (retryErr) {
@@ -1933,6 +2000,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           console.warn("[generate-cuts] ultra-compact retry also failed:", retryMsg, "→ deterministic fallback");
           step1Warnings.push(`ultra-compact retry failed: ${retryMsg.slice(0, 200)}`);
           step1Warnings.push("falling back to deterministic cut generation (no Gemini)");
+          timeoutPathUsed = "deterministic";
 
           const deterministicCuts = buildDeterministicCuts(
             String(storyText),
@@ -2063,21 +2131,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     t1_step1 = Date.now();
     console.log(`[generate-cuts] step1 완료: ${t1_step1 - t0_step1}ms, outlines=${outlines.length}`);
 
-    // ── Fast path 판정: step1 outline 품질이 충분하면 step2/3 건너뛰기 ──
-    // 조건: fast path 후보 AND outline에 핵심 필드가 모두 있음 AND degraded 아님
-    const outlineQualitySufficient = outlines.every(o =>
-      o.sceneKo && o.shotType && o.cameraMovement && o.subjectAction && o.sceneBeat1 && o.sceneBeat2 && o.sceneBeat3
-    );
-    const shouldUseFastPath = isFastPathCandidate && outlineQualitySufficient && !step1Degraded;
+    // ── Fast path 판정: evaluateFastPathEligibility로 구조적 판단 ──
+    const fastPathEval = evaluateFastPathEligibility({
+      totalDurationSec: effectiveTotalForDensity,
+      targetCuts,
+      outlines,
+      step1Degraded,
+      storyText: String(storyText),
+    });
+    const shouldUseFastPath = isFastPathCandidate && fastPathEval.eligible;
 
     if (shouldUseFastPath) {
       fastPathUsed = true;
       skippedSteps.push("step2", "step3");
-      console.log("[generate-cuts] FAST PATH: step2/3 건너뛰기 — outline 품질 충분, shortform", {
+      console.log("[generate-cuts] FAST PATH: step2/3 건너뛰기", {
         totalDuration: effectiveTotalForDensity,
         targetCuts,
         step1LatencyMs: t1_step1 - t0_step1,
+        eligibilityReason: fastPathEval.reason,
+        checks: fastPathEval.checks,
       });
+    } else if (isFastPathCandidate) {
+      console.log("[generate-cuts] fast path candidate rejected:", fastPathEval.reason, fastPathEval.checks);
     }
 
     // ── STEP 2 & 3: 상세 프롬프트 생성 (병렬) ────────────────────────────────
@@ -2406,8 +2481,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     return Response.json({
       ok: true,
-      degraded: step1Degraded || fastPathUsed,
-      reason: fastPathUsed ? "fast path: step2/3 skipped (short/simple)" : (step1DegradedReason || undefined),
+      degraded: step1Degraded,
+      degradedByFastPath: fastPathUsed && !step1Degraded,
+      reason: fastPathUsed
+        ? `fast path: ${fastPathEval.reason}`
+        : (step1DegradedReason || undefined),
       source: "gemini" as const,
       warnings: step1Warnings,
       characterSeeds,
@@ -2467,6 +2545,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         cutShotCounts: finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 1),
         totalShotCount: finalizedCuts.reduce((s, c) => s + (Array.isArray(c.multiShot) ? c.multiShot.length : 1), 0),
         fallbackUsed: step1Degraded && step1DegradedReason.includes("fallback"),
+        fastPathUsed,
+        totalLatencyMs: totalLatencyMs,
+        step1LatencyMs: step1LatencyMs,
+        step23LatencyMs: step23LatencyMs,
         outlineOnly: details1.length === 0 && details2.length === 0 && outlines.length > 0,
         genericSplitFallback: false,
         providerError: step1Warnings.find(w => w.includes("provider")) || undefined,
@@ -2493,6 +2575,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         fastPathUsed,
         skippedSteps,
         degradedFastPathUsed: fastPathUsed,
+        // timeout tracking
+        timedOutAtStep1,
+        timedOutAtUltra,
+        timeoutPathUsed,
+        // quality context for fast path comparison
+        totalCutCount: finalizedCuts.length,
+        totalShotCount: finalizedCuts.reduce((s, c) => s + (Array.isArray(c.multiShot) ? c.multiShot.length : 1), 0),
+        outlineOnly: details1.length === 0 && details2.length === 0 && outlines.length > 0,
+        step1Ratio: totalLatencyMs > 0 ? Math.round((step1LatencyMs / totalLatencyMs) * 100) : 0,
+        step23Ratio: totalLatencyMs > 0 ? Math.round((step23LatencyMs / totalLatencyMs) * 100) : 0,
+      },
+      // ── Fast path eligibility reasoning ──
+      _fastPathEval: {
+        eligible: fastPathEval.eligible,
+        reason: fastPathEval.reason,
+        checks: fastPathEval.checks,
       },
     });
 

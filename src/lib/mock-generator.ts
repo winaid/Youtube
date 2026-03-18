@@ -42,7 +42,7 @@ async function fetchGeminiCuts(
   cutCount: number,
   cutDuration: number,
   projectTotalDurationSec: number,
-): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; degraded?: boolean; degradedReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown; generationMeta?: Record<string, unknown>; _latency?: unknown }> {
+): Promise<{ characterSeeds: CharacterSeed[]; cuts: Cut[]; usedFallback?: boolean; fallbackReason?: string; fallbackCause?: string; degraded?: boolean; degradedReason?: string; sequencePlan?: unknown; sequenceValidation?: unknown; generationMeta?: Record<string, unknown>; _latency?: unknown; _fastPathEval?: unknown }> {
   try {
     const res = await fetch("/api/generate-cuts", {
       method: "POST",
@@ -141,6 +141,9 @@ async function fetchGeminiCuts(
     if (data._latency) {
       console.log("[generate-cuts] LATENCY:", data._latency);
     }
+    if (data._fastPathEval) {
+      console.log("[generate-cuts] FAST PATH EVAL:", data._fastPathEval);
+    }
 
     return {
       characterSeeds,
@@ -151,6 +154,7 @@ async function fetchGeminiCuts(
       sequenceValidation: data.sequenceValidation ?? undefined,
       generationMeta: data.generationMeta ?? undefined,
       _latency: data._latency ?? undefined,
+      _fastPathEval: data._fastPathEval ?? undefined,
     };
   } catch (error) {
     const errStr = String(error);

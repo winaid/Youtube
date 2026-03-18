@@ -121,6 +121,11 @@ export default function PromptGenerator() {
         providerError: sm?.providerError,
         densityPolicy: sm?.densityPolicy,
         rationale: sm?.rationale,
+        fastPathUsed: sm?.fastPathUsed,
+        totalLatencyMs: sm?.totalLatencyMs,
+        step1LatencyMs: sm?.step1LatencyMs,
+        step23LatencyMs: sm?.step23LatencyMs,
+        totalShotCount: sm?.totalShotCount ?? output.cuts.reduce((s, c) => s + (c.multiShot?.length || 1), 0),
         narrativeFunction: sm?.narrativeFunctions?.slice(0, 3).join(", "),
         shortformRhythm: sm?.shortformPolicyApplied ? {
           band: sm.durationBand ?? "unknown",

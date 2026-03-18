@@ -75,6 +75,9 @@ export default function QualityDebugPanel({ output, meta, sampleHint }: Props) {
   if (output.degraded) {
     rationale.push(`자동 조정됨: ${output.degradedReason ?? "사유 미상"}`);
   }
+  if (meta?.fastPathUsed) {
+    rationale.push("Fast path 사용: step2/3 건너뜀 — outline 기반 프롬프트만 사용됨.");
+  }
 
   // Status summary
   const hasIssues = output.usedFallback || output.degraded || valErrors > 0 || cutCount < expectedMinCuts;
@@ -91,6 +94,9 @@ export default function QualityDebugPanel({ output, meta, sampleHint }: Props) {
           <span className="text-[10px]">{open ? "▼" : "▶"}</span>
           <span className="font-semibold tracking-wide">QUALITY DEBUG</span>
           <span className={`text-[10px] font-semibold ${statusColor}`}>{statusText}</span>
+          {meta?.fastPathUsed && (
+            <span className="px-1.5 py-0.5 rounded bg-cyan-900/60 text-cyan-300 text-[10px]">FAST PATH</span>
+          )}
           {output.usedFallback && (
             <span className="px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-300 text-[10px]">FALLBACK</span>
           )}
@@ -200,8 +206,26 @@ export default function QualityDebugPanel({ output, meta, sampleHint }: Props) {
             <Row label="genericSplitFallback" value={meta?.genericSplitFallback ? "YES" : "no"} highlight={meta?.genericSplitFallback} />
           </Section>
 
-          {/* ── 5. Sequence Plan ── */}
-          <Section title="5. Sequence Plan">
+          {/* ── 5. Fast Path / Latency ── */}
+          <Section title="5. Fast Path / Latency">
+            <Row label="fastPathUsed" value={meta?.fastPathUsed ? "YES (step2/3 skip)" : "no"} highlight={meta?.fastPathUsed} />
+            <Row label="outlineOnly" value={meta?.outlineOnly ? "YES" : "no"} highlight={meta?.outlineOnly} />
+            {meta?.totalLatencyMs != null && (
+              <>
+                <Row label="totalLatencyMs" value={`${meta.totalLatencyMs}ms (${(meta.totalLatencyMs / 1000).toFixed(1)}s)`} />
+                {meta.step1LatencyMs != null && (
+                  <Row label="step1LatencyMs" value={`${meta.step1LatencyMs}ms`} />
+                )}
+                {meta.step23LatencyMs != null && (
+                  <Row label="step23LatencyMs" value={`${meta.step23LatencyMs}ms`} highlight={meta.fastPathUsed && meta.step23LatencyMs < 100} />
+                )}
+              </>
+            )}
+            <Row label="totalShotCount" value={String(meta?.totalShotCount ?? shotCount)} />
+          </Section>
+
+          {/* ── 6. Sequence Plan ── */}
+          <Section title="6. Sequence Plan">
             <Row label="hasSequencePlan" value={hasSequencePlan ? "YES" : "NO"} />
             <Row label="validationErrors" value={String(valErrors)} highlight={valErrors > 0} />
             <Row label="validationWarnings" value={String(valWarnings)} highlight={valWarnings > 0} />

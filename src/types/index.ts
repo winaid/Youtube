@@ -408,6 +408,10 @@ export interface ServerGenerationMeta {
   cutDurations?: number[];
   cutShotCounts?: number[];
   totalShotCount?: number;
+  fastPathUsed?: boolean;
+  totalLatencyMs?: number;
+  step1LatencyMs?: number;
+  step23LatencyMs?: number;
   fallbackUsed?: boolean;
   outlineOnly?: boolean;
   genericSplitFallback?: boolean;

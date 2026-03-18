@@ -113,6 +113,16 @@ export interface DraftGenerationMeta {
   providerError?: string;
   /** Rationale messages for quick judgment */
   rationale?: string[];
+  /** Whether fast path was used (step2/3 skipped) */
+  fastPathUsed?: boolean;
+  /** Total latency in ms */
+  totalLatencyMs?: number;
+  /** Step1 latency in ms */
+  step1LatencyMs?: number;
+  /** Step23 latency in ms */
+  step23LatencyMs?: number;
+  /** Total shot count */
+  totalShotCount?: number;
 }
 
 // ─── Save Status ───
@@ -340,6 +350,10 @@ export interface SessionLogEntry {
   directorPaceDownWeighted?: boolean;
   outlineOnly?: boolean;
   totalDurationSec?: number;
+  /** Fast path tracking */
+  fastPathUsed?: boolean;
+  totalLatencyMs?: number;
+  totalShotCount?: number;
 }
 
 /** Load session log from localStorage */
