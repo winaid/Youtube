@@ -688,12 +688,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       const webCount = data.webSuggestions?.length ?? 0;
       const outcome: RecommendLogEntry["outcome"] = (localCount + webCount > 0) ? "success" : "empty";
 
+      // Pipeline debug 로그 (서버에서 반환한 _debug 전체 출력)
+      if (data._debug) {
+        console.log("[recommend-director] pipeline debug:", data._debug);
+      }
       console.log("[recommend-director] result:", {
         outcome,
         resultCount: localCount + webCount,
         localMatches: localCount,
         webSuggestions: webCount,
         latencyMs: Date.now() - startTime,
+        emptyReason: data._debug?.emptyReason ?? null,
       });
 
       appendRecommendLog({
@@ -997,19 +1002,36 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             {/* 추천 결과 */}
             {showRecommendation && !isRecommending && directorRecommendation && !recommendError && (
               <div className="rounded-xl border p-3 space-y-3" style={{ background: "#fafbff", borderColor: "#787fff30" }}>
-                {/* 결과 건수 표시 */}
+                {/* 결과 건수 + 파이프라인 미니 라인 */}
                 {(() => {
                   const localCount = directorRecommendation.localMatches.length;
                   const webCount = directorRecommendation.webSuggestions.length;
                   const totalCount = localCount + webCount;
+                  const debug = (directorRecommendation as Record<string, unknown>)._debug as Record<string, unknown> | undefined;
+                  const genres = (debug?.extractedGenres as string[]) ?? [];
+                  const moods = (debug?.extractedMoods as string[]) ?? [];
+                  const invalidRemoved = (debug?.invalidIdsRemoved as number) ?? 0;
                   return totalCount > 0 ? (
+                    <>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-semibold" style={{ color: "#787fff" }}>
                         {totalCount}명 추천됨
                       </span>
                       {localCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff10", color: "#787fff" }}>보유 {localCount}</span>}
                       {webCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>신규 {webCount}</span>}
+                      {invalidRemoved > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#ef444410", color: "#ef4444" }}>ID필터 -{invalidRemoved}</span>}
                     </div>
+                    {(genres.length > 0 || moods.length > 0) && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {genres.map((g, i) => (
+                          <span key={`g-${i}`} className="text-[8px] px-1 py-0.5 rounded" style={{ background: "#787fff08", color: "#787fff90" }}>{g}</span>
+                        ))}
+                        {moods.map((m, i) => (
+                          <span key={`m-${i}`} className="text-[8px] px-1 py-0.5 rounded" style={{ background: "#22c55e08", color: "#22c55e90" }}>{m}</span>
+                        ))}
+                      </div>
+                    )}
+                    </>
                   ) : null;
                 })()}
 
@@ -1037,21 +1059,103 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   </p>
                 )}
 
-                {/* 빈 결과 상태 */}
-                {directorRecommendation.localMatches.length === 0 && directorRecommendation.webSuggestions.length === 0 && (
-                  <div className="text-center py-3 space-y-1.5">
-                    <p className="text-[11px] font-medium" style={{ color: "#9ca3af" }}>추천 결과 없음</p>
-                    <p className="text-[10px]" style={{ color: "#b0b0b0" }}>
-                      시나리오를 더 구체적으로 작성하거나, 다른 장르/무드를 시도해보세요.
-                    </p>
-                    <div className="text-[9px] space-y-0.5" style={{ color: "#c0c0c0" }}>
-                      <p>확인 포인트:</p>
-                      <p>- 시나리오 길이: {storyText.length}자 (100자 이상 권장)</p>
-                      <p>- 감독 풀: {allDirectors.length}명</p>
-                      <p>- 장르/배경/감정 키워드가 포함되어 있나요?</p>
+                {/* 빈 결과 상태 — 파이프라인 병목 표시 */}
+                {directorRecommendation.localMatches.length === 0 && directorRecommendation.webSuggestions.length === 0 && (() => {
+                  const debug = (directorRecommendation as Record<string, unknown>)._debug as Record<string, unknown> | undefined;
+                  const emptyReason = debug?.emptyReason as string | undefined;
+                  const extractedGenres = debug?.extractedGenres as string[] | undefined;
+                  const extractedMoods = debug?.extractedMoods as string[] | undefined;
+                  const geminiLocalCount = debug?.geminiLocalCount as number | undefined;
+                  const geminiWebCount = debug?.geminiWebCount as number | undefined;
+                  const invalidIdsRemoved = debug?.invalidIdsRemoved as number | undefined;
+
+                  const EMPTY_REASON_LABELS: Record<string, { label: string; hint: string }> = {
+                    genre_mood_not_detected: {
+                      label: "장르/무드 신호 약함",
+                      hint: "시나리오에 장르(스릴러, 로맨스 등)나 분위기(어두운, 따뜻한 등) 키워드를 추가해보세요.",
+                    },
+                    empty_director_pool: {
+                      label: "감독 풀 비어 있음",
+                      hint: "보유 감독 목록이 비어 있습니다. 감독을 추가해주세요.",
+                    },
+                    no_local_candidates_considered: {
+                      label: "로컬 후보 검토 실패",
+                      hint: "AI가 보유 감독 중 적합한 후보를 검토하지 못했습니다. 시나리오를 더 구체적으로 작성해보세요.",
+                    },
+                    gemini_returned_empty: {
+                      label: "AI 매칭 실패",
+                      hint: "장르/무드는 인식했으나 적합한 감독을 찾지 못했습니다. 다른 장르나 배경을 시도해보세요.",
+                    },
+                    all_local_ids_hallucinated: {
+                      label: "로컬 감독 ID 불일치",
+                      hint: "AI가 추천한 감독 ID가 실제 목록과 불일치했습니다. 자동 재시도를 권장합니다.",
+                    },
+                    post_validation_eliminated_all: {
+                      label: "후처리에서 전원 탈락",
+                      hint: "AI 응답은 있었으나 검증 과정에서 모두 제거되었습니다.",
+                    },
+                  };
+
+                  const reasonInfo = emptyReason ? EMPTY_REASON_LABELS[emptyReason] : null;
+
+                  return (
+                    <div className="text-center py-3 space-y-2">
+                      <p className="text-[11px] font-medium" style={{ color: "#9ca3af" }}>추천 결과 없음</p>
+
+                      {/* 구체적 병목 표시 */}
+                      {reasonInfo ? (
+                        <div className="rounded px-2 py-1.5 text-left" style={{ background: "#fff7ed", border: "1px solid #fed7aa40" }}>
+                          <p className="text-[10px] font-medium" style={{ color: "#c2410c" }}>{reasonInfo.label}</p>
+                          <p className="text-[9px] mt-0.5" style={{ color: "#9a3412" }}>{reasonInfo.hint}</p>
+                        </div>
+                      ) : (
+                        <p className="text-[10px]" style={{ color: "#b0b0b0" }}>
+                          시나리오를 더 구체적으로 작성하거나, 다른 장르/무드를 시도해보세요.
+                        </p>
+                      )}
+
+                      {/* 파이프라인 단계별 카운트 */}
+                      {debug && (
+                        <div className="text-[9px] text-left space-y-0.5 rounded px-2 py-1.5" style={{ background: "#f8fafc", border: "1px solid #e2e8f020" }}>
+                          <p className="font-medium" style={{ color: "#94a3b8" }}>파이프라인 추적</p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5" style={{ color: "#a0aec0" }}>
+                            <span>시나리오 길이</span><span>{storyText.length}자</span>
+                            <span>감독 풀</span><span>{allDirectors.length}명</span>
+                            {extractedGenres && extractedGenres.length > 0 && (
+                              <><span>추출 장르</span><span>{extractedGenres.join(", ")}</span></>
+                            )}
+                            {extractedMoods && extractedMoods.length > 0 && (
+                              <><span>추출 무드</span><span>{extractedMoods.join(", ")}</span></>
+                            )}
+                            {extractedGenres && extractedGenres.length === 0 && extractedMoods && extractedMoods.length === 0 && (
+                              <><span className="col-span-2" style={{ color: "#f59e0b" }}>장르/무드 추출 실패</span></>
+                            )}
+                            {typeof geminiLocalCount === "number" && (
+                              <><span>AI 로컬 추천</span><span>{geminiLocalCount}명</span></>
+                            )}
+                            {typeof geminiWebCount === "number" && (
+                              <><span>AI 웹 추천</span><span>{geminiWebCount}명</span></>
+                            )}
+                            {typeof invalidIdsRemoved === "number" && invalidIdsRemoved > 0 && (
+                              <><span style={{ color: "#ef4444" }}>ID 불일치 제거</span><span style={{ color: "#ef4444" }}>{invalidIdsRemoved}명</span></>
+                            )}
+                            <span>최종 결과</span><span>0명</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* debug 없을 때 기본 진단 */}
+                      {!debug && (
+                        <div className="text-[9px] space-y-0.5" style={{ color: "#c0c0c0" }}>
+                          <p>확인 포인트:</p>
+                          <p>- 시나리오 길이: {storyText.length}자 (100자 이상 권장)</p>
+                          <p>- 감독 풀: {allDirectors.length}명</p>
+                          <p>- 장르/배경/감정 키워드가 포함되어 있나요?</p>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* 로컬 감독 매칭 */}
                 {directorRecommendation.localMatches.length > 0 && (
