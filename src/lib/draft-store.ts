@@ -54,7 +54,25 @@ export interface DraftGenerationMeta {
   densityPolicy?: string;
   sequenceValidationErrors?: number;
   sequenceValidationWarnings?: number;
+  /** Director requested by user */
+  directorRequested?: string;
+  /** Director pace after reconciliation */
+  directorPaceResult?: string;
+  /** Reason director style was weakened */
+  directorWeakenReason?: string;
+  /** Whether outline-only path was used */
+  outlineOnly?: boolean;
+  /** Whether generic split fallback was used */
+  genericSplitFallback?: boolean;
+  /** Provider error message if any */
+  providerError?: string;
+  /** Rationale messages for quick judgment */
+  rationale?: string[];
 }
+
+// ─── Save Status ───
+
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 // ─── IndexedDB Wrapper ───
 
@@ -85,13 +103,37 @@ function txStore(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
   return db.transaction(STORE_NAME, mode).objectStore(STORE_NAME);
 }
 
+// ─── Schema Migration ───
+
+/** Migrate a draft to the current schema version */
+export function migrateDraft(draft: DraftProject): DraftProject {
+  // v0 → v1: no changes needed, just stamp version
+  if (!draft.schemaVersion || draft.schemaVersion < 1) {
+    draft.schemaVersion = 1;
+  }
+  // Future migrations go here:
+  // if (draft.schemaVersion < 2) { ... draft.schemaVersion = 2; }
+  return draft;
+}
+
+/** Validate a draft has minimum required structure */
+export function validateDraft(draft: unknown): draft is DraftProject {
+  if (!draft || typeof draft !== "object") return false;
+  const d = draft as Record<string, unknown>;
+  if (typeof d.id !== "string" || !d.id) return false;
+  if (!d.input || typeof d.input !== "object") return false;
+  const input = d.input as Record<string, unknown>;
+  if (typeof input.storyText !== "string") return false;
+  return true;
+}
+
 // ─── CRUD Operations ───
 
 export function genDraftId(): string {
   return `draft-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/** List all drafts, newest first */
+/** List all drafts, newest first. Filters out corrupted entries. */
 export async function listDrafts(): Promise<DraftProject[]> {
   try {
     const db = await openDB();
@@ -103,7 +145,10 @@ export async function listDrafts(): Promise<DraftProject[]> {
       req.onsuccess = () => {
         const cursor = req.result;
         if (cursor) {
-          results.push(cursor.value as DraftProject);
+          const val = cursor.value;
+          if (validateDraft(val)) {
+            results.push(migrateDraft(val as DraftProject));
+          }
           cursor.continue();
         } else {
           resolve(results);
@@ -122,7 +167,14 @@ export async function getDraft(id: string): Promise<DraftProject | null> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const req = txStore(db, "readonly").get(id);
-      req.onsuccess = () => resolve((req.result as DraftProject) || null);
+      req.onsuccess = () => {
+        const val = req.result;
+        if (val && validateDraft(val)) {
+          resolve(migrateDraft(val as DraftProject));
+        } else {
+          resolve(null);
+        }
+      };
       req.onerror = () => reject(req.error);
     });
   } catch {
@@ -130,13 +182,13 @@ export async function getDraft(id: string): Promise<DraftProject | null> {
   }
 }
 
-/** Save (create or update) a draft */
-export async function saveDraft(draft: DraftProject): Promise<void> {
+/** Save (create or update) a draft. Returns success boolean. */
+export async function saveDraft(draft: DraftProject): Promise<boolean> {
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const req = txStore(db, "readwrite").put(draft);
-      req.onsuccess = () => resolve();
+      req.onsuccess = () => resolve(true);
       req.onerror = () => reject(req.error);
     });
   } catch {
@@ -144,7 +196,10 @@ export async function saveDraft(draft: DraftProject): Promise<void> {
     try {
       const key = `draft-fallback-${draft.id}`;
       localStorage.setItem(key, JSON.stringify(draft));
-    } catch { /* ignore */ }
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -212,4 +267,24 @@ export function importDraftJSON(json: string): DraftProject | null {
   } catch {
     return null;
   }
+}
+
+/** Check if a draft is stale (older than given days) */
+export function isDraftStale(draft: DraftProject, staleDays: number = 30): boolean {
+  const staleMs = staleDays * 24 * 60 * 60 * 1000;
+  return Date.now() - draft.updatedAt > staleMs;
+}
+
+/** Format relative time for display */
+export function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return "방금 전";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}일 전`;
+  return new Date(timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }

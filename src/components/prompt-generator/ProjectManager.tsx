@@ -4,9 +4,10 @@
  * ProjectManager — 프로젝트 드래프트 관리 UI
  *
  * Internal Owner-Only V0.9:
- * - 최근 드래프트 목록
- * - 새 프로젝트 시작
- * - 드래프트 저장/불러오기
+ * - 저장 상태 명확 표시 (saved/saving/error/unsaved)
+ * - 마지막 저장 시각
+ * - unsaved changes 표시
+ * - 최근 드래프트 목록 (수정순)
  * - JSON export/import
  * - 샘플 프로젝트 로더
  */
@@ -20,8 +21,11 @@ import {
   buildDraft,
   exportDraftJSON,
   importDraftJSON,
+  isDraftStale,
+  formatRelativeTime,
   type DraftProject,
   type DraftGenerationMeta,
+  type SaveStatus,
 } from "@/lib/draft-store";
 import { SAMPLE_PROJECTS } from "@/data/sample-projects";
 
@@ -34,10 +38,14 @@ interface Props {
   currentMeta?: DraftGenerationMeta | null;
   /** Active draft ID (null = unsaved new project) */
   activeDraftId: string | null;
+  /** External save status from parent (for Cmd+S feedback) */
+  saveStatus: SaveStatus;
+  lastSavedAt: number | null;
+  hasUnsavedChanges: boolean;
   /** Callbacks */
   onLoad: (input: PromptInput, output: PromptOutput | null, draftId: string, meta?: DraftGenerationMeta) => void;
   onNew: () => void;
-  onSaved: (draftId: string) => void;
+  onSave: () => void;
 }
 
 export default function ProjectManager({
@@ -45,15 +53,19 @@ export default function ProjectManager({
   currentOutput,
   currentMeta,
   activeDraftId,
+  saveStatus,
+  lastSavedAt,
+  hasUnsavedChanges,
   onLoad,
   onNew,
-  onSaved,
+  onSave,
 }: Props) {
   const [drafts, setDrafts] = useState<DraftProject[]>([]);
   const [showPanel, setShowPanel] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
+  const [saveFlash, setSaveFlash] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Load draft list
   const refreshDrafts = useCallback(async () => {
@@ -65,31 +77,31 @@ export default function ProjectManager({
     refreshDrafts();
   }, [refreshDrafts]);
 
-  // ── Save ──
-  const handleSave = useCallback(async () => {
-    if (!currentInput) return;
-    setSaving(true);
-    try {
-      const draft = buildDraft({
-        id: activeDraftId || undefined,
-        input: currentInput,
-        output: currentOutput,
-        generationMeta: currentMeta || undefined,
-      });
-      if (activeDraftId) {
-        draft.id = activeDraftId;
-        // Preserve original createdAt
-        const existing = drafts.find(d => d.id === activeDraftId);
-        if (existing) draft.createdAt = existing.createdAt;
-      }
-      draft.updatedAt = Date.now();
-      await saveDraft(draft);
-      onSaved(draft.id);
-      await refreshDrafts();
-    } finally {
-      setSaving(false);
+  // Flash effect on save success
+  useEffect(() => {
+    if (saveStatus === "saved") {
+      setSaveFlash(true);
+      const t = setTimeout(() => setSaveFlash(false), 1500);
+      return () => clearTimeout(t);
     }
-  }, [currentInput, currentOutput, currentMeta, activeDraftId, drafts, onSaved, refreshDrafts]);
+  }, [saveStatus, lastSavedAt]);
+
+  // Refresh drafts when save succeeds
+  useEffect(() => {
+    if (saveStatus === "saved") refreshDrafts();
+  }, [saveStatus, refreshDrafts]);
+
+  // Close panel on outside click
+  useEffect(() => {
+    if (!showPanel) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showPanel]);
 
   // ── Load draft ──
   const handleLoad = useCallback(async (draft: DraftProject) => {
@@ -98,13 +110,15 @@ export default function ProjectManager({
   }, [onLoad]);
 
   // ── Delete ──
-  const handleDelete = useCallback(async (id: string) => {
+  const handleDelete = useCallback(async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     await deleteDraft(id);
     await refreshDrafts();
   }, [refreshDrafts]);
 
   // ── Export JSON ──
-  const handleExport = useCallback(async (draft: DraftProject) => {
+  const handleExport = useCallback(async (draft: DraftProject, e: React.MouseEvent) => {
+    e.stopPropagation();
     const json = exportDraftJSON(draft);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -132,7 +146,6 @@ export default function ProjectManager({
     } catch {
       alert("파일을 읽을 수 없습니다.");
     }
-    // reset file input
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [onLoad, refreshDrafts]);
 
@@ -153,26 +166,54 @@ export default function ProjectManager({
     ? drafts.find(d => d.id === activeDraftId)?.title ?? "Untitled"
     : currentOutput?.projectTitle ?? "새 프로젝트";
 
+  // Save button styling
+  const saveButtonStyle = () => {
+    if (saveStatus === "saving") return "bg-blue-900/60 text-blue-300 opacity-70";
+    if (saveStatus === "error") return "bg-red-900/60 text-red-300";
+    if (saveFlash) return "bg-green-900/60 text-green-300";
+    if (hasUnsavedChanges) return "bg-amber-900/60 hover:bg-amber-800/60 text-amber-300";
+    return "bg-blue-900/60 hover:bg-blue-800/60 text-blue-300";
+  };
+
+  const saveButtonLabel = () => {
+    if (saveStatus === "saving") return "저장 중...";
+    if (saveStatus === "error") return "저장 실패";
+    if (saveFlash) return "저장됨 ✓";
+    if (!activeDraftId) return "새로 저장";
+    if (hasUnsavedChanges) return "저장 *";
+    return "저장";
+  };
+
   return (
-    <div className="relative">
+    <div className="relative" ref={panelRef}>
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 text-xs">
+        {/* Project name button */}
         <button
           onClick={() => setShowPanel(!showPanel)}
           className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1.5"
         >
           <span className="text-[10px]">📁</span>
           <span className="max-w-[160px] truncate">{activeTitle}</span>
+          {hasUnsavedChanges && <span className="text-amber-400 text-[10px]">●</span>}
           <span className="text-zinc-500 text-[10px]">{showPanel ? "▲" : "▼"}</span>
         </button>
 
+        {/* Save button */}
         <button
-          onClick={handleSave}
-          disabled={!currentInput || saving}
-          className="px-3 py-1.5 rounded bg-blue-900/60 hover:bg-blue-800/60 text-blue-300 disabled:opacity-40 transition-colors"
+          onClick={onSave}
+          disabled={!currentInput || saveStatus === "saving"}
+          className={`px-3 py-1.5 rounded disabled:opacity-40 transition-all ${saveButtonStyle()}`}
         >
-          {saving ? "저장 중..." : activeDraftId ? "저장" : "새로 저장"}
+          {saveButtonLabel()}
         </button>
+
+        {/* Last saved indicator */}
+        {lastSavedAt && (
+          <span className="text-zinc-500 text-[10px]" title={new Date(lastSavedAt).toLocaleString("ko-KR")}>
+            {formatRelativeTime(lastSavedAt)}
+          </span>
+        )}
 
         <button
           onClick={handleNew}
@@ -184,7 +225,7 @@ export default function ProjectManager({
 
       {/* ── Panel Dropdown ── */}
       {showPanel && (
-        <div className="absolute top-10 left-0 z-50 w-[400px] max-h-[500px] overflow-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl">
+        <div className="absolute top-10 left-0 z-50 w-[420px] max-h-[500px] overflow-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl">
           {/* Tabs: Drafts / Samples */}
           <div className="flex border-b border-zinc-700">
             <button
@@ -197,7 +238,7 @@ export default function ProjectManager({
               onClick={() => setShowSamples(true)}
               className={`flex-1 px-3 py-2 text-xs transition-colors ${showSamples ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/50"}`}
             >
-              샘플 프로젝트
+              검증 샘플 ({SAMPLE_PROJECTS.length})
             </button>
           </div>
 
@@ -217,22 +258,25 @@ export default function ProjectManager({
                     onClick={() => handleLoad(d)}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-zinc-200 truncate font-medium">{d.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-zinc-200 truncate font-medium">{d.title}</span>
+                        {d.id === activeDraftId && <span className="text-blue-400 text-[10px]">현재</span>}
+                        {isDraftStale(d) && <span className="text-zinc-600 text-[10px]">오래됨</span>}
+                      </div>
                       <div className="text-zinc-500 text-[10px]">
-                        {d.cutCount ?? 0}컷 · {new Date(d.updatedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        {d.thumbnail && <span className="ml-1">· {d.thumbnail.slice(0, 30)}…</span>}
+                        {d.cutCount ?? 0}컷 · {formatRelativeTime(d.updatedAt)}
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleExport(d); }}
+                        onClick={(e) => handleExport(d, e)}
                         className="px-1.5 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-400 text-[10px]"
                         title="JSON 내보내기"
                       >
                         ↓
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(d.id); }}
+                        onClick={(e) => handleDelete(d.id, e)}
                         className="px-1.5 py-0.5 rounded bg-zinc-700 hover:bg-red-900/60 text-zinc-400 hover:text-red-300 text-[10px]"
                         title="삭제"
                       >
@@ -268,9 +312,19 @@ export default function ProjectManager({
                   className="px-2 py-2 rounded hover:bg-zinc-800 cursor-pointer transition-colors"
                   onClick={() => handleLoadSample(sample)}
                 >
-                  <div className="text-zinc-200 text-xs font-medium">{sample.title}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-200 text-xs font-medium">{sample.title}</span>
+                    {"verifyPoint" in sample && (
+                      <span className="px-1 py-0.5 rounded bg-violet-900/40 text-violet-300 text-[9px]">검증</span>
+                    )}
+                  </div>
                   <div className="text-zinc-500 text-[10px] mt-0.5">{sample.description}</div>
-                  <div className="flex gap-1 mt-1">
+                  {"verifyPoint" in sample && (
+                    <div className="text-zinc-600 text-[10px] mt-0.5">
+                      확인: {(sample as {verifyPoint: string}).verifyPoint}
+                    </div>
+                  )}
+                  <div className="flex gap-1 mt-1 flex-wrap">
                     {sample.tags.map(tag => (
                       <span key={tag} className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-500 text-[10px]">{tag}</span>
                     ))}

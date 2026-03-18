@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
-import { saveDraft, buildDraft, type DraftGenerationMeta } from "@/lib/draft-store";
+import { saveDraft, buildDraft, type DraftGenerationMeta, type SaveStatus } from "@/lib/draft-store";
 import InputPanel from "./InputPanel";
 import ResultPanel from "./ResultPanel";
 import StoryChat from "./StoryChat";
 import ProjectManager from "./ProjectManager";
 import QualityDebugPanel from "./QualityDebugPanel";
+import OwnerChecklist from "./OwnerChecklist";
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
@@ -25,6 +26,59 @@ export default function PromptGenerator() {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [generationMeta, setGenerationMeta] = useState<DraftGenerationMeta | null>(null);
   const [prefillInput, setPrefillInput] = useState<PromptInput | null>(null);
+
+  // ── Save status tracking ──
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Track changes after last save
+  const lastSavedSnapshotRef = useRef<string>("");
+
+  // Update unsaved indicator when input/result changes
+  useEffect(() => {
+    if (!lastInput) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+    const snapshot = JSON.stringify({ input: lastInput, totalCuts: result?.totalCuts });
+    if (lastSavedSnapshotRef.current && snapshot !== lastSavedSnapshotRef.current) {
+      setHasUnsavedChanges(true);
+    }
+  }, [lastInput, result]);
+
+  // ── Centralized save function ──
+  const performSave = useCallback(async () => {
+    if (!lastInput) return;
+    setSaveStatus("saving");
+    try {
+      const draft = buildDraft({
+        id: activeDraftId || undefined,
+        input: lastInput,
+        output: result,
+        generationMeta: generationMeta || undefined,
+      });
+      if (activeDraftId) draft.id = activeDraftId;
+      draft.updatedAt = Date.now();
+
+      const success = await saveDraft(draft);
+      if (success) {
+        if (!activeDraftId) setActiveDraftId(draft.id);
+        setLastSavedAt(Date.now());
+        setSaveStatus("saved");
+        setHasUnsavedChanges(false);
+        lastSavedSnapshotRef.current = JSON.stringify({ input: lastInput, totalCuts: result?.totalCuts });
+        // Reset to idle after flash
+        setTimeout(() => setSaveStatus("idle"), 2000);
+      } else {
+        setSaveStatus("error");
+        setTimeout(() => setSaveStatus("idle"), 3000);
+      }
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  }, [lastInput, result, activeDraftId, generationMeta]);
 
   // ── Generation ──
   const handleGenerate = async (input: PromptInput) => {
@@ -49,6 +103,7 @@ export default function PromptGenerator() {
         degradedReason: output.degradedReason,
         sequenceValidationErrors: output.sequenceValidation?.summary?.errors,
         sequenceValidationWarnings: output.sequenceValidation?.summary?.warnings,
+        directorRequested: input.directorPersona,
       };
       setGenerationMeta(meta);
 
@@ -76,9 +131,15 @@ export default function PromptGenerator() {
         draft.id = activeDraftId;
       }
       draft.updatedAt = Date.now();
-      saveDraft(draft).then(() => {
+      const saved = await saveDraft(draft);
+      if (saved) {
         if (!activeDraftId) setActiveDraftId(draft.id);
-      });
+        setLastSavedAt(Date.now());
+        setHasUnsavedChanges(false);
+        lastSavedSnapshotRef.current = JSON.stringify({ input, totalCuts: output.totalCuts });
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "프롬프트 생성에 실패했습니다.");
       setStatus("error");
@@ -106,6 +167,15 @@ export default function PromptGenerator() {
     setActiveDraftId(draftId || null);
     setError(null);
     setActiveTab("prompt");
+    setHasUnsavedChanges(false);
+    setSaveStatus("idle");
+    if (draftId) {
+      setLastSavedAt(Date.now());
+      lastSavedSnapshotRef.current = JSON.stringify({ input, totalCuts: output?.totalCuts });
+    } else {
+      setLastSavedAt(null);
+      lastSavedSnapshotRef.current = "";
+    }
   }, []);
 
   // ── New project ──
@@ -119,6 +189,10 @@ export default function PromptGenerator() {
     setPrefillInput(null);
     setPrefillScenario("");
     setSecondsPerScene(0);
+    setHasUnsavedChanges(false);
+    setSaveStatus("idle");
+    setLastSavedAt(null);
+    lastSavedSnapshotRef.current = "";
   }, []);
 
   // ── Keyboard shortcut: Cmd+S ──
@@ -126,24 +200,12 @@ export default function PromptGenerator() {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
-        if (lastInput) {
-          const draft = buildDraft({
-            id: activeDraftId || undefined,
-            input: lastInput,
-            output: result,
-            generationMeta: generationMeta || undefined,
-          });
-          if (activeDraftId) draft.id = activeDraftId;
-          draft.updatedAt = Date.now();
-          saveDraft(draft).then(() => {
-            if (!activeDraftId) setActiveDraftId(draft.id);
-          });
-        }
+        performSave();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [lastInput, result, activeDraftId, generationMeta]);
+  }, [performSave]);
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 md:p-6 space-y-4">
@@ -154,9 +216,12 @@ export default function PromptGenerator() {
           currentOutput={result}
           currentMeta={generationMeta}
           activeDraftId={activeDraftId}
+          saveStatus={saveStatus}
+          lastSavedAt={lastSavedAt}
+          hasUnsavedChanges={hasUnsavedChanges}
           onLoad={handleDraftLoad}
           onNew={handleNewProject}
-          onSaved={setActiveDraftId}
+          onSave={performSave}
         />
 
         <div className="flex gap-2 ml-auto">
@@ -215,6 +280,8 @@ export default function PromptGenerator() {
             />
             {/* Quality Debug Panel — 결과 아래에 표시 */}
             <QualityDebugPanel output={result} meta={generationMeta} />
+            {/* Owner Verification Checklist */}
+            <OwnerChecklist />
           </div>
         </div>
       ) : activeTab === "story" ? (
