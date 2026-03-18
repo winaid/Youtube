@@ -111,3 +111,47 @@ describe("safeDuration regression", () => {
     expect(safeDuration(0)).toBe(DURATION_FALLBACK);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 서버 _duration-constants 상수 export 무결성
+// ═══════════════════════════════════════════════════════════════════
+
+import {
+  DURATION_MIN as SERVER_DURATION_MIN,
+  DURATION_MAX as SERVER_DURATION_MAX,
+  safeDuration as serverSafeDuration,
+  computeServerAutoDuration,
+} from "../functions/api/_duration-constants";
+
+describe("server _duration-constants export 무결성", () => {
+  it("DURATION_MIN이 서버에서 정상 export (ReferenceError 방지)", () => {
+    expect(SERVER_DURATION_MIN).toBe(3);
+    expect(typeof SERVER_DURATION_MIN).toBe("number");
+  });
+
+  it("DURATION_MAX가 서버에서 정상 export", () => {
+    expect(SERVER_DURATION_MAX).toBe(15);
+  });
+
+  it("client/server DURATION_MIN 동일", () => {
+    expect(SERVER_DURATION_MIN).toBe(DURATION_MIN);
+  });
+
+  it("client/server DURATION_MAX 동일", () => {
+    expect(SERVER_DURATION_MAX).toBe(DURATION_MAX);
+  });
+
+  it("secPerCut reconciliation: DURATION_MIN 클램핑 동작", () => {
+    // generate-cuts.ts:1486의 패턴 시뮬레이션
+    const totalDuration = 15;
+    const targetCuts = 6;
+    const naturalPerCut = Math.max(SERVER_DURATION_MIN, Math.round(totalDuration / targetCuts));
+    expect(naturalPerCut).toBe(SERVER_DURATION_MIN); // 15/6=2.5 → round=3 = DURATION_MIN
+  });
+
+  it("serverSafeDuration이 DURATION_MIN 기반 클램핑", () => {
+    expect(serverSafeDuration(1)).toBe(SERVER_DURATION_MIN);
+    expect(serverSafeDuration(2)).toBe(SERVER_DURATION_MIN);
+    expect(serverSafeDuration(3)).toBe(3);
+  });
+});

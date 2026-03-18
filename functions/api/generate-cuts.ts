@@ -14,7 +14,7 @@ import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
 import { densifyCuts } from "./_sequence-density";
-import { computeServerAutoDuration } from "./_duration-constants";
+import { computeServerAutoDuration, DURATION_MIN } from "./_duration-constants";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildDurationAwareBeatTemplate, buildCompactEditorialSummary } from "./_editorial-persona";
 import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
