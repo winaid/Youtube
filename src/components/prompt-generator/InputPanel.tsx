@@ -17,6 +17,7 @@ import {
   type StyleUiState,
 } from "@/lib/style-capability-matrix";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
+import { appendRecommendLog, classifyRecommendError, type RecommendLogEntry } from "@/lib/draft-store";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import {
   analyzeScriptPhaseA,
@@ -637,12 +638,25 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     setShowRecommendation(true);
     setRecommendError(null);
 
+    const startTime = Date.now();
+    const storySnippet = storyText.trim().slice(0, 80);
+    const directorPoolSize = allDirectors.length;
+
     // 캐시 히트: 동일 스토리 텍스트면 API 재호출 생략
     const storyKey = storyText.trim().slice(0, 2000);
     if (recommendCacheRef.current?.storyKey === storyKey) {
       console.log("[recommend-director] 캐시 히트 — API 호출 생략");
-      setDirectorRecommendation(recommendCacheRef.current.result as typeof directorRecommendation);
+      const cached = recommendCacheRef.current.result as typeof directorRecommendation;
+      setDirectorRecommendation(cached);
       setIsRecommending(false);
+      appendRecommendLog({
+        timestamp: Date.now(), storySnippet, storyLength: storyText.length,
+        outcome: "cache-hit", localMatchCount: cached?.localMatches?.length ?? 0,
+        webSuggestionCount: cached?.webSuggestions?.length ?? 0,
+        localMatchIds: cached?.localMatches?.map((m: { id: string }) => m.id) ?? [],
+        webSuggestionIds: cached?.webSuggestions?.map((s: { id: string }) => s.id) ?? [],
+        latencyMs: Date.now() - startTime, activeRegion: region, directorPoolSize,
+      });
       return;
     }
 
@@ -671,18 +685,42 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         throw new Error(msg);
       }
       const data = await res.json();
+
       // 캐시 저장
       recommendCacheRef.current = { storyKey, result: data };
       setDirectorRecommendation(data);
       setRecommendError(null);
+
+      // 로그: 성공 또는 빈 결과
+      const localCount = data.localMatches?.length ?? 0;
+      const webCount = data.webSuggestions?.length ?? 0;
+      const outcome: RecommendLogEntry["outcome"] = (localCount + webCount > 0) ? "success" : "empty";
+      appendRecommendLog({
+        timestamp: Date.now(), storySnippet, storyLength: storyText.length,
+        outcome, localMatchCount: localCount, webSuggestionCount: webCount,
+        localMatchIds: (data.localMatches ?? []).map((m: { id: string }) => m.id),
+        webSuggestionIds: (data.webSuggestions ?? []).map((s: { id: string }) => s.id),
+        latencyMs: Date.now() - startTime, modelUsed: data._meta?.modelUsed,
+        activeRegion: region, directorPoolSize,
+      });
     } catch (err) {
       console.error("[recommend-director] 실패:", err);
+      const errorMessage = err instanceof Error ? err.message : "추천 중 오류가 발생했습니다";
       setDirectorRecommendation(null);
-      setRecommendError(err instanceof Error ? err.message : "추천 중 오류가 발생했습니다");
+      setRecommendError(errorMessage);
+
+      // 로그: 에러
+      appendRecommendLog({
+        timestamp: Date.now(), storySnippet, storyLength: storyText.length,
+        outcome: "error", errorMessage, errorCategory: classifyRecommendError(errorMessage),
+        localMatchCount: 0, webSuggestionCount: 0,
+        localMatchIds: [], webSuggestionIds: [],
+        latencyMs: Date.now() - startTime, activeRegion: region, directorPoolSize,
+      });
     } finally {
       setIsRecommending(false);
     }
-  }, [storyText, allDirectors, isRecommending]);
+  }, [storyText, allDirectors, isRecommending, region]);
 
   const handleSubmit = async () => {
     if (!storyText.trim() || !directorPersona) return;
@@ -969,6 +1007,23 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   ) : null;
                 })()}
 
+                {/* 품질 경고 */}
+                {(() => {
+                  const allScores = [
+                    ...directorRecommendation.localMatches.map(m => m.fitScore),
+                    ...directorRecommendation.webSuggestions.map(s => s.fitScore),
+                  ];
+                  const maxScore = allScores.length > 0 ? Math.max(...allScores) : 0;
+                  const hasGenericReason = [...directorRecommendation.localMatches, ...directorRecommendation.webSuggestions]
+                    .some(m => !m.reason || m.reason === "(이유 미제공)" || m.reason.length < 10);
+                  return (maxScore > 0 && maxScore < 60) || hasGenericReason ? (
+                    <div className="text-[9px] px-2 py-1 rounded" style={{ background: "#fef3c710", color: "#b45309", border: "1px solid #fbbf2420" }}>
+                      {maxScore < 60 && "적합도 점수가 전반적으로 낮습니다. 시나리오를 더 구체적으로 작성하면 매칭 정확도가 올라갑니다."}
+                      {hasGenericReason && " 일부 추천 사유가 구체적이지 않습니다."}
+                    </div>
+                  ) : null;
+                })()}
+
                 {/* 분석 요약 */}
                 {directorRecommendation.analysis && (
                   <p className="text-[10px] leading-relaxed" style={{ color: "#5a5ecc" }}>
@@ -978,11 +1033,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
                 {/* 빈 결과 상태 */}
                 {directorRecommendation.localMatches.length === 0 && directorRecommendation.webSuggestions.length === 0 && (
-                  <div className="text-center py-3">
+                  <div className="text-center py-3 space-y-1.5">
                     <p className="text-[11px] font-medium" style={{ color: "#9ca3af" }}>추천 결과 없음</p>
-                    <p className="text-[10px] mt-1" style={{ color: "#b0b0b0" }}>
+                    <p className="text-[10px]" style={{ color: "#b0b0b0" }}>
                       시나리오를 더 구체적으로 작성하거나, 다른 장르/무드를 시도해보세요.
                     </p>
+                    <div className="text-[9px] space-y-0.5" style={{ color: "#c0c0c0" }}>
+                      <p>확인 포인트:</p>
+                      <p>- 시나리오 길이: {storyText.length}자 (100자 이상 권장)</p>
+                      <p>- 감독 풀: {allDirectors.length}명</p>
+                      <p>- 장르/배경/감정 키워드가 포함되어 있나요?</p>
+                    </div>
                   </div>
                 )}
 

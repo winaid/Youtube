@@ -598,6 +598,191 @@ export function deriveActionItems(summary: OwnerSessionSummary): string[] {
 }
 
 /** Format relative time for display */
+// ─── Recommendation Log (localStorage) ───
+
+const RECOMMEND_LOG_KEY = "owner-recommend-log-v1";
+const RECOMMEND_LOG_MAX = 50;
+
+export type RecommendOutcome = "success" | "empty" | "error" | "cache-hit";
+
+export interface RecommendLogEntry {
+  timestamp: number;
+  /** First 80 chars of story text for context */
+  storySnippet: string;
+  storyLength: number;
+  outcome: RecommendOutcome;
+  /** Error message if outcome=error */
+  errorMessage?: string;
+  /** Error classification for pattern analysis */
+  errorCategory?: "network" | "api-key" | "rate-limit" | "parse-error" | "timeout" | "unknown";
+  localMatchCount: number;
+  webSuggestionCount: number;
+  /** IDs of recommended local directors */
+  localMatchIds: string[];
+  /** IDs of recommended web directors */
+  webSuggestionIds: string[];
+  /** Latency in ms */
+  latencyMs: number;
+  /** Model used (flash/pro/unknown) */
+  modelUsed?: string;
+  /** Active region filter at time of request */
+  activeRegion?: string;
+  /** Number of directors sent to API */
+  directorPoolSize: number;
+}
+
+export function loadRecommendLog(): RecommendLogEntry[] {
+  try {
+    const raw = localStorage.getItem(RECOMMEND_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export function appendRecommendLog(entry: RecommendLogEntry): void {
+  try {
+    const log = loadRecommendLog();
+    log.unshift(entry);
+    if (log.length > RECOMMEND_LOG_MAX) log.length = RECOMMEND_LOG_MAX;
+    localStorage.setItem(RECOMMEND_LOG_KEY, JSON.stringify(log));
+  } catch { /* ignore */ }
+}
+
+export function clearRecommendLog(): void {
+  try { localStorage.removeItem(RECOMMEND_LOG_KEY); } catch { /* ignore */ }
+}
+
+/** Classify error message into category */
+export function classifyRecommendError(msg: string): RecommendLogEntry["errorCategory"] {
+  const lower = msg.toLowerCase();
+  if (lower.includes("fetch") || lower.includes("network") || lower.includes("failed to fetch")) return "network";
+  if (lower.includes("api key") || lower.includes("api_key") || lower.includes("401") || lower.includes("403")) return "api-key";
+  if (lower.includes("rate") || lower.includes("429") || lower.includes("quota")) return "rate-limit";
+  if (lower.includes("json") || lower.includes("parse")) return "parse-error";
+  if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("504")) return "timeout";
+  return "unknown";
+}
+
+/** Summary of recommendation log for owner review */
+export interface RecommendLogSummary {
+  total: number;
+  successCount: number;
+  emptyCount: number;
+  errorCount: number;
+  cacheHitCount: number;
+  /** Average latency for non-cache calls (ms) */
+  avgLatencyMs: number;
+  /** Error breakdown by category */
+  errorCategories: Record<string, number>;
+  /** Most frequently recommended director ids (top 5) */
+  topDirectorIds: { id: string; count: number }[];
+  /** Fraction of calls that returned 0 results (excluding errors & cache) */
+  emptyRate: number;
+  /** Average match count per successful call */
+  avgMatchCount: number;
+}
+
+export function buildRecommendSummary(log: RecommendLogEntry[]): RecommendLogSummary {
+  if (log.length === 0) {
+    return {
+      total: 0, successCount: 0, emptyCount: 0, errorCount: 0, cacheHitCount: 0,
+      avgLatencyMs: 0, errorCategories: {}, topDirectorIds: [], emptyRate: 0, avgMatchCount: 0,
+    };
+  }
+
+  const successCount = log.filter(e => e.outcome === "success").length;
+  const emptyCount = log.filter(e => e.outcome === "empty").length;
+  const errorCount = log.filter(e => e.outcome === "error").length;
+  const cacheHitCount = log.filter(e => e.outcome === "cache-hit").length;
+
+  // Latency for non-cache
+  const nonCacheEntries = log.filter(e => e.outcome !== "cache-hit" && e.latencyMs > 0);
+  const avgLatencyMs = nonCacheEntries.length > 0
+    ? Math.round(nonCacheEntries.reduce((s, e) => s + e.latencyMs, 0) / nonCacheEntries.length)
+    : 0;
+
+  // Error categories
+  const errorCategories: Record<string, number> = {};
+  for (const e of log.filter(x => x.outcome === "error" && x.errorCategory)) {
+    errorCategories[e.errorCategory!] = (errorCategories[e.errorCategory!] || 0) + 1;
+  }
+
+  // Top director ids
+  const dirCounts: Record<string, number> = {};
+  for (const e of log) {
+    for (const id of [...e.localMatchIds, ...e.webSuggestionIds]) {
+      dirCounts[id] = (dirCounts[id] || 0) + 1;
+    }
+  }
+  const topDirectorIds = Object.entries(dirCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([id, count]) => ({ id, count }));
+
+  // Empty rate (excluding errors and cache)
+  const apiCalls = successCount + emptyCount;
+  const emptyRate = apiCalls > 0 ? emptyCount / apiCalls : 0;
+
+  // Avg match count per success
+  const successEntries = log.filter(e => e.outcome === "success");
+  const avgMatchCount = successEntries.length > 0
+    ? +(successEntries.reduce((s, e) => s + e.localMatchCount + e.webSuggestionCount, 0) / successEntries.length).toFixed(1)
+    : 0;
+
+  return {
+    total: log.length, successCount, emptyCount, errorCount, cacheHitCount,
+    avgLatencyMs, errorCategories, topDirectorIds, emptyRate, avgMatchCount,
+  };
+}
+
+/** Derive diagnostic actions from recommendation summary */
+export function deriveRecommendActions(summary: RecommendLogSummary): string[] {
+  const items: string[] = [];
+
+  if (summary.total === 0) return ["추천 로그 없음 — 먼저 추천 버튼을 사용해보세요."];
+
+  if (summary.errorCount > 0) {
+    const cats = Object.entries(summary.errorCategories).sort(([, a], [, b]) => b - a);
+    if (cats.length > 0) {
+      const [topCat, topCount] = cats[0];
+      const catActions: Record<string, string> = {
+        "network": "네트워크 연결 상태 확인",
+        "api-key": "Gemini API 키 유효성 확인 (환경변수)",
+        "rate-limit": "API 호출 빈도 줄이거나 키 할당량 확인",
+        "parse-error": "Gemini 응답 형식 오류 — prompt 또는 parseFirstJsonObject 점검",
+        "timeout": "API timeout 설정 증가 또는 storyText 길이 제한 확인",
+        "unknown": "서버 로그에서 구체적 에러 확인",
+      };
+      items.push(`[에러] ${topCat} ${topCount}회 — ${catActions[topCat] ?? "로그 확인"}`);
+    }
+  }
+
+  if (summary.emptyRate > 0.3 && summary.successCount + summary.emptyCount >= 3) {
+    items.push(`[빈결과] 빈 결과 비율 ${(summary.emptyRate * 100).toFixed(0)}% — 시나리오 길이/구체성 확인, prompt 강화 검토`);
+  }
+
+  if (summary.topDirectorIds.length > 0) {
+    const top = summary.topDirectorIds[0];
+    const totalSuccess = summary.successCount || 1;
+    if (top.count / totalSuccess > 0.6 && totalSuccess >= 3) {
+      items.push(`[편향] "${top.id}" ${top.count}/${totalSuccess}회 추천 — 추천 다양성 부족, prompt의 temperature 또는 지시 확인`);
+    }
+  }
+
+  if (summary.avgLatencyMs > 8000) {
+    items.push(`[지연] 평균 응답 ${(summary.avgLatencyMs / 1000).toFixed(1)}초 — Flash 모델 사용 확인, storyText 길이 제한 검토`);
+  }
+
+  if (summary.cacheHitCount > summary.total * 0.5 && summary.total >= 5) {
+    items.push(`[캐시] 캐시 히트 ${summary.cacheHitCount}/${summary.total}회 — 다양한 시나리오로 테스트 필요`);
+  }
+
+  if (items.length === 0 && summary.successCount > 0) {
+    items.push(`정상 — ${summary.successCount}회 성공, 평균 ${summary.avgMatchCount}명 추천, ${summary.avgLatencyMs}ms`);
+  }
+
+  return items;
+}
+
 export function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
   const sec = Math.floor(diff / 1000);

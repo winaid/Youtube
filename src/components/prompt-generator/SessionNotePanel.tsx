@@ -21,6 +21,11 @@ import {
   buildOwnerSummary,
   deriveActionItems,
   tagsByDurationBand,
+  loadRecommendLog,
+  clearRecommendLog,
+  buildRecommendSummary,
+  deriveRecommendActions,
+  type RecommendLogEntry,
 } from "@/lib/draft-store";
 import type { DraftGenerationMeta } from "@/lib/draft-store";
 
@@ -369,8 +374,127 @@ export default function SessionNotePanel({ draftId, scenario, fallbackUsed, save
               )}
 
               {/* ── Interpretation Guide (접이식) ── */}
+              {/* ── Recommendation Diagnostics ── */}
+              <RecommendDiagnostics />
+
               <InterpretationGuide activeTags={Object.entries(stats).filter(([, c]) => c > 0).map(([t]) => t as FailureTag)} />
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecommendDiagnostics() {
+  const [open, setOpen] = useState(false);
+  const [entries, setEntries] = useState<RecommendLogEntry[]>([]);
+
+  useEffect(() => {
+    if (open) setEntries(loadRecommendLog());
+  }, [open]);
+
+  const summary = useMemo(() => buildRecommendSummary(entries), [entries]);
+  const actions = useMemo(() => deriveRecommendActions(summary), [summary]);
+
+  return (
+    <div className="bg-zinc-800/30 rounded overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-2.5 py-1.5 flex items-center gap-1.5 text-[10px] text-zinc-500 hover:text-zinc-400 transition-colors"
+      >
+        <span>{open ? "▼" : "▶"}</span>
+        <span className="uppercase tracking-wider">추천 진단</span>
+        <span className="text-zinc-600">— 감독 추천 API 안정성/품질</span>
+      </button>
+      {open && (
+        <div className="px-2.5 pb-2 space-y-2">
+          {summary.total === 0 ? (
+            <span className="text-zinc-600 text-[10px]">추천 기록 없음</span>
+          ) : (
+            <>
+              {/* Overview */}
+              <div className="flex items-center gap-3 text-[10px] flex-wrap">
+                <span className="text-zinc-400">{summary.total}회 호출</span>
+                <span className="text-green-400">{summary.successCount} 성공</span>
+                {summary.emptyCount > 0 && <span className="text-amber-400">{summary.emptyCount} 빈결과</span>}
+                {summary.errorCount > 0 && <span className="text-red-400">{summary.errorCount} 에러</span>}
+                {summary.cacheHitCount > 0 && <span className="text-blue-400">{summary.cacheHitCount} 캐시</span>}
+                <span className="text-zinc-500">{summary.avgLatencyMs}ms 평균</span>
+              </div>
+
+              {/* Action items */}
+              {actions.length > 0 && (
+                <div className="space-y-0.5">
+                  {actions.map((item, i) => (
+                    <div key={i} className={`text-[10px] leading-relaxed ${
+                      item.startsWith("[에러]") ? "text-red-300"
+                        : item.startsWith("[빈결과]") ? "text-amber-300"
+                        : item.startsWith("[편향]") ? "text-pink-300"
+                        : item.startsWith("[지연]") ? "text-orange-300"
+                        : "text-zinc-300"
+                    }`}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Top recommended directors */}
+              {summary.topDirectorIds.length > 0 && (
+                <div className="space-y-0.5">
+                  <div className="text-[9px] text-zinc-600 uppercase tracking-wider">자주 추천된 감독</div>
+                  <div className="flex flex-wrap gap-1">
+                    {summary.topDirectorIds.map(({ id, count }) => (
+                      <span key={id} className="px-1.5 py-0.5 rounded text-[9px] bg-zinc-700/50 text-zinc-400">
+                        {id} ×{count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Error category breakdown */}
+              {Object.keys(summary.errorCategories).length > 0 && (
+                <div className="space-y-0.5">
+                  <div className="text-[9px] text-zinc-600 uppercase tracking-wider">에러 유형</div>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(summary.errorCategories).map(([cat, count]) => (
+                      <span key={cat} className="px-1.5 py-0.5 rounded text-[9px] bg-red-900/30 text-red-400">
+                        {cat} ×{count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent entries */}
+              <div className="space-y-0.5">
+                <div className="text-[9px] text-zinc-600 uppercase tracking-wider">최근 호출</div>
+                {entries.slice(0, 5).map((e, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[10px] text-zinc-500">
+                    <span className="text-zinc-600 w-10 shrink-0">
+                      {new Date(e.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className={`w-10 shrink-0 ${
+                      e.outcome === "success" ? "text-green-400" : e.outcome === "error" ? "text-red-400" : e.outcome === "empty" ? "text-amber-400" : "text-blue-400"
+                    }`}>
+                      {e.outcome}
+                    </span>
+                    <span className="truncate flex-1">{e.storySnippet}</span>
+                    <span className="text-zinc-600 shrink-0">{e.latencyMs}ms</span>
+                    <span className="text-zinc-600 shrink-0">{e.localMatchCount}+{e.webSuggestionCount}</span>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => { clearRecommendLog(); setEntries([]); }}
+                className="px-1.5 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-500 text-[9px] transition-colors"
+              >
+                추천 로그 초기화
+              </button>
+            </>
           )}
         </div>
       )}
