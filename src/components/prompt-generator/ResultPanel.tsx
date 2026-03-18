@@ -39,6 +39,64 @@ interface ResultPanelProps {
   onSecondsPerSceneChange?: (v: number) => void;
 }
 
+// ─── 단계별 생성 진행 표시 ───
+const GENERATION_PHASES = [
+  { label: "스토리 구조 해석 중", minMs: 0 },
+  { label: "컷 아웃라인 생성 중", minMs: 2000 },
+  { label: "컷 리듬 정리 중", minMs: 6000 },
+  { label: "샷 디테일 보강 중", minMs: 12000 },
+  { label: "최종 검증 중", minMs: 20000 },
+];
+
+function GenerationProgressCard() {
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - startTime);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 현재 단계 결정 (경과 시간 기반)
+  let currentPhase = GENERATION_PHASES[0];
+  for (const phase of GENERATION_PHASES) {
+    if (elapsedMs >= phase.minMs) currentPhase = phase;
+  }
+
+  const elapsedSec = Math.floor(elapsedMs / 1000);
+
+  return (
+    <Card className="h-full flex items-center justify-center">
+      <CardContent className="text-center py-16 space-y-4">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent mx-auto" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium" style={{ color: "#787fff" }}>
+            {currentPhase.label}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {elapsedSec}초 경과
+          </p>
+          {/* 단계 인디케이터 */}
+          <div className="flex items-center justify-center gap-1 pt-1">
+            {GENERATION_PHASES.map((phase, i) => (
+              <div
+                key={i}
+                className="h-1 rounded-full transition-all duration-500"
+                style={{
+                  width: elapsedMs >= phase.minMs ? 20 : 8,
+                  background: elapsedMs >= phase.minMs ? "#787fff" : "#e5e7eb",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ResultPanel({
   result,
   status,
@@ -309,21 +367,7 @@ export default function ResultPanel({
   }
 
   if (status === "loading") {
-    return (
-      <Card className="h-full flex items-center justify-center">
-        <CardContent className="text-center py-16 space-y-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent mx-auto" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />
-          <div className="space-y-1">
-            <p className="text-sm font-medium" style={{ color: "#787fff" }}>
-              장면을 설계하고 있습니다
-            </p>
-            <p className="text-xs text-muted-foreground">
-              보통 10~20초 정도 소요됩니다
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return <GenerationProgressCard />;
   }
 
   if (status === "error") {

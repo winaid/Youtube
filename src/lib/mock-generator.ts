@@ -137,6 +137,11 @@ async function fetchGeminiCuts(
 
     if (cuts.length === 0) throw new Error("Empty cuts from API");
 
+    // Latency breakdown 로그 (서버에서 반환)
+    if (data._latency) {
+      console.log("[generate-cuts] LATENCY:", data._latency);
+    }
+
     return {
       characterSeeds,
       cuts,
@@ -145,6 +150,7 @@ async function fetchGeminiCuts(
       sequencePlan: data.sequencePlan ?? undefined,
       sequenceValidation: data.sequenceValidation ?? undefined,
       generationMeta: data.generationMeta ?? undefined,
+      _latency: data._latency ?? undefined,
     };
   } catch (error) {
     const errStr = String(error);

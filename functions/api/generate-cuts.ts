@@ -53,6 +53,12 @@ type Env = GeminiEnv;
 const MODEL_OUTLINE = GEMINI_MODEL_PRO;
 const MODEL_DETAIL  = GEMINI_MODEL_PRO;
 
+// ─── Fast path 상수 ──────────────────────────────────────────────────────────
+// 짧고 단순한 shortform 요청에서 step2/3를 건너뛰는 조건.
+// 충분 조건: 총 시간 ≤ FAST_PATH_MAX_DURATION_SEC AND 컷 수 ≤ FAST_PATH_MAX_CUTS
+const FAST_PATH_MAX_DURATION_SEC = 15;
+const FAST_PATH_MAX_CUTS = 5;
+
 // ─── Step1 토큰/타임아웃 상수 ────────────────────────────────────────────────
 // 각 retry 경로에서 리터럴 값 대신 이 상수를 사용.
 // 변경 시 여기만 수정하면 전 경로에 반영됨.
@@ -65,10 +71,10 @@ const STEP1_RETRY_MAX_TOKENS = 32768;
 const STEP1_ULTRA_MAX_TOKENS = 16384;
 /** Step1 per-outline 토큰 추정 (14개 필드 경량 스키마) */
 const STEP1_TOKENS_PER_OUTLINE = 400;
-/** Step1 초기 요청 타임아웃 (ms) — 기본 55s보다 여유 있게 */
-const STEP1_TIMEOUT_MS = 90_000;
-/** Ultra-compact retry 타임아웃 (ms) */
-const STEP1_ULTRA_TIMEOUT_MS = 45_000;
+/** Step1 초기 요청 타임아웃 (ms) — 55초로 단축하여 빠른 fallback 전환 */
+const STEP1_TIMEOUT_MS = 55_000;
+/** Ultra-compact retry 타임아웃 (ms) — 25초로 단축하여 빠른 응답 */
+const STEP1_ULTRA_TIMEOUT_MS = 25_000;
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**
@@ -1704,6 +1710,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.info(`[generate-cuts] characterPersonas 주입: ${cpRaw.length}명`);
     }
 
+    // ── Latency tracking ──────────────────────────────────────────────────────
+    const t0_total = Date.now();
+    let t0_step1 = 0, t1_step1 = 0;
+    let t0_step23 = 0, t1_step23 = 0;
+    let t0_postprocess = 0, t1_postprocess = 0;
+    let fallbackLatencyMs = 0;
+    const skippedSteps: string[] = [];
+    let fastPathUsed = false;
+
+    // ── Fast path 판정 ──────────────────────────────────────────────────────
+    // 짧은 shortform(≤15초, ≤5컷)이면 step2/3 skip 후보
+    const isFastPathCandidate =
+      effectiveTotalForDensity <= FAST_PATH_MAX_DURATION_SEC
+      && targetCuts <= FAST_PATH_MAX_CUTS;
+
+    if (isFastPathCandidate) {
+      console.log("[generate-cuts] fast path candidate: short/simple request", {
+        totalDuration: effectiveTotalForDensity,
+        targetCuts,
+        threshold: `≤${FAST_PATH_MAX_DURATION_SEC}s, ≤${FAST_PATH_MAX_CUTS}cuts`,
+      });
+    }
+
     // ── STEP 1: 아웃라인 생성 ─────────────────────────────────────────────────
     let characterSeeds: CharacterSeed[];
     let outlines: CutOutline[];
@@ -1712,6 +1741,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let step1DegradedReason = "";
     const step1Warnings: string[] = [];
 
+    t0_step1 = Date.now();
     try {
       // ── editorial planning block 빌드 ──
       const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
@@ -2030,6 +2060,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       appearanceKo: "캐주얼 의상의 젊은 인물",
     };
 
+    t1_step1 = Date.now();
+    console.log(`[generate-cuts] step1 완료: ${t1_step1 - t0_step1}ms, outlines=${outlines.length}`);
+
+    // ── Fast path 판정: step1 outline 품질이 충분하면 step2/3 건너뛰기 ──
+    // 조건: fast path 후보 AND outline에 핵심 필드가 모두 있음 AND degraded 아님
+    const outlineQualitySufficient = outlines.every(o =>
+      o.sceneKo && o.shotType && o.cameraMovement && o.subjectAction && o.sceneBeat1 && o.sceneBeat2 && o.sceneBeat3
+    );
+    const shouldUseFastPath = isFastPathCandidate && outlineQualitySufficient && !step1Degraded;
+
+    if (shouldUseFastPath) {
+      fastPathUsed = true;
+      skippedSteps.push("step2", "step3");
+      console.log("[generate-cuts] FAST PATH: step2/3 건너뛰기 — outline 품질 충분, shortform", {
+        totalDuration: effectiveTotalForDensity,
+        targetCuts,
+        step1LatencyMs: t1_step1 - t0_step1,
+      });
+    }
+
     // ── STEP 2 & 3: 상세 프롬프트 생성 (병렬) ────────────────────────────────
     const mid    = Math.ceil(targetCuts / 2);
     const batch1 = outlines.slice(0, mid);
@@ -2056,6 +2106,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // editorial summary for step2/3 reinforcement
     const editorialSummary = buildCompactEditorialSummary(editorial);
 
+    t0_step23 = Date.now();
+
+    if (shouldUseFastPath) {
+      // Fast path: skip step2/3 entirely — use outline-based fallback prompts
+      console.log("[generate-cuts] fast path: step2/3 skipped");
+      t1_step23 = Date.now();
+    } else {
     try {
       [details1, details2] = await Promise.all([
         step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary),
@@ -2103,6 +2160,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // details1, details2 remain empty → cuts will use fallback prompts
       }
     }
+    t1_step23 = Date.now();
+    console.log(`[generate-cuts] step2/3 완료: ${t1_step23 - t0_step23}ms, details=${details1.length + details2.length}`);
+    } // end of else (non-fast-path)
+
+    t0_postprocess = Date.now();
 
     // ── 병합 ──────────────────────────────────────────────────────────────────
     const detailMap = new Map<number, CutDetail>();
@@ -2327,10 +2389,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.warn("[generate-cuts] ⚠️ sequence validation issues:", sequenceValidation.issues);
     }
 
+    t1_postprocess = Date.now();
+    const totalLatencyMs = Date.now() - t0_total;
+    const step1LatencyMs = t1_step1 - t0_step1;
+    const step23LatencyMs = t1_step23 - t0_step23;
+    const postprocessLatencyMs = t1_postprocess - t0_postprocess;
+
+    console.log("[generate-cuts] LATENCY BREAKDOWN", {
+      totalLatencyMs,
+      step1LatencyMs,
+      step23LatencyMs,
+      postprocessLatencyMs,
+      fastPathUsed,
+      skippedSteps,
+    });
+
     return Response.json({
       ok: true,
-      degraded: step1Degraded,
-      reason: step1DegradedReason || undefined,
+      degraded: step1Degraded || fastPathUsed,
+      reason: fastPathUsed ? "fast path: step2/3 skipped (short/simple)" : (step1DegradedReason || undefined),
       source: "gemini" as const,
       warnings: step1Warnings,
       characterSeeds,
@@ -2405,6 +2482,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           targetCuts,
           secPerCut,
         }),
+      },
+      // ── Latency breakdown for client-side observability ──
+      _latency: {
+        totalLatencyMs,
+        step1LatencyMs,
+        step23LatencyMs,
+        postprocessLatencyMs,
+        fallbackLatencyMs,
+        fastPathUsed,
+        skippedSteps,
+        degradedFastPathUsed: fastPathUsed,
       },
     });
 
