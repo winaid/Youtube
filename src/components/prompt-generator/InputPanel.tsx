@@ -56,6 +56,9 @@ interface InputPanelProps {
   isLoading: boolean;
   prefillScenario?: string;
   onPrefillConsumed?: () => void;
+  /** 드래프트/샘플에서 전체 입력 상태를 복원할 때 사용 */
+  prefillInput?: PromptInput | null;
+  onPrefillInputConsumed?: () => void;
   /** 부모가 소유하는 시퀀스당 초 (0=자동, 3-15=명시) */
   secondsPerScene: number;
   /** 시퀀스당 초 변경 콜백 */
@@ -267,7 +270,7 @@ function persistCustomDirectors(dirs: DirectorPersona[]) {
   } catch { /* storage full */ }
 }
 
-export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, prefillInput, onPrefillInputConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -339,6 +342,27 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       setShowRecommendation(true);
     }
   }, [prefillScenario, onPrefillConsumed]);
+
+  // 드래프트/샘플 전체 입력 복원
+  useEffect(() => {
+    if (prefillInput) {
+      setStoryText(prefillInput.storyText || "");
+      setDirectorPersona(prefillInput.directorPersona || "");
+      setRegion(prefillInput.region || "한국");
+      setAnimationMode(prefillInput.animationMode || "tv-anime");
+      setDuration(prefillInput.duration || "auto");
+      setAspectRatio(prefillInput.aspectRatio || "16:9");
+      if (prefillInput.cutCount && prefillInput.cutCount > 0) {
+        setCutCount(prefillInput.cutCount);
+      } else {
+        setCutCount("auto");
+      }
+      if (prefillInput.cutDuration && prefillInput.cutDuration > 0) {
+        setCutDuration(prefillInput.cutDuration);
+      }
+      onPrefillInputConsumed?.();
+    }
+  }, [prefillInput, onPrefillInputConsumed, setCutDuration]);
 
   const allDirectors = useMemo(() => [...directors, ...customDirectors], [customDirectors]);
   const filteredDirectors = useMemo(() => allDirectors.filter((d) => d.region === region), [allDirectors, region]);
