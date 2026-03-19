@@ -1594,11 +1594,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // LLM이 "24초 기준 3컷" 프롬프트를 받고 15초 스토리에 2컷만 생성하는 원인이 됨.
     // 숏폼 리듬 > 감독 스타일: secPerCut을 totalDuration/targetCuts 이하로 제한.
     if (effectiveTotalForDensity > 0 && targetCuts > 1) {
-      const naturalPerCut = Math.max(DURATION_MIN, Math.round(effectiveTotalForDensity / targetCuts));
+      const naturalPerCut = Math.max(DURATION_MIN, Math.min(KLING_SEGMENT_CAP, Math.round(effectiveTotalForDensity / targetCuts)));
       if (secPerCut > naturalPerCut) {
-        console.log(`[generate-cuts] secPerCut reconciliation: ${secPerCut}→${naturalPerCut} (${effectiveTotalForDensity}s / ${targetCuts}cuts, persona wanted ${secPerCut}s)`);
+        console.log(`[generate-cuts] secPerCut reconciliation: ${secPerCut}→${naturalPerCut} (${effectiveTotalForDensity}s / ${targetCuts}cuts, cap=${KLING_SEGMENT_CAP}s, persona wanted ${secPerCut}s)`);
         secPerCut = naturalPerCut;
       }
+    }
+    // ── 절대 상한: Kling 최대 15초 강제 ──
+    if (secPerCut > KLING_SEGMENT_CAP) {
+      console.warn(`[generate-cuts] secPerCut ${secPerCut}s exceeds Kling cap → clamping to ${KLING_SEGMENT_CAP}s`);
+      secPerCut = KLING_SEGMENT_CAP;
     }
 
     // ── shortform reconciliation (full structured plan) ──
@@ -2152,6 +2157,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           }];
 
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
+          for (const fc of finalizedCuts) { if (fc.durationSec > KLING_SEGMENT_CAP) fc.durationSec = KLING_SEGMENT_CAP; }
           const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
             aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
@@ -2197,6 +2203,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }];
 
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
+        for (const fc of finalizedCuts) { if (fc.durationSec > KLING_SEGMENT_CAP) fc.durationSec = KLING_SEGMENT_CAP; }
         const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
           aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
@@ -2581,6 +2588,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ═══ density 보정 + classify → finalizedCuts ═══════════════════
     const finalizedCuts = classifyCuts(densifyCuts(rhythmCuts));
+
+    // ═══ Kling 15초 상한 강제 클램핑 ═══════════════════════════════
+    // 리듬 분배/density 보정 후에도 durationSec이 15초를 초과할 수 있음.
+    // Kling API 최대값은 15초이므로 여기서 강제 클램핑.
+    for (const fc of finalizedCuts) {
+      if (fc.durationSec > KLING_SEGMENT_CAP) {
+        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} duration ${fc.durationSec}s exceeds ${KLING_SEGMENT_CAP}s cap → clamping`);
+        fc.durationSec = KLING_SEGMENT_CAP;
+      }
+    }
 
     // ═══ 시퀀스 플랜 구축 + 검증 ═══════════════════════════════════
     // finalizedCuts 기준으로 SequencePlan 생성 (cuts와 sequencePlan 정합성 보장)

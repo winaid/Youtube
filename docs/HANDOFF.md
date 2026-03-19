@@ -37,7 +37,8 @@ The core workflow: a user provides a story or scene description, the system plan
 
 1. **0~5초 = micro (1~2컷)** | **6~9초 = 최소 3컷** | **10~15초 = 4~6컷** | **16초+ = shortform 생성 불가**
 2. 각 컷(8-15초) 내부의 멀티샷은 **3-6개 권장** (리텐션 기반)
-3. 이 규칙은 추천/자동 조정/하드캡/예외 처리보다 우선
+3. **Kling 15초 상한: 모든 컷은 최대 15초**. generate-cuts에서 리듬 분배, density 보정, reconciliation 후에도 15초 초과 시 강제 클램핑 적용
+4. 이 규칙은 추천/자동 조정/하드캡/예외 처리보다 우선
 4. 최종 출력에서 6초 이상 영상이 1-2컷으로 확정되면 안 됨
 
 ## Release Status
@@ -141,6 +142,39 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 - `buildLocalNameSet()` / `isLocalDuplicate()` — 이름 기반 중복 판정
 - `clampFitScore()` / `ensureReason()` — fitScore/reason 정규화
 - `isGenericReason()` — 추천 사유 품질 검증
+
+## 이어 만들기 (Continuity Mode)
+
+### 토글의 실제 의미
+- **이어 만들기 ON**: 여러 클립을 하나의 연속된 영상처럼 만듦. 캐릭터 외모, 색감, 조명, 움직임 방향이 세그먼트 간 일관되게 유지됨
+- **이어 만들기 OFF**: 각 컷이 독립적으로 생성됨. 프롬프트 수준의 약한 연속성만 존재
+
+### continuity ON일 때 무엇이 연결되는가
+1. **프롬프트 주입**: CHARACTER LOCK, VISUAL LOCK, CONTINUATION FROM, ENDING RULE, NARRATIVE POSITION 블록이 generate-cuts 프롬프트에 삽입
+2. **Frame chaining** (autoLinkFirstFrame=true 기본값):
+   - 우선순위: lastFrameBase64 캐시 → 비디오 캡처 → storyboard end → storyboard start → text-to-video
+   - 각 컷 완료 시 마지막 프레임을 캡처하여 다음 컷의 firstFrame으로 전달
+3. **continuityMeta**: segmentIndex, totalSegments, isLastSegment, prevEndState가 generate-video API에 전달
+4. **endState 전파** (submitContinuitySequence): 세그먼트 순차 생성 시 이전 세그먼트의 확정된 endState가 다음 세그먼트의 startState로 전파
+
+### ON이어도 continuity가 약해질 수 있는 경우
+- R2 버킷 미설정 → Scene Extension 불가 → IMAGE_TO_VIDEO fallback (연속성 60%)
+- lastFrame 캡처 실패 (CORS, data: URI) → storyboard fallback
+- storyboard도 없음 → TEXT_TO_VIDEO (연속성 0%)
+- Kling 모델 편차로 캐릭터 외모가 변할 수 있음
+
+### autoLinkFirstFrame 토글
+- **VideoSettingsPanel**에 위치. 기본값 true
+- ON: CUT N>1에서 이전 컷의 마지막 프레임을 다음 컷의 firstFrame으로 자동 연결
+- OFF: frame chaining 비활성화. 각 컷이 storyboard 또는 text 기반으로 독립 생성
+- `useVideoGeneration.ts`에서 `cfg.autoLinkFirstFrame`으로 읽혀 frame chaining 분기에 사용됨
+
+### 디버그 메타에서 continuity 상태 보는 법
+클라이언트 콘솔에서 `[CUT N] continuity debug` 로그 확인:
+- `autoLinkFirstFrame`: frame chaining 활성화 여부
+- `continuityFrameSource`: 실제 사용된 frame 소스 (lastFrameBase64_cached / video_capture / storyboard_end / storyboard_start / text_to_video_fallback / disabled_by_autoLinkFirstFrame)
+- `hasFirstFrame`: firstFrame 존재 여부
+- `hasPrevClip`: 이전 컷 존재 여부
 
 ### UI 구조 — 로컬 vs 외부 추천 분리
 - **보유 감독 추천** (보라색 #787fff): 로컬 풀에서 매칭된 감독

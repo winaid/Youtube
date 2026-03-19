@@ -1271,14 +1271,18 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         console.log(`[CUT ${cutNumber}] ⚡ CONFLICT RESOLUTIONS`, assembled.diagnostics.conflictResolutions);
       }
 
-      // ── Continuity firstFrame 취득 (우선순위 순)
-      // CUT 1: 사용자 설정값 / CUT N>1: 이전 컷과의 연결 필수
+      // ── Continuity firstFrame 취득 (우선순위 순) ──
+      // autoLinkFirstFrame이 OFF면 CUT N>1에서도 frame chaining 비활성화.
+      // CUT 1: 사용자 설정값 / CUT N>1: autoLinkFirstFrame ON일 때만 이전 컷과 연결.
+      const shouldLinkFrames = cfg.autoLinkFirstFrame !== false; // 기본값 true
       let firstFrameBase64 = cutNumber === 1 ? cfg.firstFrameBase64 : undefined;
+      let continuityFrameSource: string = "none"; // 디버그용 추적
 
-      if (cutNumber > 1 && prevClip) {
+      if (cutNumber > 1 && prevClip && shouldLinkFrames) {
         // 1순위: 완료 시 저장된 lastFrameBase64 (재캡처 없이 즉시 사용)
         if (prevClip.lastFrameBase64) {
           firstFrameBase64 = prevClip.lastFrameBase64;
+          continuityFrameSource = "lastFrameBase64_cached";
           console.log(`[CUT ${cutNumber}] continuity: 저장된 lastFrame 사용 (CUT ${cutNumber - 1})`);
         } else if (prevClip.videoUri) {
           // 2순위: 이전 컷 비디오에서 직접 캡처
@@ -1286,6 +1290,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             const captured = await captureVideoLastFrame(prevClip.videoUri);
             if (captured) {
               firstFrameBase64 = captured;
+              continuityFrameSource = "video_capture";
               // 이후 재사용을 위해 저장
               updateClip(cutNumber - 1, { lastFrameBase64: captured });
               console.log(`[CUT ${cutNumber}] continuity: lastFrame 캡처 성공 (CUT ${cutNumber - 1})`);
@@ -1300,20 +1305,27 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         // 3순위: 이전 컷의 END 스토리보드
         if (!firstFrameBase64 && storyboardEndImages?.[cutNumber - 1]) {
           firstFrameBase64 = storyboardEndImages[cutNumber - 1];
+          continuityFrameSource = "storyboard_end";
           console.log(`[CUT ${cutNumber}] continuity: storyboard end image 사용 (CUT ${cutNumber - 1})`);
         }
 
         // 4순위: 현재 컷의 START 스토리보드
         if (!firstFrameBase64 && storyboardImages?.[cutNumber]) {
           firstFrameBase64 = storyboardImages[cutNumber];
+          continuityFrameSource = "storyboard_start";
           console.log(`[CUT ${cutNumber}] continuity: storyboard start image 사용 (CUT ${cutNumber})`);
         }
 
         if (!firstFrameBase64) {
+          continuityFrameSource = "text_to_video_fallback";
           console.warn(`[CUT ${cutNumber}] continuity: firstFrame 없음 — text-to-video로 생성 (프롬프트에 연속성 포함)`);
         }
+      } else if (cutNumber > 1 && !shouldLinkFrames) {
+        continuityFrameSource = "disabled_by_autoLinkFirstFrame";
+        console.log(`[CUT ${cutNumber}] continuity: autoLinkFirstFrame=OFF — frame chaining 비활성화`);
       } else if (cutNumber === 1 && !firstFrameBase64 && storyboardImages?.[1]) {
         firstFrameBase64 = storyboardImages[1];
+        continuityFrameSource = "storyboard_cut1";
       }
 
       // Auto-link lastFrame from end storyboard image
@@ -1321,6 +1333,17 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       if (!lastFrameBase64 && storyboardEndImages?.[cutNumber]) {
         lastFrameBase64 = storyboardEndImages[cutNumber];
       }
+
+      // ── Continuity 디버그 로그 ──
+      console.log(`[CUT ${cutNumber}] continuity debug`, {
+        autoLinkFirstFrame: shouldLinkFrames,
+        continuityFrameSource,
+        hasFirstFrame: !!firstFrameBase64,
+        hasLastFrame: !!lastFrameBase64,
+        hasPrevClip: !!prevClip,
+        prevClipHasLastFrame: !!prevClip?.lastFrameBase64,
+        prevClipHasVideoUri: !!prevClip?.videoUri,
+      });
 
       // 캐릭터 얼굴 레퍼런스 자동 주입 (Set으로 O(1) 중복 검사)
       const refImageSet = new Set<string>(cfg.referenceImages || []);
@@ -1498,6 +1521,17 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           if (elementList.length === 0) return {};
           return { element_list: elementList };
         })()),
+        // ── Continuity metadata (continuitySegment가 있으면 전달) ──
+        ...(cut.continuitySegment ? {
+          continuityMeta: {
+            segmentIndex: cut.continuitySegment.segmentIndex ?? 0,
+            totalSegments: cutsRef.current.length,
+            isLastSegment: cut.continuitySegment.isLastSegment ?? (cutNumber === cutsRef.current.length),
+            prevEndState: cut.continuitySegment.startState as unknown as Record<string, unknown> | undefined,
+            characterLock: "",
+            visualLock: "",
+          },
+        } : {}),
         extraFields: {
           mode: cfg.mode,
           resolution: cfg.resolution,
@@ -1506,6 +1540,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           seed: cfg.seed,
           previousVideoUri: safePrevVideoUri,
           referenceImages: finalRefImages.length > 0 ? finalRefImages : undefined,
+          // continuity 디버그 필드
+          continuityFrameSource,
+          autoLinkFirstFrame: shouldLinkFrames,
         },
       };
 
