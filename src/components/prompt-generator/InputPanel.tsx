@@ -727,16 +727,29 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           localCount: debug.localResultCount,
           externalCount: debug.externalResultCount,
           finalCount: debug.finalResultCount,
+          webAttempts: debug.webSearchAttemptCount ?? 1,
+          webRetryReason: debug.webSearchRetryReason ?? null,
+          webProvider: debug.webSearchProvider ?? null,
         });
-        // 실패/빈 결과 시 상세 로그
+        // 웹 검색이 0명이면 항상 상세 로그
+        if (webCount === 0) {
+          console.warn("[recommend-director] web search details", {
+            webSearchResultCount: debug.webSearchResultCount,
+            webSearchAcceptedCount: debug.webSearchAcceptedCount,
+            webSearchRejectedCount: debug.webSearchRejectedCount,
+            webSearchRejectionReasons: debug.webSearchRejectionReasons,
+            webRawSnippet: debug.webSearchRawSnippet ?? "(not available)",
+            localRawSnippet: debug.localMatchRawSnippet ?? "(not available)",
+            stageReasons: debug.stageReasons,
+          });
+        }
+        // 전체 빈 결과 시 추가 상세 로그
         if (localCount + webCount === 0 && debug.stageReasons) {
           console.warn("[recommend-director] empty result details", {
             stageReasons: debug.stageReasons,
             invalidIdsRemoved: debug.invalidIdsRemoved,
             rejectedLocalIds: debug.rejectedLocalIds,
             localRejectionReasons: debug.localRejectionReasons,
-            webSearchResultCount: debug.webSearchResultCount,
-            webSearchRejectionReasons: debug.webSearchRejectionReasons,
           });
         }
       } else if (debug) {

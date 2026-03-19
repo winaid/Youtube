@@ -1025,15 +1025,27 @@ Each director object must have:
               }
             } else {
               // Case B: 원시 결과 0명 → 모델이 directors 배열을 반환하지 않음 → 모델 폴백
+              // googleSearchRetrieval 도구 사용 시 Gemini가 JSON이 아닌 자연어를 반환하는 경우가 많음.
+              // 폴백은 단순한 프롬프트 + responseMimeType: "application/json"으로 강제.
               webSearchRetryReason = `웹 검색 200 OK but rawCount=0 (JSON 파싱 실패 또는 빈 응답) → 모델 폴백`;
               console.log(`[recommend-director] ${webSearchRetryReason}`);
               webSearchAttemptCount = 2;
 
+              // 로컬 감독 제외 목록 (간결하게)
+              const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
+              const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
+              const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
+
+              // ── 단순화된 폴백 프롬프트: JSON 출력 성공률 최대화 ──
+              const simpleFallbackPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario.
+Do NOT recommend: ${excludeNames}.
+Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean description","reason":"Korean reason","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]}]}`;
+
               try {
                 const fallbackBody = {
-                  contents: [{ role: "user", parts: [{ text: buildWebPrompt("\n## NOTE: Web search returned no usable results. Use your internal knowledge to recommend directors.\n") }] }],
+                  contents: [{ role: "user", parts: [{ text: simpleFallbackPrompt }] }],
                   generationConfig: {
-                    temperature: 0.4,
+                    temperature: 0.5,
                     maxOutputTokens: 3072,
                     responseMimeType: "application/json" as const,
                   },
@@ -1065,6 +1077,40 @@ Each director object must have:
                   webSearchProvider = `${webSearchProvider} + model-fallback`;
 
                   console.log(`[recommend-director] 모델 폴백: 원시=${fbResult.rawCount}, 채택=${fbResult.accepted.length}`);
+
+                  // ── 모델 폴백도 0명이면 Flash 모델로 최종 시도 ──
+                  if (fbResult.accepted.length === 0) {
+                    console.log(`[recommend-director] 모델 폴백도 0명 → Flash 모델 최종 시도`);
+                    webSearchAttemptCount = 3;
+                    try {
+                      const flashRes = await fetchWithAuth(
+                        context.env,
+                        buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
+                        {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(fallbackBody),
+                        },
+                      );
+                      if (flashRes.ok) {
+                        const flashData = await flashRes.json() as {
+                          candidates?: { content?: { parts?: { text?: string }[] } }[];
+                        };
+                        const flashText = flashData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+                        console.log(`[recommend-director] Flash 폴백 raw (first 300): ${flashText.slice(0, 300)}`);
+                        const flashResult = processWebResponse(flashText, [], "flash_fallback");
+                        webSearchResultCount += flashResult.rawCount;
+                        webSearchAcceptedCount += flashResult.accepted.length;
+                        webSuggestions.push(...flashResult.accepted);
+                        if (flashResult.accepted.length > 0) {
+                          webSearchProvider = `${webSearchProvider} + flash-fallback`;
+                        }
+                        console.log(`[recommend-director] Flash 폴백: 원시=${flashResult.rawCount}, 채택=${flashResult.accepted.length}`);
+                      }
+                    } catch { /* Flash 폴백 실패 — 무시 */ }
+                  }
+                } else {
+                  console.warn(`[recommend-director] 모델 폴백 API 실패(${fallbackRes.status})`);
                 }
               } catch (fbErr) {
                 console.warn(`[recommend-director] 모델 폴백 예외: ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`);
@@ -1086,16 +1132,24 @@ Each director object must have:
           const webStatus = webRes.status;
           console.warn(`[recommend-director] 웹 검색 실패(${webStatus}): ${webErr.slice(0, 300)}`);
 
-          // ── 웹 검색 실패 시 모델 지식 폴백 ──
+          // ── 웹 검색 실패 시 모델 지식 폴백 (단순 프롬프트) ──
           console.log(`[recommend-director] 모델 지식 기반 폴백 시도`);
           webSearchProvider = `model-fallback (web failed ${webStatus})`;
           webSearchAttemptCount = 2;
 
           try {
+            const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
+            const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
+            const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
+
+            const simpleFallbackPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario.
+Do NOT recommend: ${excludeNames}.
+Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean description","reason":"Korean reason","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]}]}`;
+
             const fallbackBody = {
-              contents: [{ role: "user", parts: [{ text: buildWebPrompt("\n## NOTE: Web search is unavailable. Use your internal knowledge to recommend directors.\n") }] }],
+              contents: [{ role: "user", parts: [{ text: simpleFallbackPrompt }] }],
               generationConfig: {
-                temperature: 0.4,
+                temperature: 0.5,
                 maxOutputTokens: 3072,
                 responseMimeType: "application/json" as const,
               },
