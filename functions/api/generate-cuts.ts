@@ -362,6 +362,60 @@ interface CutDetail {
 
 type ShotRoleServer = "establish" | "develop" | "peak" | "resolve" | "insert" | "transition";
 
+// ─── 멀티샷 최소 수 강제 보충 (공통 함수) ────────────────────────────────
+// Gemini/deterministic fallback이 최소 샷 수를 미달하면 강제 보충.
+// 모든 finalizedCuts 경로 (정상, deterministic fallback)에서 호출.
+const ROLE_PATTERNS_REPAIR: Record<number, ShotRoleServer[]> = {
+  2: ["establish", "resolve"],
+  3: ["establish", "develop", "resolve"],
+  4: ["establish", "develop", "peak", "resolve"],
+  5: ["establish", "transition", "develop", "peak", "resolve"],
+  6: ["establish", "transition", "develop", "insert", "peak", "resolve"],
+};
+
+function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: number; videoPrompt?: string; sceneDescription?: string; multiShot?: MultiShotItem[] }>): void {
+  for (const fc of cuts) {
+    const dur = fc.durationSec;
+    const minRequired = getMinShots(KLING_DEFAULT_TEXT_MODEL, dur);
+    const existingShots: MultiShotItem[] = Array.isArray(fc.multiShot) ? fc.multiShot : [];
+
+    if (minRequired >= 2 && existingShots.length < minRequired) {
+      console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} (${dur}s): multiShot ${existingShots.length}개 < 최소 ${minRequired}개 → auto-repair`);
+
+      const targetCount = Math.min(minRequired, getMaxShots(KLING_DEFAULT_TEXT_MODEL, dur));
+      const roles = ROLE_PATTERNS_REPAIR[targetCount] ?? ROLE_PATTERNS_REPAIR[4]!;
+
+      const baseDur = Math.floor(dur / targetCount);
+      const remainder = dur - baseDur * targetCount;
+      const durations = roles.map((_, i) => i < remainder ? baseDur + 1 : baseDur);
+
+      const basePrompt = fc.videoPrompt || fc.sceneDescription || "";
+      const roleDirective: Record<ShotRoleServer, string> = {
+        establish: "Wide establishing shot showing the full environment and spatial context",
+        transition: "Camera shifts to a new angle, revealing hidden depth in the scene",
+        develop: "Medium shot revealing new action or information not visible before",
+        insert: "Extreme close-up on a critical detail, dramatic scale shift",
+        peak: "The most emotionally intense moment, maximum visual impact",
+        resolve: "Visual closure, tension releases, the scene settles into resolution",
+      };
+
+      const repairedShots: MultiShotItem[] = roles.map((role, i) => {
+        if (i < existingShots.length) {
+          return { index: i + 1, prompt: existingShots[i].prompt, duration: String(durations[i]), role };
+        }
+        return {
+          index: i + 1,
+          prompt: `[Shot ${i + 1}/${targetCount} — ${role}] ${roleDirective[role]}. ${basePrompt.slice(0, 120)}`,
+          duration: String(durations[i]),
+          role,
+        };
+      });
+
+      (fc as Record<string, unknown>).multiShot = repairedShots;
+    }
+  }
+}
+
 function inferMultiShotRole(index: number, total: number): ShotRoleServer {
   if (total <= 1) return "establish";
   if (index === 0) return "establish";
@@ -1042,9 +1096,10 @@ ${(() => {
     ];
     const roles = progressionRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
     const minShots = Math.max(2, getMinShots(KLING_DEFAULT_TEXT_MODEL, secPerCut)); // duration 기반 최소 (10s+ → 4개)
-    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최소 ${minShots}개 ~ 최대 ${maxShots}개)
+    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 ${minShots}개 이상 ~ 최대 ${maxShots}개)
 
-⚠️ 숏폼 필수: 각 시퀀스에 최소 ${minShots}개 서브샷. 감독이 롱테이크/정적 스타일이어도 서브샷 수를 줄이지 마라.
+🚨 MANDATORY: 각 컷의 multiShot 배열은 반드시 ${minShots}개 이상 서브샷을 포함해야 한다. ${minShots}개 미만은 규칙 위반이며 절대 허용하지 않는다.
+⚠️ 숏폼 필수: 감독이 롱테이크/정적 스타일이어도 서브샷 수를 ${minShots}개 미만으로 줄이지 마라.
 
 핵심 원칙 — 이것은 숫자 규칙이 아니라 프로그레션 규칙이다:
 1. 모든 서브샷은 존재 이유가 있어야 한다 — 같은 화면을 나누는 것은 금지
@@ -2158,6 +2213,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
           for (const fc of finalizedCuts) { if (fc.durationSec > KLING_SEGMENT_CAP) fc.durationSec = KLING_SEGMENT_CAP; }
+          repairMultiShotMinimums(finalizedCuts);
           const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
             aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
@@ -2204,6 +2260,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
         for (const fc of finalizedCuts) { if (fc.durationSec > KLING_SEGMENT_CAP) fc.durationSec = KLING_SEGMENT_CAP; }
+        repairMultiShotMinimums(finalizedCuts);
         const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
           aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
@@ -2600,66 +2657,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ═══ 멀티샷 사후 검증 — Gemini가 최소 샷 수 미달 시 자동 복구 ═══
-    // SHOT_COUNT_RANGES 기준: ≤5s→2, ≤8s→2, ≤12s→3, 13~15s→4
-    // Gemini가 이 규칙을 무시하고 샷 수가 부족하면 여기서 강제 보충.
-    for (const fc of finalizedCuts) {
-      const dur = fc.durationSec;
-      const minRequired = getMinShots(KLING_DEFAULT_TEXT_MODEL, dur);
-      const existingShots: MultiShotItem[] = Array.isArray((fc as Record<string, unknown>).multiShot)
-        ? (fc as Record<string, unknown>).multiShot as MultiShotItem[]
-        : [];
-
-      if (minRequired >= 2 && existingShots.length < minRequired) {
-        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} (${dur}s): multiShot ${existingShots.length}개 < 최소 ${minRequired}개 → auto-repair`);
-
-        // role progression 패턴 (multi-shot-planner.ts RETENTION_ROLE_PATTERNS 동기화)
-        const ROLE_PATTERNS: Record<number, ShotRoleServer[]> = {
-          2: ["establish", "resolve"],
-          3: ["establish", "develop", "resolve"],
-          4: ["establish", "develop", "peak", "resolve"],
-          5: ["establish", "transition", "develop", "peak", "resolve"],
-          6: ["establish", "transition", "develop", "insert", "peak", "resolve"],
-        };
-        const targetCount = Math.min(minRequired, getMaxShots(KLING_DEFAULT_TEXT_MODEL, dur));
-        const roles = ROLE_PATTERNS[targetCount] ?? ROLE_PATTERNS[4]!;
-
-        // duration 균등 분배
-        const baseDur = Math.floor(dur / targetCount);
-        const remainder = dur - baseDur * targetCount;
-        const durations = roles.map((_, i) => i < remainder ? baseDur + 1 : baseDur);
-
-        // 기존 샷 prompt 재활용 + 부족분 생성
-        const basePrompt = fc.videoPrompt || fc.sceneDescription || "";
-        const repairedShots: MultiShotItem[] = roles.map((role, i) => {
-          if (i < existingShots.length) {
-            // 기존 샷 유지, duration/role만 보정
-            return {
-              index: i + 1,
-              prompt: existingShots[i].prompt,
-              duration: String(durations[i]),
-              role,
-            };
-          }
-          // 부족분: role 기반 기본 prompt 생성
-          const roleDirective: Record<ShotRoleServer, string> = {
-            establish: "Wide establishing shot showing the full environment and spatial context",
-            transition: "Camera shifts to a new angle, revealing hidden depth in the scene",
-            develop: "Medium shot revealing new action or information not visible before",
-            insert: "Extreme close-up on a critical detail, dramatic scale shift",
-            peak: "The most emotionally intense moment, maximum visual impact",
-            resolve: "Visual closure, tension releases, the scene settles into resolution",
-          };
-          return {
-            index: i + 1,
-            prompt: `[Shot ${i + 1}/${targetCount} — ${role}] ${roleDirective[role]}. ${basePrompt.slice(0, 120)}`,
-            duration: String(durations[i]),
-            role,
-          };
-        });
-
-        (fc as Record<string, unknown>).multiShot = repairedShots;
-      }
-    }
+    repairMultiShotMinimums(finalizedCuts);
 
     // ═══ Continuity Segment 생성 (continuityMode ON일 때만) ═══════
     // 각 컷에 continuitySegment를 붙여서 클라이언트 → useVideoGeneration → generate-video까지 전달.
