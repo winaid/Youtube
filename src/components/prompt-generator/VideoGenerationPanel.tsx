@@ -47,6 +47,8 @@ interface VideoGenerationPanelProps {
   styleId?: string;
   /** 사용 중인 Kling 모델 ID */
   modelId?: string;
+  /** stitch 완료 시 부모에 알림 — 업로드 준비 상태 반영용 */
+  onStitchComplete?: (result: { outputUrl: string; sizeBytes: number } | null) => void;
 }
 
 function ElapsedTime({ startedAt }: { startedAt?: number }) {
@@ -101,6 +103,7 @@ export default function VideoGenerationPanel({
   canonicalDurations,
   styleId,
   modelId: propModelId,
+  onStitchComplete,
 }: VideoGenerationPanelProps) {
   // ── Preflight validation ──
   const preflight: PreflightResult | null = useMemo(() => {
@@ -162,10 +165,16 @@ export default function VideoGenerationPanel({
         (progress) => setStitchProgress(progress),
       );
       setStitchResult(job);
+      // 부모에 stitch 결과 전달 — 업로드 준비 상태 반영
+      if (job.phase === "done" && job.outputUrl) {
+        onStitchComplete?.({ outputUrl: job.outputUrl, sizeBytes: job.outputSizeBytes ?? 0 });
+      } else {
+        onStitchComplete?.(null);
+      }
     } finally {
       setIsStitching(false);
     }
-  }, [stitchReadiness.canStitch, isStitching, enrichedState, projectTitle]);
+  }, [stitchReadiness.canStitch, isStitching, enrichedState, projectTitle, onStitchComplete]);
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#22c55e40" }}>

@@ -139,6 +139,9 @@ export default function ResultPanel({
   const [thumbnailImages, setThumbnailImages] = useState<{ base64: string; mimeType: string }[]>([]);
   const [thumbnailLoading, setThumbnailLoading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+  // Final export (stitch)
+  const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null);
+  const [finalVideoSizeBytes, setFinalVideoSizeBytes] = useState<number>(0);
   // 캐릭터 얼굴 레퍼런스
   const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
   // Kling Custom Element assets
@@ -1191,6 +1194,15 @@ export default function ResultPanel({
               hasImage: false,
               hasReferenceImages: (videoGen.config.referenceImages?.length ?? 0) > 0,
             })}
+            onStitchComplete={(result) => {
+              if (result) {
+                setFinalVideoUrl(result.outputUrl);
+                setFinalVideoSizeBytes(result.sizeBytes);
+              } else {
+                setFinalVideoUrl(null);
+                setFinalVideoSizeBytes(0);
+              }
+            }}
           />
 
           {/* AI 리뷰 패널 */}
@@ -1228,7 +1240,8 @@ export default function ResultPanel({
             <CardContent className="space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: "영상", done: videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0, detail: `${videoGen.completedCount}/${videoGen.totalCount}` },
+                  { label: "컷 영상", done: videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0, detail: `${videoGen.completedCount}/${videoGen.totalCount}` },
+                  { label: "최종 영상", done: !!finalVideoUrl, detail: finalVideoUrl ? `${(finalVideoSizeBytes / 1024 / 1024).toFixed(1)}MB` : undefined },
                   { label: "자막 (SRT)", done: !!srtContent, detail: srtError || undefined },
                   { label: "SEO", done: !!seoResult, detail: seoError || undefined },
                   { label: "썸네일", done: thumbnailImages.length > 0, detail: thumbnailError || undefined },
@@ -1238,17 +1251,36 @@ export default function ResultPanel({
                       {item.done ? "✓" : item.detail && !item.done ? "✗" : "○"}
                     </span>
                     <span style={{ color: item.done ? "#334155" : "#999" }}>{item.label}</span>
-                    {item.detail && !item.done && (
+                    {item.done && item.detail && (
+                      <span className="text-[9px]" style={{ color: "#22c55e" }}>{item.detail}</span>
+                    )}
+                    {!item.done && item.detail && (
                       <span className="text-[9px] text-red-400 truncate max-w-[120px]">{item.detail}</span>
                     )}
                   </div>
                 ))}
               </div>
-              {videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0 && srtContent && seoResult && thumbnailImages.length > 0 && (
+              {finalVideoUrl && (
+                <div className="flex items-center gap-2 py-1">
+                  <a
+                    href={finalVideoUrl}
+                    download={`${result?.projectTitle || "montage"}_final.mp4`}
+                    className="text-[11px] underline"
+                    style={{ color: "#787fff" }}
+                  >
+                    최종 영상 다시 다운로드
+                  </a>
+                </div>
+              )}
+              {videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0 && finalVideoUrl && srtContent && seoResult && thumbnailImages.length > 0 ? (
                 <div className="text-[11px] text-center py-1 rounded" style={{ background: "#22c55e15", color: "#16a34a" }}>
                   모든 에셋 준비 완료 — 유튜브 업로드 가능
                 </div>
-              )}
+              ) : videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0 && !finalVideoUrl ? (
+                <div className="text-[11px] text-center py-1 rounded" style={{ background: "#fef3c720", color: "#b45309" }}>
+                  컷 영상 완료 — 생성 탭에서 "최종 몽타주 MP4 생성" 실행 필요
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 

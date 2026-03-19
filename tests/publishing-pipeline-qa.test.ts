@@ -17,6 +17,7 @@ import { describe, it, expect } from "vitest";
 
 interface PublishReadiness {
   video: boolean;
+  finalVideo: boolean;
   srt: boolean;
   seo: boolean;
   thumbnail: boolean;
@@ -29,56 +30,66 @@ function checkPublishReadiness(
   srtContent: string | null,
   seoResult: { titles: string[] } | null,
   thumbnailImages: { base64: string }[],
+  finalVideoUrl: string | null = null,
 ): PublishReadiness {
   const video = completedCount === totalCount && totalCount > 0;
+  const finalVideo = !!finalVideoUrl;
   const srt = !!srtContent;
   const seo = !!seoResult;
   const thumbnail = thumbnailImages.length > 0;
   return {
     video,
+    finalVideo,
     srt,
     seo,
     thumbnail,
-    allReady: video && srt && seo && thumbnail,
+    allReady: video && finalVideo && srt && seo && thumbnail,
   };
 }
 
 describe("퍼블리싱 준비 상태 판정", () => {
-  it("모든 에셋 준비 → allReady", () => {
-    const r = checkPublishReadiness(3, 3, "1\n00:00...", { titles: ["T"] }, [{ base64: "abc" }]);
+  it("모든 에셋 + 최종 영상 → allReady", () => {
+    const r = checkPublishReadiness(3, 3, "1\n00:00...", { titles: ["T"] }, [{ base64: "abc" }], "blob:http://localhost/final");
     expect(r.allReady).toBe(true);
     expect(r.video).toBe(true);
+    expect(r.finalVideo).toBe(true);
     expect(r.srt).toBe(true);
     expect(r.seo).toBe(true);
     expect(r.thumbnail).toBe(true);
   });
 
+  it("최종 영상 없음 → allReady false", () => {
+    const r = checkPublishReadiness(3, 3, "srt", { titles: ["T"] }, [{ base64: "abc" }], null);
+    expect(r.allReady).toBe(false);
+    expect(r.finalVideo).toBe(false);
+  });
+
   it("영상 미완료 → allReady false", () => {
-    const r = checkPublishReadiness(2, 3, "srt", { titles: ["T"] }, [{ base64: "abc" }]);
+    const r = checkPublishReadiness(2, 3, "srt", { titles: ["T"] }, [{ base64: "abc" }], "blob:x");
     expect(r.allReady).toBe(false);
     expect(r.video).toBe(false);
   });
 
   it("영상 0/0 → allReady false (빈 프로젝트)", () => {
-    const r = checkPublishReadiness(0, 0, "srt", { titles: ["T"] }, [{ base64: "abc" }]);
+    const r = checkPublishReadiness(0, 0, "srt", { titles: ["T"] }, [{ base64: "abc" }], "blob:x");
     expect(r.allReady).toBe(false);
     expect(r.video).toBe(false);
   });
 
   it("SRT 없음 → allReady false", () => {
-    const r = checkPublishReadiness(3, 3, null, { titles: ["T"] }, [{ base64: "abc" }]);
+    const r = checkPublishReadiness(3, 3, null, { titles: ["T"] }, [{ base64: "abc" }], "blob:x");
     expect(r.allReady).toBe(false);
     expect(r.srt).toBe(false);
   });
 
   it("SEO 없음 → allReady false", () => {
-    const r = checkPublishReadiness(3, 3, "srt", null, [{ base64: "abc" }]);
+    const r = checkPublishReadiness(3, 3, "srt", null, [{ base64: "abc" }], "blob:x");
     expect(r.allReady).toBe(false);
     expect(r.seo).toBe(false);
   });
 
   it("썸네일 없음 → allReady false", () => {
-    const r = checkPublishReadiness(3, 3, "srt", { titles: ["T"] }, []);
+    const r = checkPublishReadiness(3, 3, "srt", { titles: ["T"] }, [], "blob:x");
     expect(r.allReady).toBe(false);
     expect(r.thumbnail).toBe(false);
   });
@@ -87,6 +98,7 @@ describe("퍼블리싱 준비 상태 판정", () => {
     const r = checkPublishReadiness(0, 5, null, null, []);
     expect(r.allReady).toBe(false);
     expect(r.video).toBe(false);
+    expect(r.finalVideo).toBe(false);
     expect(r.srt).toBe(false);
     expect(r.seo).toBe(false);
     expect(r.thumbnail).toBe(false);
