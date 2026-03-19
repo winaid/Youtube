@@ -451,6 +451,31 @@ export default function VideoGenerationPanel({
                           재시도 {clip.retryCount}회
                         </Badge>
                       )}
+                      {/* Priority C+D: 연속성 품질 배지 */}
+                      {clip.continuityQuality && (
+                        <Badge
+                          className="text-[10px] text-white"
+                          style={{
+                            background: clip.continuityQuality.score >= 100
+                              ? "#22c55e"
+                              : clip.continuityQuality.score >= 60
+                              ? "#e09900"
+                              : "#ef4444",
+                          }}
+                        >
+                          연속성 {clip.continuityQuality.score === 100 ? "완전" : clip.continuityQuality.score >= 60 ? "부분" : "손실"}
+                        </Badge>
+                      )}
+                      {clip.continuityQuality?.degradation === "sourceVideo_missing" && (
+                        <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#ef4444", color: "#dc2626" }}>
+                          소스영상 없음
+                        </Badge>
+                      )}
+                      {clip.continuityQuality?.degradation === "autoLink_off" && (
+                        <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#d97706", color: "#b45309" }}>
+                          프레임 연결 OFF
+                        </Badge>
+                      )}
                     </div>
 
                     {/* 씬 타입별 세부 점수 */}

@@ -981,6 +981,13 @@ export interface VideoClip {
   uploadStorage?: "r2" | "gcs" | "none";
   uploadError?: string;
   sceneExtensionEligible?: boolean;  // canonicalVideoUri가 있어서 다음 컷 Scene Extension 가능 여부
+  /** 연속성 품질 메타 — UI에서 이어만들기 상태를 사용자에게 표시 */
+  continuityQuality?: {
+    score: number;                   // 0=손실, 60=부분, 100=완전
+    frameSource: string;             // lastFrameBase64_cached | video_capture | storyboard_end | storyboard_start | text_to_video_fallback | none
+    sourceVideoAvailable: boolean;   // extend용 sourceVideo 존재 여부
+    degradation?: string;            // sourceVideo_missing | frame_missing | autoLink_off 등
+  };
   // ── JSON-first asset 추적 ──
   assetStatus?: AssetStatus;         // 자산 생명 주기 상태 (생성 상태와 분리)
   /** JSON-first source of truth — 모든 생성/저장/디버그의 1급 데이터 */

@@ -998,8 +998,27 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     } else if (cut.extendPrompt && cut.extendPrompt.trim().length > 0) {
       legacyPrompt = cut.extendPrompt;
     } else {
-      console.warn(`[CUT ${cutNumber}] extendPrompt 없음(빈 문자열) — videoPrompt 사용. 장면 연속성이 약해질 수 있음.`);
-      legacyPrompt = cut.videoPrompt;
+      // Priority A: 이전 컷 데이터로 연속성 컨텍스트를 합성한 fallback prompt 생성
+      const prevCut = cutsRef.current.find((c) => c.cutNumber === cutNumber - 1);
+      if (prevCut) {
+        const continuityParts: string[] = [];
+        if (prevCut.sceneDescription) {
+          continuityParts.push(`Continuing from: ${prevCut.sceneDescription.slice(0, 80)}`);
+        }
+        if (prevCut.cameraDirection) {
+          continuityParts.push(`Previous camera: ${prevCut.cameraDirection}`);
+        }
+        if (prevCut.moodLighting) {
+          continuityParts.push(`Mood: ${prevCut.moodLighting}`);
+        }
+        const currentScene = cut.videoPrompt || cut.sceneDescription || "";
+        continuityParts.push(currentScene);
+        legacyPrompt = continuityParts.filter(Boolean).join(". ");
+        console.warn(`[CUT ${cutNumber}] extendPrompt 없음 — 이전 컷 컨텍스트로 합성 fallback 생성 (${continuityParts.length}개 요소)`);
+      } else {
+        console.warn(`[CUT ${cutNumber}] extendPrompt 없음 + 이전 컷 없음 — videoPrompt 사용. 연속성 완전 손실.`);
+        legacyPrompt = cut.videoPrompt;
+      }
     }
     const clip = state.clips.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
@@ -1505,9 +1524,20 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       });
 
       // Kling extend: sourceVideo = 이전 클립의 rawVideoUri (Kling video_id)
+      // Priority B: sourceVideo 누락 시 명시적 경고 + 메타데이터 기록
       const sourceVideo = (videoMode === "extend" && cutNumber > 1)
         ? (prevClip?.rawVideoUri ?? "")
         : "";
+
+      let continuityDegradation: string | undefined;
+      if (videoMode === "extend" && cutNumber > 1 && !sourceVideo) {
+        continuityDegradation = "sourceVideo_missing";
+        console.warn(`[CUT ${cutNumber}] ⚠️ CONTINUITY DEGRADED: extend 모드이나 sourceVideo 없음 (이전 컷 rawVideoUri 부재). text-to-video fallback 예상.`, {
+          prevClipStatus: prevClip?.status,
+          prevClipRawVideoUri: prevClip?.rawVideoUri ? "있음" : "없음",
+          prevClipCanonicalUri: prevClip?.canonicalVideoUri ? "있음" : "없음",
+        });
+      }
 
       // ── cut1 hard guard: extend 관련 필드 완전 차단 ──────────────────────────
       const isCut1 = cutNumber === 1;
@@ -1590,6 +1620,31 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           autoLinkFirstFrame: shouldLinkFrames,
         },
       };
+
+      // ── Priority C: continuityQuality 메타데이터 기록 ──────────────────────
+      if (cutNumber > 1) {
+        const hasSourceVideo = !!sourceVideo;
+        const cqScore = hasSourceVideo ? 100
+          : (continuityFrameSource !== "none" && continuityFrameSource !== "text_to_video_fallback" && continuityFrameSource !== "disabled_by_autoLinkFirstFrame") ? 60
+          : 0;
+        const effectiveDegradation = continuityDegradation
+          || (continuityFrameSource === "disabled_by_autoLinkFirstFrame" ? "autoLink_off" : undefined)
+          || (!hasSourceVideo ? "sourceVideo_missing" : undefined);
+        updateClip(cutNumber, {
+          continuityQuality: {
+            score: cqScore,
+            frameSource: continuityFrameSource,
+            sourceVideoAvailable: hasSourceVideo,
+            degradation: effectiveDegradation,
+          },
+        });
+        console.log(`[CUT ${cutNumber}] continuityQuality`, {
+          score: cqScore,
+          frameSource: continuityFrameSource,
+          sourceVideoAvailable: hasSourceVideo,
+          degradation: continuityDegradation,
+        });
+      }
 
       // ── 3-way snapshot: finalSent (API 전송 직전) ──
       {
