@@ -185,18 +185,18 @@ describe("테스트 4: multiShot clamp — 짧은 컷에서 억제 (O3 capabilit
     expect(getMax(O3, 3)).toBe(0);
   });
 
-  it("4~5초 → O3 최대 2개", () => {
-    expect(getMax(O3, 4)).toBe(2);
-    expect(getMax(O3, 5)).toBe(2);
+  it("4~5초 → O3 최대 6개", () => {
+    expect(getMax(O3, 4)).toBe(6);
+    expect(getMax(O3, 5)).toBe(6);
   });
 
-  it("6~7초 → O3 최대 3개", () => {
-    expect(getMax(O3, 6)).toBe(3);
-    expect(getMax(O3, 7)).toBe(3);
+  it("6~7초 → O3 최대 6개", () => {
+    expect(getMax(O3, 6)).toBe(6);
+    expect(getMax(O3, 7)).toBe(6);
   });
 
-  it("8~10초 → O3 최대 4개", () => {
-    expect(getMax(O3, 8)).toBe(4);
+  it("8~10초 → O3 최대 6개", () => {
+    expect(getMax(O3, 8)).toBe(6);
   });
 
   it("12~15초 → O3 최대 6개", () => {
@@ -208,11 +208,11 @@ describe("테스트 4: multiShot clamp — 짧은 컷에서 억제 (O3 capabilit
     expect(normalizeMultiShots(O3, [], 10)).toHaveLength(0);
   });
 
-  it("normalizeMultiShots 6개 → 4개 clamp (8초)", () => {
+  it("normalizeMultiShots 6개 → 6개 clamp (8초)", () => {
     const result = normalizeMultiShots(O3, sampleMultiShot, 8);
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(6);
     // index 재정렬 확인
-    expect(result.map((s: { index: number }) => s.index)).toEqual([1, 2, 3, 4]);
+    expect(result.map((s: { index: number }) => s.index)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
 

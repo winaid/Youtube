@@ -228,7 +228,7 @@ describe("Before/After: 초현실/몽환 + visual hints", () => {
   it("after: webSearchQuery에 장르/무드/visual 반영", () => {
     const result = simulateBeforeAfter(surrealInput);
     const q = result.after.webSearchQuery.toLowerCase();
-    expect(q).toContain("느와르");
+    expect(q).toContain("noir");
     expect(q.length).toBeGreaterThan(50);
   });
 

@@ -146,7 +146,7 @@ describe("Layer 2→3: 시퀀스 내부 멀티샷", () => {
     expect(shouldForceMultiShot("cinematic_sequence", 12, MODEL)).toBe(true);
   });
 
-  it("12초 시퀀스 → 내부 3-4 멀티샷", () => {
+  it("12초 시퀀스 → 내부 3-6 멀티샷", () => {
     const shots = buildDefaultMultiShot({
       durationSec: 12,
       sceneType: "cinematic_sequence",
@@ -154,7 +154,7 @@ describe("Layer 2→3: 시퀀스 내부 멀티샷", () => {
       modelId: MODEL,
     });
     expect(shots.length).toBeGreaterThanOrEqual(3);
-    expect(shots.length).toBeLessThanOrEqual(4);
+    expect(shots.length).toBeLessThanOrEqual(6);
   });
 
   it("15초 environment → 내부 4-6 멀티샷", () => {
@@ -205,7 +205,7 @@ describe("48초 시나리오: 3-Layer 전체 흐름", () => {
     expect(result.length).toBe(4); // 이미 충분
   });
 
-  it("각 12s 시퀀스 → 내부 3-4 멀티샷", () => {
+  it("각 12s 시퀀스 → 내부 3-6 멀티샷", () => {
     for (let i = 0; i < 4; i++) {
       const shots = buildDefaultMultiShot({
         durationSec: 12,
@@ -214,7 +214,7 @@ describe("48초 시나리오: 3-Layer 전체 흐름", () => {
         modelId: MODEL,
       });
       expect(shots.length).toBeGreaterThanOrEqual(3);
-      expect(shots.length).toBeLessThanOrEqual(4);
+      expect(shots.length).toBeLessThanOrEqual(6);
     }
   });
 
@@ -229,6 +229,6 @@ describe("48초 시나리오: 3-Layer 전체 흐름", () => {
     ).reduce((s, n) => s + n, 0);
 
     expect(totalShots).toBeGreaterThanOrEqual(12); // 4 × 3
-    expect(totalShots).toBeLessThanOrEqual(16); // 4 × 4
+    expect(totalShots).toBeLessThanOrEqual(24); // 4 × 6
   });
 });

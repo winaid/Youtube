@@ -756,6 +756,27 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       } else if (debug) {
         console.log("[recommend-director] pipeline debug:", debug);
       }
+      // grounding/fallback 상태 로그 — 웹 검색이 실제로 사용되었는지 명확히 표시
+      const meta = data._meta;
+      if (meta) {
+        const mode = meta.resultMode ?? "unknown";
+        const grounded = meta.finalGrounded ?? false;
+        const fallback = meta.fallbackUsed ?? false;
+        if (mode === "fallback" || (fallback && !grounded)) {
+          console.warn("[recommend-director] ⚠ 웹 검색 grounding 실패 → 모델 지식 폴백 사용됨", {
+            resultMode: mode,
+            finalGrounded: grounded,
+            fallbackUsed: fallback,
+            finalModel: meta.finalModel,
+            retryCount: meta.retryCount,
+          });
+        } else if (mode === "grounded") {
+          console.info("[recommend-director] ✓ 웹 검색 grounding 성공", {
+            resultMode: mode,
+            groundedCount: meta.groundedExternalCount,
+          });
+        }
+      }
       console.log("[recommend-director] result:", {
         outcome,
         resultCount: localCount + webCount,
@@ -764,6 +785,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         latencyMs: Date.now() - startTime,
         emptyReason: debug?.emptyReason ?? null,
         webSearched: debug?.attemptedWebSearch ?? false,
+        resultMode: meta?.resultMode ?? null,
+        grounded: meta?.finalGrounded ?? null,
       });
 
       appendRecommendLog({

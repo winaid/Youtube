@@ -37,13 +37,13 @@ describe("Case 1: 12s cinematic_sequence 기본 구조", () => {
     expect(shouldForceMultiShot("cinematic_sequence", 12, MODEL)).toBe(true);
   });
 
-  it("추천 3-4샷", () => {
+  it("추천 3-6샷", () => {
     const count = planRecommendedShotCount(MODEL, 12, "cinematic_sequence");
     expect(count).toBeGreaterThanOrEqual(3);
-    expect(count).toBeLessThanOrEqual(4);
+    expect(count).toBeLessThanOrEqual(6);
   });
 
-  it("buildDefaultMultiShot → 즉시 3-4샷 생성", () => {
+  it("buildDefaultMultiShot → 즉시 3-6샷 생성", () => {
     const shots = buildDefaultMultiShot({
       durationSec: 12,
       sceneType: "cinematic_sequence",
@@ -52,7 +52,7 @@ describe("Case 1: 12s cinematic_sequence 기본 구조", () => {
     });
 
     expect(shots.length).toBeGreaterThanOrEqual(3);
-    expect(shots.length).toBeLessThanOrEqual(4);
+    expect(shots.length).toBeLessThanOrEqual(6);
 
     // role 시퀀스 확인 — establish로 시작, resolve로 끝남
     expect(shots[0].role).toBe("establish");

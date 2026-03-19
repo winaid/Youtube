@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:full": "npx wrangler pages dev --compatibility-date=2024-09-23 -- npx next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

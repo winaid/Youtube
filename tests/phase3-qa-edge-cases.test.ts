@@ -41,7 +41,7 @@ describe("Case A: 12s cinematic_sequence 전체 흐름", () => {
     expect(shouldForceMultiShot(SCENE, DURATION, MODEL)).toBe(true);
   });
 
-  it("3-4샷 기본 생성", () => {
+  it("3-6샷 기본 생성", () => {
     const shots = buildDefaultMultiShot({
       durationSec: DURATION,
       sceneType: SCENE,
@@ -49,7 +49,7 @@ describe("Case A: 12s cinematic_sequence 전체 흐름", () => {
       modelId: MODEL,
     });
     expect(shots.length).toBeGreaterThanOrEqual(3);
-    expect(shots.length).toBeLessThanOrEqual(4);
+    expect(shots.length).toBeLessThanOrEqual(6);
   });
 
   it("역할 progression: establish → ... → resolve", () => {

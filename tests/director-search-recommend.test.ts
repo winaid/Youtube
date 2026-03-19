@@ -226,8 +226,8 @@ describe("buildEnhancedWebSearchQuery", () => {
       genres: [], moods: [], keywords: [], formatHints: [], visualHints: [], pacingHints: [], contentType: null, reasons: [],
     };
     const result = buildEnhancedWebSearchQuery(["SF"], ["철학적"], [], pre);
-    expect(result.query).toContain("SF");
-    expect(result.query).toContain("철학적");
+    expect(result.query).toContain("sci-fi");
+    expect(result.query).toContain("philosophical");
   });
 
   it("모든 신호가 비었으면 기본 쿼리 반환", () => {

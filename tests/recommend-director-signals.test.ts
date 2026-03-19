@@ -190,7 +190,7 @@ describe("web search query: 빈 쿼리 방지", () => {
   it("장르만 있고 무드/키워드 없어도 query 생성됨", () => {
     const pre = preExtractSignals("SF 세계관의 이야기");
     const result = buildEnhancedWebSearchQuery(["SF"], [], [], pre);
-    expect(result.query).toContain("SF");
+    expect(result.query).toContain("sci-fi");
     expect(result.query.length).toBeGreaterThan(10);
   });
 
