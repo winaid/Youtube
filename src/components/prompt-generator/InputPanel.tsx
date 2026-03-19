@@ -1105,6 +1105,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   // provenance 기준 — 실제 결과 출처
                   const groundedCount = Number(meta?.groundedExternalCount ?? 0);
                   const fallbackCount = Number(meta?.fallbackExternalCount ?? 0);
+                  const resultMode = meta?.resultMode as string | undefined;
                   return totalCount > 0 ? (
                     <>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1116,6 +1117,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       {fallbackCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#ca8a0410", color: "#ca8a04" }}>모델 보완 {fallbackCount}</span>}
                       {invalidRemoved > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#ef444410", color: "#ef4444" }}>ID필터 -{invalidRemoved}</span>}
                     </div>
+                    {/* 추천 출처 상태 표시 */}
+                    <p className="text-[9px]" style={{ color: resultMode === "grounded" ? "#6b7280" : "#92400e" }}>
+                      {resultMode === "grounded"
+                        ? "웹 검색 기반 추천"
+                        : resultMode === "mixed"
+                        ? "웹 검색 + 모델 지식 기반 추천"
+                        : resultMode === "fallback"
+                        ? "모델 지식 기반 추천 (검색 실패 폴백)"
+                        : "웹 검색 기반 추천"}
+                    </p>
                     {(genres.length > 0 || moods.length > 0) && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {genres.map((g, i) => (

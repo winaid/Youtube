@@ -427,3 +427,32 @@ describe("provenance 계산", () => {
     expect(p.fallbackExternalCount).toBe(3);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// UI 출처 라벨 매핑 (InputPanel 렌더링 로직과 동기화)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("resultMode → UI 출처 라벨 매핑", () => {
+  function getSourceLabel(resultMode: string | undefined): string {
+    if (resultMode === "grounded") return "웹 검색 기반 추천";
+    if (resultMode === "mixed") return "웹 검색 + 모델 지식 기반 추천";
+    if (resultMode === "fallback") return "모델 지식 기반 추천 (검색 실패 폴백)";
+    return "웹 검색 기반 추천";
+  }
+
+  it("grounded → 웹 검색 기반 추천", () => {
+    expect(getSourceLabel("grounded")).toBe("웹 검색 기반 추천");
+  });
+
+  it("mixed → 웹 검색 + 모델 지식 기반 추천", () => {
+    expect(getSourceLabel("mixed")).toBe("웹 검색 + 모델 지식 기반 추천");
+  });
+
+  it("fallback → 모델 지식 기반 추천 (검색 실패 폴백)", () => {
+    expect(getSourceLabel("fallback")).toBe("모델 지식 기반 추천 (검색 실패 폴백)");
+  });
+
+  it("undefined → 기본값 (웹 검색 기반 추천)", () => {
+    expect(getSourceLabel(undefined)).toBe("웹 검색 기반 추천");
+  });
+});
