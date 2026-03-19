@@ -22,6 +22,7 @@ import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
 import { getMaxShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-capability";
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
+import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
@@ -509,7 +510,7 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ed
 
 ## 시나리오
 ${storyExcerpt}
-${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}${continuityBlock ? `\n${continuityBlock}\n` : ""}
+${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}${continuityBlock ? `\n${continuityBlock}\n` : ""}${deepAnalysisBriefBlock ? `\n${deepAnalysisBriefBlock}\n` : ""}
 ## 출력 JSON 스키마
 
 characterSeeds (최대 3명):
@@ -1856,6 +1857,42 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.info(`[generate-cuts] continuity mode: segment=${segIdx}, role=${segRole}, isLast=${isLast}, blockLen=${continuityPromptBlock.length}`);
     }
 
+    // ── Deep Analysis standard-lite ────────────────────────────────────────
+    let deepAnalysisBriefBlock = "";
+    let deepAnalysisMeta: Record<string, unknown> | undefined;
+    try {
+      const daResult = runDeepAnalysis({
+        storyText: String(storyText),
+        totalDurationSec: totalDurationSec > 0 ? totalDurationSec : 30,
+        cutCount: targetCuts,
+        animationMode: String(animationMode || ""),
+        directorStyle: String(directorStyle || ""),
+        continuityMode: isContinuityMode,
+        characterCount: 1, // step1 전이라 정확한 수를 모름, 보수적 기본값
+      });
+      deepAnalysisBriefBlock = serializePromptBrief(daResult.promptBrief);
+      deepAnalysisMeta = {
+        tone: daResult.storyIntent.tone,
+        genre: daResult.storyIntent.genre,
+        pacing: daResult.storyIntent.pacing,
+        emotionalArc: daResult.storyIntent.emotionalArc,
+        protagonistFocus: daResult.storyIntent.protagonistFocus,
+        continuityRisk: daResult.generationRisk.continuityRisk,
+        subjectCountRisk: daResult.generationRisk.subjectCountRisk,
+        sceneSwitchRisk: daResult.generationRisk.sceneSwitchRisk,
+        visualDensity: daResult.visualStrategy.visualDensity,
+        cameraEnergy: daResult.visualStrategy.cameraEnergy,
+        realismLevel: daResult.visualStrategy.realismLevel,
+        analysisMs: daResult.analysisMs,
+        warnings: daResult.warnings.length > 0 ? daResult.warnings : undefined,
+      };
+      if (deepAnalysisBriefBlock) {
+        console.info(`[generate-cuts] deep analysis brief injected (${daResult.analysisMs}ms): ${deepAnalysisBriefBlock.slice(0, 150)}…`);
+      }
+    } catch (e) {
+      console.warn("[generate-cuts] deep analysis failed, continuing without:", e instanceof Error ? e.message : String(e));
+    }
+
     // ── Latency tracking ──────────────────────────────────────────────────────
     const t0_total = Date.now();
     let t0_step1 = 0, t1_step1 = 0;
@@ -2643,6 +2680,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         continuityMode: isContinuityMode || undefined,
         continuitySegmentIndex: isContinuityMode ? Number(continuitySegmentIndex) || 0 : undefined,
         continuitySegmentRole: isContinuityMode ? String(continuitySegmentRole || "building") : undefined,
+        deepAnalysis: deepAnalysisMeta || undefined,
         reconciliationNotes: shortformPlan.reconciliationNotes,
         rationale: buildRationale({
           bandPolicy,
