@@ -49,6 +49,7 @@ export type PreflightErrorCode =
   | "cut_count_too_low"
   | "cut_count_too_high"
   | "invalid_duration_structure"
+  | "duration_band_not_supported"
   | "budget_exceeded"
   | "style_warning"
   | "style_info";
@@ -87,35 +88,41 @@ export interface PreflightInput {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 15초 시퀀스 구조 규칙 (shortform band policy mirror)
-// source of truth: functions/api/_shortform-rhythm.ts
+// Shortform 시퀀스 구조 규칙
+// 프론트/서버 동일 정책 — source of truth: functions/api/_shortform-rhythm.ts
+//
+// 확정 규칙 (2026-03):
+//   ≤5초: micro (1컷)
+//   6~9초: short (최소 3컷)
+//   10~15초: shortform-critical (4~6컷 필수)
+//   16초+: 생성 불가
 // ═══════════════════════════════════════════════════════════════════
 
-/** 10초 이상 생성 규칙에서 허용되는 컷 수 범위 */
-export const SHORTFORM_MIN_CUTS = 4;
-export const SHORTFORM_MAX_CUTS = 6;
-/** 총 길이 상한 (Kling API 단일 컷 기준) */
+/** 총 길이 상한 — 이 이상은 shortform 생성 불가 */
 export const SEQUENCE_MAX_TOTAL_DURATION = 15;
-/** shortform-critical 밴드 진입 기준 (이 이상이면 4~6컷 필수) */
-export const SHORTFORM_CRITICAL_THRESHOLD = 10;
 
-interface SequenceBandRule {
-  band: string;
+export interface SequenceBandRule {
+  band: "micro" | "short" | "shortform-critical" | "over-limit";
   minCuts: number;
   maxCuts: number;
   maxSecPerCut: number;
+  /** 이 밴드에서 생성이 가능한지 */
+  supported: boolean;
 }
 
 /**
  * 총 길이 기반 시퀀스 구조 규칙 반환.
- * _shortform-rhythm.ts의 resolveShortformBandPolicy() 간소 미러.
+ * _shortform-rhythm.ts의 resolveShortformBandPolicy()와 동일 정책.
  */
 export function getSequenceBandRule(totalDurationSec: number): SequenceBandRule {
-  if (totalDurationSec <= 5) return { band: "micro", minCuts: 1, maxCuts: 2, maxSecPerCut: 5 };
-  if (totalDurationSec <= 9) return { band: "short", minCuts: 1, maxCuts: 3, maxSecPerCut: totalDurationSec };
-  // 10초 이상은 무조건 4~6컷 (제품 규칙: 10초 이상 = 최소 4컷)
-  if (totalDurationSec <= 15) return { band: "shortform-critical", minCuts: 4, maxCuts: 6, maxSecPerCut: 4 };
-  return { band: "standard", minCuts: 3, maxCuts: 20, maxSecPerCut: 15 };
+  if (totalDurationSec <= 5)
+    return { band: "micro", minCuts: 1, maxCuts: 2, maxSecPerCut: 5, supported: true };
+  if (totalDurationSec <= 9)
+    return { band: "short", minCuts: 3, maxCuts: 6, maxSecPerCut: totalDurationSec, supported: true };
+  if (totalDurationSec <= 15)
+    return { band: "shortform-critical", minCuts: 4, maxCuts: 6, maxSecPerCut: 4, supported: true };
+  // 16초+: shortform 범위 초과
+  return { band: "over-limit", minCuts: 0, maxCuts: 0, maxSecPerCut: 0, supported: false };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -237,37 +244,52 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
     return sum + (input.canonicalDurations.get(cut.cutNumber) ?? cut.durationSec);
   }, 0);
 
-  // 총 길이 상한 (개별 컷은 각각 15초 이하이므로, 총합은 cutCount * 15)
-  // 하지만 shortform 모드에서는 총 길이 자체에 의미가 있음
   const bandRule = getSequenceBandRule(totalDuration);
 
-  const isCritical = bandRule.band === "shortform-critical";
-  const bandLabel = isCritical ? `${SHORTFORM_CRITICAL_THRESHOLD}초 이상 영상` : `${totalDuration}초 영상`;
+  // ── 16초 초과 → 생성 불가 ──
+  if (!bandRule.supported) {
+    issues.push({
+      severity: "blocking",
+      code: "duration_band_not_supported",
+      messageKo: `총 길이 ${totalDuration}초 — 15초를 초과하는 영상은 현재 shortform 생성 규칙에서 지원하지 않습니다. 총 길이를 15초 이하로 줄여 주세요.`,
+    });
+    return; // 지원 불가이므로 세부 검사 불필요
+  }
+
+  // 밴드별 라벨
+  const bandLabel = bandRule.band === "short"
+    ? `6~9초 영상`
+    : bandRule.band === "shortform-critical"
+      ? `10~15초 영상`
+      : `${totalDuration}초 영상`;
 
   // ── 컷 수 하한 ──
   if (cutCount < bandRule.minCuts) {
     issues.push({
       severity: "blocking",
       code: "cut_count_too_low",
-      messageKo: isCritical
+      messageKo: bandRule.band === "shortform-critical"
         ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}컷으로 구성해야 합니다. 현재 ${cutCount}컷이라 생성할 수 없습니다. 컷을 추가해 주세요.`
-        : `${bandLabel}(${bandRule.band})은 최소 ${bandRule.minCuts}컷이 필요합니다. 현재 ${cutCount}컷입니다.`,
+        : bandRule.band === "short"
+          ? `${bandLabel}은 최소 ${bandRule.minCuts}컷 이상이어야 합니다. 현재 ${cutCount}컷이라 생성할 수 없습니다. 컷을 추가해 주세요.`
+          : `${bandLabel}은 최소 ${bandRule.minCuts}컷이 필요합니다. 현재 ${cutCount}컷입니다.`,
     });
   }
 
   // ── 컷 수 상한 ──
   if (cutCount > bandRule.maxCuts) {
+    const isHardLimit = bandRule.band === "shortform-critical";
     issues.push({
-      severity: isCritical ? "blocking" : "warning",
+      severity: isHardLimit ? "blocking" : "warning",
       code: "cut_count_too_high",
-      messageKo: isCritical
+      messageKo: isHardLimit
         ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}컷으로 구성해야 합니다. 현재 ${cutCount}컷이라 너무 많습니다. 컷 수를 ${bandRule.maxCuts}개 이하로 줄여 주세요.`
-        : `${totalDuration}초 영상에 ${cutCount}컷은 권장 상한(${bandRule.maxCuts}컷)을 초과합니다. 컷을 줄이는 것을 권장합니다.`,
+        : `${bandLabel}에 ${cutCount}컷은 권장 상한(${bandRule.maxCuts}컷)을 초과합니다. 컷을 줄이는 것을 권장합니다.`,
     });
   }
 
-  // ── 개별 컷이 밴드 maxSecPerCut 초과 ──
-  if (isCritical) {
+  // ── 개별 컷이 밴드 maxSecPerCut 초과 (shortform-critical에서만 강제) ──
+  if (bandRule.band === "shortform-critical") {
     for (const cut of input.cuts) {
       const duration = input.canonicalDurations.get(cut.cutNumber) ?? cut.durationSec;
       if (duration > bandRule.maxSecPerCut) {
@@ -279,15 +301,6 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
         });
       }
     }
-  }
-
-  // ── 총 길이 초과 ──
-  if (totalDuration > SEQUENCE_MAX_TOTAL_DURATION && isCritical) {
-    issues.push({
-      severity: "blocking",
-      code: "total_duration_exceeded",
-      messageKo: `총 길이 ${totalDuration}초 — 최대 ${SEQUENCE_MAX_TOTAL_DURATION}초를 넘었습니다. 각 컷 길이를 줄이거나 컷 수를 조정해 주세요.`,
-    });
   }
 }
 

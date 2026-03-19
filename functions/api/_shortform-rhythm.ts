@@ -35,8 +35,11 @@ export interface ShortformBandPolicy {
 /**
  * totalDuration → shortform band 정책 반환.
  *
- * 핵심: 13~15초 구간은 "짧지만 느리면 망하는" 구간.
- * 최소 4컷을 기본 추천. 2컷/2샷이면 구조적 실패.
+ * 확정 규칙 (2026-03):
+ * - ≤5초: micro (1컷)
+ * - 6~9초: short (최소 3컷)
+ * - 10~15초: shortform-critical (4~6컷 필수)
+ * - 16초+: 생성 불가 (shortform 범위 초과)
  */
 export function resolveShortformBandPolicy(totalDurationSec: number): ShortformBandPolicy {
   if (totalDurationSec <= 0) {
@@ -48,28 +51,19 @@ export function resolveShortformBandPolicy(totalDurationSec: number): ShortformB
     return { band: "micro", minCuts: 1, preferredCuts: 1, maxSecPerCut: 5, minShotsPerCut: 1, isShortformBand: true, is13to15Special: false };
   }
 
-  // 6~9초: 숏 클립
+  // 6~9초: 숏 클립 — 최소 3컷
   if (totalDurationSec <= 9) {
-    return { band: "short", minCuts: 1, preferredCuts: 2, maxSecPerCut: totalDurationSec, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
+    return { band: "short", minCuts: 3, preferredCuts: 3, maxSecPerCut: totalDurationSec, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
   }
 
-  // 10~12초: 숏폼 기본
-  if (totalDurationSec <= 12) {
-    return { band: "shortform-base", minCuts: 3, preferredCuts: 3, maxSecPerCut: 4, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
-  }
-
-  // 13~15초: 숏폼 핵심 구간 — "느리면 망하는" 특별 취급
+  // 10~15초: 숏폼 핵심 구간 — 4~6컷 필수
   if (totalDurationSec <= 15) {
     return { band: "shortform-critical", minCuts: 4, preferredCuts: 4, maxSecPerCut: 4, minShotsPerCut: 2, isShortformBand: true, is13to15Special: true };
   }
 
-  // 16~30초: 미디엄 숏폼
-  if (totalDurationSec <= 30) {
-    return { band: "medium-shortform", minCuts: 3, preferredCuts: Math.max(4, Math.ceil(totalDurationSec / 5)), maxSecPerCut: 8, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
-  }
-
-  // 31초+: 표준/롱폼
-  return { band: "standard", minCuts: Math.max(3, Math.ceil(totalDurationSec / 15)), preferredCuts: Math.ceil(totalDurationSec / 8), maxSecPerCut: DURATION_MAX, minShotsPerCut: 2, isShortformBand: false, is13to15Special: false };
+  // 16초+: shortform 범위 초과 — 생성 불가
+  // reconciliation에서는 이 band가 오면 에러로 처리해야 함
+  return { band: "over-limit", minCuts: 0, preferredCuts: 0, maxSecPerCut: 0, minShotsPerCut: 0, isShortformBand: false, is13to15Special: false };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -124,6 +118,23 @@ export function reconcileShortformPlan(opts: {
   let directorPaceDownweighted = false;
 
   const bandPolicy = resolveShortformBandPolicy(totalDurationSec);
+
+  // over-limit band → 생성 불가, 최소한의 fallback plan 반환
+  if (bandPolicy.band === "over-limit") {
+    notes.push(`totalDuration(${totalDurationSec}s) exceeds shortform limit (15s) — generation not supported`);
+    return {
+      cutCount: densityTargetCuts,
+      secPerCut: personaSecPerCut,
+      totalDurationSec,
+      bandPolicy,
+      personaWantedSecPerCut: personaSecPerCut,
+      densityTargetCuts,
+      reconciled: true,
+      reconciliationNotes: notes,
+      directorPaceDownweighted: false,
+      shortformRhythmApplied: false,
+    };
+  }
 
   // Step 1: cutCount 결정 — band minimum ≥ density target ≥ exactCutCount
   let cutCount = densityTargetCuts;

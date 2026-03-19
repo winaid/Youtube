@@ -22,13 +22,13 @@ import { recommendMinimumCutCount, recommendCutCountRange } from "../functions/a
 // 1. 10초 입력 → 최소 3컷 유지
 // ═══════════════════════════════════════════════════════════════════
 describe("10초 입력", () => {
-  it("최소 3컷을 유지한다", () => {
+  it("최소 4컷을 유지한다 (10~15초 = shortform-critical)", () => {
     const plan = reconcileShortformPlan({
       totalDurationSec: 10,
       densityTargetCuts: 3,
       personaSecPerCut: 5,
     });
-    expect(plan.cutCount).toBeGreaterThanOrEqual(3);
+    expect(plan.cutCount).toBeGreaterThanOrEqual(4);
   });
 
   it("density minimum이 3 이상이다", () => {
@@ -40,13 +40,13 @@ describe("10초 입력", () => {
 // 2. 12초 입력 → 최소 3컷 유지
 // ═══════════════════════════════════════════════════════════════════
 describe("12초 입력", () => {
-  it("최소 3컷을 유지한다", () => {
+  it("최소 4컷을 유지한다 (10~15초 = shortform-critical)", () => {
     const plan = reconcileShortformPlan({
       totalDurationSec: 12,
       densityTargetCuts: 3,
       personaSecPerCut: 6,
     });
-    expect(plan.cutCount).toBeGreaterThanOrEqual(3);
+    expect(plan.cutCount).toBeGreaterThanOrEqual(4);
   });
 
   it("density minimum이 3이다", () => {
@@ -135,8 +135,8 @@ describe("느린 감독 + 15초 숏폼", () => {
 // 6. secPerCut × targetCuts가 totalDuration과 모순되지 않음
 // ═══════════════════════════════════════════════════════════════════
 describe("secPerCut × targetCuts 정합성", () => {
-  it("총합이 totalDuration의 120% 이내여야 한다", () => {
-    const testCases = [10, 12, 13, 15, 20, 30, 45, 60];
+  it("지원 범위(≤15초) 내에서 총합이 totalDuration의 120% 이내여야 한다", () => {
+    const testCases = [8, 10, 12, 13, 15];
     for (const total of testCases) {
       const plan = reconcileShortformPlan({
         totalDurationSec: total,
@@ -216,11 +216,11 @@ describe("reconciliation UX 설명", () => {
 
   it("reconciliation이 없으면 설명이 null이다", () => {
     const plan = reconcileShortformPlan({
-      totalDurationSec: 30,
-      densityTargetCuts: 6,
+      totalDurationSec: 5,
+      densityTargetCuts: 1,
       personaSecPerCut: 5,
     });
-    // 30초 + 6컷 + 5초/컷 → 정합성 OK → 설명 불필요
+    // 5초 + 1컷 + 5초/컷 → micro band, 정합성 OK → 설명 불필요
     if (!plan.reconciled) {
       const explanation = buildReconciliationExplanation(plan);
       expect(explanation).toBeNull();
@@ -238,17 +238,18 @@ describe("reconciliation UX 설명", () => {
 // Band policy 종합 테스트
 // ═══════════════════════════════════════════════════════════════════
 describe("band policy 종합", () => {
-  it("각 duration band가 올바른 정책을 반환한다", () => {
+  it("각 duration band가 올바른 정책을 반환한다 (2026-03 확정 규칙)", () => {
+    // 확정 규칙: ≤5s micro, 6-9s short(min3), 10-15s critical(min4), 16+ over-limit
     const cases: [number, string, number][] = [
       [3, "micro", 1],
       [5, "micro", 1],
-      [8, "short", 1],
-      [10, "shortform-base", 3],
-      [12, "shortform-base", 3],
+      [8, "short", 3],
+      [10, "shortform-critical", 4],
+      [12, "shortform-critical", 4],
       [13, "shortform-critical", 4],
       [15, "shortform-critical", 4],
-      [20, "medium-shortform", 3],
-      [60, "standard", 4],
+      [16, "over-limit", 0],
+      [30, "over-limit", 0],
     ];
     for (const [dur, expectedBand, expectedMinCuts] of cases) {
       const band = resolveShortformBandPolicy(dur);
