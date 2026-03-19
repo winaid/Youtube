@@ -1094,8 +1094,6 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   const emptyReason = debug?.emptyReason as string | undefined;
                   const extractedGenres = debug?.extractedGenres as string[] | undefined;
                   const extractedMoods = debug?.extractedMoods as string[] | undefined;
-                  const geminiLocalCount = debug?.geminiLocalCount as number | undefined;
-                  const geminiWebCount = debug?.geminiWebCount as number | undefined;
                   const invalidIdsRemoved = debug?.invalidIdsRemoved as number | undefined;
 
                   const EMPTY_REASON_LABELS: Record<string, { label: string; hint: string }> = {
@@ -1161,7 +1159,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                           <p className="font-medium" style={{ color: "#94a3b8" }}>파이프라인 추적</p>
 
                           {/* Stage status 4종 */}
-                          {(debug as Record<string, unknown>).stageStatus && (() => {
+                          {(debug as Record<string, unknown>).stageStatus && ((): React.ReactNode => {
                             const ss = (debug as Record<string, unknown>).stageStatus as Record<string, string>;
                             const sr = ((debug as Record<string, unknown>).stageReasons ?? {}) as Record<string, string>;
                             const statusIcon = (s: string) => s === "ok" || s === "attempted_success" ? "✅" : s === "failed" ? "❌" : s.includes("empty") || s === "weak" ? "⚠️" : "⬜";
