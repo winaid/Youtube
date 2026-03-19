@@ -388,16 +388,13 @@ describe("autoAssignRoles", () => {
 import { checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
 
 describe("getRecommendedShotRange", () => {
-  it("3–5s → 2–6", () => {
-    expect(getRecommendedShotRange(5)).toEqual({ min: 2, max: 6 });
+  it("4–8s → 3–6", () => {
+    expect(getRecommendedShotRange(5)).toEqual({ min: 3, max: 6 });
+    expect(getRecommendedShotRange(8)).toEqual({ min: 3, max: 6 });
   });
-  it("6–8s → 2–6", () => {
-    expect(getRecommendedShotRange(8)).toEqual({ min: 2, max: 6 });
-  });
-  it("9–12s → 3–6", () => {
-    expect(getRecommendedShotRange(12)).toEqual({ min: 3, max: 6 });
-  });
-  it("13–15s → 4–6", () => {
+  it("9–15s → 4–6", () => {
+    expect(getRecommendedShotRange(9)).toEqual({ min: 4, max: 6 });
+    expect(getRecommendedShotRange(12)).toEqual({ min: 4, max: 6 });
     expect(getRecommendedShotRange(15)).toEqual({ min: 4, max: 6 });
   });
 });
@@ -407,21 +404,21 @@ describe("checkShotDensity", () => {
     const result = checkShotDensity(12, 1);
     expect(result).not.toBeNull();
     expect(result!.severity).toBe("warning");
-    expect(result!.message).toContain("3–6개 권장");
+    expect(result!.message).toContain("4–6개 권장");
   });
 
-  it("12s + 3 shots → OK", () => {
-    expect(checkShotDensity(12, 3)).toBeNull();
+  it("12s + 4 shots → OK", () => {
+    expect(checkShotDensity(12, 4)).toBeNull();
   });
 
-  it("5s + 1 shot → OK (8초 미만은 density 체크 스킵)", () => {
+  it("5s + 1 shot → OK (8초 미만 density 체크 스킵)", () => {
     expect(checkShotDensity(5, 1)).toBeNull();
   });
 
   it("8s + 1 shot → warning", () => {
     const result = checkShotDensity(8, 1);
     expect(result).not.toBeNull();
-    expect(result!.message).toContain("2–6개 권장");
+    expect(result!.message).toContain("3–6개 권장");
   });
 
   it("15s + 4 shots → OK", () => {

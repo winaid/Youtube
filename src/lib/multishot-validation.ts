@@ -55,10 +55,8 @@ export const PROMPT_MAX_LENGTH = 512;
  * recommendation이며 hard cap이 아님.
  */
 export const RUNTIME_SHOT_HEURISTICS: { maxSec: number; min: number; max: number; label: string }[] = [
-  { maxSec: 5,  min: 2, max: 6, label: "3–5s" },
-  { maxSec: 8,  min: 2, max: 6, label: "6–8s" },
-  { maxSec: 12, min: 3, max: 6, label: "9–12s" },
-  { maxSec: 15, min: 4, max: 6, label: "13–15s" },
+  { maxSec: 8,  min: 3, max: 6, label: "4–8s" },
+  { maxSec: 15, min: 4, max: 6, label: "9–15s" },
 ];
 
 /**

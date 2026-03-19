@@ -33,38 +33,20 @@ describe("planRecommendedShotCount", () => {
     expect(planRecommendedShotCount(model, 2)).toBe(1);
   });
 
-  it("4-5초 → 2~6샷 (max=6 허용)", () => {
-    expect(planRecommendedShotCount(model, 4)).toBeGreaterThanOrEqual(2);
-    expect(planRecommendedShotCount(model, 4)).toBeLessThanOrEqual(6);
-    expect(planRecommendedShotCount(model, 5)).toBeGreaterThanOrEqual(2);
-    expect(planRecommendedShotCount(model, 5)).toBeLessThanOrEqual(6);
+  it("4-8초 → 3~6샷", () => {
+    for (const sec of [4, 5, 6, 7, 8]) {
+      const count = planRecommendedShotCount(model, sec);
+      expect(count).toBeGreaterThanOrEqual(3);
+      expect(count).toBeLessThanOrEqual(6);
+    }
   });
 
-  it("6-8초 → 2~6샷 (max=6 허용)", () => {
-    const count6 = planRecommendedShotCount(model, 6);
-    const count8 = planRecommendedShotCount(model, 8);
-    expect(count6).toBeGreaterThanOrEqual(2);
-    expect(count6).toBeLessThanOrEqual(6);
-    expect(count8).toBeGreaterThanOrEqual(2);
-    expect(count8).toBeLessThanOrEqual(6);
-  });
-
-  it("9-12초 → 3~6샷 (max=6 허용)", () => {
-    const count9 = planRecommendedShotCount(model, 9);
-    const count12 = planRecommendedShotCount(model, 12);
-    expect(count9).toBeGreaterThanOrEqual(3);
-    expect(count9).toBeLessThanOrEqual(6);
-    expect(count12).toBeGreaterThanOrEqual(3);
-    expect(count12).toBeLessThanOrEqual(6);
-  });
-
-  it("13-15초 → 4-6샷", () => {
-    const count13 = planRecommendedShotCount(model, 13);
-    const count15 = planRecommendedShotCount(model, 15);
-    expect(count13).toBeGreaterThanOrEqual(4);
-    expect(count13).toBeLessThanOrEqual(6);
-    expect(count15).toBeGreaterThanOrEqual(4);
-    expect(count15).toBeLessThanOrEqual(6);
+  it("9-15초 → 4~6샷", () => {
+    for (const sec of [9, 10, 12, 13, 15]) {
+      const count = planRecommendedShotCount(model, sec);
+      expect(count).toBeGreaterThanOrEqual(4);
+      expect(count).toBeLessThanOrEqual(6);
+    }
   });
 
   it("battle 씬 → bias +1로 더 많은 샷", () => {

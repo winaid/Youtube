@@ -280,19 +280,15 @@ export function getMaxShots(modelId: string, durationSec: number): number {
  * multi-shot-planner.ts의 SHOT_COUNT_RANGES와 동기화.
  *
  *   ≤3s: 0 (multiShot 비활성)
- *   ≤5s: 2
- *   ≤8s: 2
- *   ≤12s: 3
- *   ≤15s: 4
+ *   4~8s: 3
+ *   9~15s: 4
  */
 export function getMinShots(modelId: string, durationSec: number): number {
   const cap = getCapability(modelId);
   if (!cap.supportsMultiShot) return 0;
   if (durationSec <= 3) return 0;
-  if (durationSec <= 5) return 2;
-  if (durationSec <= 8) return 2;
-  if (durationSec <= 12) return 3;
-  return 4; // 13~15s
+  if (durationSec <= 8) return 3;
+  return 4; // 9~15s
 }
 
 /**
