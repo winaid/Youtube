@@ -66,7 +66,7 @@ export function preExtractSignals(storyText: string): PreExtractedSignals {
     [/(?:sf|sci[\s-]*fi|과학|우주|로봇|인공지능|ai|미래\s*사회|시간\s*여행|타임)/, "SF"],
     [/(?:판타지|마법|용|요정|마녀|주문|이세계|환상)/, "판타지"],
     [/(?:드라마|감동|눈물|이별|재회|성장|갈등)/, "드라마"],
-    [/(?:다큐멘터리|다큐|르포|관찰|현실|사실|기록)/, "다큐멘터리"],
+    [/(?:다큐멘터리|다큐|르포|관찰\s*카메라|사실\s*기반|기록\s*영화|실화)/, "다큐멘터리"],
     [/(?:무협|검객|무림|내공|검|무공|도장|사부)/, "무협"],
     [/(?:느와르|범죄\s*도시|하드보일드|갱|마피아|조직)/, "느와르"],
     [/(?:청춘|학교|대학|고3|졸업|방학|캠퍼스)/, "청춘"],
@@ -360,8 +360,8 @@ export function buildEnhancedWebSearchQuery(
     }
   }
 
-  // 조립
-  const allParts = [
+  // 조립 (중복 제거)
+  const allPartsRaw = [
     ...genreParts,
     ...moodParts,
     ...keyParts,
@@ -369,6 +369,7 @@ export function buildEnhancedWebSearchQuery(
     ...extraFormat,
     ...extraPacing,
   ].filter(Boolean);
+  const allParts = [...new Set(allPartsRaw)];
 
   // 완전히 빈 경우 최소 쿼리 보장
   if (allParts.length === 0) {
