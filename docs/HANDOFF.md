@@ -199,6 +199,40 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 - 실제 효과: slow는 natural 대비 약 30-40% 런타임 증가, fast는 약 25-30% 단축
 - Visual breathing: slow 1.20x > natural 1.15x > fast 1.08x
 - Rhetorical pause: slow 1.3x > natural 1.0x > fast 0.5x
+
+### 감독 추천 웹 검색 빈 결과 자동 복구
+
+#### 빈 결과 원인 분류 (WebSearchEmptyReason)
+| 코드 | 의미 |
+|------|------|
+| `parse_failed` | AI 응답이 JSON이 아닌 자연어 — 자연어 목록 파싱 시도 |
+| `provider_failed` | 웹 검색 API 자체 HTTP 에러 |
+| `provider_empty` | API 성공이지만 감독 목록 자체가 없음 |
+| `duplicate_filtered_all` | 모든 후보가 로컬 풀과 중복 |
+| `missing_required_fields` | name/nameKo 둘 다 없어 전원 탈락 |
+| `validation_rejected_all` | 기타 유효성 검증으로 전원 탈락 |
+| `fallback_empty` | 모든 재시도/폴백 후에도 0건 |
+
+#### 자동 복구 전략
+1. **파싱 강화**: `directors`, `recommendations`, `results`, `suggestions`, `data`, `items` 키 모두 탐색
+2. **자연어 목록 추출**: `"1. Director Name (한글명) - Description"` 패턴 인식
+3. **필드 완화**: name 또는 nameKo 중 하나만 있으면 나머지를 복사하여 복구
+4. **자동 재시도**: 1차 웹+grounding → 2차 제외 강화 재시도 → 3차 모델 폴백 → 4차 Flash 폴백 (최대 4회)
+5. **weak_query 보정**: 신호가 약하면 시나리오 키워드에서 직접 명사를 추출해 쿼리 재구성
+
+#### 디버그에서 확인할 수 있는 정보
+- `webSearchEmptyReasons`: 0건 세부 원인 코드 배열
+- `webSearchQueryCorrected`: 쿼리 자동 보정 여부
+- `webSearchPartialRecoveryCount`: 필드 누락 복구된 후보 수
+- `webSearchAttemptCount`: 재시도 횟수 (1~4)
+- `webSearchRejectionReasons`: 개별 탈락 사유 목록
+- `webSearchRawSnippet`: 원본 응답 첫 200자
+
+#### UI 표시
+- 외부 후보 0명: 세분화된 사유 표시 (파싱 실패 / 중복 전멸 / API 에러 등)
+- 중복 전멸 시 노란색 강조
+- 쿼리 자동 보정 시 보라색 알림
+
 4. **endState 전파** (submitContinuitySequence): 세그먼트 순차 생성 시 이전 세그먼트의 확정된 endState가 다음 세그먼트의 startState로 전파
 
 ### ON이어도 continuity가 약해질 수 있는 경우

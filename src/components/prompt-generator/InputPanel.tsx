@@ -1427,6 +1427,19 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                               const rejectedCount = Number(debug?.webSearchRejectedCount ?? 0);
                               const attemptCount = Number(debug?.webSearchAttemptCount ?? 1);
                               const retryReason = debug?.webSearchRetryReason as string | undefined;
+                              const emptyReasons = (debug?.webSearchEmptyReasons ?? []) as string[];
+                              const queryCorrected = debug?.webSearchQueryCorrected as boolean | undefined;
+
+                              const EMPTY_REASON_LABELS: Record<string, string> = {
+                                parse_failed: "AI 응답 파싱 실패",
+                                provider_failed: "웹 검색 API 에러",
+                                provider_empty: "AI가 감독 목록을 생성하지 않음",
+                                duplicate_filtered_all: "모든 후보가 보유 감독과 중복",
+                                weak_query: "검색 신호가 약해 일반적인 결과만 나옴",
+                                missing_required_fields: "후보 데이터 불완전",
+                                validation_rejected_all: "유효성 검증에서 전원 탈락",
+                                fallback_empty: "모든 재시도 후에도 결과 없음",
+                              };
 
                               if (webStatus === "failed") {
                                 return (
@@ -1440,15 +1453,26 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
                               return (
                                 <>
-                                  <p>웹 검색 원시 결과: {rawCount}명</p>
-                                  {rawCount > 0 && <p>로컬 중복으로 제거: {rejectedCount}명</p>}
-                                  {attemptCount > 1 && <p>재시도: {attemptCount}회 (사유: {retryReason ?? "중복 전멸"})</p>}
+                                  {emptyReasons.length > 0 ? (
+                                    <div className="space-y-0.5">
+                                      {emptyReasons.map((reason: string, i: number) => (
+                                        <p key={i} style={{ color: reason === "duplicate_filtered_all" ? "#ca8a04" : "#94a3b8" }}>
+                                          • {EMPTY_REASON_LABELS[reason] ?? reason}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <p>웹 검색 원시 결과: {rawCount}명</p>
+                                      {rawCount > 0 && <p>탈락: {rejectedCount}명</p>}
+                                    </>
+                                  )}
+                                  {attemptCount > 1 && <p>재시도: {attemptCount}회{retryReason ? ` (${retryReason.slice(0, 50)})` : ""}</p>}
+                                  {queryCorrected && <p style={{ color: "#6366f1" }}>검색 쿼리 자동 보정됨</p>}
                                   {Array.isArray(debug?.webSearchRejectionReasons) && (debug.webSearchRejectionReasons as string[]).length > 0 && (
-                                    <p className="truncate">제거 사유: {(debug.webSearchRejectionReasons as string[]).slice(0, 3).join(", ")}</p>
+                                    <p className="truncate">상세: {(debug.webSearchRejectionReasons as string[]).slice(0, 3).join(", ")}</p>
                                   )}
-                                  {rawCount === 0 && (
-                                    <p className="mt-0.5" style={{ color: "#b0b0b0" }}>시나리오를 더 구체적으로 작성하면 외부 감독 탐색 품질이 올라갑니다.</p>
-                                  )}
+                                  <p className="mt-0.5" style={{ color: "#b0b0b0" }}>시나리오를 더 구체적으로 작성하면 외부 감독 탐색 품질이 올라갑니다.</p>
                                 </>
                               );
                             })()}

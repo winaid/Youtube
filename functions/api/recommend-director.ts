@@ -446,6 +446,21 @@ interface StageReasons {
   finalAssembly?: string;
 }
 
+/**
+ * 웹 검색 빈 결과 원인 분류 코드.
+ * attempted_empty일 때 정확히 왜 0건인지 세분화.
+ */
+export type WebSearchEmptyReason =
+  | "parse_failed"              // JSON 파싱 실패 — 모델이 자연어로 응답
+  | "provider_failed"           // 웹 검색 API 자체 에러 (HTTP 에러)
+  | "provider_empty"            // API 성공이지만 모델이 감독 목록 자체를 안 줌
+  | "duplicate_filtered_all"    // 후보 전멸 — 로컬 풀과 전부 중복
+  | "weak_query"                // 검색 쿼리가 약해 의미 있는 결과 못 얻음
+  | "missing_required_fields"   // name/nameKo 누락으로 전원 탈락
+  | "validation_rejected_all"   // 기타 유효성 검증으로 전원 탈락
+  | "fallback_empty"            // 모든 재시도/폴백까지 0건
+  | "unknown";                  // 분류 불가
+
 interface DirectorRecommendationDebug {
   stageStatus: StageStatus;
   stageReasons: StageReasons;
@@ -475,6 +490,13 @@ interface DirectorRecommendationDebug {
   externalResultCount: number;
   finalResultCount: number;
   emptyReason?: string;
+  /** 웹 검색 0건 세부 원인 코드 목록 — attempted_empty일 때만 채워짐 */
+  webSearchEmptyReasons?: WebSearchEmptyReason[];
+  /** 쿼리 보정 여부 및 보정 사유 */
+  webSearchQueryCorrected?: boolean;
+  webSearchQueryCorrectionReason?: string;
+  /** 필드 누락으로 부분 복구된 후보 수 */
+  webSearchPartialRecoveryCount?: number;
   modelUsed: string;
   preExtracted?: PreExtractedSignals;
   signalMergeReasons?: string[];
@@ -756,6 +778,10 @@ ${localList}
     let webSearchRawBeforeDedup = 0;
     let webSearchDedupRemoved = 0;
     let webSearchRetryReason: string | null = null;
+    let webSearchEmptyReasons: WebSearchEmptyReason[] = [];
+    let webSearchQueryCorrected = false;
+    let webSearchQueryCorrectionReason: string | undefined;
+    let webSearchPartialRecoveryCount = 0;
 
     // ── 항상 웹 검색 실행 — 로컬 결과 강도와 무관하게 외부 후보 확장 ──
     {
@@ -766,6 +792,42 @@ ${localList}
       webSearchQuery = enhanced.query;
       if (enhanced.queryReasons.length > 0) {
         signalDetails.push(`web query: ${enhanced.queryReasons.join("; ")}`)
+      }
+
+      // ── weak_query 자동 보정: 신호가 약하면 시나리오 키워드로 직접 보강 ──
+      const isWeakQuery = enhanced.queryReasons.some(r => r.includes("generic storytelling"));
+      if (isWeakQuery && storyText.length > 30) {
+        // 시나리오에서 핵심 명사를 직접 추출해 쿼리 보강
+        const keyNounPatterns = [
+          /(?:전사|전투|전쟁|군대|병사)/g, /(?:사무라이|무사|검객)/g,
+          /(?:우주|행성|은하|외계)/g, /(?:AI|로봇|인공지능)/g,
+          /(?:범죄|수사|추격|살인)/g, /(?:사랑|연인|이별)/g,
+          /(?:마법|환상|판타지)/g, /(?:스파르타|로마|중세)/g,
+          /(?:도시|골목|거리|빌딩)/g, /(?:바다|산|숲|자연)/g,
+        ];
+        const foundNouns: string[] = [];
+        const nounEnMap: Record<string, string> = {
+          "전사": "warrior", "전투": "battle", "전쟁": "war", "사무라이": "samurai",
+          "우주": "space", "AI": "AI", "로봇": "robot", "범죄": "crime",
+          "사랑": "love", "마법": "magic", "스파르타": "Sparta", "도시": "urban",
+          "바다": "ocean", "자연": "nature", "숲": "forest",
+        };
+        for (const pattern of keyNounPatterns) {
+          const matches = storyText.match(pattern);
+          if (matches) {
+            for (const m of matches) {
+              const en = nounEnMap[m];
+              if (en && !foundNouns.includes(en)) foundNouns.push(en);
+            }
+          }
+        }
+        if (foundNouns.length > 0) {
+          const correctedParts = foundNouns.slice(0, 3).join(" ");
+          webSearchQuery = `best film directors for ${correctedParts} visual storytelling cinematography`;
+          webSearchQueryCorrected = true;
+          webSearchQueryCorrectionReason = `weak_query 보정: generic → ${correctedParts}`;
+          signalDetails.push(webSearchQueryCorrectionReason);
+        }
       }
 
       // 로컬 감독 이름 목록 (중복 판정용) — 공통 유틸 사용
@@ -824,7 +886,9 @@ Each director object must have:
         webText: string,
         sources: ReturnType<typeof extractGroundingSources>,
         label: string,
-      ) => {
+      ): { accepted: Array<Record<string, unknown>>; rejected: number; reasons: string[]; rawCount: number; emptyReasons: WebSearchEmptyReason[] } => {
+        const emptyReasons: WebSearchEmptyReason[] = [];
+
         // ── 견고한 JSON 파싱: 코드 블록, 비정형 응답 처리 ──
         let cleanText = webText;
         // 마크다운 코드 블록 제거 (```json ... ``` 또는 ``` ... ```)
@@ -834,39 +898,85 @@ Each director object must have:
         }
 
         let webParsed: Record<string, unknown>;
+        let parseFailed = false;
         try {
           webParsed = JSON.parse(cleanText) as Record<string, unknown>;
         } catch {
-          webParsed = (parseFirstJsonObject(cleanText) as Record<string, unknown>) ?? {};
+          const fallbackParsed = parseFirstJsonObject(cleanText) as Record<string, unknown> | null;
+          if (fallbackParsed) {
+            webParsed = fallbackParsed;
+          } else {
+            webParsed = {};
+            parseFailed = true;
+          }
         }
 
         // directors 배열 탐색: 최상위 또는 중첩 구조 모두 처리
         let rawWebDirs: Array<Record<string, unknown>> = [];
-        if (Array.isArray(webParsed.directors)) {
-          rawWebDirs = webParsed.directors as Array<Record<string, unknown>>;
-        } else if (Array.isArray(webParsed.recommendations)) {
-          rawWebDirs = webParsed.recommendations as Array<Record<string, unknown>>;
-        } else if (Array.isArray(webParsed.results)) {
-          rawWebDirs = webParsed.results as Array<Record<string, unknown>>;
-        } else {
+        const arrayKeys = ["directors", "recommendations", "results", "suggestions", "data", "items"];
+        for (const key of arrayKeys) {
+          if (Array.isArray(webParsed[key])) {
+            rawWebDirs = webParsed[key] as Array<Record<string, unknown>>;
+            break;
+          }
+        }
+        if (rawWebDirs.length === 0) {
           // 최상위가 배열인 경우
           const parsed = parseFirstJsonObject(cleanText);
           if (Array.isArray(parsed)) {
             rawWebDirs = parsed as Array<Record<string, unknown>>;
           }
         }
+        // ── 자연어 목록 파싱 폴백: "1. Name - Description" 패턴 ──
+        if (rawWebDirs.length === 0 && cleanText.length > 50) {
+          const naturalListPattern = /(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)([A-Z][a-zA-Zà-ž\s\-.']+?)(?:\s*[\(（]([가-힣\s]+)[\)）])?\s*[-–:]\s*(.+)/gm;
+          let match;
+          const naturalDirs: Array<Record<string, unknown>> = [];
+          while ((match = naturalListPattern.exec(cleanText)) !== null) {
+            const name = match[1].trim();
+            const nameKo = match[2]?.trim() || "";
+            const desc = match[3]?.trim() || "";
+            if (name.length >= 3 && name.length <= 50) {
+              naturalDirs.push({ name, nameKo: nameKo || name, description: desc, region: "미국", style: "", fitScore: 65, reason: desc.slice(0, 100) });
+            }
+          }
+          if (naturalDirs.length > 0) {
+            rawWebDirs = naturalDirs;
+            console.log(`[recommend-director] processWebResponse: 자연어 목록에서 ${naturalDirs.length}명 추출`);
+          }
+        }
+
         if (rawWebDirs.length === 0) {
-          console.log(`[recommend-director] processWebResponse: directors 배열 없음 — parsed keys: ${Object.keys(webParsed).join(", ")}`);
+          if (parseFailed) {
+            emptyReasons.push("parse_failed");
+          } else {
+            emptyReasons.push("provider_empty");
+          }
+          console.log(`[recommend-director] processWebResponse: directors 배열 없음 — parsed keys: ${Object.keys(webParsed).join(", ")}, parseFailed=${parseFailed}`);
         }
         const accepted: Array<Record<string, unknown>> = [];
         let rejected = 0;
+        let missingFieldCount = 0;
+        let partialRecoveryCount = 0;
         const reasons: string[] = [];
 
         for (const d of rawWebDirs) {
-          if (!d.name || !d.nameKo) {
+          // ── 필드 완화: name 또는 nameKo 중 하나만 있어도 복구 시도 ──
+          if (!d.name && !d.nameKo) {
             rejected++;
-            reasons.push(`missing name/nameKo`);
+            missingFieldCount++;
+            reasons.push(`missing both name and nameKo`);
             continue;
+          }
+          if (!d.name && d.nameKo) {
+            d.name = d.nameKo; // nameKo를 name으로 사용
+            partialRecoveryCount++;
+            reasons.push(`recovered "${d.nameKo}" — name was missing, used nameKo`);
+          }
+          if (!d.nameKo && d.name) {
+            d.nameKo = d.name; // name을 nameKo로 사용
+            partialRecoveryCount++;
+            reasons.push(`recovered "${d.name}" — nameKo was missing, used name`);
           }
 
           // 중복 판정 — 공통 유틸 사용
@@ -906,7 +1016,18 @@ Each director object must have:
           });
         }
 
-        return { accepted, rejected, reasons, rawCount: rawWebDirs.length };
+        // ── 0건 원인 분류 ──
+        if (accepted.length === 0 && rawWebDirs.length > 0) {
+          if (rawWebDirs.length === rejected && reasons.every(r => r.includes("already in local pool"))) {
+            emptyReasons.push("duplicate_filtered_all");
+          } else if (missingFieldCount === rejected) {
+            emptyReasons.push("missing_required_fields");
+          } else if (rejected > 0) {
+            emptyReasons.push("validation_rejected_all");
+          }
+        }
+
+        return { accepted, rejected, reasons, rawCount: rawWebDirs.length, emptyReasons, partialRecoveryCount };
       };
 
       try {
@@ -967,8 +1088,10 @@ Each director object must have:
           webSearchRejectionReasons = result.reasons;
           webSearchDedupRemoved = result.rejected;
           webSuggestions = result.accepted;
+          webSearchEmptyReasons.push(...result.emptyReasons);
+          webSearchPartialRecoveryCount += result.partialRecoveryCount;
 
-          console.log(`[recommend-director] 웹 검색 1차: 원시=${result.rawCount}, 채택=${result.accepted.length}, 제거=${result.rejected}`);
+          console.log(`[recommend-director] 웹 검색 1차: 원시=${result.rawCount}, 채택=${result.accepted.length}, 제거=${result.rejected}, emptyReasons=${result.emptyReasons.join(",") || "none"}`);
 
           // ── 외부 후보 잔존 보장 ──
           // Case A: 원시 결과 > 0이지만 전부 중복 제거 → 재시도
@@ -1123,14 +1246,20 @@ Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region
             stageReasons.webSearch = `검색 결과 ${webSearchResultCount}개 중 ${webSearchAcceptedCount}개 채택 (시도 ${webSearchAttemptCount}회)`;
           } else {
             stageStatus.webSearch = "attempted_empty";
+            // 최종 0건 사유를 세분화된 코드로 남김
+            if (webSearchEmptyReasons.length === 0) {
+              webSearchEmptyReasons.push("fallback_empty");
+            }
+            const reasonSummary = webSearchEmptyReasons.join(", ");
             stageReasons.webSearch = webSearchResultCount > 0
-              ? `검색 결과 ${webSearchResultCount}개 모두 로컬 중복 또는 불완전 (시도 ${webSearchAttemptCount}회)`
-              : "검색 결과 없음";
+              ? `검색 결과 ${webSearchResultCount}개 모두 탈락 [${reasonSummary}] (시도 ${webSearchAttemptCount}회)`
+              : `검색 결과 없음 [${reasonSummary}] (시도 ${webSearchAttemptCount}회)`;
           }
         } else {
           const webErr = await webRes.text();
           const webStatus = webRes.status;
           console.warn(`[recommend-director] 웹 검색 실패(${webStatus}): ${webErr.slice(0, 300)}`);
+          webSearchEmptyReasons.push("provider_failed");
 
           // ── 웹 검색 실패 시 모델 지식 폴백 (단순 프롬프트) ──
           console.log(`[recommend-director] 모델 지식 기반 폴백 시도`);
@@ -1269,6 +1398,10 @@ Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region
       externalResultCount: finalWebCount,
       finalResultCount: finalCount,
       emptyReason,
+      webSearchEmptyReasons: webSearchEmptyReasons.length > 0 ? webSearchEmptyReasons : undefined,
+      webSearchQueryCorrected: webSearchQueryCorrected || undefined,
+      webSearchQueryCorrectionReason: webSearchQueryCorrectionReason || undefined,
+      webSearchPartialRecoveryCount: webSearchPartialRecoveryCount > 0 ? webSearchPartialRecoveryCount : undefined,
       modelUsed,
       preExtracted: preSignals,
       signalMergeReasons: mergeResult.mergeReasons,
