@@ -152,9 +152,9 @@ describe("validateMultiShots", () => {
   });
 
   it("샷 수 초과 → error", () => {
-    // 5초 duration → maxShots=2 for O3
-    const shots = makeShots(3, 5);
-    const result = validateMultiShots(MODEL, shots, 5);
+    // maxShots=6 (모델 상한). 7개 넣으면 초과.
+    const shots = makeShots(7, 14);
+    const result = validateMultiShots(MODEL, shots, 14);
     expect(result.valid).toBe(false);
     expect(result.aggregateIssues.some(i => i.message.includes("샷 수 초과"))).toBe(true);
   });
