@@ -1308,21 +1308,142 @@ Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region
               webSuggestions = fbResult.accepted;
 
               console.log(`[recommend-director] 모델 폴백 결과: 원시=${fbResult.rawCount}, 채택=${fbResult.accepted.length}`);
+              webSearchEmptyReasons.push(...fbResult.emptyReasons);
 
               if (webSuggestions.length > 0) {
                 stageStatus.webSearch = "attempted_success";
                 stageReasons.webSearch = `웹 실패 → 모델 폴백: ${fbResult.accepted.length}개 채택`;
               } else {
-                stageStatus.webSearch = "attempted_empty";
-                stageReasons.webSearch = `웹 실패(${webStatus}) → 모델 폴백도 결과 없음`;
+                // ── Pro 폴백도 실패 → Flash 최종 시도 ──
+                console.log(`[recommend-director] 모델 폴백(Pro)도 0명 → Flash 최종 시도`);
+                webSearchAttemptCount = 3;
+                try {
+                  const flashRes = await fetchWithAuth(
+                    context.env,
+                    buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(fallbackBody),
+                    },
+                  );
+                  if (flashRes.ok) {
+                    const flashData = await flashRes.json() as {
+                      candidates?: { content?: { parts?: { text?: string }[] } }[];
+                    };
+                    const flashText = flashData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+                    console.log(`[recommend-director] Flash 폴백(failed path) raw (first 300): ${flashText.slice(0, 300)}`);
+                    const flashResult = processWebResponse(flashText, [], "flash_fallback_after_fail");
+                    webSearchResultCount += flashResult.rawCount;
+                    webSearchAcceptedCount += flashResult.accepted.length;
+                    webSuggestions.push(...flashResult.accepted);
+                    webSearchEmptyReasons.push(...flashResult.emptyReasons);
+                    if (flashResult.accepted.length > 0) {
+                      webSearchProvider = `${webSearchProvider} + flash-fallback`;
+                    }
+                    console.log(`[recommend-director] Flash 폴백(failed path): 원시=${flashResult.rawCount}, 채택=${flashResult.accepted.length}`);
+                  }
+                } catch { /* Flash 폴백 실패 — 무시 */ }
+
+                if (webSuggestions.length > 0) {
+                  stageStatus.webSearch = "attempted_success";
+                  stageReasons.webSearch = `웹 실패 → Flash 폴백: ${webSuggestions.length}개 채택`;
+                } else {
+                  webSearchEmptyReasons.push("fallback_empty");
+                  stageStatus.webSearch = "attempted_empty";
+                  const reasonSummary = webSearchEmptyReasons.join(", ");
+                  stageReasons.webSearch = `웹 실패(${webStatus}) → 모든 폴백 실패 [${reasonSummary}]`;
+                }
               }
             } else {
-              stageStatus.webSearch = "failed";
-              stageReasons.webSearch = `웹 실패(${webStatus}) + 모델 폴백도 실패`;
+              // Pro 폴백 API도 실패 → Flash 시도
+              console.log(`[recommend-director] Pro 폴백도 HTTP 실패(${fallbackRes.status}) → Flash 시도`);
+              webSearchAttemptCount = 3;
+              try {
+                const flashRes2 = await fetchWithAuth(
+                  context.env,
+                  buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(fallbackBody),
+                  },
+                );
+                if (flashRes2.ok) {
+                  const flashData2 = await flashRes2.json() as {
+                    candidates?: { content?: { parts?: { text?: string }[] } }[];
+                  };
+                  const flashText2 = flashData2?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+                  const flashResult2 = processWebResponse(flashText2, [], "flash_fallback_after_fail");
+                  webSearchResultCount += flashResult2.rawCount;
+                  webSearchAcceptedCount += flashResult2.accepted.length;
+                  webSuggestions.push(...flashResult2.accepted);
+                  webSearchEmptyReasons.push(...flashResult2.emptyReasons);
+                  if (flashResult2.accepted.length > 0) {
+                    webSearchProvider = `${webSearchProvider} + flash-fallback`;
+                    stageStatus.webSearch = "attempted_success";
+                    stageReasons.webSearch = `웹+Pro 실패 → Flash 폴백: ${flashResult2.accepted.length}개 채택`;
+                  } else {
+                    webSearchEmptyReasons.push("fallback_empty");
+                    stageStatus.webSearch = "attempted_empty";
+                    stageReasons.webSearch = `웹+Pro+Flash 모두 실패 [${webSearchEmptyReasons.join(", ")}]`;
+                  }
+                } else {
+                  webSearchEmptyReasons.push("fallback_empty");
+                  stageStatus.webSearch = "failed";
+                  stageReasons.webSearch = `웹(${webStatus})+Pro+Flash 모두 실패`;
+                }
+              } catch {
+                webSearchEmptyReasons.push("fallback_empty");
+                stageStatus.webSearch = "failed";
+                stageReasons.webSearch = `웹(${webStatus})+Pro 실패+Flash 예외`;
+              }
             }
           } catch (fbErr) {
-            stageStatus.webSearch = "failed";
-            stageReasons.webSearch = `웹 실패(${webStatus}) + 폴백 예외`;
+            // ── Pro 폴백 예외 → Flash 최종 시도 ──
+            console.warn(`[recommend-director] Pro 폴백 예외: ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`);
+            webSearchAttemptCount = 3;
+            try {
+              const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
+              const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
+              const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
+              const emergencyPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario. Do NOT recommend: ${excludeNames}. Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"미국","fitScore":75}]}`;
+              const emergencyRes = await fetchWithAuth(
+                context.env,
+                buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [{ role: "user", parts: [{ text: emergencyPrompt }] }],
+                    generationConfig: { temperature: 0.5, maxOutputTokens: 2048, responseMimeType: "application/json" as const },
+                  }),
+                },
+              );
+              if (emergencyRes.ok) {
+                const eData = await emergencyRes.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+                const eText = eData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+                const eResult = processWebResponse(eText, [], "flash_emergency_fallback");
+                webSuggestions.push(...eResult.accepted);
+                webSearchEmptyReasons.push(...eResult.emptyReasons);
+                if (eResult.accepted.length > 0) {
+                  stageStatus.webSearch = "attempted_success";
+                  stageReasons.webSearch = `웹+Pro 예외 → Flash 긴급 폴백: ${eResult.accepted.length}개 채택`;
+                } else {
+                  webSearchEmptyReasons.push("fallback_empty");
+                  stageStatus.webSearch = "attempted_empty";
+                  stageReasons.webSearch = `웹+Pro 예외+Flash 결과 없음 [${webSearchEmptyReasons.join(", ")}]`;
+                }
+              } else {
+                webSearchEmptyReasons.push("fallback_empty");
+                stageStatus.webSearch = "failed";
+                stageReasons.webSearch = `웹(${webStatus})+Pro 예외+Flash 실패`;
+              }
+            } catch {
+              webSearchEmptyReasons.push("fallback_empty");
+              stageStatus.webSearch = "failed";
+              stageReasons.webSearch = `웹(${webStatus})+폴백 전부 예외`;
+            }
           }
         }
       } catch (e) {

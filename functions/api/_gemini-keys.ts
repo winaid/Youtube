@@ -68,10 +68,14 @@ function isRetryableError(status: number, body?: string): boolean {
 // Re-export for testing
 export { isRetryableError };
 
+/** Default timeout for non-streaming Gemini API calls (ms). */
+export const FETCH_TIMEOUT_MS = 30_000; // 30s — generous but prevents 138s hangs
+
 function fetchWithKeyFallback(
   keys: string[],
   url: string,
   init: RequestInit,
+  timeoutMs: number = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
   if (keys.length === 0) {
     return Promise.resolve(
@@ -88,7 +92,29 @@ function fetchWithKeyFallback(
 
   const tryKey = async (i: number): Promise<Response> => {
     const keyUrl = `${url}${url.includes("?") ? "&" : "?"}key=${keys[i]}`;
-    const res = await fetch(keyUrl, init);
+
+    // AbortController for timeout — prevents indefinite hangs
+    // If caller already provided a signal (e.g. streamingGenerate), respect it instead
+    const callerHasSignal = !!init.signal;
+    const controller = callerHasSignal ? null : new AbortController();
+    const timer = callerHasSignal ? null : setTimeout(() => controller!.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(keyUrl, controller ? { ...init, signal: controller.signal } : init);
+    } catch (err) {
+      if (timer) clearTimeout(timer);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        console.warn(`[Gemini] API key ${i + 1} timed out after ${timeoutMs}ms`);
+        // Try next key if available
+        if (i < keys.length - 1) return tryKey(i + 1);
+        return new Response(
+          JSON.stringify({ error: `Gemini API timeout (${timeoutMs}ms)`, code: "TIMEOUT" }),
+          { status: 504, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw err;
+    }
+    if (timer) clearTimeout(timer);
 
     if (i === keys.length - 1) return res;
 
@@ -131,6 +157,7 @@ export async function fetchWithAuth(
   env: GeminiEnv,
   url: string,
   init: RequestInit,
+  options?: { timeoutMs?: number },
 ): Promise<Response> {
   const keys = getApiKeys(env);
   if (keys.length === 0) {
@@ -143,7 +170,7 @@ export async function fetchWithAuth(
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
-  return fetchWithKeyFallback(keys, url, init);
+  return fetchWithKeyFallback(keys, url, init, options?.timeoutMs ?? FETCH_TIMEOUT_MS);
 }
 
 // === 스트리밍 수집 함수 ===
