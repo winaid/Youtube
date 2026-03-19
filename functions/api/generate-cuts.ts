@@ -20,7 +20,7 @@ import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
-import { getMaxShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-capability";
+import { getMaxShots, getMinShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-capability";
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
@@ -1041,7 +1041,7 @@ ${(() => {
       { role: "resolve",   desc: "PAYOFF — 시각적 해소. 에너지 릴리즈. WS로 빠지거나 CU로 마지막 감정 비트." },
     ];
     const roles = progressionRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
-    const minShots = Math.max(2, Math.min(3, maxShots)); // 숏폼 최소 2-3 서브샷
+    const minShots = Math.max(2, getMinShots(KLING_DEFAULT_TEXT_MODEL, secPerCut)); // duration 기반 최소 (10s+ → 4개)
     return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 최소 ${minShots}개 ~ 최대 ${maxShots}개)
 
 ⚠️ 숏폼 필수: 각 시퀀스에 최소 ${minShots}개 서브샷. 감독이 롱테이크/정적 스타일이어도 서브샷 수를 줄이지 마라.
@@ -2596,6 +2596,68 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (fc.durationSec > KLING_SEGMENT_CAP) {
         console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} duration ${fc.durationSec}s exceeds ${KLING_SEGMENT_CAP}s cap → clamping`);
         fc.durationSec = KLING_SEGMENT_CAP;
+      }
+    }
+
+    // ═══ 멀티샷 사후 검증 — Gemini가 최소 샷 수 미달 시 자동 복구 ═══
+    // SHOT_COUNT_RANGES 기준: ≤5s→2, ≤8s→2, ≤12s→3, 13~15s→4
+    // Gemini가 이 규칙을 무시하고 샷 수가 부족하면 여기서 강제 보충.
+    for (const fc of finalizedCuts) {
+      const dur = fc.durationSec;
+      const minRequired = getMinShots(KLING_DEFAULT_TEXT_MODEL, dur);
+      const existingShots: MultiShotItem[] = Array.isArray((fc as Record<string, unknown>).multiShot)
+        ? (fc as Record<string, unknown>).multiShot as MultiShotItem[]
+        : [];
+
+      if (minRequired >= 2 && existingShots.length < minRequired) {
+        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} (${dur}s): multiShot ${existingShots.length}개 < 최소 ${minRequired}개 → auto-repair`);
+
+        // role progression 패턴 (multi-shot-planner.ts RETENTION_ROLE_PATTERNS 동기화)
+        const ROLE_PATTERNS: Record<number, ShotRoleServer[]> = {
+          2: ["establish", "resolve"],
+          3: ["establish", "develop", "resolve"],
+          4: ["establish", "develop", "peak", "resolve"],
+          5: ["establish", "transition", "develop", "peak", "resolve"],
+          6: ["establish", "transition", "develop", "insert", "peak", "resolve"],
+        };
+        const targetCount = Math.min(minRequired, getMaxShots(KLING_DEFAULT_TEXT_MODEL, dur));
+        const roles = ROLE_PATTERNS[targetCount] ?? ROLE_PATTERNS[4]!;
+
+        // duration 균등 분배
+        const baseDur = Math.floor(dur / targetCount);
+        const remainder = dur - baseDur * targetCount;
+        const durations = roles.map((_, i) => i < remainder ? baseDur + 1 : baseDur);
+
+        // 기존 샷 prompt 재활용 + 부족분 생성
+        const basePrompt = fc.videoPrompt || fc.sceneDescription || "";
+        const repairedShots: MultiShotItem[] = roles.map((role, i) => {
+          if (i < existingShots.length) {
+            // 기존 샷 유지, duration/role만 보정
+            return {
+              index: i + 1,
+              prompt: existingShots[i].prompt,
+              duration: String(durations[i]),
+              role,
+            };
+          }
+          // 부족분: role 기반 기본 prompt 생성
+          const roleDirective: Record<ShotRoleServer, string> = {
+            establish: "Wide establishing shot showing the full environment and spatial context",
+            transition: "Camera shifts to a new angle, revealing hidden depth in the scene",
+            develop: "Medium shot revealing new action or information not visible before",
+            insert: "Extreme close-up on a critical detail, dramatic scale shift",
+            peak: "The most emotionally intense moment, maximum visual impact",
+            resolve: "Visual closure, tension releases, the scene settles into resolution",
+          };
+          return {
+            index: i + 1,
+            prompt: `[Shot ${i + 1}/${targetCount} — ${role}] ${roleDirective[role]}. ${basePrompt.slice(0, 120)}`,
+            duration: String(durations[i]),
+            role,
+          };
+        });
+
+        (fc as Record<string, unknown>).multiShot = repairedShots;
       }
     }
 

@@ -277,6 +277,26 @@ export function getMaxShots(modelId: string, durationSec: number): number {
 }
 
 /**
+ * duration 기반 최소 멀티샷 수.
+ * multi-shot-planner.ts의 SHOT_COUNT_RANGES와 동기화.
+ *
+ *   ≤3s: 0 (multiShot 비활성)
+ *   ≤5s: 2
+ *   ≤8s: 2
+ *   ≤12s: 3
+ *   ≤15s: 4
+ */
+export function getMinShots(modelId: string, durationSec: number): number {
+  const cap = getCapability(modelId);
+  if (!cap.supportsMultiShot) return 0;
+  if (durationSec <= 3) return 0;
+  if (durationSec <= 5) return 2;
+  if (durationSec <= 8) return 2;
+  if (durationSec <= 12) return 3;
+  return 4; // 13~15s
+}
+
+/**
  * 개별 샷의 duration을 검증하고, 최소값 미만이면 보정한다.
  *
  * @returns 보정된 duration (초, 정수)
