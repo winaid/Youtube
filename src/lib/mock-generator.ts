@@ -68,6 +68,8 @@ async function fetchGeminiCuts(
         characterPersonas: input.characterPersonas ?? [],
         // 대본 사전 분석 힌트 (분석 깊이 옵션 활성 시)
         scriptAnalysisHint: input.scriptAnalysisHint ?? null,
+        // ── Continuity mode ──
+        continuityMode: input.continuityMode ?? false,
       }),
     });
 
@@ -132,6 +134,8 @@ async function fetchGeminiCuts(
           characterRole: cut.characterRole,
           videoPromptJson: cut.videoPromptJson,
           extendPromptJson: cut.extendPromptJson,
+          // Continuity segment metadata — generate-cuts에서 생성, useVideoGeneration에서 소비
+          continuitySegment: cut.continuitySegment ?? undefined,
         }))
       : [];
 

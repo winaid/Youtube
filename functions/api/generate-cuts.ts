@@ -2599,6 +2599,75 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
+    // ═══ Continuity Segment 생성 (continuityMode ON일 때만) ═══════
+    // 각 컷에 continuitySegment를 붙여서 클라이언트 → useVideoGeneration → generate-video까지 전달.
+    // 이 데이터는 시퀀스 경계에서 이전 컷의 끝 상태를 다음 컷 시작으로 전파하는 핵심 메타.
+    if (isContinuityMode) {
+      const totalCuts = finalizedCuts.length;
+      const prevEnd = continuityPrevEndState && typeof continuityPrevEndState === "object"
+        ? continuityPrevEndState as Record<string, unknown>
+        : null;
+      const anchors = continuityGlobalAnchors && typeof continuityGlobalAnchors === "object"
+        ? continuityGlobalAnchors as Record<string, unknown>
+        : null;
+
+      for (let i = 0; i < totalCuts; i++) {
+        const fc = finalizedCuts[i] as Record<string, unknown>;
+
+        // prevEndState: 첫 컷은 상위에서 전달된 값 사용, 이후 컷은 이전 컷의 장면 설명 기반
+        let segStartState: Record<string, unknown>;
+        if (i === 0 && prevEnd) {
+          // 시퀀스 경계: 이전 시퀀스의 마지막 상태가 전달됨
+          segStartState = {
+            subjectPosition: prevEnd.subjectPosition || "",
+            cameraState: prevEnd.cameraState || "",
+            emotionKeyword: prevEnd.emotionKeyword || "",
+            emotionIntensity: Number(prevEnd.emotionIntensity) || 0,
+            motionVector: prevEnd.motionVector || "",
+            lightingState: prevEnd.lightingState || "",
+            environmentSnapshot: prevEnd.environmentSnapshot || "",
+          };
+        } else if (i > 0) {
+          // 같은 시퀀스 내: 이전 컷의 장면 설명에서 파생
+          const prevCut = finalizedCuts[i - 1] as Record<string, unknown>;
+          segStartState = {
+            subjectPosition: String(prevCut.sceneDescription || "").slice(0, 100),
+            cameraState: String(prevCut.cameraDirection || ""),
+            emotionKeyword: "",
+            emotionIntensity: 0,
+            motionVector: "",
+            lightingState: String(prevCut.moodLighting || ""),
+            environmentSnapshot: String(prevCut.sceneDescription || "").slice(0, 80),
+          };
+        } else {
+          segStartState = {
+            subjectPosition: "", cameraState: "", emotionKeyword: "",
+            emotionIntensity: 0, motionVector: "", lightingState: "", environmentSnapshot: "",
+          };
+        }
+
+        // endState: 현재 컷의 장면 설명에서 파생 (다음 컷의 startState가 됨)
+        const segEndState: Record<string, unknown> = {
+          subjectPosition: String(fc.sceneDescription || "").slice(0, 100),
+          cameraState: String(fc.cameraDirection || ""),
+          emotionKeyword: "",
+          emotionIntensity: 0,
+          motionVector: "",
+          lightingState: String(fc.moodLighting || ""),
+          environmentSnapshot: String(fc.sceneDescription || "").slice(0, 80),
+        };
+
+        fc.continuitySegment = {
+          segmentIndex: i,
+          startState: segStartState,
+          endState: segEndState,
+          isLastSegment: i === totalCuts - 1,
+        };
+      }
+
+      console.info(`[generate-cuts] continuitySegment 생성 완료: ${totalCuts}컷, prevEndState=${!!prevEnd}, anchors=${!!anchors}`);
+    }
+
     // ═══ 시퀀스 플랜 구축 + 검증 ═══════════════════════════════════
     // finalizedCuts 기준으로 SequencePlan 생성 (cuts와 sequencePlan 정합성 보장)
     const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {

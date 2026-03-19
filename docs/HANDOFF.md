@@ -151,10 +151,23 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 
 ### continuity ON일 때 무엇이 연결되는가
 1. **프롬프트 주입**: CHARACTER LOCK, VISUAL LOCK, CONTINUATION FROM, ENDING RULE, NARRATIVE POSITION 블록이 generate-cuts 프롬프트에 삽입
-2. **Frame chaining** (autoLinkFirstFrame=true 기본값):
+2. **continuitySegment 생성 (Producer)**: generate-cuts API가 continuityMode ON일 때 각 컷에 `continuitySegment` 부착
+   - `segmentIndex`: 전체 흐름에서 현재 컷 위치
+   - `startState`: 이전 컷의 endState 또는 상위 전달된 prevEndState에서 파생
+   - `endState`: 현재 컷의 장면 설명/카메라/조명에서 파생 (다음 컷의 startState가 됨)
+   - `isLastSegment`: 마지막 컷 여부
+3. **continuitySegment → continuityMeta 변환 (Consumer)**: useVideoGeneration이 cut.continuitySegment를 읽어 continuityMeta로 변환, generate-video에 전달
+4. **generate-video 프롬프트 주입**: continuityMeta의 prevEndState를 "[CONTINUATION]" 블록으로 프롬프트에 삽입
+5. **Frame chaining** (autoLinkFirstFrame=true 기본값):
    - 우선순위: lastFrameBase64 캐시 → 비디오 캡처 → storyboard end → storyboard start → text-to-video
    - 각 컷 완료 시 마지막 프레임을 캡처하여 다음 컷의 firstFrame으로 전달
-3. **continuityMeta**: segmentIndex, totalSegments, isLastSegment, prevEndState가 generate-video API에 전달
+
+### Frame chaining vs Continuity metadata (역할 분리)
+- **Frame chaining**: 시각적 시작 프레임 연결. 이전 컷의 마지막 프레임 → 다음 컷의 firstFrame. 시각적 연속성 보장
+- **Continuity metadata**: 내러티브/상태/앵커 전달. prevEndState(캐릭터 위치, 카메라, 조명)가 프롬프트에 주입. 장면 구성 연속성 보장
+- 둘 다 ON일 때 가장 강한 연속성
+- Frame chaining이 실패해도 continuity metadata는 남아 프롬프트 수준에서 연속성 유지
+- Continuity metadata가 없어도 frame chaining만으로 부분적 시각 연속성 확보
 4. **endState 전파** (submitContinuitySequence): 세그먼트 순차 생성 시 이전 세그먼트의 확정된 endState가 다음 세그먼트의 startState로 전파
 
 ### ON이어도 continuity가 약해질 수 있는 경우
