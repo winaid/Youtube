@@ -51,6 +51,15 @@ export interface VideoSubmitParams {
   sceneType?: string;
   /** 의도적 원테이크 */
   intentionalOneTake?: boolean;
+  /** continuity mode 세그먼트 메타 — generate-video에 전달 */
+  continuityMeta?: {
+    segmentIndex: number;
+    totalSegments: number;
+    isLastSegment: boolean;
+    prevEndState?: Record<string, unknown>;
+    characterLock?: string;
+    visualLock?: string;
+  };
 }
 
 /** generate-video API 응답 */
@@ -280,6 +289,7 @@ export async function submitVideoGeneration(
   else if (params.multiShot) body.multiShot = params.multiShot;
 
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
+  if (params.continuityMeta) body.continuityMeta = params.continuityMeta;
   if (params.workflowType) body.workflowType = params.workflowType;
   if (params.referenceImages && params.referenceImages.length > 0) body.referenceImages = params.referenceImages;
   if (params.element_list && params.element_list.length > 0) body.element_list = params.element_list;

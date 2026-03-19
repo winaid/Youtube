@@ -423,6 +423,7 @@ async function step1Outlines(
   characterPersonaBlock: string,
   editorialPlanningBlock: string,
   scriptAnalysisHint?: string,
+  continuityBlock?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
@@ -508,7 +509,7 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ed
 
 ## 시나리오
 ${storyExcerpt}
-${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}
+${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}${continuityBlock ? `\n${continuityBlock}\n` : ""}
 ## 출력 JSON 스키마
 
 characterSeeds (최대 3명):
@@ -1510,6 +1511,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       generationPersona,
       characterPersonas,
       scriptAnalysisHint,
+      continuityMode,
+      continuitySegmentIndex,
+      continuityPrevEndState,
+      continuityGlobalAnchors,
+      continuitySegmentRole,
+      continuityIsLastSegment,
     } = await context.request.json() as Record<string, string | number | object>;
 
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
@@ -1770,6 +1777,85 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.info(`[generate-cuts] characterPersonas 주입: ${cpRaw.length}명`);
     }
 
+    // ── Continuity Mode 프롬프트 블록 빌드 ─────────────────────────────
+    const isContinuityMode = continuityMode === true || continuityMode === "true";
+    let continuityPromptBlock = "";
+    if (isContinuityMode) {
+      const segIdx = Number(continuitySegmentIndex) || 0;
+      const segRole = String(continuitySegmentRole || "building");
+      const isLast = continuityIsLastSegment === true || continuityIsLastSegment === "true";
+      const anchors = continuityGlobalAnchors && typeof continuityGlobalAnchors === "object"
+        ? continuityGlobalAnchors as Record<string, unknown>
+        : null;
+      const prevEnd = continuityPrevEndState && typeof continuityPrevEndState === "object"
+        ? continuityPrevEndState as Record<string, unknown>
+        : null;
+
+      const cBlocks: string[] = [];
+
+      // Character lock
+      if (anchors?.character && typeof anchors.character === "object") {
+        const ch = anchors.character as Record<string, unknown>;
+        if (ch.primarySubjectDescription) {
+          const lines = [
+            "## CHARACTER LOCK (동일 인물 — 모든 세그먼트에서 절대 변경 금지)",
+            `Subject: ${String(ch.primarySubjectDescription)}`,
+          ];
+          if (ch.clothingLock) lines.push(`Clothing: ${String(ch.clothingLock)}`);
+          if (ch.bodyType) lines.push(`Body type: ${String(ch.bodyType)}`);
+          const features = Array.isArray(ch.distinctiveFeatures) ? ch.distinctiveFeatures : [];
+          if (features.length > 0) lines.push(`Distinctive features: ${features.join(", ")}`);
+          lines.push("RULE: This character's appearance MUST NOT change across segments.");
+          cBlocks.push(lines.join("\n"));
+        }
+      }
+
+      // Visual lock
+      if (anchors?.visual && typeof anchors.visual === "object") {
+        const v = anchors.visual as Record<string, unknown>;
+        const vLines = ["## VISUAL CONTINUITY LOCK (모든 세그먼트에서 동일 시각 스타일 유지)"];
+        if (v.colorPalette) vLines.push(`Color palette: ${String(v.colorPalette)}`);
+        if (v.lightingSetup) vLines.push(`Lighting: ${String(v.lightingSetup)}`);
+        if (v.filmGrain) vLines.push(`Film texture: ${String(v.filmGrain)}`);
+        if (v.contrastProfile) vLines.push(`Contrast: ${String(v.contrastProfile)}`);
+        vLines.push("RULE: Visual style MUST NOT shift between segments.");
+        if (vLines.length > 2) cBlocks.push(vLines.join("\n"));
+      }
+
+      // Continuation from previous segment
+      if (prevEnd && segIdx > 0) {
+        const pLines = [
+          "## CONTINUATION FROM PREVIOUS SEGMENT (이전 구간의 마지막 상태에서 이어받아 시작)",
+          "Previous segment ended with:",
+        ];
+        if (prevEnd.subjectPosition) pLines.push(`- Subject: ${String(prevEnd.subjectPosition)}`);
+        if (prevEnd.cameraState) pLines.push(`- Camera: ${String(prevEnd.cameraState)}`);
+        if (prevEnd.emotionKeyword) pLines.push(`- Emotion: ${String(prevEnd.emotionKeyword)} (intensity: ${Number(prevEnd.emotionIntensity) || 0}/100)`);
+        if (prevEnd.motionVector) pLines.push(`- Motion: ${String(prevEnd.motionVector)}`);
+        if (prevEnd.lightingState) pLines.push(`- Lighting: ${String(prevEnd.lightingState)}`);
+        pLines.push("");
+        pLines.push("THIS segment MUST START from exactly this state.");
+        pLines.push("First 2 seconds: seamless continuation — DO NOT re-establish, DO NOT reset camera, DO NOT change lighting.");
+        cBlocks.push(pLines.join("\n"));
+      }
+
+      // Segment ending rule (not last segment)
+      if (!isLast) {
+        cBlocks.push([
+          "## SEGMENT ENDING RULE (이 세그먼트는 영상의 중간 구간이다)",
+          "LAST 2 SECONDS: character mid-action, camera still moving, emotion unresolved — DO NOT close the scene, DO NOT resolve the action, maintain forward momentum",
+          "BANNED: emotional resolution, narrative closure, character turning away, fade-to-black feeling",
+          "REQUIRED: forward momentum — viewer must feel the story continues immediately after this clip ends",
+        ].join("\n"));
+      }
+
+      // Narrative position
+      cBlocks.push(`## NARRATIVE POSITION: Segment ${segIdx + 1} — Role: ${segRole.toUpperCase()}`);
+
+      continuityPromptBlock = cBlocks.join("\n\n");
+      console.info(`[generate-cuts] continuity mode: segment=${segIdx}, role=${segRole}, isLast=${isLast}, blockLen=${continuityPromptBlock.length}`);
+    }
+
     // ── Latency tracking ──────────────────────────────────────────────────────
     const t0_total = Date.now();
     let t0_step1 = 0, t1_step1 = 0;
@@ -1822,6 +1908,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         characterPersonaBlock,
         editorialPlanningBlock,
         scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
+        continuityPromptBlock || undefined,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -2553,6 +2640,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         genericSplitFallback: false,
         providerError: step1Warnings.find(w => w.includes("provider")) || undefined,
         densityPolicy: cutDecision.source,
+        continuityMode: isContinuityMode || undefined,
+        continuitySegmentIndex: isContinuityMode ? Number(continuitySegmentIndex) || 0 : undefined,
+        continuitySegmentRole: isContinuityMode ? String(continuitySegmentRole || "building") : undefined,
         reconciliationNotes: shortformPlan.reconciliationNotes,
         rationale: buildRationale({
           bandPolicy,

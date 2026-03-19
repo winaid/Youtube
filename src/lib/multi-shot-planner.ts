@@ -268,19 +268,55 @@ const SCENE_TYPE_ROLE_VARIANTS: Partial<Record<PlannerSceneType, Record<number, 
  * @param sceneType - optional scene type for role pattern variation
  * @returns ShotRole 배열
  */
-export function planShotRoles(shotCount: number, sceneType?: PlannerSceneType): ShotRole[] {
+/**
+ * continuity mode 옵션 — 마지막 샷 resolve 금지 등
+ */
+export interface PlanShotRolesOptions {
+  /** continuity mode에서 마지막 세그먼트가 아닌 경우 true */
+  banResolveAsLastShot?: boolean;
+}
+
+export function planShotRoles(
+  shotCount: number,
+  sceneType?: PlannerSceneType,
+  options?: PlanShotRolesOptions,
+): ShotRole[] {
   if (shotCount <= 0) return [];
+
+  let roles: ShotRole[];
 
   // Scene type별 변형이 있으면 사용
   if (sceneType && sceneType !== "default") {
     const variants = SCENE_TYPE_ROLE_VARIANTS[sceneType];
     if (variants && variants[shotCount]) {
-      return [...variants[shotCount]];
+      roles = [...variants[shotCount]];
+    } else if (shotCount <= 6) {
+      roles = [...(RETENTION_ROLE_PATTERNS[shotCount] ?? RETENTION_ROLE_PATTERNS[1])];
+    } else {
+      roles = buildExtendedRoles(shotCount);
+    }
+  } else if (shotCount <= 6) {
+    roles = [...(RETENTION_ROLE_PATTERNS[shotCount] ?? RETENTION_ROLE_PATTERNS[1])];
+  } else {
+    roles = buildExtendedRoles(shotCount);
+  }
+
+  // ── Continuity mode: 마지막 샷 resolve 금지 ──
+  // 마지막 세그먼트가 아닌 경우, resolve로 끝나면 premature resolution → 이어붙이기 어색
+  // resolve → develop 또는 peak으로 교체하여 전방 모멘텀 유지
+  if (options?.banResolveAsLastShot && roles.length > 0) {
+    const lastIdx = roles.length - 1;
+    if (roles[lastIdx] === "resolve") {
+      // peak이 이미 있으면 develop, 없으면 peak으로 교체
+      const hasPeak = roles.includes("peak");
+      roles[lastIdx] = hasPeak ? "develop" : "peak";
     }
   }
 
-  if (shotCount <= 6) return [...(RETENTION_ROLE_PATTERNS[shotCount] ?? RETENTION_ROLE_PATTERNS[1])];
+  return roles;
+}
 
+function buildExtendedRoles(shotCount: number): ShotRole[] {
   // 6샷 초과: 기본 패턴 + 중간에 develop/insert 반복
   const base = [...RETENTION_ROLE_PATTERNS[6]];
   const extra = shotCount - 6;

@@ -333,6 +333,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [showRecommendation, setShowRecommendation] = useState(false);
   const [recommendError, setRecommendError] = useState<string | null>(null);
 
+  // ── 이어 만들기 (continuity mode) ──
+  const [continuityMode, setContinuityMode] = useState(false);
+
   // ── 분석 깊이 옵션 (바로 생성에 통합) ──
   type AnalysisDepth = "none" | "basic" | "deep";
   const [analysisDepth, setAnalysisDepth] = useState<AnalysisDepth>("basic");
@@ -868,6 +871,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         : undefined,
       generationPersona,
       scriptAnalysisHint,
+      continuityMode: continuityMode || undefined,
     };
 
     // ── 진단 로그: 최종 payload 요약 ──
@@ -2251,6 +2255,26 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         </div>
 
         </details>
+
+        {/* 이어 만들기 토글 */}
+        <div className="flex items-center gap-2 px-1">
+          <button
+            onClick={() => setContinuityMode(!continuityMode)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all"
+            style={continuityMode
+              ? { background: "#059669", color: "white" }
+              : { background: "#f5f5f5", color: "#888" }
+            }
+            title="여러 클립을 하나의 연속된 영상처럼 만듭니다. 인물/색감/동작/감정선이 클립 사이에서 끊기지 않고 이어집니다."
+          >
+            {continuityMode ? "이어 만들기 ON" : "이어 만들기"}
+          </button>
+          {continuityMode && (
+            <span className="text-[10px]" style={{ color: "#059669" }}>
+              인물/색감/동작이 클립 간 자연스럽게 이어집니다
+            </span>
+          )}
+        </div>
 
         {/* 생성 버튼 */}
         {(() => {

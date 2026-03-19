@@ -433,6 +433,16 @@ interface GenerateVideoRequest {
   element_list?: Array<{ element_id: string }>;
   // ── Reference Images (reference-to-video 워크플로우용) ──────────────────
   referenceImages?: string[];
+  // ── Continuity Mode ──────────────────────────────────────────
+  /** continuity mode 세그먼트 메타 — 프롬프트에 연속성 정보 주입 */
+  continuityMeta?: {
+    segmentIndex: number;
+    totalSegments: number;
+    isLastSegment: boolean;
+    prevEndState?: Record<string, unknown>;
+    characterLock?: string;
+    visualLock?: string;
+  };
   // ── Legacy fields (무시됨) ──────────────────────────────────────────
   mode?: string;
   resolution?: string;
@@ -517,6 +527,50 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!finalPromptForProvider) {
       return Response.json({ error: "structuredSequence, videoPromptJson, or prompt must be provided" }, { status: 400 });
+    }
+
+    // ── Continuity Mode: 프롬프트 앞에 연속성 정보 주입 ──────────────────
+    if (req.continuityMeta) {
+      const cm = req.continuityMeta;
+      const continuityParts: string[] = [];
+
+      // Character lock
+      if (cm.characterLock) {
+        continuityParts.push(`[CHARACTER LOCK] ${cm.characterLock}`);
+      }
+
+      // Visual lock
+      if (cm.visualLock) {
+        continuityParts.push(`[VISUAL LOCK] ${cm.visualLock}`);
+      }
+
+      // Previous segment end state continuation
+      if (cm.prevEndState && cm.segmentIndex > 0) {
+        const pe = cm.prevEndState;
+        const contLines = ["[CONTINUATION] This clip continues from previous segment:"];
+        if (pe.subjectPosition) contLines.push(`Subject: ${pe.subjectPosition}`);
+        if (pe.cameraState) contLines.push(`Camera: ${pe.cameraState}`);
+        if (pe.motionVector) contLines.push(`Motion: ${pe.motionVector}`);
+        if (pe.lightingState) contLines.push(`Lighting: ${pe.lightingState}`);
+        contLines.push("Start seamlessly from this state.");
+        continuityParts.push(contLines.join(" "));
+      }
+
+      // Ending rule (not last segment)
+      if (!cm.isLastSegment) {
+        continuityParts.push("[ENDING] Last 2 seconds: mid-action, camera moving, emotion unresolved. Do not close the scene.");
+      }
+
+      if (continuityParts.length > 0) {
+        const continuityPrefix = continuityParts.join(". ") + ". ";
+        finalPromptForProvider = continuityPrefix + finalPromptForProvider;
+        console.log("[generate-video] continuity meta injected:", {
+          segmentIndex: cm.segmentIndex,
+          totalSegments: cm.totalSegments,
+          isLastSegment: cm.isLastSegment,
+          prefixLen: continuityPrefix.length,
+        });
+      }
     }
 
     console.log("[generate-video] source-of-truth resolution:", {
