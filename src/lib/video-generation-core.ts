@@ -640,3 +640,228 @@ function makeTimeoutRecoverableResult(attempts: number, startTime: number): Norm
     pollMeta: { totalAttempts: attempts, totalDurationMs: Date.now() - startTime },
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Continuity-Preserving Sequential Generation
+// ═══════════════════════════════════════════════════════════════════
+
+import type {
+  SegmentState,
+  ContinuitySequencePlan,
+  ContinuitySegmentProgress,
+  ContinuitySegmentStatus,
+  ContinuityGenerationProgress,
+  ContinuityValidationReport,
+} from "@/types/continuity";
+import { EMPTY_SEGMENT_STATE } from "@/types/continuity";
+import { propagateEndState } from "@/lib/continuity-planner";
+import { validateContinuity } from "@/lib/continuity-validator";
+
+/** continuity 순차 생성의 세그먼트별 파라미터 빌더 */
+export type ContinuitySegmentParamsBuilder = (
+  segmentIndex: number,
+  plan: ContinuitySequencePlan,
+  prevEndState: SegmentState | undefined,
+) => VideoSubmitParams;
+
+/** continuity 순차 생성 옵션 */
+export interface ContinuityGenerationOptions {
+  /** 세그먼트별 submit params 빌더 — UI가 제공 */
+  buildSegmentParams: ContinuitySegmentParamsBuilder;
+  /** 진행 콜백 — UI가 React 상태에 반영 */
+  onProgress: (progress: ContinuityGenerationProgress) => void;
+  /** abort 시그널 */
+  signal?: AbortSignal;
+  /** polling 옵션 (세그먼트별 공통) */
+  pollOptions?: Omit<PollOptions, "signal">;
+  /** endState 추출기 — 생성 결과에서 endState를 추출 (기본: 빈 state) */
+  extractEndState?: (result: NormalizedVideoResult, segmentIndex: number) => SegmentState;
+}
+
+/** continuity 순차 생성 결과 */
+export interface ContinuityGenerationResult {
+  /** 전체 성공 여부 */
+  success: boolean;
+  /** 세그먼트별 진행 상태 */
+  segments: ContinuitySegmentProgress[];
+  /** 검증 보고서 */
+  validationReport: ContinuityValidationReport;
+  /** 최종 계획 (endState가 채워진 상태) */
+  finalPlan: ContinuitySequencePlan;
+}
+
+/**
+ * continuity mode 순차 생성 orchestration.
+ *
+ * 핵심 흐름:
+ * 1. 세그먼트 1 생성 → 완료 대기 → endState 확정
+ * 2. endState를 다음 세그먼트 startState로 전파
+ * 3. 세그먼트 2 생성 → 완료 대기 → endState 확정 → ...
+ * 4. 전체 완료 → 연속성 검증
+ *
+ * 이 함수는 React 의존성이 없다. UI hook은 onProgress 콜백으로만 연결.
+ */
+export async function submitContinuitySequence(
+  initialPlan: ContinuitySequencePlan,
+  options: ContinuityGenerationOptions,
+): Promise<ContinuityGenerationResult> {
+  let plan = initialPlan;
+  const segmentCount = plan.segmentCount;
+
+  // 초기 진행 상태
+  const segmentProgresses: ContinuitySegmentProgress[] = plan.segments.map((seg) => ({
+    segmentIndex: seg.segmentIndex,
+    status: "pending" as ContinuitySegmentStatus,
+  }));
+
+  const reportProgress = (currentIndex: number) => {
+    const completedCount = segmentProgresses.filter(s => s.status === "completed").length;
+    const overallPercent = Math.round((completedCount / segmentCount) * 100);
+    options.onProgress({
+      planId: plan.planId,
+      totalSegments: segmentCount,
+      currentSegmentIndex: currentIndex,
+      segments: [...segmentProgresses],
+      overallPercent,
+      validated: false,
+    });
+  };
+
+  // 순차 생성 루프
+  for (let i = 0; i < segmentCount; i++) {
+    // abort check
+    if (options.signal?.aborted) {
+      segmentProgresses[i].status = "failed";
+      segmentProgresses[i].error = "사용자에 의해 취소됨";
+      break;
+    }
+
+    // 이전 세그먼트의 endState
+    const prevEndState = i > 0 ? segmentProgresses[i - 1].confirmedEndState : undefined;
+
+    // endState 전파 (planner가 계획 갱신)
+    if (i > 0 && prevEndState) {
+      plan = propagateEndState(plan, i - 1, prevEndState);
+    }
+
+    // 1. submit
+    segmentProgresses[i].status = "generating";
+    reportProgress(i);
+
+    let submitResult: VideoSubmitResult;
+    try {
+      const params = options.buildSegmentParams(i, plan, prevEndState);
+      submitResult = await submitVideoGeneration(params);
+    } catch (err) {
+      segmentProgresses[i].status = "failed";
+      segmentProgresses[i].error = err instanceof Error ? err.message : String(err);
+      reportProgress(i);
+      // 하나 실패해도 계속 진행하지 않음 (순차 의존)
+      break;
+    }
+
+    segmentProgresses[i].taskId = submitResult.taskId;
+
+    // 2. polling
+    segmentProgresses[i].status = "polling";
+    reportProgress(i);
+
+    const pollResult = await pollVideoTask(submitResult.taskId, {
+      ...options.pollOptions,
+      signal: options.signal,
+      longRunning: true,
+    });
+
+    if (pollResult.status === "completed") {
+      segmentProgresses[i].status = "completed";
+      segmentProgresses[i].videoUri = pollResult.videoUri;
+
+      // endState 추출
+      const extractFn = options.extractEndState ?? defaultExtractEndState;
+      segmentProgresses[i].confirmedEndState = extractFn(pollResult, i);
+
+      reportProgress(i);
+    } else {
+      segmentProgresses[i].status = "failed";
+      segmentProgresses[i].error = pollResult.error || "생성 실패";
+      reportProgress(i);
+      break;
+    }
+  }
+
+  // 검증
+  const validationReport = validateContinuity(segmentProgresses);
+  const allCompleted = segmentProgresses.every(s => s.status === "completed");
+
+  // 최종 진행 상태 보고 (검증 포함)
+  options.onProgress({
+    planId: plan.planId,
+    totalSegments: segmentCount,
+    currentSegmentIndex: segmentCount - 1,
+    segments: [...segmentProgresses],
+    overallPercent: allCompleted ? 100 : Math.round(
+      (segmentProgresses.filter(s => s.status === "completed").length / segmentCount) * 100,
+    ),
+    validated: true,
+    validationReport,
+  });
+
+  return {
+    success: allCompleted && validationReport.pass,
+    segments: segmentProgresses,
+    validationReport,
+    finalPlan: plan,
+  };
+}
+
+/**
+ * 특정 세그먼트만 재생성한다.
+ * 이전/다음 세그먼트의 endState는 유지하고, 해당 세그먼트만 다시 생성.
+ */
+export async function regenerateContinuitySegment(
+  plan: ContinuitySequencePlan,
+  segmentIndex: number,
+  existingProgresses: ContinuitySegmentProgress[],
+  options: ContinuityGenerationOptions,
+): Promise<ContinuitySegmentProgress> {
+  const prevEndState = segmentIndex > 0
+    ? existingProgresses[segmentIndex - 1]?.confirmedEndState
+    : undefined;
+
+  // submit
+  const params = options.buildSegmentParams(segmentIndex, plan, prevEndState);
+  const submitResult = await submitVideoGeneration(params);
+
+  // polling
+  const pollResult = await pollVideoTask(submitResult.taskId, {
+    ...options.pollOptions,
+    signal: options.signal,
+    longRunning: true,
+  });
+
+  const extractFn = options.extractEndState ?? defaultExtractEndState;
+
+  if (pollResult.status === "completed") {
+    return {
+      segmentIndex,
+      status: "completed",
+      taskId: submitResult.taskId,
+      videoUri: pollResult.videoUri,
+      confirmedEndState: extractFn(pollResult, segmentIndex),
+    };
+  }
+
+  return {
+    segmentIndex,
+    status: "failed",
+    taskId: submitResult.taskId,
+    error: pollResult.error || "재생성 실패",
+  };
+}
+
+/** 기본 endState 추출기 — 영상 결과만으로는 상태 추출 불가하므로 빈 상태 반환 */
+function defaultExtractEndState(_result: NormalizedVideoResult, _segmentIndex: number): SegmentState {
+  // 실제로는 generate-cuts에서 계획한 endState를 사용.
+  // 영상 자체에서 프레임 분석으로 추출하는 것은 향후 확장.
+  return { ...EMPTY_SEGMENT_STATE };
+}

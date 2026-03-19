@@ -50,6 +50,10 @@ export interface PromptInput {
   characterPersonas?: CharacterPersonaInput[]; // 캐릭터별 행동/감정 규칙
   /** 대본 사전 분석 힌트 — 분석 깊이 옵션 활성 시 Phase A/B/C 결과 요약 */
   scriptAnalysisHint?: string;
+  /** 이어 만들기 모드 활성화 — continuity-preserving generation */
+  continuityMode?: boolean;
+  /** continuity 전체 계획 (continuityMode=true일 때) */
+  continuityPlan?: import("@/types/continuity").ContinuitySequencePlan;
 }
 
 // ===== 컷 수 범위 =====
@@ -351,6 +355,13 @@ export interface Cut {
   durationClass?: DurationClass;
   /** scene/sequence 그룹 ID — 같은 그룹에 속하는 cut끼리 공유 */
   groupId?: string;
+  /** continuity mode 세그먼트 메타 — 이어 만들기 시 세그먼트 경계 상태 추적 */
+  continuitySegment?: {
+    segmentIndex: number;
+    startState: import("@/types/continuity").SegmentState;
+    endState: import("@/types/continuity").SegmentState;
+    isLastSegment: boolean;
+  };
 }
 
 /** Fallback 원인 분류 — 사용자에게 정확한 안내를 위해 */
@@ -1263,3 +1274,28 @@ export type {
   ProviderCapability,
   AssembleFromJSONResult,
 } from "@/lib/sequence-assembler";
+
+// ===== continuity-preserving generation re-export =====
+export type {
+  SegmentState,
+  CharacterAnchor,
+  VisualAnchor,
+  NarrativeAnchor,
+  EmotionalBeat,
+  MotionAnchor,
+  TransitionStrategy,
+  GlobalContinuityAnchors,
+  SegmentRole,
+  CarryForward,
+  SegmentEndingRule,
+  ContinuitySegmentPlan,
+  ContinuitySequencePlan,
+  ContinuityValidationRuleId,
+  ContinuityValidationSeverity,
+  ContinuityValidationResult,
+  ContinuityValidationReport,
+  ContinuitySegmentStatus,
+  ContinuitySegmentProgress,
+  ContinuityGenerationProgress,
+} from "@/types/continuity";
+export { EMPTY_SEGMENT_STATE } from "@/types/continuity";
