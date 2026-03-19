@@ -9,6 +9,9 @@
 # R2 버킷 CLI 생성:
 #   npx wrangler r2 bucket create video-uploads
 
+# Pages 프로젝트 이름 (Cloudflare Pages 필수)
+name = "youtube"
+
 # Pages 빌드 출력 디렉토리 (next export → out/)
 pages_build_output_dir = "out"
 
