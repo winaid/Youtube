@@ -200,6 +200,43 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 - Visual breathing: slow 1.20x > natural 1.15x > fast 1.08x
 - Rhetorical pause: slow 1.3x > natural 1.0x > fast 0.5x
 
+### Gemini 모델 선택 정책 (전체 레포)
+
+#### 원칙
+- **Primary**: `gemini-3.1-pro-preview` (GEMINI_MODEL_PRO) — 모든 text/analysis 호출의 1차 모델
+- **Fallback**: `gemini-3.1-flash-lite-preview` (GEMINI_MODEL_FLASH) — 1차 실패 시 자동 전환
+- **Image**: `gemini-3.1-flash-image-preview` / `imagen-3.0-generate-002` — 별도 도메인, 이 정책과 무관
+
+#### 공통 래퍼
+| 함수 | 용도 |
+|------|------|
+| `fetchWithModelFallback(env, init, opts?)` | 비스트리밍 호출: Pro → Flash-Lite 자동 폴백 |
+| `streamingGenerateWithFallback(env, body, opts?)` | 스트리밍 호출: Pro → Flash-Lite 자동 폴백 |
+| `fetchWithAuth(env, url, init, opts?)` | 저수준 key 폴백만 (image gen, proxy 등에서 직접 사용) |
+
+#### 폴백 트리거 조건
+- HTTP 429, 503, 524, 504(TIMEOUT)
+- HTTP 500 + RESOURCE_EXHAUSTED/quota/overloaded
+- 타임아웃 (AbortController, 기본 30초)
+- **비트리거**: 404 (deprecated model), 400 (bad request)
+
+#### 결과 구분 (`ModelFallbackMeta`)
+```typescript
+{ primaryModel, fallbackModel, finalModel, fallbackUsed }
+```
+- `fallbackUsed: false` → Pro 성공
+- `fallbackUsed: true` → Flash-Lite 폴백 사용
+
+#### grounded vs fallback vs mixed
+- **grounded**: googleSearchRetrieval 사용 + 소스 존재 → 웹 근거 기반
+- **fallback**: 모델 지식만 사용 (Flash-Lite 포함) → grounded=false
+- **mixed**: grounded + fallback 후보 혼합
+
+#### 비용/지연 Trade-off
+- Pro: 더 정확하지만 느리고 비쌈
+- Flash-Lite: 더 빠르고 저렴하지만 품질 하락 가능
+- 일반적으로 Pro에서 성공: 추가 비용 없음. 폴백 시 2회 호출 비용
+
 ### 감독 추천 웹 검색 — Flat Stage Retry Pipeline
 
 #### 파이프라인 개요

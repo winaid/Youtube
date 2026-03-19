@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -57,7 +57,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    const urlTemplate = buildGeminiUrl(context.env, GEMINI_MODEL_PRO);
 
     const imageParts = frames.map((frame) => ({
       inlineData: {
@@ -108,7 +107,7 @@ Compare every unique pair of cuts. Be specific about differences in facial featu
       },
     };
 
-    const response = await fetchWithAuth(context.env, urlTemplate, {
+    const { response } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),

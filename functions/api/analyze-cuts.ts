@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -61,11 +61,10 @@ JSON으로만 응답 (recommendedCuts는 반드시 4~10 사이):
   "scenes": ["장면1 요약", "장면2 요약", ...]
 }`;
 
-    console.info(`[analyze-cuts] model=${GEMINI_MODEL_PRO} promptLen=${prompt.length} maxOutputTokens=4096`);
+    console.info(`[analyze-cuts] promptLen=${prompt.length} maxOutputTokens=4096`);
 
-    const res = await fetchWithAuth(
+    const { response: res } = await fetchWithModelFallback(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

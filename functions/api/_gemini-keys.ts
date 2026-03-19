@@ -19,8 +19,8 @@ export interface GeminiEnv {
 
 /** 메인 추론 (영상 제외 전 엔드포인트) — Gemini 3.1 Pro Preview */
 export const GEMINI_MODEL_PRO   = "gemini-3.1-pro-preview";
-/** 미사용 (레거시 참조용 보존) — Gemini 3 Flash */
-export const GEMINI_MODEL_FLASH = "gemini-3-flash-preview";
+/** 폴백 모델 — Pro 실패 시 자동 전환 — Gemini 3.1 Flash-Lite Preview */
+export const GEMINI_MODEL_FLASH = "gemini-3.1-flash-lite-preview";
 /** 이미지 생성 (primary) — Nano Banana 2 */
 export const GEMINI_MODEL_IMAGE       = "gemini-3.1-flash-image-preview";
 /** 이미지 생성 (fallback) */
@@ -620,4 +620,122 @@ export function parseProviderError(status: number, rawBody: string): {
   const userMessage = userMessageMap[code] ?? "분석 중 오류가 발생했습니다. 다시 시도해주세요.";
 
   return { code, providerStatus: status, providerCode, providerMessage, retryable, userMessage, help };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Model Fallback Helpers — Pro 우선, Flash-Lite 폴백 공통 정책
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 모델 폴백 메타데이터.
+ * 모든 Gemini 호출 경로에서 어떤 모델이 최종 결과를 만들었는지 기록.
+ */
+export interface ModelFallbackMeta {
+  primaryModel: string;
+  fallbackModel: string;
+  finalModel: string;
+  fallbackUsed: boolean;
+}
+
+/**
+ * 주어진 HTTP status/body가 모델 폴백을 유발하는 transient 에러인지 판별.
+ */
+function shouldFallbackToAltModel(status: number, body: string): boolean {
+  if (isDeprecatedModelError(status, body)) return false; // 모델 자체가 없으면 폴백도 무의미
+  if (status === 504 && body.includes('"TIMEOUT"')) return true; // timeout
+  if (status === 429) return true; // rate limit
+  if (status === 503) return true; // overloaded
+  if (status === 524) return true; // cloudflare timeout
+  if (status >= 500 && /overloaded|RESOURCE_EXHAUSTED|quota|exhausted/i.test(body)) return true;
+  return false;
+}
+
+/**
+ * Gemini API를 Pro 우선 → Flash-Lite 폴백으로 호출.
+ * 모든 text/analysis 엔드포인트에서 사용.
+ *
+ * Image generation (GEMINI_MODEL_IMAGE/IMAGE_FB)은 별도 경로이므로 이 함수를 사용하지 않는다.
+ */
+export async function fetchWithModelFallback(
+  env: GeminiEnv,
+  init: RequestInit,
+  options?: {
+    timeoutMs?: number;
+    primaryModel?: string;
+    fallbackModel?: string;
+    method?: string;
+  },
+): Promise<{ response: Response; meta: ModelFallbackMeta }> {
+  const primary = options?.primaryModel ?? GEMINI_MODEL_PRO;
+  const fallback = options?.fallbackModel ?? GEMINI_MODEL_FLASH;
+  const method = options?.method ?? "generateContent";
+  const timeoutMs = options?.timeoutMs;
+
+  const meta: ModelFallbackMeta = { primaryModel: primary, fallbackModel: fallback, finalModel: primary, fallbackUsed: false };
+
+  // 1차: primary model
+  const primaryUrl = buildGeminiUrl(env, primary, method);
+  const primaryRes = await fetchWithAuth(env, primaryUrl, init, timeoutMs ? { timeoutMs } : undefined);
+
+  if (primaryRes.ok) {
+    return { response: primaryRes, meta };
+  }
+
+  // 실패 — 폴백 판단
+  let errBody = "";
+  try { errBody = await primaryRes.text(); } catch { /* ignore */ }
+
+  if (!shouldFallbackToAltModel(primaryRes.status, errBody)) {
+    // non-transient → 폴백 안 함, primary 에러 그대로 반환
+    const errorRes = new Response(errBody, { status: primaryRes.status, headers: primaryRes.headers });
+    return { response: errorRes, meta };
+  }
+
+  // 2차: fallback model
+  console.warn(`[Gemini] ${primary} failed (${primaryRes.status}) → fallback to ${fallback}`);
+  meta.finalModel = fallback;
+  meta.fallbackUsed = true;
+
+  const fallbackUrl = buildGeminiUrl(env, fallback, method);
+  const fallbackRes = await fetchWithAuth(env, fallbackUrl, init, timeoutMs ? { timeoutMs } : undefined);
+  return { response: fallbackRes, meta };
+}
+
+/**
+ * streamingGenerate를 Pro 우선 → Flash-Lite 폴백으로 호출.
+ * analyze-script, generate-cuts 등 스트리밍 엔드포인트에서 사용.
+ */
+export async function streamingGenerateWithFallback(
+  env: GeminiEnv,
+  requestBody: Record<string, unknown>,
+  options?: {
+    timeoutMs?: number;
+    primaryModel?: string;
+    fallbackModel?: string;
+  },
+): Promise<{ text: string; error?: string; status?: number; truncated?: boolean; timedOut?: boolean; finalModel: string; fallbackUsed: boolean }> {
+  const primary = options?.primaryModel ?? GEMINI_MODEL_PRO;
+  const fallback = options?.fallbackModel ?? GEMINI_MODEL_FLASH;
+
+  // 1차: primary model
+  const primaryResult = await streamingGenerate(env, primary, requestBody, { timeoutMs: options?.timeoutMs });
+
+  // 사용 가능한 text가 있으면 성공
+  if (!primaryResult.error || (primaryResult.text && primaryResult.text.length > 10)) {
+    return { ...primaryResult, finalModel: primary, fallbackUsed: false };
+  }
+
+  // transient 에러 판단
+  const isTransient = primaryResult.timedOut ||
+    (primaryResult.status && [429, 503, 524].includes(primaryResult.status)) ||
+    (primaryResult.status && primaryResult.status >= 500);
+
+  if (!isTransient) {
+    return { ...primaryResult, finalModel: primary, fallbackUsed: false };
+  }
+
+  // 2차: fallback model
+  console.warn(`[Gemini] streaming ${primary} failed → fallback to ${fallback}`);
+  const fallbackResult = await streamingGenerate(env, fallback, requestBody, { timeoutMs: options?.timeoutMs });
+  return { ...fallbackResult, finalModel: fallback, fallbackUsed: true };
 }

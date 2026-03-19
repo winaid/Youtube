@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import { safeDuration } from "./_duration-constants";
 
 type Env = GeminiEnv;
@@ -463,7 +463,7 @@ ${sceneDescription ? `- Scene Description: ${String(sceneDescription)}` : ""}
 
 ${sceneTypeCriteria}`;
 
-    const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
+    const { response: res } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

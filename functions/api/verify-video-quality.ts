@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -114,9 +114,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   "suggestion": "one-sentence suggestion for improvement if score < 70"
 }`;
 
-    const res = await fetchWithAuth(
+    const { response: res } = await fetchWithModelFallback(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

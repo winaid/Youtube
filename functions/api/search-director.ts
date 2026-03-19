@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import {
   generateSlugId,
   extractGroundingSources,
@@ -102,7 +102,7 @@ If no match, return { "directors": [] }`;
 
     console.log(`[search-director] 웹 검색 시작: query="${query}"`);
 
-    const webRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
+    const { response: webRes } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(webBody),
@@ -190,7 +190,7 @@ If no match, return { "directors": [] }`;
       warnings.push(`웹 검색 실패 (${webRes.status}). 모델 지식 기반으로 대체합니다.`);
 
       // ── Fallback: 웹 검색 없이 모델 지식만 사용 ──
-      const fallbackRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
+      const { response: fallbackRes } = await fetchWithModelFallback(context.env, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

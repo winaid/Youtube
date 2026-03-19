@@ -7,7 +7,7 @@
  * fallback: 분석 실패 시 빈 상태 반환 (계획 기반 continuity로 내려감)
  */
 
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_FLASH, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, parseFirstJsonObject } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -76,9 +76,8 @@ Return ONLY valid JSON with these fields:
       },
     };
 
-    const res = await fetchWithAuth(
+    const { response: res, meta: modelMeta } = await fetchWithModelFallback(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -88,11 +87,12 @@ Return ONLY valid JSON with these fields:
 
     if (!res.ok) {
       const errText = await res.text();
-      console.warn(`[analyze-frame] Gemini 실패(${res.status}): ${errText.slice(0, 200)}`);
+      console.warn(`[analyze-frame] Gemini 실패(${res.status}, model=${modelMeta.finalModel}): ${errText.slice(0, 200)}`);
       return Response.json({
         success: false,
         error: `Gemini API error: ${res.status}`,
         state: null,
+        _meta: { ...modelMeta },
       });
     }
 
@@ -124,7 +124,7 @@ Return ONLY valid JSON with these fields:
       emotionKeyword: state.emotionKeyword,
     });
 
-    return Response.json({ success: true, state });
+    return Response.json({ success: true, state, _meta: { ...modelMeta } });
   } catch (error) {
     console.error("[analyze-frame] 예외:", error instanceof Error ? error.message : String(error));
     return Response.json({
