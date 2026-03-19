@@ -425,6 +425,7 @@ async function step1Outlines(
   editorialPlanningBlock: string,
   scriptAnalysisHint?: string,
   continuityBlock?: string,
+  deepAnalysisBriefBlock?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
@@ -1946,6 +1947,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         editorialPlanningBlock,
         scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
         continuityPromptBlock || undefined,
+        deepAnalysisBriefBlock || undefined,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1980,6 +1982,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               characterPersonaBlock,
               editorialPlanningBlock,
               scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
+              continuityPromptBlock || undefined,
+              deepAnalysisBriefBlock || undefined,
             ));
             retrySuccess = true;
             step1Degraded = true;
@@ -2029,6 +2033,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             generationPersonaBlock,
             characterPersonaBlock,
             editorialPlanningBlock,
+            undefined, // scriptAnalysisHint
+            continuityPromptBlock || undefined,
+            deepAnalysisBriefBlock || undefined,
           );
           characterSeeds = retryResult.characterSeeds;
           outlines = retryResult.outlines;
