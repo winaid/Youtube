@@ -698,9 +698,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         );
       } else {
         // Batch Mode: auto-repair — 역할 기반 멀티샷 자동 생성
+        // 절대 규칙: 6~9초=최소3, 10~15초=최소4
         const autoShotCount = normalizedDuration <= 5 ? 2
-          : normalizedDuration <= 8 ? 3
-          : normalizedDuration <= 12 ? 4
+          : normalizedDuration <= 9 ? 3
+          : normalizedDuration <= 12 ? Math.min(4, serverMaxShots)
           : Math.min(5, serverMaxShots);
         const minShotDur = getCapability(modelUsed).minShotDuration;
         const baseDur = Math.floor(normalizedDuration / autoShotCount);
@@ -727,25 +728,33 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
-    // ── 멀티샷 최소 샷 수 강제 (6초+ = 최소 3샷) ──
-    // LLM이 2샷만 생성한 경우, 절대 규칙 위반. 부족한 샷을 자동 삽입.
-    if (req.multiShot && req.multiShot.length > 0 && req.multiShot.length < 3 && normalizedDuration >= 6 && serverMaxShots >= 3) {
+    // ── 멀티샷 최소 샷 수 강제 ──
+    // 절대 규칙: 6~9초 = 최소 3샷, 10~15초 = 최소 4샷
+    // LLM이 부족한 샷을 생성하면 자동 확장.
+    if (req.multiShot && req.multiShot.length > 0 && normalizedDuration >= 6 && serverMaxShots >= 3) {
       const currentCount = req.multiShot.length;
-      const targetCount = normalizedDuration <= 8 ? 3
-        : normalizedDuration <= 12 ? 4
-        : Math.min(5, serverMaxShots);
+      const minRequired = normalizedDuration >= 10 ? 4
+        : normalizedDuration >= 6 ? 3
+        : 2;
+      const targetCount = Math.max(minRequired, Math.min(
+        normalizedDuration <= 8 ? 3
+          : normalizedDuration <= 12 ? 4
+          : Math.min(5, serverMaxShots),
+        serverMaxShots,
+      ));
 
       if (currentCount < targetCount) {
-        console.warn(`[Kling] 멀티샷 최소 강제: ${currentCount}샷 → ${targetCount}샷 (${normalizedDuration}s, min=3)`);
+        console.warn(`[Kling] 멀티샷 최소 강제: ${currentCount}샷 → ${targetCount}샷 (${normalizedDuration}s, min=${minRequired})`);
         const basePrompt = finalPromptForProvider || "";
-        const totalDur = req.multiShot.reduce((s: number, sh: KlingMultiShot) => s + (parseFloat(sh.duration) || 0), 0);
+        const totalDur = req.multiShot.reduce((s: number, sh: KlingMultiShot) => s + (parseFloat(sh.duration) || 0), 0) || normalizedDuration;
         const perShotDur = Math.max(2, Math.floor(totalDur / targetCount));
         const ROLE_PREFIXES: Record<number, string[]> = {
           3: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Resolving close-up] "],
           4: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
           5: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
+          6: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Insert detail] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
         };
-        const prefixes = ROLE_PREFIXES[targetCount] ?? ROLE_PREFIXES[3]!;
+        const prefixes = ROLE_PREFIXES[targetCount] ?? ROLE_PREFIXES[4]!;
         const repairedShots: KlingMultiShot[] = Array.from({ length: targetCount }, (_, i) => ({
           index: i + 1,
           prompt: `${prefixes[i] ?? ""}${basePrompt}`.slice(0, 512),
