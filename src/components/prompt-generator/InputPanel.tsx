@@ -691,9 +691,33 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       const webCount = data.webSuggestions?.length ?? 0;
       const outcome: RecommendLogEntry["outcome"] = (localCount + webCount > 0) ? "success" : "empty";
 
-      // Pipeline debug 로그 (서버에서 반환한 _debug 전체 출력)
-      if (data._debug) {
-        console.log("[recommend-director] pipeline debug:", data._debug);
+      // Pipeline stage summary (5초 안에 병목 파악 가능하게)
+      const debug = data._debug;
+      if (debug?.stageStatus) {
+        console.info("[recommend-director] stage summary", {
+          extractSignals: debug.stageStatus.extractSignals,
+          localMatch: debug.stageStatus.localMatch,
+          webSearch: debug.stageStatus.webSearch,
+          finalAssembly: debug.stageStatus.finalAssembly,
+          emptyReason: debug.emptyReason ?? null,
+          query: debug.webSearchQuery ?? null,
+          localCount: debug.localResultCount,
+          externalCount: debug.externalResultCount,
+          finalCount: debug.finalResultCount,
+        });
+        // 실패/빈 결과 시 상세 로그
+        if (localCount + webCount === 0 && debug.stageReasons) {
+          console.warn("[recommend-director] empty result details", {
+            stageReasons: debug.stageReasons,
+            invalidIdsRemoved: debug.invalidIdsRemoved,
+            rejectedLocalIds: debug.rejectedLocalIds,
+            localRejectionReasons: debug.localRejectionReasons,
+            webSearchResultCount: debug.webSearchResultCount,
+            webSearchRejectionReasons: debug.webSearchRejectionReasons,
+          });
+        }
+      } else if (debug) {
+        console.log("[recommend-director] pipeline debug:", debug);
       }
       console.log("[recommend-director] result:", {
         outcome,
@@ -701,7 +725,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         localMatches: localCount,
         webSuggestions: webCount,
         latencyMs: Date.now() - startTime,
-        emptyReason: data._debug?.emptyReason ?? null,
+        emptyReason: debug?.emptyReason ?? null,
+        webSearched: debug?.attemptedWebSearch ?? false,
       });
 
       appendRecommendLog({
@@ -1022,7 +1047,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                         {totalCount}명 추천됨
                       </span>
                       {localCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff10", color: "#787fff" }}>보유 {localCount}</span>}
-                      {webCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>신규 {webCount}</span>}
+                      {webCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>웹 검색 {webCount}</span>}
                       {invalidRemoved > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#ef444410", color: "#ef4444" }}>ID필터 -{invalidRemoved}</span>}
                     </div>
                     {(genres.length > 0 || moods.length > 0) && (
@@ -1075,28 +1100,40 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
                   const EMPTY_REASON_LABELS: Record<string, { label: string; hint: string }> = {
                     genre_mood_not_detected: {
-                      label: "장르/무드 신호 약함",
-                      hint: "시나리오에 장르(스릴러, 로맨스 등)나 분위기(어두운, 따뜻한 등) 키워드를 추가해보세요.",
+                      label: "장르나 분위기 신호를 감지하지 못했어요",
+                      hint: "분위기나 참고 감독을 조금 더 구체적으로 적어보세요.",
                     },
                     empty_director_pool: {
-                      label: "감독 풀 비어 있음",
-                      hint: "보유 감독 목록이 비어 있습니다. 감독을 추가해주세요.",
+                      label: "보유 감독 목록이 비어 있어요",
+                      hint: "먼저 감독을 추가하거나 다른 지역 탭을 확인해보세요.",
                     },
                     no_local_candidates_considered: {
-                      label: "로컬 후보 검토 실패",
-                      hint: "AI가 보유 감독 중 적합한 후보를 검토하지 못했습니다. 시나리오를 더 구체적으로 작성해보세요.",
+                      label: "보유 감독 중 적합한 후보를 검토하지 못했어요",
+                      hint: "시나리오를 더 구체적으로 작성하면 매칭 정확도가 올라갑니다.",
                     },
                     gemini_returned_empty: {
-                      label: "AI 매칭 실패",
-                      hint: "장르/무드는 인식했으나 적합한 감독을 찾지 못했습니다. 다른 장르나 배경을 시도해보세요.",
+                      label: "AI가 적합한 감독을 찾지 못했어요",
+                      hint: "다른 장르나 배경으로 시도해보세요.",
                     },
                     all_local_ids_hallucinated: {
-                      label: "로컬 감독 ID 불일치",
-                      hint: "AI가 추천한 감독 ID가 실제 목록과 불일치했습니다. 자동 재시도를 권장합니다.",
+                      label: "추천 후보는 있었지만 유효하지 않은 데이터라 제외됐어요",
+                      hint: "다시 시도해 주세요. 보통 재시도하면 해결됩니다.",
                     },
                     post_validation_eliminated_all: {
-                      label: "후처리에서 전원 탈락",
-                      hint: "AI 응답은 있었으나 검증 과정에서 모두 제거되었습니다.",
+                      label: "AI 응답이 검증을 통과하지 못했어요",
+                      hint: "다시 시도해 주세요.",
+                    },
+                    web_search_returned_empty: {
+                      label: "웹 검색까지 시도했지만 조건에 맞는 감독을 찾지 못했어요",
+                      hint: "시나리오의 장르나 스타일 키워드를 더 구체적으로 적어보세요.",
+                    },
+                    web_search_failed_and_no_local: {
+                      label: "로컬 매칭과 웹 검색 모두 실패했어요",
+                      hint: "인터넷 연결을 확인하고 다시 시도해 주세요.",
+                    },
+                    no_candidates_found: {
+                      label: "적합한 감독 후보를 찾지 못했어요",
+                      hint: "시나리오를 수정하거나 다시 시도해 주세요.",
                     },
                   };
 
@@ -1118,11 +1155,27 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                         </p>
                       )}
 
-                      {/* 파이프라인 단계별 카운트 */}
+                      {/* 파이프라인 단계별 상태 */}
                       {debug && (
-                        <div className="text-[9px] text-left space-y-0.5 rounded px-2 py-1.5" style={{ background: "#f8fafc", border: "1px solid #e2e8f020" }}>
+                        <div className="text-[9px] text-left space-y-1 rounded px-2 py-1.5" style={{ background: "#f8fafc", border: "1px solid #e2e8f020" }}>
                           <p className="font-medium" style={{ color: "#94a3b8" }}>파이프라인 추적</p>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5" style={{ color: "#a0aec0" }}>
+
+                          {/* Stage status 4종 */}
+                          {(debug as Record<string, unknown>).stageStatus && (() => {
+                            const ss = (debug as Record<string, unknown>).stageStatus as Record<string, string>;
+                            const sr = ((debug as Record<string, unknown>).stageReasons ?? {}) as Record<string, string>;
+                            const statusIcon = (s: string) => s === "ok" || s === "attempted_success" ? "✅" : s === "failed" ? "❌" : s.includes("empty") || s === "weak" ? "⚠️" : "⬜";
+                            return (
+                              <div className="space-y-0.5" style={{ color: "#64748b" }}>
+                                <div>{statusIcon(ss.extractSignals)} 신호 추출: {sr.extractSignals || ss.extractSignals}</div>
+                                <div>{statusIcon(ss.localMatch)} 로컬 매칭: {sr.localMatch || ss.localMatch}</div>
+                                <div>{statusIcon(ss.webSearch)} 웹 검색: {sr.webSearch || ss.webSearch}</div>
+                                <div>{statusIcon(ss.finalAssembly)} 최종 조립: {sr.finalAssembly || ss.finalAssembly}</div>
+                              </div>
+                            );
+                          })()}
+
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1" style={{ color: "#a0aec0" }}>
                             <span>시나리오 길이</span><span>{storyText.length}자</span>
                             <span>감독 풀</span><span>{allDirectors.length}명</span>
                             {extractedGenres && extractedGenres.length > 0 && (
@@ -1131,14 +1184,18 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                             {extractedMoods && extractedMoods.length > 0 && (
                               <><span>추출 무드</span><span>{extractedMoods.join(", ")}</span></>
                             )}
-                            {extractedGenres && extractedGenres.length === 0 && extractedMoods && extractedMoods.length === 0 && (
+                            {extractedGenres?.length === 0 && extractedMoods?.length === 0 && (
                               <><span className="col-span-2" style={{ color: "#f59e0b" }}>장르/무드 추출 실패</span></>
                             )}
-                            {typeof geminiLocalCount === "number" && (
-                              <><span>AI 로컬 추천</span><span>{geminiLocalCount}명</span></>
-                            )}
-                            {typeof geminiWebCount === "number" && (
-                              <><span>AI 웹 추천</span><span>{geminiWebCount}명</span></>
+                            {/* 웹 검색 정보 */}
+                            {(debug as Record<string, unknown>).attemptedWebSearch && (
+                              <>
+                                <span>웹 검색</span><span>시도됨</span>
+                                {(debug as Record<string, unknown>).webSearchQuery && (
+                                  <><span>검색 쿼리</span><span className="truncate">{String((debug as Record<string, unknown>).webSearchQuery).slice(0, 40)}</span></>
+                                )}
+                                <span>검색 결과</span><span>{String((debug as Record<string, unknown>).webSearchResultCount ?? 0)}개</span>
+                              </>
                             )}
                             {typeof invalidIdsRemoved === "number" && invalidIdsRemoved > 0 && (
                               <><span style={{ color: "#ef4444" }}>ID 불일치 제거</span><span style={{ color: "#ef4444" }}>{invalidIdsRemoved}명</span></>
