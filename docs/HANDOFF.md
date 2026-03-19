@@ -64,6 +64,20 @@ V1 완성 단계. 핵심 파이프라인/프롬프트/규칙이 구현 완료되
 | Narration pipeline | Complete |
 | Quality verification pipeline | Complete |
 | Auto-retry with negative strengthening | Complete |
+| Director web search (googleSearchRetrieval) | Complete |
+| Hybrid director recommendation (local + web) | Complete |
+
+## Director Search & Recommendation
+
+감독 검색/추천은 **하이브리드 모드**로 동작한다.
+
+- **검색 (`/api/search-director`)**: Gemini + `googleSearchRetrieval` 도구를 사용한 실제 웹 검색. grounding metadata가 있으면 `grounded: true`로 표시, 없으면 `grounded: false`로 모델 지식 기반임을 명시.
+- **추천 (`/api/recommend-director`)**: 3단계 파이프라인.
+  1. Stage 1: 로컬 감독 풀에서 Gemini 매칭 (규칙 기반 사전 추출 + Gemini 분석)
+  2. Stage 2: **항상** 웹 검색으로 외부 후보 확장 (더 이상 조건부가 아님)
+  3. Stage 3: 로컬 + 웹 결과 병합, 중복 제거, 점수 정렬
+- **UI 라벨**: grounding 소스 유무에 따라 "웹 기반 결과" / "모델 제안" 구분. 출처 없는 결과에 "웹 검색 결과" 라벨 사용 금지.
+- **환경변수**: `GEMINI_API_KEY` (또는 `GEMINI_API_KEY_2` fallback) 필요.
 
 ## Architecture Overview
 

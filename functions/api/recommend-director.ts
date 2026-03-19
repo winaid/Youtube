@@ -698,10 +698,8 @@ ${localList}
     // Google AI의 googleSearchRetrieval tool을 사용해서 실제 검색
 
     let webSuggestions: Array<Record<string, unknown>> = [];
-    const localWeak = localMatches.length === 0
-      || (localMatches.length === 1 && (localMatches[0].fitScore as number) < 60);
-
-    if (localWeak) {
+    // 항상 웹 검색 실행 — 로컬 결과와 무관하게 외부 후보 확장
+    {
       attemptedWebSearch = true;
 
       // 검색 쿼리 구성 — 사전 추출 신호로 보강
@@ -814,7 +812,18 @@ Only recommend real, existing directors. No fictional directors.` }] }],
             if (typeof d.fitScore === "number") d.fitScore = Math.max(0, Math.min(100, Math.round(d.fitScore)));
             if (!d.reason || typeof d.reason !== "string") d.reason = "(이유 미제공)";
 
-            webSuggestions.push({ ...d, id: webId, _source: "web_search" });
+            // grounding source 정보 포함
+            const sources = groundingChunks
+              .filter(c => c.web)
+              .map(c => ({ title: c.web!.title, url: c.web!.uri }));
+
+            webSuggestions.push({
+              ...d,
+              id: webId,
+              _source: "web_search",
+              grounded: sources.length > 0,
+              sources: sources.length > 0 ? sources : undefined,
+            });
             webSearchAcceptedCount++;
           }
 
@@ -839,9 +848,6 @@ Only recommend real, existing directors. No fictional directors.` }] }],
         stageStatus.webSearch = "failed";
         stageReasons.webSearch = `예외: ${errMsg.slice(0, 100)}`;
       }
-    } else {
-      stageStatus.webSearch = "not_attempted";
-      stageReasons.webSearch = "로컬 결과 충분 — 웹 검색 불필요";
     }
 
     // ═══════════════════════════════════════════════════════════

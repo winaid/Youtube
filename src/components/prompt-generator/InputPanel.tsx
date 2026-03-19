@@ -50,6 +50,8 @@ interface WebDirectorResult {
   matchedBy: string;
   signatureTechniques?: SignatureTechniques;
   notableWorks?: string[];
+  grounded?: boolean;
+  sources?: Array<{ title?: string; url?: string }>;
 }
 
 interface InputPanelProps {
@@ -442,9 +444,20 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         return;
       }
       const data = await res.json();
+      if (data.warnings) {
+        console.info("[search-director] warnings:", data.warnings);
+      }
       if (data.directors && Array.isArray(data.directors)) {
         const localIds = new Set(localResultsRef.current.map((r) => r.director.id));
-        setWebResults(data.directors.filter((d: WebDirectorResult) => !localIds.has(d.id)));
+        const filtered = data.directors
+          .filter((d: WebDirectorResult) => !localIds.has(d.id))
+          .map((d: WebDirectorResult) => ({
+            ...d,
+            grounded: d.grounded ?? false,
+            sources: d.sources ?? [],
+          }));
+        setWebResults(filtered);
+        console.info(`[search-director] mode=${data.mode}, results=${filtered.length}, grounded=${filtered.filter((d: WebDirectorResult) => d.grounded).length}`);
       }
     } catch (err) {
       console.error("search-director fetch error:", err);
@@ -1261,7 +1274,9 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 {directorRecommendation.webSuggestions.length > 0 && (
                   <div className="space-y-1.5">
                     <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
-                      웹 검색 추천 감독 (새로 추가)
+                      {directorRecommendation.webSuggestions.some((s: Record<string, unknown>) => s.grounded)
+                        ? "웹 기반 추천 감독"
+                        : "웹 확장 추천 감독"}
                     </span>
                     <div className="space-y-1.5">
                       {directorRecommendation.webSuggestions.map((sug) => {
@@ -1371,7 +1386,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 ))}
                 {webResults.length > 0 && (
                   <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-gray-50 border-b" style={{ color: "#787fff" }}>
-                    웹 검색 결과 (Gemini)
+                    {webResults.some(d => d.grounded) ? "웹 기반 결과" : "모델 제안"}
                   </div>
                 )}
                 {webResults.map((webDir) => (
@@ -1392,9 +1407,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                         </Badge>
                         <Badge
                           className="text-[10px]"
-                          style={{ background: "#787fff20", color: "#787fff" }}
+                          style={webDir.grounded
+                            ? { background: "#22c55e20", color: "#22c55e" }
+                            : { background: "#787fff20", color: "#787fff" }
+                          }
                         >
-                          웹
+                          {webDir.grounded ? "웹 근거" : "모델 제안"}
                         </Badge>
                       </div>
                     </div>
