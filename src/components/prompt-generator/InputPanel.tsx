@@ -347,7 +347,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
   // ── 이어 만들기 (continuity mode) ──
   const [continuityMode, setContinuityMode] = useState(false);
-  const [narrationSpeed, setNarrationSpeed] = useState<"natural" | "fast">("natural");
+  const [narrationSpeed, setNarrationSpeed] = useState<"slow" | "natural" | "fast">("natural");
 
   // ── 분석 깊이 옵션 (바로 생성에 통합) ──
   type AnalysisDepth = "none" | "basic" | "deep";
@@ -2485,6 +2485,16 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           <span className="text-[11px]" style={{ color: "#888" }}>나레이션 속도</span>
           <div className="flex rounded-full overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
             <button
+              onClick={() => setNarrationSpeed("slow")}
+              className="px-2.5 py-1 text-[10px] font-medium transition-colors"
+              style={narrationSpeed === "slow"
+                ? { background: "#787fff", color: "white" }
+                : { background: "white", color: "#666" }
+              }
+            >
+              느리게 (3자/초)
+            </button>
+            <button
               onClick={() => setNarrationSpeed("natural")}
               className="px-2.5 py-1 text-[10px] font-medium transition-colors"
               style={narrationSpeed === "natural"
@@ -2505,8 +2515,11 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               빠르게 (5.5자/초)
             </button>
           </div>
+          {narrationSpeed === "slow" && (
+            <span className="text-[10px]" style={{ color: "#787fff" }}>감성형·다큐형 여백 있는 전달</span>
+          )}
           {narrationSpeed === "fast" && (
-            <span className="text-[10px]" style={{ color: "#787fff" }}>런타임이 짧아집니다</span>
+            <span className="text-[10px]" style={{ color: "#787fff" }}>정보 밀도 높은 빠른 전달</span>
           )}
         </div>
 

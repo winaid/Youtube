@@ -180,12 +180,25 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 - 현재는 직접 활성화하지 않음 — 기존 autoMode + Gemini 분석 통합이 더 안정적
 - 향후 완전 독립 순차 파이프라인이 필요할 때 활성화 예정
 
-### 나레이션 속도 옵션
-- UI: InputPanel 하단의 "기본 (4자/초)" / "빠르게 (5.5자/초)" 토글
-- 값: `PromptInput.narrationSpeed` ("natural" | "fast")
-- 계산 영향: `estimateNarrationRuntime()`, `estimateRuntime()`, `analyzeScript()` 모두 speed 파라미터 반영
-- fast 선택 시: natural 대비 약 25-30% 런타임 단축 → 컷 수와 시퀀스 구조에 영향
-- 기본값: "natural" (4자/초) — 기존 동작과 완전 호환
+### 나레이션 속도 옵션 (3단계)
+
+| 속도 | 값 | chars/sec | 용도 |
+|------|------|-----------|------|
+| 느리게 | `"slow"` | 3.0 | 감성형, 다큐멘터리, 여백 있는 전달 |
+| 기본 | `"natural"` | 4.0 | 일반적인 기본 템포 |
+| 빠르게 | `"fast"` | 5.5 | 정보 밀도 높은 숏폼, 빠른 전달 |
+
+- UI: InputPanel 하단 3버튼 토글 ("느리게" / "기본" / "빠르게")
+- 값: `PromptInput.narrationSpeed` (`"slow"` | `"natural"` | `"fast"`)
+- 기본값: `"natural"` (4자/초) — 기존 동작과 완전 호환
+- 계산 영향:
+  - `estimateNarrationRuntime()`: 속도별 chars/sec + visual breathing room 적용
+  - `estimateNarrationDuration()`: baseReadingSec, rhetoricalPause, breathingRoom 모두 pace별 분기
+  - `estimateRuntime()` (script-analyzer): speed 파라미터 반영
+  - `analyzeScript()`: beats 스케일링 — slow=1.33x, fast=0.727x
+- 실제 효과: slow는 natural 대비 약 30-40% 런타임 증가, fast는 약 25-30% 단축
+- Visual breathing: slow 1.20x > natural 1.15x > fast 1.08x
+- Rhetorical pause: slow 1.3x > natural 1.0x > fast 0.5x
 4. **endState 전파** (submitContinuitySequence): 세그먼트 순차 생성 시 이전 세그먼트의 확정된 endState가 다음 세그먼트의 startState로 전파
 
 ### ON이어도 continuity가 약해질 수 있는 경우

@@ -52,8 +52,8 @@ export interface PromptInput {
   scriptAnalysisHint?: string;
   /** 이어 만들기 모드 활성화 — continuity-preserving generation */
   continuityMode?: boolean;
-  /** 나레이션 속도 — "natural"(4자/초) | "fast"(5.5자/초). 런타임 추정에 직접 영향 */
-  narrationSpeed?: "natural" | "fast";
+  /** 나레이션 속도 — "slow"(3자/초) | "natural"(4자/초) | "fast"(5.5자/초). 런타임 추정에 직접 영향 */
+  narrationSpeed?: "slow" | "natural" | "fast";
   /** continuity 전체 계획 (continuityMode=true일 때) */
   continuityPlan?: import("@/types/continuity").ContinuitySequencePlan;
 }

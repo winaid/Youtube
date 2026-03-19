@@ -23,6 +23,9 @@
 // Pacing Constants
 // ═══════════════════════════════════════════════════════════════════
 
+/** Slow Korean narration: emotional, documentary, contemplative pacing */
+export const KO_SLOW_CHARS_PER_SEC = 3.0;
+
 /** Natural Korean narration: documentary, educational shorts, story narration */
 export const KO_NATURAL_CHARS_PER_SEC = 4.0;
 
@@ -30,6 +33,7 @@ export const KO_NATURAL_CHARS_PER_SEC = 4.0;
 export const KO_FAST_CHARS_PER_SEC = 5.5;
 
 /** Visual breathing room multiplier — time for the viewer to absorb imagery */
+const VISUAL_BREATH_SLOW = 1.20;
 const VISUAL_BREATH_NATURAL = 1.15;
 const VISUAL_BREATH_FAST = 1.08;
 
@@ -148,7 +152,7 @@ function countRhetoricalPauses(text: string): number {
 // Main Estimation
 // ═══════════════════════════════════════════════════════════════════
 
-export type NarrationPace = "natural" | "fast";
+export type NarrationPace = "slow" | "natural" | "fast";
 export type NarrationFit = "fits" | "tight" | "overflow";
 
 export interface NarrationEstimate {
@@ -183,6 +187,8 @@ export interface NarrationEstimate {
 export interface NarrationFitResult {
   /** Fit classification for this sequence */
   fit: NarrationFit;
+  /** Slow pace estimate */
+  slow: NarrationEstimate;
   /** Natural pace estimate */
   natural: NarrationEstimate;
   /** Fast pace estimate */
@@ -223,13 +229,20 @@ export function estimateNarrationDuration(
     };
   }
 
-  const charsPerSec = pace === "natural" ? KO_NATURAL_CHARS_PER_SEC : KO_FAST_CHARS_PER_SEC;
-  const breathMultiplier = pace === "natural" ? VISUAL_BREATH_NATURAL : VISUAL_BREATH_FAST;
+  const charsPerSec = pace === "slow" ? KO_SLOW_CHARS_PER_SEC
+    : pace === "fast" ? KO_FAST_CHARS_PER_SEC
+    : KO_NATURAL_CHARS_PER_SEC;
+  const breathMultiplier = pace === "slow" ? VISUAL_BREATH_SLOW
+    : pace === "fast" ? VISUAL_BREATH_FAST
+    : VISUAL_BREATH_NATURAL;
 
   const baseReadingSec = charCount / charsPerSec;
   const pauseSec = countPauseDuration(text);
   const specialTokenSec = countSpecialTokenOverhead(text);
-  const rhetoricalSec = pace === "natural" ? countRhetoricalPauses(text) : countRhetoricalPauses(text) * 0.5;
+  const rawRhetorical = countRhetoricalPauses(text);
+  const rhetoricalSec = pace === "slow" ? rawRhetorical * 1.3
+    : pace === "fast" ? rawRhetorical * 0.5
+    : rawRhetorical;
 
   const narrationSec = baseReadingSec + pauseSec + specialTokenSec + rhetoricalSec;
   const breathingSec = narrationSec * (breathMultiplier - 1);
@@ -270,6 +283,7 @@ export function evaluateNarrationFit(
   text: string,
   targetDurationSec: number,
 ): NarrationFitResult {
+  const slow = estimateNarrationDuration(text, "slow");
   const natural = estimateNarrationDuration(text, "natural");
   const fast = estimateNarrationDuration(text, "fast");
 
@@ -328,6 +342,7 @@ export function evaluateNarrationFit(
 
   return {
     fit,
+    slow,
     natural,
     fast,
     targetDurationSec,
@@ -347,7 +362,7 @@ export function evaluateNarrationFit(
  * Drop-in replacement for the old simple estimator.
  * Uses natural pace with punctuation/special token weights.
  */
-export function estimateNarrationRuntime(scriptText: string, speed?: "natural" | "fast"): number {
+export function estimateNarrationRuntime(scriptText: string, speed?: NarrationPace): number {
   const est = estimateNarrationDuration(scriptText, speed ?? "natural");
   return Math.ceil(est.totalWithBreathingSec);
 }
