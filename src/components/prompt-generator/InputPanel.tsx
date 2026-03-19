@@ -347,6 +347,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
   // ── 이어 만들기 (continuity mode) ──
   const [continuityMode, setContinuityMode] = useState(false);
+  const [narrationSpeed, setNarrationSpeed] = useState<"natural" | "fast">("natural");
 
   // ── 분석 깊이 옵션 (바로 생성에 통합) ──
   type AnalysisDepth = "none" | "basic" | "deep";
@@ -933,6 +934,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       generationPersona,
       scriptAnalysisHint,
       continuityMode: continuityMode || undefined,
+      narrationSpeed: narrationSpeed !== "natural" ? narrationSpeed : undefined,
     };
 
     // ── 진단 로그: 최종 payload 요약 ──
@@ -2475,6 +2477,36 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             <span className="text-[10px]" style={{ color: "#059669" }}>
               인물/색감/동작이 클립 간 자연스럽게 이어집니다
             </span>
+          )}
+        </div>
+
+        {/* 나레이션 속도 */}
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[11px]" style={{ color: "#888" }}>나레이션 속도</span>
+          <div className="flex rounded-full overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
+            <button
+              onClick={() => setNarrationSpeed("natural")}
+              className="px-2.5 py-1 text-[10px] font-medium transition-colors"
+              style={narrationSpeed === "natural"
+                ? { background: "#787fff", color: "white" }
+                : { background: "white", color: "#666" }
+              }
+            >
+              기본 (4자/초)
+            </button>
+            <button
+              onClick={() => setNarrationSpeed("fast")}
+              className="px-2.5 py-1 text-[10px] font-medium transition-colors"
+              style={narrationSpeed === "fast"
+                ? { background: "#787fff", color: "white" }
+                : { background: "white", color: "#666" }
+              }
+            >
+              빠르게 (5.5자/초)
+            </button>
+          </div>
+          {narrationSpeed === "fast" && (
+            <span className="text-[10px]" style={{ color: "#787fff" }}>런타임이 짧아집니다</span>
           )}
         </div>
 

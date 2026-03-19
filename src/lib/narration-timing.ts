@@ -24,10 +24,10 @@
 // ═══════════════════════════════════════════════════════════════════
 
 /** Natural Korean narration: documentary, educational shorts, story narration */
-const KO_NATURAL_CHARS_PER_SEC = 4.0;
+export const KO_NATURAL_CHARS_PER_SEC = 4.0;
 
 /** Fast shorts pacing: rapid-fire commentary, meme/pop-culture shorts */
-const KO_FAST_CHARS_PER_SEC = 5.0;
+export const KO_FAST_CHARS_PER_SEC = 5.5;
 
 /** Visual breathing room multiplier — time for the viewer to absorb imagery */
 const VISUAL_BREATH_NATURAL = 1.15;
@@ -347,7 +347,7 @@ export function evaluateNarrationFit(
  * Drop-in replacement for the old simple estimator.
  * Uses natural pace with punctuation/special token weights.
  */
-export function estimateNarrationRuntime(scriptText: string): number {
-  const est = estimateNarrationDuration(scriptText, "natural");
+export function estimateNarrationRuntime(scriptText: string, speed?: "natural" | "fast"): number {
+  const est = estimateNarrationDuration(scriptText, speed ?? "natural");
   return Math.ceil(est.totalWithBreathingSec);
 }

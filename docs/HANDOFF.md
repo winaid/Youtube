@@ -162,12 +162,30 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
    - 우선순위: lastFrameBase64 캐시 → 비디오 캡처 → storyboard end → storyboard start → text-to-video
    - 각 컷 완료 시 마지막 프레임을 캡처하여 다음 컷의 firstFrame으로 전달
 
-### Frame chaining vs Continuity metadata (역할 분리)
-- **Frame chaining**: 시각적 시작 프레임 연결. 이전 컷의 마지막 프레임 → 다음 컷의 firstFrame. 시각적 연속성 보장
-- **Continuity metadata**: 내러티브/상태/앵커 전달. prevEndState(캐릭터 위치, 카메라, 조명)가 프롬프트에 주입. 장면 구성 연속성 보장
-- 둘 다 ON일 때 가장 강한 연속성
-- Frame chaining이 실패해도 continuity metadata는 남아 프롬프트 수준에서 연속성 유지
-- Continuity metadata가 없어도 frame chaining만으로 부분적 시각 연속성 확보
+### Continuity 3-Layer 아키텍처
+
+| 레이어 | 역할 | 실패 시 |
+|--------|------|---------|
+| **Frame chaining** | 시각적 시작 프레임 연결 (lastFrame → firstFrame) | storyboard/text fallback |
+| **Plan-based continuity** | 내러티브/상태 전달 (sceneDescription 기반 startState) | 프롬프트 수준 연속성 |
+| **Actual endState extraction** | Gemini 프레임 분석으로 실제 생성 결과 반영 | plan-based로 fallback |
+
+- 3개 레이어가 동시에 작동하면 가장 강한 연속성
+- Actual endState는 `/api/analyze-frame`으로 마지막 프레임을 Gemini Flash에 분석시킴
+- 분석 결과는 다음 컷의 `continuitySegment.startState`를 실시간 업데이트
+- 기존 autoMode 순차 생성 패턴(CUT 1 완료 → CUT 2 시작)에 통합
+
+### submitContinuitySequence 상태
+- `video-generation-core.ts`에 정의된 독립 orchestrator
+- 현재는 직접 활성화하지 않음 — 기존 autoMode + Gemini 분석 통합이 더 안정적
+- 향후 완전 독립 순차 파이프라인이 필요할 때 활성화 예정
+
+### 나레이션 속도 옵션
+- UI: InputPanel 하단의 "기본 (4자/초)" / "빠르게 (5.5자/초)" 토글
+- 값: `PromptInput.narrationSpeed` ("natural" | "fast")
+- 계산 영향: `estimateNarrationRuntime()`, `estimateRuntime()`, `analyzeScript()` 모두 speed 파라미터 반영
+- fast 선택 시: natural 대비 약 25-30% 런타임 단축 → 컷 수와 시퀀스 구조에 영향
+- 기본값: "natural" (4자/초) — 기존 동작과 완전 호환
 4. **endState 전파** (submitContinuitySequence): 세그먼트 순차 생성 시 이전 세그먼트의 확정된 endState가 다음 세그먼트의 startState로 전파
 
 ### ON이어도 continuity가 약해질 수 있는 경우

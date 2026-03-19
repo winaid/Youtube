@@ -39,7 +39,7 @@ import type {
 } from "@/types/script-analysis";
 import { SEQUENCE_MIN_DURATION } from "@/lib/sequence-density";
 import { normalizeAnalysisResult, safeString, safeArray, safeNumber } from "@/lib/normalize";
-import { estimateNarrationDuration, estimateNarrationRuntime } from "@/lib/narration-timing";
+import { estimateNarrationDuration, estimateNarrationRuntime, KO_NATURAL_CHARS_PER_SEC, KO_FAST_CHARS_PER_SEC } from "@/lib/narration-timing";
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants & Content Mode Configuration
@@ -769,6 +769,7 @@ export function analyzeScriptPhaseA(
   options?: {
     targetRuntimeSec?: number;
     contentTypeHint?: ScriptContentType;
+    narrationSpeed?: "natural" | "fast";
   },
 ): PhaseAResult {
   const text = scriptText.trim();
@@ -805,9 +806,12 @@ export function analyzeScriptPhaseA(
     cacheSet(beatCache, key, beats);
   }
 
-  // 2. Runtime
+  // 2. Runtime — narrationSpeed 옵션 반영
+  // beats는 natural pace(4자/초)로 계산됨. fast(5.5자/초) 선택 시 비례 스케일링.
+  const speedScale = options?.narrationSpeed === "fast" ? (KO_NATURAL_CHARS_PER_SEC / KO_FAST_CHARS_PER_SEC) : 1.0;
+  const rawBeatRuntime = beats.reduce((sum, b) => sum + b.estimatedSec, 0);
   const estimatedRuntime = options?.targetRuntimeSec
-    ?? beats.reduce((sum, b) => sum + b.estimatedSec, 0);
+    ?? Math.ceil(rawBeatRuntime * speedScale);
 
   // 2b. Detect content mode
   const contentType = options?.contentTypeHint ?? detectContentType(text);
@@ -1270,8 +1274,8 @@ function generateCliffhangerText(beats: ScriptBeat[], beatType: SequenceBeatType
  *
  * @see narration-timing.ts for the full pacing model
  */
-export function estimateRuntime(scriptText: string): number {
-  return estimateNarrationRuntime(scriptText);
+export function estimateRuntime(scriptText: string, narrationSpeed?: "natural" | "fast"): number {
+  return estimateNarrationRuntime(scriptText, narrationSpeed);
 }
 
 // ═══════════════════════════════════════════════════════════════════

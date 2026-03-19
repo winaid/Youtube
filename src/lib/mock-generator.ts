@@ -70,6 +70,8 @@ async function fetchGeminiCuts(
         scriptAnalysisHint: input.scriptAnalysisHint ?? null,
         // ── Continuity mode ──
         continuityMode: input.continuityMode ?? false,
+        // ── 나레이션 속도 ──
+        narrationSpeed: input.narrationSpeed ?? "natural",
       }),
     });
 

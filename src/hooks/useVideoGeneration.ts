@@ -690,6 +690,51 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             updateClip(cutNumber, { lastFrameBase64: lastFrame });
             console.log(`[CUT ${cutNumber}] lastFrame 저장 완료 — 다음 컷 continuity 준비됨`);
 
+            // ── Actual endState 추출: Gemini 프레임 분석 (비동기, continuity 강화) ──
+            // continuity mode에서 실제 생성 결과 기반 endState를 다음 컷에 전파.
+            // 실패해도 기존 계획 기반 continuity는 유지됨 (보완 레이어).
+            {
+              const nextCutNumber = cutNumber + 1;
+              const nextCut = cutsRef.current.find(c => c.cutNumber === nextCutNumber);
+              const currentCut = cutsRef.current.find(c => c.cutNumber === cutNumber);
+              if (nextCut && currentCut?.continuitySegment) {
+                fetch("/api/analyze-frame", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    frameBase64: lastFrame,
+                    sceneContext: currentCut.sceneDescription?.slice(0, 200) || "",
+                  }),
+                }).then(async (afRes) => {
+                  if (afRes.ok) {
+                    const afData = await afRes.json();
+                    if (afData.success && afData.state) {
+                      // actual endState를 다음 컷의 continuitySegment.startState로 업데이트
+                      console.log(`[CUT ${cutNumber}] actual endState 추출 성공 → CUT ${nextCutNumber} startState 업데이트`, {
+                        source: "gemini_frame_analysis",
+                        subjectPosition: afData.state.subjectPosition?.slice(0, 50),
+                        cameraState: afData.state.cameraState?.slice(0, 50),
+                      });
+                      // cutsRef를 통해 다음 컷의 continuitySegment 업데이트
+                      if (nextCut.continuitySegment) {
+                        nextCut.continuitySegment.startState = afData.state;
+                        (nextCut.continuitySegment as Record<string, unknown>)._endStateSource = "gemini_frame_analysis";
+                      }
+                    } else {
+                      console.log(`[CUT ${cutNumber}] Gemini 프레임 분석 실패 → 계획 기반 continuity 유지`, {
+                        error: afData.error,
+                        fallback: "plan_based",
+                      });
+                    }
+                  } else {
+                    console.warn(`[CUT ${cutNumber}] analyze-frame API 실패(${afRes.status}) → 계획 기반 continuity 유지`);
+                  }
+                }).catch((err) => {
+                  console.warn(`[CUT ${cutNumber}] analyze-frame 예외 → 계획 기반 continuity 유지:`, err);
+                });
+              }
+            }
+
             const cut = cutsRef.current.find((c) => c.cutNumber === cutNumber);
             fetch("/api/verify-video-quality", {
               method: "POST",
