@@ -873,13 +873,13 @@ export default function VideoGenerationPanel({
 
             {/* ── 최종 편집본 영역 ── */}
             {stitchCapability === "not_available" ? (
-              /* stitch 불가 — 명시 안내 */
+              /* stitch 불가 — 명시 안내 + 개별 다운로드 유도 */
               <div
-                className="rounded-md p-2.5 text-[11px]"
+                className="rounded-md p-2.5 text-[11px] space-y-1"
                 style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}
               >
-                <span className="font-medium">최종 편집본 없음</span> —{" "}
-                {enrichedState.stitchUnavailableReason}
+                <p><span className="font-medium">자동 합치기 미지원</span> — {enrichedState.stitchUnavailableReason}</p>
+                <p style={{ color: "#78716c" }}>아래 &ldquo;개별 clip 다운로드&rdquo; 버튼으로 영상을 받은 후 CapCut/Premiere 등에서 합치세요.</p>
               </div>
             ) : (
               /* stitch 가능 (client_wasm) — stitch 버튼 + 상태 */

@@ -9,6 +9,9 @@
 # R2 버킷 CLI 생성:
 #   npx wrangler r2 bucket create video-uploads
 
+# Pages 빌드 출력 디렉토리 (next export → out/)
+pages_build_output_dir = "out"
+
 # Pages Functions에서 R2 접근용 바인딩
 [[r2_buckets]]
 binding = "VIDEO_BUCKET"

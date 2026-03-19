@@ -1278,7 +1278,7 @@ export default function ResultPanel({
                 </div>
               ) : videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0 && !finalVideoUrl ? (
                 <div className="text-[11px] text-center py-1 rounded" style={{ background: "#fef3c720", color: "#b45309" }}>
-                  컷 영상 완료 — 생성 탭에서 "최종 몽타주 MP4 생성" 실행 필요
+                  컷 영상 완료 — 생성 탭에서 &ldquo;최종 몽타주 MP4 생성&rdquo; 실행 필요
                 </div>
               ) : null}
             </CardContent>

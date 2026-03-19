@@ -83,12 +83,21 @@ export async function detectFFmpegAvailability(): Promise<FFmpegAvailability> {
     return { available: false, reason: "no_wasm_support" };
   }
   if (!hasSharedArrayBuffer()) {
+    // 배포 환경 디버깅: COOP/COEP 헤더 상태 로그
+    console.warn("[FFmpeg] SharedArrayBuffer 미활성. COOP/COEP 헤더 확인 필요:", {
+      crossOriginIsolated: typeof crossOriginIsolated !== "undefined" ? crossOriginIsolated : "N/A",
+      hint: "Cross-Origin-Opener-Policy: same-origin + Cross-Origin-Embedder-Policy: credentialless 필요",
+    });
     return { available: false, reason: "no_sharedarraybuffer" };
   }
 
   // 패키지 설치 여부 — dynamic import로 확인
   try {
     await import("@ffmpeg/ffmpeg");
+    console.log("[FFmpeg] 가용 확인 완료:", {
+      crossOriginIsolated: typeof crossOriginIsolated !== "undefined" ? crossOriginIsolated : "N/A",
+      sharedArrayBuffer: true,
+    });
     return { available: true };
   } catch {
     return { available: false, reason: "package_not_installed" };
@@ -175,16 +184,17 @@ export function terminateFFmpeg(): void {
 // ═══════════════════════════════════════════════════════════════════
 
 export function getFFmpegUnavailableMessage(reason: FFmpegUnavailableReason): string {
+  const fallbackHint = " 개별 clip 다운로드 후 외부 편집 도구로 합칠 수 있습니다.";
   switch (reason) {
     case "not_browser":
-      return "브라우저 환경에서만 영상 합치기가 가능합니다.";
+      return "브라우저 환경에서만 영상 합치기가 가능합니다." + fallbackHint;
     case "no_sharedarraybuffer":
-      return "이 사이트의 보안 헤더(COOP/COEP) 설정이 필요합니다. 서버 관리자에게 문의하세요.";
+      return "현재 브라우저에서 SharedArrayBuffer를 사용할 수 없습니다. Chrome/Edge 최신 버전을 사용하거나, 사이트 보안 헤더가 올바르게 설정되어 있는지 확인하세요." + fallbackHint;
     case "no_wasm_support":
-      return "현재 브라우저가 WebAssembly를 지원하지 않습니다. 최신 브라우저를 사용해주세요.";
+      return "현재 브라우저가 WebAssembly를 지원하지 않습니다. 최신 Chrome/Edge/Safari를 사용해주세요." + fallbackHint;
     case "package_not_installed":
-      return "영상 합치기 기능이 아직 설치되지 않았습니다. (FFmpeg.wasm 패키지 필요)";
+      return "영상 합치기 엔진이 로드되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요." + fallbackHint;
     case "load_failed":
-      return "영상 합치기 엔진 로딩에 실패했습니다. 페이지를 새로고침 후 다시 시도해주세요.";
+      return "영상 합치기 엔진 로딩에 실패했습니다. 페이지를 새로고침 후 다시 시도해주세요." + fallbackHint;
   }
 }
