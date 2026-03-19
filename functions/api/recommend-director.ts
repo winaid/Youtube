@@ -469,6 +469,8 @@ interface DirectorRecommendationDebug {
   webSearchRawBeforeDedup: number;
   webSearchDedupRemoved: number;
   webSearchRetryReason: string | null;
+  webSearchRawSnippet?: string; // 웹 검색 raw 응답 첫 200자 (디버그용)
+  localMatchRawSnippet?: string; // 로컬 매칭 raw 응답 첫 200자 (디버그용)
   localResultCount: number;
   externalResultCount: number;
   finalResultCount: number;
@@ -515,6 +517,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ── 규칙 기반 사전 추출 (Gemini fallback) ──
     const preSignals = preExtractSignals(storyText);
+
+    // Raw response snippets for debug
+    let localMatchRawSnippet = "";
+    let webSearchRawSnippet = "";
 
     // Web search state
     let attemptedWebSearch = false;
@@ -633,7 +639,18 @@ ${localList}
     const data = await res.json() as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+
+    // ── 디버그: STEP 1 raw 응답 기록 ──
+    localMatchRawSnippet = rawText.slice(0, 200);
+    console.log(`[recommend-director] STEP 1 raw (first 500): ${rawText.slice(0, 500)}`);
+
+    // 마크다운 코드 블록 제거
+    let text = rawText;
+    const step1CodeBlock = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+    if (step1CodeBlock) {
+      text = step1CodeBlock[1].trim();
+    }
 
     let parsed: Record<string, unknown>;
     try {
@@ -808,14 +825,39 @@ Each director object must have:
         sources: ReturnType<typeof extractGroundingSources>,
         label: string,
       ) => {
-        let webParsed: Record<string, unknown>;
-        try {
-          webParsed = JSON.parse(webText) as Record<string, unknown>;
-        } catch {
-          webParsed = (parseFirstJsonObject(webText) as Record<string, unknown>) ?? {};
+        // ── 견고한 JSON 파싱: 코드 블록, 비정형 응답 처리 ──
+        let cleanText = webText;
+        // 마크다운 코드 블록 제거 (```json ... ``` 또는 ``` ... ```)
+        const codeBlockMatch = cleanText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+        if (codeBlockMatch) {
+          cleanText = codeBlockMatch[1].trim();
         }
 
-        const rawWebDirs = Array.isArray(webParsed.directors) ? webParsed.directors as Array<Record<string, unknown>> : [];
+        let webParsed: Record<string, unknown>;
+        try {
+          webParsed = JSON.parse(cleanText) as Record<string, unknown>;
+        } catch {
+          webParsed = (parseFirstJsonObject(cleanText) as Record<string, unknown>) ?? {};
+        }
+
+        // directors 배열 탐색: 최상위 또는 중첩 구조 모두 처리
+        let rawWebDirs: Array<Record<string, unknown>> = [];
+        if (Array.isArray(webParsed.directors)) {
+          rawWebDirs = webParsed.directors as Array<Record<string, unknown>>;
+        } else if (Array.isArray(webParsed.recommendations)) {
+          rawWebDirs = webParsed.recommendations as Array<Record<string, unknown>>;
+        } else if (Array.isArray(webParsed.results)) {
+          rawWebDirs = webParsed.results as Array<Record<string, unknown>>;
+        } else {
+          // 최상위가 배열인 경우
+          const parsed = parseFirstJsonObject(cleanText);
+          if (Array.isArray(parsed)) {
+            rawWebDirs = parsed as Array<Record<string, unknown>>;
+          }
+        }
+        if (rawWebDirs.length === 0) {
+          console.log(`[recommend-director] processWebResponse: directors 배열 없음 — parsed keys: ${Object.keys(webParsed).join(", ")}`);
+        }
         const accepted: Array<Record<string, unknown>> = [];
         let rejected = 0;
         const reasons: string[] = [];
@@ -903,6 +945,10 @@ Each director object must have:
 
           const webText = webData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
 
+          // ── 디버그: raw 응답 텍스트 기록 (JSON 파싱 실패 추적용) ──
+          webSearchRawSnippet = webText.slice(0, 200);
+          console.log(`[recommend-director] 웹 검색 raw 응답 (first 500): ${webText.slice(0, 500)}`);
+
           // grounding source 추출 — 공통 유틸 사용
           const grounding = webData?.candidates?.[0]?.groundingMetadata;
           const sources = extractGroundingSources(grounding?.groundingChunks);
@@ -924,53 +970,105 @@ Each director object must have:
 
           console.log(`[recommend-director] 웹 검색 1차: 원시=${result.rawCount}, 채택=${result.accepted.length}, 제거=${result.rejected}`);
 
-          // ── 외부 후보 잔존 보장: 1차 결과가 전부 제거되면 2차 재시도 ──
-          if (result.accepted.length === 0 && result.rawCount > 0) {
-            webSearchRetryReason = `1차 웹 결과 ${result.rawCount}명 전부 로컬 중복 제거됨 → 제외 조건 강화 재시도`;
-            console.log(`[recommend-director] ${webSearchRetryReason}`);
-            webSearchAttemptCount = 2;
+          // ── 외부 후보 잔존 보장 ──
+          // Case A: 원시 결과 > 0이지만 전부 중복 제거 → 재시도
+          // Case B: 원시 결과 = 0 (모델이 감독을 반환하지 않음) → 모델 폴백
+          if (result.accepted.length === 0) {
+            if (result.rawCount > 0) {
+              // Case A: 중복 전멸 → 제외 조건 강화 재시도
+              webSearchRetryReason = `1차 웹 결과 ${result.rawCount}명 전부 로컬 중복 제거됨 → 제외 조건 강화 재시도`;
+              console.log(`[recommend-director] ${webSearchRetryReason}`);
+              webSearchAttemptCount = 2;
 
-            const retryNote = `\n## RETRY NOTE\nYour previous response contained ONLY directors already in the exclusion list.\nYou MUST find completely different directors this time.\nDo NOT repeat: ${result.reasons.filter(r => r.includes("already in local pool")).map(r => r.replace(" already in local pool", "").replace(/"/g, "")).join(", ")}\n`;
+              const retryNote = `\n## RETRY NOTE\nYour previous response contained ONLY directors already in the exclusion list.\nYou MUST find completely different directors this time.\nDo NOT repeat: ${result.reasons.filter(r => r.includes("already in local pool")).map(r => r.replace(" already in local pool", "").replace(/"/g, "")).join(", ")}\n`;
 
-            const retryBody = {
-              contents: [{ role: "user", parts: [{ text: buildWebPrompt(retryNote) }] }],
-              tools: [{ googleSearchRetrieval: {} }],
-              generationConfig: { temperature: 0.5, maxOutputTokens: 3072 },
-            };
-
-            const retryRes = await fetchWithAuth(
-              context.env,
-              buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(retryBody),
-              },
-            );
-
-            if (retryRes.ok) {
-              const retryData = await retryRes.json() as {
-                candidates?: {
-                  content?: { parts?: { text?: string }[] };
-                  groundingMetadata?: {
-                    groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
-                  };
-                }[];
+              const retryBody = {
+                contents: [{ role: "user", parts: [{ text: buildWebPrompt(retryNote) }] }],
+                tools: [{ googleSearchRetrieval: {} }],
+                generationConfig: { temperature: 0.5, maxOutputTokens: 3072 },
               };
-              const retryText = retryData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-              const retryGrounding = retryData?.candidates?.[0]?.groundingMetadata;
-              const retrySources = extractGroundingSources(retryGrounding?.groundingChunks);
-              const retryResult = processWebResponse(retryText, retrySources, "web_search_retry");
 
-              webSearchResultCount += retryResult.rawCount;
-              webSearchAcceptedCount += retryResult.accepted.length;
-              webSearchRejectedCount += retryResult.rejected;
-              webSearchRejectionReasons.push(...retryResult.reasons.map(r => `[retry] ${r}`));
-              webSuggestions.push(...retryResult.accepted);
+              const retryRes = await fetchWithAuth(
+                context.env,
+                buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(retryBody),
+                },
+              );
 
-              console.log(`[recommend-director] 2차 재시도: 원시=${retryResult.rawCount}, 채택=${retryResult.accepted.length}`);
+              if (retryRes.ok) {
+                const retryData = await retryRes.json() as {
+                  candidates?: {
+                    content?: { parts?: { text?: string }[] };
+                    groundingMetadata?: {
+                      groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
+                    };
+                  }[];
+                };
+                const retryText = retryData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+                console.log(`[recommend-director] 재시도 raw (first 300): ${retryText.slice(0, 300)}`);
+                const retryGrounding = retryData?.candidates?.[0]?.groundingMetadata;
+                const retrySources = extractGroundingSources(retryGrounding?.groundingChunks);
+                const retryResult = processWebResponse(retryText, retrySources, "web_search_retry");
+
+                webSearchResultCount += retryResult.rawCount;
+                webSearchAcceptedCount += retryResult.accepted.length;
+                webSearchRejectedCount += retryResult.rejected;
+                webSearchRejectionReasons.push(...retryResult.reasons.map(r => `[retry] ${r}`));
+                webSuggestions.push(...retryResult.accepted);
+
+                console.log(`[recommend-director] 2차 재시도: 원시=${retryResult.rawCount}, 채택=${retryResult.accepted.length}`);
+              } else {
+                console.warn(`[recommend-director] 2차 재시도 실패(${retryRes.status})`);
+              }
             } else {
-              console.warn(`[recommend-director] 2차 재시도 실패(${retryRes.status})`);
+              // Case B: 원시 결과 0명 → 모델이 directors 배열을 반환하지 않음 → 모델 폴백
+              webSearchRetryReason = `웹 검색 200 OK but rawCount=0 (JSON 파싱 실패 또는 빈 응답) → 모델 폴백`;
+              console.log(`[recommend-director] ${webSearchRetryReason}`);
+              webSearchAttemptCount = 2;
+
+              try {
+                const fallbackBody = {
+                  contents: [{ role: "user", parts: [{ text: buildWebPrompt("\n## NOTE: Web search returned no usable results. Use your internal knowledge to recommend directors.\n") }] }],
+                  generationConfig: {
+                    temperature: 0.4,
+                    maxOutputTokens: 3072,
+                    responseMimeType: "application/json" as const,
+                  },
+                };
+
+                const fallbackRes = await fetchWithAuth(
+                  context.env,
+                  buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(fallbackBody),
+                  },
+                );
+
+                if (fallbackRes.ok) {
+                  const fbData = await fallbackRes.json() as {
+                    candidates?: { content?: { parts?: { text?: string }[] } }[];
+                  };
+                  const fbText = fbData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+                  console.log(`[recommend-director] 모델 폴백 raw (first 300): ${fbText.slice(0, 300)}`);
+                  const fbResult = processWebResponse(fbText, [], "model_fallback_after_empty");
+
+                  webSearchResultCount += fbResult.rawCount;
+                  webSearchAcceptedCount += fbResult.accepted.length;
+                  webSearchRejectedCount += fbResult.rejected;
+                  webSearchRejectionReasons.push(...fbResult.reasons.map(r => `[fallback] ${r}`));
+                  webSuggestions.push(...fbResult.accepted);
+                  webSearchProvider = `${webSearchProvider} + model-fallback`;
+
+                  console.log(`[recommend-director] 모델 폴백: 원시=${fbResult.rawCount}, 채택=${fbResult.accepted.length}`);
+                }
+              } catch (fbErr) {
+                console.warn(`[recommend-director] 모델 폴백 예외: ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`);
+              }
             }
           }
 
@@ -1111,6 +1209,8 @@ Each director object must have:
       webSearchRawBeforeDedup,
       webSearchDedupRemoved,
       webSearchRetryReason,
+      webSearchRawSnippet: webSearchRawSnippet || undefined,
+      localMatchRawSnippet: localMatchRawSnippet || undefined,
       localResultCount: finalLocalCount,
       externalResultCount: finalWebCount,
       finalResultCount: finalCount,
