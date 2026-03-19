@@ -32,7 +32,7 @@ export const SAMPLE_PROJECTS: SampleProject[] = [
   {
     id: "sample-shortform-10s",
     title: "10초 숏폼 — 커피 한 잔",
-    description: "10-12s 밴드 검증: min 3컷 정책. 극단적으로 짧은 콘텐츠에서 리듬이 살아있는지.",
+    description: "10-15s shortform-critical 밴드 검증: min 4컷 정책. 극단적으로 짧은 콘텐츠에서 리듬이 살아있는지.",
     tags: ["shortform", "rhythm", "10s", "minimal"],
     input: {
       storyText:
@@ -46,15 +46,15 @@ export const SAMPLE_PROJECTS: SampleProject[] = [
     },
     recommendedDuration: 10,
     recommendedDirector: "wong-kar-wai",
-    verifyPoint: "10-12s 밴드에서 min 3컷 보장, 각 컷이 2-4초로 리듬감 유지",
-    suspectOnFail: "recommendMinimumCutCount 10-12s 분기 또는 densifyCuts 2s 하한",
+    verifyPoint: "10-15s shortform-critical 밴드에서 min 4컷 보장, 각 컷이 2-3초로 리듬감 유지",
+    suspectOnFail: "recommendMinimumCutCount 10-15s 분기 또는 densifyCuts 2s 하한",
   },
 
   // ─── 2. 12초 숏폼 ───
   {
     id: "sample-shortform-12s",
     title: "12초 숏폼 — 빗방울 포착",
-    description: "10-12s 밴드 경계값. 12s에서 13s 미만이 정확히 3컷 정책을 따르는지.",
+    description: "10-15s shortform-critical 밴드. 12s도 10-15s 통합 밴드로 min 4컷 정책.",
     tags: ["shortform", "rhythm", "12s", "boundary"],
     input: {
       storyText:
@@ -68,8 +68,8 @@ export const SAMPLE_PROJECTS: SampleProject[] = [
     },
     recommendedDuration: 12,
     recommendedDirector: "wong-kar-wai",
-    verifyPoint: "12s는 13-15s 밴드가 아닌 10-12s 밴드 — min 3컷 (4컷 아님)",
-    suspectOnFail: "recommendMinimumCutCount 경계 조건 (< 13 vs >= 13)",
+    verifyPoint: "12s도 10-15s shortform-critical 밴드 — min 4컷",
+    suspectOnFail: "recommendMinimumCutCount 10-15s 통합 분기",
   },
 
   // ─── 3. 13초 숏폼 ───

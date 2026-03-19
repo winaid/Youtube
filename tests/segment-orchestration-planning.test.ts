@@ -99,13 +99,14 @@ describe("C. exact cutCount 분배", () => {
     expect(plan.currentSegmentTargetCuts).toBe(10);
   });
 
-  it("10) exactCutCount=3, 30초 → 2 segments, densityMinimum이 올림", () => {
+  it("10) exactCutCount=3, 30초 → 2 segments, densityMinimum이 올림 (min 4/segment)", () => {
     const plan = resolveSegmentPlan({
       totalDurationSec: 30,
       exactCutCount: 3,
     });
-    expect(plan.totalTargetCuts).toBe(3);
-    // exactCutCount=3이지만 각 segment의 densityMinimum=4 (15초 숏폼 리듬)
+    // exactCutCount=3이지만 총 densityMinimum=4 (30초 → max(4, ceil(30/15))=4)
+    // 각 segment의 densityMinimum=4 (15초 숏폼 리듬)
+    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(4);
     expect(plan.segments[0].preferredCutTarget).toBeGreaterThanOrEqual(4);
     expect(plan.segments[1].preferredCutTarget).toBeGreaterThanOrEqual(4);
   });

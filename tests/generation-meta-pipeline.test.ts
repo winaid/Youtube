@@ -72,30 +72,29 @@ describe("shortform band policy → generationMeta mapping", () => {
     expect(band.minCuts).toBe(4);
   });
 
-  it("12초 → shortform-base band (NOT critical)", () => {
+  it("12초 → shortform-critical band", () => {
     const band = resolveShortformBandPolicy(12);
-    expect(band.band).toBe("shortform-base");
-    expect(band.is13to15Special).toBe(false);
-    expect(band.minCuts).toBe(3);
+    expect(band.band).toBe("shortform-critical");
+    expect(band.is13to15Special).toBe(true);
+    expect(band.minCuts).toBe(4);
   });
 
-  it("10초 → shortform-base band", () => {
+  it("10초 → shortform-critical band", () => {
     const band = resolveShortformBandPolicy(10);
-    expect(band.band).toBe("shortform-base");
-    expect(band.minCuts).toBe(3);
+    expect(band.band).toBe("shortform-critical");
+    expect(band.minCuts).toBe(4);
   });
 
-  it("60초 → standard band (NOT shortform)", () => {
+  it("60초 → over-limit (shortform 생성 불가)", () => {
     const band = resolveShortformBandPolicy(60);
-    expect(band.band).toBe("standard");
+    expect(band.band).toBe("over-limit");
     expect(band.isShortformBand).toBe(false);
   });
 
-  it("120초 → standard band", () => {
+  it("120초 → over-limit (shortform 생성 불가)", () => {
     const band = resolveShortformBandPolicy(120);
-    expect(band.band).toBe("standard");
+    expect(band.band).toBe("over-limit");
     expect(band.isShortformBand).toBe(false);
-    expect(band.minCuts).toBeGreaterThanOrEqual(8); // ceil(120/15) = 8
   });
 });
 

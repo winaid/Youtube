@@ -389,34 +389,34 @@ describe("server-side densifyCuts — shortform rhythm model", () => {
     expect(total).toBe(15);
   });
 
-  it("should NOT split deterministic fallback with 5 cuts at 8s each (40s: minCuts=3, already 5 >= 3)", () => {
+  it("should NOT split deterministic fallback with 5 cuts at 8s each (40s: minCuts=4, already 5 >= 4)", () => {
     const deterministicCuts = Array.from({ length: 5 }, (_, i) => ({
       cutNumber: i + 1,
       durationSec: 8,
       shotType: "WS",
     }));
     const result = densifyCuts(deterministicCuts);
-    // 5 cuts at 8s = 40s total. ceil(40/15) = 3 sequences. 5 >= 3, no split needed.
+    // 5 cuts at 8s = 40s total. max(4, ceil(40/15)) = max(4,3) = 4. 5 >= 4, no split needed.
     expect(result.length).toBe(5);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(40); // total duration preserved
   });
 
-  it("should split 12s single cut into 3 cuts (minCuts=3 for 10-12s), classify with correct pipeline", () => {
+  it("should split 12s single cut into 4 cuts (minCuts=4 for 10-15s), classify with correct pipeline", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 12 }];
     const densified = densifyCuts(deterministicCuts);
     const classified = classifyCuts(densified);
-    expect(classified.length).toBe(3);
+    expect(classified.length).toBe(4);
     for (const c of classified) {
       expect(c.structureType).toBe("cut");
       expect(c.durationClass).toBeDefined();
     }
   });
 
-  it("should split 10s single cut into 3 cuts (minCuts=3 for 10-12s), preserve shotType on fragments", () => {
+  it("should split 10s single cut into 4 cuts (minCuts=4 for 10-15s), preserve shotType on fragments", () => {
     const deterministicCuts = [{ cutNumber: 1, durationSec: 10, shotType: "MS" }];
     const result = densifyCuts(deterministicCuts);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
     for (const c of result) {
       expect(c.shotType).toBe("MS");
     }
@@ -455,15 +455,15 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
-  it("12s single cut → density split into 3 cuts (minCuts=3 for 10-12s)", () => {
+  it("12s single cut → density split into 4 cuts (minCuts=4 for 10-15s)", () => {
     const resp = simulateFallbackResponse(1, 12);
-    expect(resp.cuts.length).toBe(3);
+    expect(resp.cuts.length).toBe(4);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
-  it("8s single cut → NO density split (minCuts=1 for <10s)", () => {
+  it("8s single cut → density split into 3 cuts (minCuts=3 for 6-9s)", () => {
     const resp = simulateFallbackResponse(1, 8);
-    expect(resp.cuts.length).toBe(1);
+    expect(resp.cuts.length).toBe(3);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
 
@@ -473,9 +473,9 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     expect(resp.sequencePlan.shots.length).toBe(1);
   });
 
-  it("5 cuts x 8s → 3-layer: 40s = 3 sequences, already 5 cuts >= 3, no split", () => {
+  it("5 cuts x 8s → 3-layer: 40s = max(4, ceil(40/15))=4 sequences, already 5 cuts >= 4, no split", () => {
     const resp = simulateFallbackResponse(5, 8);
-    // 40s total, ceil(40/15) = 3 sequences. 5 cuts >= 3, no densification needed.
+    // 40s total, max(4, ceil(40/15)) = max(4,3) = 4. 5 cuts >= 4, no densification needed.
     expect(resp.cuts.length).toBe(5);
     expect(resp.sequencePlan.shots.length).toBe(resp.cuts.length);
   });
@@ -492,9 +492,9 @@ describe("finalizedCuts ↔ sequencePlan consistency", () => {
     expect(resp.sequenceValidation.summary.errors).toBe(0);
   });
 
-  it("classify 메타가 있는 cuts로 sequencePlan 생성 가능 (10s → 3 cuts, minCuts=3)", () => {
+  it("classify 메타가 있는 cuts로 sequencePlan 생성 가능 (10s → 4 cuts, minCuts=4)", () => {
     const resp = simulateFallbackResponse(1, 10);
-    expect(resp.cuts.length).toBe(3); // 10s → minCuts=3 for 10-12s range
+    expect(resp.cuts.length).toBe(4); // 10s → minCuts=4 for 10-15s range
     for (const cut of resp.cuts) {
       expect(cut.structureType).toBeDefined();
       expect(cut.durationClass).toBeDefined();

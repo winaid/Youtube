@@ -22,11 +22,16 @@ export const KLING_SEGMENT_CAP = 15;
  * 시퀀스 내부 샷 수는 multi-shot-planner가 관리.
  * 로직은 src/lib/sequence-density.ts와 동일 유지 필수.
  */
+/**
+ * 확정 규칙 (2026-03):
+ *   ≤5초: 1컷, 6~9초: 3컷, 10~15초: 4컷
+ *   DENSITY_POLICY는 레거시 — recommendMinimumCutCount()가 실제 source of truth.
+ */
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 5, minCuts: 1 },
-  { maxSec: 8, minCuts: 1 },
-  { maxSec: 15, minCuts: 1 },
-  { maxSec: Infinity, minCuts: 1 },
+  { maxSec: 9, minCuts: 3 },
+  { maxSec: 15, minCuts: 4 },
+  { maxSec: Infinity, minCuts: 4 },
 ];
 
 /**
@@ -43,12 +48,16 @@ export const CUT_COUNT_MAX = 10;
 /**
  * 시퀀스당 런타임 → 내부 밀도 권장 범위.
  * multi-shot-planner와 연동되어 Layer 3 샷 수 결정에 사용.
+ *
+ * 확정 규칙 (2026-03):
+ *   ≤5초: 1~2컷 (micro)
+ *   6~9초: 3~6컷 (short — 최소 3컷)
+ *   10~15초: 4~6컷 (shortform-critical)
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 9,  min: 1, max: 2 },
-  { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 4, max: 6 },  // 숏폼 리듬: 13-15초는 최소 4컷
+  { maxSec: 9,  min: 3, max: 6 },  // 6~9초: 최소 3컷
+  { maxSec: 15, min: 4, max: 6 },  // 10~15초: 4~6컷
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {
@@ -338,24 +347,20 @@ export function resolveSegmentPlan(opts: {
 /**
  * 총 런타임(초) → 최소 시퀀스 수 반환.
  * 3-Layer 모델: Layer 2 시퀀스 수를 결정.
- * 15초 초과 시 segment 단위로 분할: ceil(total / 15).
- * 시퀀스 내부 샷(Layer 3)은 multi-shot-planner가 결정.
+ *
+ * 확정 규칙 (2026-03):
+ *   ≤5초: 1컷 (micro)
+ *   6~9초: 3컷 (short)
+ *   10~15초: 4컷 (shortform-critical)
+ *   16초+: over-limit (segment 분할)
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  // 숏폼 리듬 규칙: 13-15초는 최소 4컷 (감독 스타일보다 플랫폼 리듬 우선)
-  if (totalDurationSec >= 13 && totalDurationSec <= KLING_SEGMENT_CAP) {
-    return 4;
-  }
-  // 10-12초이면 최소 3컷
-  if (totalDurationSec >= 10 && totalDurationSec < 13) {
-    return 3;
-  }
-  if (totalDurationSec < 10) {
-    return 1;
-  }
-  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 3
-  return Math.max(3, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
+  if (totalDurationSec <= 5) return 1;
+  if (totalDurationSec <= 9) return 3;
+  if (totalDurationSec <= KLING_SEGMENT_CAP) return 4;
+  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 4
+  return Math.max(4, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
 }
 
 export function needsDensityBoost(

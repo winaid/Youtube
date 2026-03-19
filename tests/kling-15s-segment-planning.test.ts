@@ -39,20 +39,20 @@ describe("B. segment-aware recommendMinimumCutCount", () => {
     expect(recommendMinimumCutCount(15)).toBe(4);
   });
 
-  it("3) 30초 = 3 (max(3, ceil(30/15)))", () => {
-    expect(recommendMinimumCutCount(30)).toBe(3);
+  it("3) 30초 = 4 (max(4, ceil(30/15)))", () => {
+    expect(recommendMinimumCutCount(30)).toBe(4);
   });
 
   it("4) 120초 = 8 (ceil(120/15))", () => {
     expect(recommendMinimumCutCount(120)).toBe(8);
   });
 
-  it("5) 20초 = 3 (max(3, ceil(20/15)))", () => {
-    expect(recommendMinimumCutCount(20)).toBe(3);
+  it("5) 20초 = 4 (max(4, ceil(20/15)))", () => {
+    expect(recommendMinimumCutCount(20)).toBe(4);
   });
 
-  it("6) 25초 = 3 (max(3, ceil(25/15)))", () => {
-    expect(recommendMinimumCutCount(25)).toBe(3);
+  it("6) 25초 = 4 (max(4, ceil(25/15)))", () => {
+    expect(recommendMinimumCutCount(25)).toBe(4);
   });
 });
 
@@ -84,17 +84,17 @@ describe("C. segment-aware recommendCutCountRange", () => {
 
 describe("D. density preset segment interaction", () => {
   it("11) dense(120초) → 상단 확장", () => {
-    const base = recommendCutCountRange(120); // {16, 32}
+    const base = recommendCutCountRange(120); // {32, 48}
     const dense = densityPresetToRange("dense", 120);
-    expect(dense.min).toBe(base.max); // 32
-    expect(dense.max).toBe(base.max + 2); // 34
+    expect(dense.min).toBe(base.max); // 48
+    expect(dense.max).toBe(base.max + 2); // 50
   });
 
   it("12) sparse(120초) → 하단 축소", () => {
-    const base = recommendCutCountRange(120); // {16, 32}
+    const base = recommendCutCountRange(120); // {32, 48}
     const sparse = densityPresetToRange("sparse", 120);
-    expect(sparse.min).toBe(Math.max(1, base.min - 1)); // 15
-    expect(sparse.max).toBe(base.min); // 16
+    expect(sparse.min).toBe(Math.max(1, base.min - 1)); // 31
+    expect(sparse.max).toBe(base.min); // 32
   });
 });
 
@@ -158,16 +158,16 @@ describe("F. persona + segment-aware", () => {
 describe("G. regression checks", () => {
   it("18) ≤15초 범위 기본값 유지 (숏폼 리듬 정책)", () => {
     expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 2 });
-    expect(recommendCutCountRange(8)).toEqual({ min: 1, max: 2 });
-    expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
+    expect(recommendCutCountRange(8)).toEqual({ min: 3, max: 6 });
+    expect(recommendCutCountRange(12)).toEqual({ min: 4, max: 6 });
     expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
   });
 
-  it("19) ≤15초 density minimum (숏폼 리듬: 10-12=3, 13-15=4)", () => {
+  it("19) ≤15초 density minimum (숏폼 리듬: 6-9=3, 10-15=4)", () => {
     expect(recommendMinimumCutCount(4)).toBe(1);
-    expect(recommendMinimumCutCount(7)).toBe(1);
-    expect(recommendMinimumCutCount(9)).toBe(1);
-    expect(recommendMinimumCutCount(12)).toBe(3);
+    expect(recommendMinimumCutCount(7)).toBe(3);
+    expect(recommendMinimumCutCount(9)).toBe(3);
+    expect(recommendMinimumCutCount(12)).toBe(4);
     expect(recommendMinimumCutCount(15)).toBe(4);
   });
 

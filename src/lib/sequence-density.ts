@@ -66,22 +66,18 @@ export const CUT_COUNT_MAX = 10;
 /**
  * 시퀀스당 런타임 → 시퀀스 내부 내러티브 밀도 권장 범위.
  *
- * 이 값은 총 런타임을 시퀀스로 분할할 때의 시퀀스 수가 아니라,
- * "이 길이의 시퀀스는 내부적으로 몇 개의 서사 비트/샷을 가져야 하는가"의 가이드.
  * multi-shot-planner와 연동되어 Layer 3 샷 수 결정에 사용.
- *
- *   10–12s: 3–4 internal shots (10s+ = 최소 3컷 규칙)
- *   13–15s: 3–6 internal shots
- *
- * 10s 미만 시퀀스는 특수 케이스 (의도적 원테이크 또는 짧은 컷):
- *   3–5s:  1–2 shots
- *   6–9s:  1–2 shots
+ */
+/**
+ * 확정 규칙 (2026-03):
+ *   ≤5초: 1~2컷 (micro)
+ *   6~9초: 3~6컷 (short — 최소 3컷)
+ *   10~15초: 4~6컷 (shortform-critical)
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 9,  min: 1, max: 2 },
-  { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 4, max: 6 },  // 숏폼 리듬: 13-15초는 최소 4컷 (느린 감독도 최소 4컷)
+  { maxSec: 9,  min: 3, max: 6 },  // 6~9초: 최소 3컷
+  { maxSec: 15, min: 4, max: 6 },  // 10~15초: 4~6컷
 ];
 
 /**
@@ -434,21 +430,20 @@ export function resolveSegmentPlan(opts: {
  * 48초 → ceil(48/15) = 4 시퀀스 (각 12초)
  * 120초 → ceil(120/15) = 8 시퀀스 (각 15초)
  */
+/**
+ * 확정 규칙 (2026-03):
+ *   ≤5초: 1컷 (micro)
+ *   6~9초: 3컷 (short)
+ *   10~15초: 4컷 (shortform-critical)
+ *   16초+: over-limit (segment 분할)
+ */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
-  // 숏폼 리듬 규칙: 13-15초는 최소 4컷 (감독 스타일보다 플랫폼 리듬 우선)
-  if (totalDurationSec >= 13 && totalDurationSec <= KLING_SEGMENT_CAP) {
-    return 4;
-  }
-  // 10-12초이면 최소 3컷
-  if (totalDurationSec >= 10 && totalDurationSec < 13) {
-    return 3;
-  }
-  if (totalDurationSec < 10) {
-    return 1;
-  }
-  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 3
-  return Math.max(3, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
+  if (totalDurationSec <= 5) return 1;
+  if (totalDurationSec <= 9) return 3;
+  if (totalDurationSec <= KLING_SEGMENT_CAP) return 4;
+  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 4
+  return Math.max(4, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
 }
 
 /**

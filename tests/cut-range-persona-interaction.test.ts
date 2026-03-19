@@ -156,11 +156,11 @@ describe("E. editorial persona regression check", () => {
     expect(ep.motionBias).toBe("minimal");
   });
 
-  it("13) density policy = shortform rhythm model (13-15s: 4, 10-12s: 3, <10s: 1)", () => {
+  it("13) density policy = shortform rhythm model (10-15s: 4, 6-9s: 3, ≤5s: 1)", () => {
     expect(recommendMinimumCutCount(15)).toBe(4);
-    expect(recommendMinimumCutCount(12)).toBe(3);
-    expect(recommendMinimumCutCount(9)).toBe(1);
-    expect(recommendMinimumCutCount(7)).toBe(1);
+    expect(recommendMinimumCutCount(12)).toBe(4);
+    expect(recommendMinimumCutCount(9)).toBe(3);
+    expect(recommendMinimumCutCount(7)).toBe(3);
     expect(recommendMinimumCutCount(4)).toBe(1);
   });
 });

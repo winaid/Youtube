@@ -33,10 +33,10 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
   });
 
   it("15초 이하 → 숏폼 리듬 정책 반영", () => {
-    expect(recommendMinimumCutCount(8)).toBe(1);
-    expect(recommendMinimumCutCount(10)).toBe(3);  // 10-12초: min 3
-    expect(recommendMinimumCutCount(12)).toBe(3);  // 10-12초: min 3
-    expect(recommendMinimumCutCount(15)).toBe(4);  // 13-15초: min 4
+    expect(recommendMinimumCutCount(8)).toBe(3);   // 6-9초: min 3
+    expect(recommendMinimumCutCount(10)).toBe(4);  // 10-15초: min 4
+    expect(recommendMinimumCutCount(12)).toBe(4);  // 10-15초: min 4
+    expect(recommendMinimumCutCount(15)).toBe(4);  // 10-15초: min 4
   });
 
   it("48초 → 4 시퀀스 (ceil(48/15))", () => {
@@ -51,8 +51,8 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
     expect(recommendMinimumCutCount(60)).toBe(4);
   });
 
-  it("30초 → 최소 3 (segment-aware: max(3, ceil(30/15)))", () => {
-    expect(recommendMinimumCutCount(30)).toBe(3);
+  it("30초 → 최소 4 (segment-aware: max(4, ceil(30/15)))", () => {
+    expect(recommendMinimumCutCount(30)).toBe(4);
   });
 
   it("300초 → 20 시퀀스 (5분 = 배치 예산 한도)", () => {
@@ -94,46 +94,46 @@ describe("densifyCuts: 숏폼 리듬 분할", () => {
     expect(total).toBe(15);
   });
 
-  it("단일 12초 시퀀스 → 3컷 분할 (숏폼 리듬: 10-12초 min=3)", () => {
+  it("단일 12초 시퀀스 → 4컷 분할 (숏폼 리듬: 10-15초 min=4)", () => {
     const cuts = [{ durationSec: 12 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
   });
 
-  it("단일 8초 시퀀스 → 분할 안 함 (min=1)", () => {
+  it("단일 8초 시퀀스 → 3컷 분할 (short band: 6-9s min=3)", () => {
     const cuts = [{ durationSec: 8 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(1);
+    expect(result.length).toBe(3);
   });
 
-  it("단일 16초 시퀀스 → 3컷 분할 (max(3, ceil(16/15))=3)", () => {
+  it("단일 16초 시퀀스 → 4컷 분할 (max(4, ceil(16/15))=4)", () => {
     const cuts = [{ durationSec: 16 }];
     const result = densifyCuts(cuts, 16);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(16);
   });
 
-  it("단일 20초 시퀀스 → 3컷 분할 (max(3, ceil(20/15))=3)", () => {
+  it("단일 20초 시퀀스 → 4컷 분할 (max(4, ceil(20/15))=4)", () => {
     const cuts = [{ durationSec: 20 }];
     const result = densifyCuts(cuts, 20);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
   });
 
-  it("3 × 15s = 45s → 분할 불필요 (3 ≥ max(3, ceil(45/15))=3)", () => {
+  it("3 × 15s = 45s → 분할 필요 (3 < max(4, ceil(45/15))=4)", () => {
     const cuts = [
       { durationSec: 15 },
       { durationSec: 15 },
       { durationSec: 15 },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
   });
 
-  it("2 × 15s = 30s, 필요 최소=3 → 1컷 추가 분할", () => {
+  it("2 × 15s = 30s, 필요 최소=4 → 2컷 추가 분할", () => {
     const cuts = [{ durationSec: 15 }, { durationSec: 15 }];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
   });
 });
 

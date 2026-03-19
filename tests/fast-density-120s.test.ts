@@ -87,7 +87,7 @@ describe("B. 120초 segment-aware density", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("C. resolveCutCount with totalDurationSec=120", () => {
-  it("9) secPerCut*3 같은 가짜 totalDuration 대신 실제 120 사용 시 결과가 다름", () => {
+  it("9) secPerCut*3 같은 가짜 totalDuration 대신 실제 120 사용 시 densityMinimum이 더 높음", () => {
     const fakeResult = resolveCutCount({
       totalDurationSec: 8 * 3, // 24 — 이전 버그 패턴
       personaBias: "neutral",
@@ -96,8 +96,9 @@ describe("C. resolveCutCount with totalDurationSec=120", () => {
       totalDurationSec: 120, // 실제 값
       personaBias: "neutral",
     });
-    // 120초면 훨씬 더 많은 컷이 필요
-    expect(realResult.cutCount).toBeGreaterThan(fakeResult.cutCount);
+    // 120초면 더 높은 densityMinimum (ceil(120/15)=8 vs ceil(24/15)=4)
+    expect(realResult.densityMinimum).toBeGreaterThan(fakeResult.densityMinimum);
+    // cutCount는 CUT_COUNT_MAX=10으로 둘 다 capped될 수 있으므로 densityMinimum으로 비교
   });
 
   it("10) 120초 + dense range + upper bias → 많은 컷 수", () => {

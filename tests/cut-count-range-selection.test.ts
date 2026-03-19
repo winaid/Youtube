@@ -41,12 +41,12 @@ describe("A. recommendCutCountRange", () => {
     expect(recommendCutCountRange(5)).toEqual({ min: 1, max: 2 });
   });
 
-  it("3) 8s → { min: 1, max: 2 }", () => {
-    expect(recommendCutCountRange(8)).toEqual({ min: 1, max: 2 });
+  it("3) 8s → { min: 3, max: 6 }", () => {
+    expect(recommendCutCountRange(8)).toEqual({ min: 3, max: 6 });
   });
 
-  it("4) 12s → { min: 3, max: 4 }", () => {
-    expect(recommendCutCountRange(12)).toEqual({ min: 3, max: 4 });
+  it("4) 12s → { min: 4, max: 6 }", () => {
+    expect(recommendCutCountRange(12)).toEqual({ min: 4, max: 6 });
   });
 
   it("5) 20s → segment-aware (15s segment + 5s remainder)", () => {

@@ -56,9 +56,9 @@ describe("B. remainder segment budget", () => {
   it("5) 25초 remainder(10초) cutRange는 singleSegmentRange(10) 기반", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 25 });
     const rem = plan.segments[1];
-    // 10초 → RANGE_PRESETS: maxSec=12 → {3, 4}, densityMinimum=3
-    expect(rem.cutRange.min).toBeGreaterThanOrEqual(3);
-    expect(rem.cutRange.max).toBeLessThanOrEqual(4);
+    // 10초 → RANGE_PRESETS: 10-15s → {4, 6}, densityMinimum=4
+    expect(rem.cutRange.min).toBeGreaterThanOrEqual(4);
+    expect(rem.cutRange.max).toBeLessThanOrEqual(6);
   });
 
   it("6) 90초 = 정확히 6 segments, remainder 없음", () => {

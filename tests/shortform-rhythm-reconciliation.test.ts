@@ -49,8 +49,8 @@ describe("12초 입력", () => {
     expect(plan.cutCount).toBeGreaterThanOrEqual(4);
   });
 
-  it("density minimum이 3이다", () => {
-    expect(recommendMinimumCutCount(12)).toBe(3);
+  it("density minimum이 4이다", () => {
+    expect(recommendMinimumCutCount(12)).toBe(4);
   });
 });
 
