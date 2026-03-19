@@ -40,6 +40,13 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 
+interface GroundingQualityInfo {
+  score: number;
+  label: "strong" | "moderate" | "weak" | "none";
+  sourceCount: number;
+  details: string;
+}
+
 interface WebDirectorResult {
   id: string;
   name: string;
@@ -52,6 +59,7 @@ interface WebDirectorResult {
   notableWorks?: string[];
   grounded?: boolean;
   sources?: Array<{ title?: string; url?: string }>;
+  groundingQuality?: GroundingQualityInfo;
 }
 
 interface InputPanelProps {
@@ -1273,15 +1281,30 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 {/* 웹 추천 감독 */}
                 {directorRecommendation.webSuggestions.length > 0 && (
                   <div className="space-y-1.5">
-                    <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
-                      {directorRecommendation.webSuggestions.some((s: Record<string, unknown>) => s.grounded)
-                        ? "웹 기반 추천 감독"
-                        : "웹 확장 추천 감독"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
+                        {directorRecommendation.webSuggestions.some((s: Record<string, unknown>) => s.grounded)
+                          ? "웹 검색 기반 추천 감독"
+                          : "모델 지식 기반 추천 감독"}
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>
+                        {directorRecommendation.webSuggestions.length}명
+                      </span>
+                    </div>
                     <div className="space-y-1.5">
                       {directorRecommendation.webSuggestions.map((sug) => {
                         const alreadyAdded = customDirectors.some((d) => d.id === sug.id);
                         const isSelected = directorPersona === sug.id;
+                        const gq = (sug as Record<string, unknown>).groundingQuality as GroundingQualityInfo | undefined;
+                        const groundingLabel = gq?.label === "strong" ? "높은 신뢰도"
+                          : gq?.label === "moderate" ? "보통 신뢰도"
+                          : gq?.label === "weak" ? "낮은 신뢰도"
+                          : null;
+                        const groundingColor = gq?.label === "strong" ? "#16a34a"
+                          : gq?.label === "moderate" ? "#ca8a04"
+                          : gq?.label === "weak" ? "#dc2626"
+                          : "#999";
+
                         return (
                           <button
                             key={sug.id}
@@ -1319,15 +1342,35 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                                 <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "#787fff10", color: "#787fff" }}>{sug.region}</span>
                                 {isSelected && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e", color: "white" }}>선택됨</span>}
                               </div>
-                              <span
-                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                style={{ background: sug.fitScore >= 85 ? "#22c55e15" : "#fff78715", color: sug.fitScore >= 85 ? "#16a34a" : "#7a7000" }}
-                              >
-                                {sug.fitScore}%
-                              </span>
+                              <div className="flex items-center gap-1">
+                                {/* grounding 품질 라벨 — source 있을 때만 표시 */}
+                                {groundingLabel && (
+                                  <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: `${groundingColor}10`, color: groundingColor }}>
+                                    {groundingLabel}
+                                  </span>
+                                )}
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                  style={{ background: sug.fitScore >= 85 ? "#22c55e15" : "#fff78715", color: sug.fitScore >= 85 ? "#16a34a" : "#7a7000" }}
+                                >
+                                  {sug.fitScore}%
+                                </span>
+                              </div>
                             </div>
                             <p className="text-[10px]" style={{ color: "#888" }}>{sug.style}</p>
                             <p className="text-[10px] leading-relaxed mt-0.5" style={{ color: "#666" }}>{sug.reason}</p>
+                            {/* source 기반 여부 — grounded일 때만 표시 */}
+                            {(sug as Record<string, unknown>).grounded && gq && gq.sourceCount > 0 && (
+                              <p className="text-[8px] mt-0.5" style={{ color: "#16a34a90" }}>
+                                웹 소스 {gq.sourceCount}개 참조 (신뢰도 {gq.score}/100)
+                              </p>
+                            )}
+                            {/* grounded가 아닐 때 정직하게 표시 */}
+                            {!(sug as Record<string, unknown>).grounded && (
+                              <p className="text-[8px] mt-0.5" style={{ color: "#9ca3af" }}>
+                                모델 지식 기반 추천
+                              </p>
+                            )}
                             {!alreadyAdded && (
                               <p className="text-[9px] mt-1" style={{ color: "#22c55e" }}>+ 클릭하면 자동으로 저장됩니다</p>
                             )}
@@ -1337,6 +1380,32 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                     </div>
                   </div>
                 )}
+
+                {/* 웹 추천이 0명일 때 — 디버그 정보 표시 */}
+                {directorRecommendation.webSuggestions.length === 0 && directorRecommendation.localMatches.length > 0 && (() => {
+                  const debug = (directorRecommendation as Record<string, unknown>)._debug as Record<string, unknown> | undefined;
+                  if (!debug) return null;
+                  return (
+                    <div className="text-[9px] px-2 py-1.5 rounded" style={{ background: "#f8fafc", border: "1px solid #e2e8f010", color: "#94a3b8" }}>
+                      <p className="font-medium">웹 확장 결과 0명</p>
+                      <div className="mt-0.5 space-y-0.5">
+                        {debug.attemptedWebSearch ? (
+                          <>
+                            <p>웹 검색: 시도됨</p>
+                            {debug.webSearchQuery && <p>쿼리: {String(debug.webSearchQuery).slice(0, 50)}</p>}
+                            <p>원시 결과: {String(debug.webSearchResultCount ?? 0)}명</p>
+                            <p>중복 제거: {String(debug.webSearchRejectedCount ?? 0)}명</p>
+                            {Array.isArray(debug.webSearchRejectionReasons) && debug.webSearchRejectionReasons.length > 0 && (
+                              <p>사유: {(debug.webSearchRejectionReasons as string[]).slice(0, 3).join(", ")}</p>
+                            )}
+                          </>
+                        ) : (
+                          <p>웹 검색: 미시도</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <button
                   onClick={() => setShowRecommendation(false)}
@@ -1386,10 +1455,13 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 ))}
                 {webResults.length > 0 && (
                   <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-gray-50 border-b" style={{ color: "#787fff" }}>
-                    {webResults.some(d => d.grounded) ? "웹 기반 결과" : "모델 제안"}
+                    {webResults.some(d => d.grounded) ? "웹 검색 기반 결과" : "모델 지식 기반 제안"}
+                    <span className="ml-1 text-[9px]" style={{ color: "#999" }}>({webResults.length}명)</span>
                   </div>
                 )}
-                {webResults.map((webDir) => (
+                {webResults.map((webDir) => {
+                  const gq = webDir.groundingQuality;
+                  return (
                   <button
                     key={webDir.id}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-b-0 transition-colors"
@@ -1405,22 +1477,29 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                         >
                           {webDir.region}
                         </Badge>
-                        <Badge
-                          className="text-[10px]"
-                          style={webDir.grounded
-                            ? { background: "#22c55e20", color: "#22c55e" }
-                            : { background: "#787fff20", color: "#787fff" }
-                          }
-                        >
-                          {webDir.grounded ? "웹 근거" : "모델 제안"}
-                        </Badge>
+                        {webDir.grounded ? (
+                          <Badge
+                            className="text-[10px]"
+                            style={{ background: "#22c55e20", color: "#22c55e" }}
+                          >
+                            웹 근거 {gq ? `(${gq.score})` : ""}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            className="text-[10px]"
+                            style={{ background: "#787fff20", color: "#787fff" }}
+                          >
+                            모델 제안
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {webDir.matchedBy} | {webDir.style?.slice(0, 40)}...
                     </p>
                   </button>
-                ))}
+                  );
+                })}
                 {isSearching && (
                   <div className="px-3 py-3 text-xs text-center text-muted-foreground flex items-center justify-center gap-2">
                     <span className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "#787fff", borderTopColor: "transparent" }} />

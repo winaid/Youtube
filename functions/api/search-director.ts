@@ -1,15 +1,19 @@
 import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import {
+  generateSlugId,
+  extractGroundingSources,
+  computeGroundingQuality,
+  clampFitScore,
+  ensureReason,
+  type GroundingSource,
+  type GroundingQuality,
+} from "./_director-shared";
 
 type Env = GeminiEnv;
 
 // ═══════════════════════════════════════════════════════════════════
 // Response Types
 // ═══════════════════════════════════════════════════════════════════
-
-interface GroundingSource {
-  title?: string;
-  url?: string;
-}
 
 interface DirectorSearchResult {
   id: string;
@@ -29,6 +33,7 @@ interface DirectorSearchResult {
   notableWorks?: string[];
   sources?: GroundingSource[];
   grounded: boolean;
+  groundingQuality?: GroundingQuality;
 }
 
 interface SearchDirectorResponse {
@@ -50,7 +55,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "query is required", success: false, directors: [] }, { status: 400 });
     }
 
+    // 너무 짧은 쿼리 경고
     const warnings: string[] = [];
+    if (query.trim().length < 2) {
+      warnings.push("검색어가 너무 짧습니다. 더 구체적인 검색어를 사용해보세요.");
+    }
 
     // ── Step 1: Gemini + googleSearchRetrieval (실제 웹 검색) ──
     const webSearchPrompt = `You are a world-class film/animation encyclopedia with access to web search.
@@ -114,18 +123,12 @@ If no match, return { "directors": [] }`;
 
       const text = webData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
 
-      // grounding metadata 추출
+      // grounding source 추출 — 공통 유틸 사용
       const grounding = webData?.candidates?.[0]?.groundingMetadata;
-      const groundingChunks = grounding?.groundingChunks ?? [];
+      groundingSources = extractGroundingSources(grounding?.groundingChunks);
 
-      if (groundingChunks.length > 0) {
+      if (groundingSources.length > 0) {
         mode = "web";
-        groundingSources = groundingChunks
-          .filter(c => c.web)
-          .map(c => ({
-            title: c.web!.title,
-            url: c.web!.uri,
-          }));
         console.log(`[search-director] 웹 grounding 확인: ${groundingSources.length}개 소스`);
       } else {
         mode = "model";
@@ -141,9 +144,24 @@ If no match, return { "directors": [] }`;
       }
 
       const rawDirs = Array.isArray(parsed.directors) ? parsed.directors as Array<Record<string, unknown>> : [];
+      console.log(`[search-director] 원시 결과: ${rawDirs.length}명, grounding sources: ${groundingSources.length}`);
 
       for (const d of rawDirs) {
-        if (!d.name || !d.nameKo) continue;
+        if (!d.name || !d.nameKo) {
+          console.log(`[search-director] 결과 스킵: name/nameKo 누락`);
+          continue;
+        }
+
+        // grounding 품질 점수 계산 — 공통 유틸 사용
+        const relevanceKeywords = [
+          String(d.name), String(d.nameKo), query,
+          ...(Array.isArray(d.notableWorks) ? d.notableWorks.map(String) : []),
+        ];
+        const groundingQuality = computeGroundingQuality(
+          groundingSources,
+          relevanceKeywords,
+          false,
+        );
 
         directors.push({
           id: String(d.id ?? generateSlugId(String(d.name), String(d.region ?? "미국"))),
@@ -157,6 +175,7 @@ If no match, return { "directors": [] }`;
           notableWorks: Array.isArray(d.notableWorks) ? d.notableWorks as string[] : [],
           sources: groundingSources.length > 0 ? groundingSources : undefined,
           grounded: groundingSources.length > 0,
+          groundingQuality,
         });
       }
     } else {
@@ -193,6 +212,8 @@ If no match, return { "directors": [] }`;
         ? fallbackParsed.directors as Array<Record<string, unknown>>
         : [];
 
+      console.log(`[search-director] fallback 결과: ${fallbackDirs.length}명 (grounded=false)`);
+
       for (const d of fallbackDirs) {
         if (!d.name || !d.nameKo) continue;
         directors.push({
@@ -206,6 +227,7 @@ If no match, return { "directors": [] }`;
           signatureTechniques: d.signatureTechniques as DirectorSearchResult["signatureTechniques"],
           notableWorks: Array.isArray(d.notableWorks) ? d.notableWorks as string[] : [],
           grounded: false,
+          groundingQuality: { score: 0, sourceCount: 0, uniqueDomains: 0, relevantSources: 0, label: "none", details: "fallback — no web search" },
         });
       }
 
@@ -241,23 +263,9 @@ If no match, return { "directors": [] }`;
         query: "",
         mode: "model" as const,
         directors: [],
+        warnings: ["검색 중 예외가 발생했습니다."],
       },
       { status: 500 }
     );
   }
 };
-
-// ═══════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════
-
-function generateSlugId(name: string, region: string): string {
-  const regionSlug: Record<string, string> = {
-    "한국": "kr", "일본": "jp", "중국": "cn", "유럽": "eu",
-    "미국": "us", "인도": "in", "중동": "me", "동남아": "sea",
-    "중남미": "la", "아프리카": "af", "오세아니아": "oc",
-  };
-  const rSlug = regionSlug[region] ?? "xx";
-  const nameSlug = name.split(" ").pop()?.toLowerCase().replace(/[^a-z]/g, "") ?? "unknown";
-  return `web-${rSlug}-${nameSlug}`;
-}

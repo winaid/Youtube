@@ -69,15 +69,50 @@ V1 완성 단계. 핵심 파이프라인/프롬프트/규칙이 구현 완료되
 
 ## Director Search & Recommendation
 
-감독 검색/추천은 **하이브리드 모드**로 동작한다.
+감독 검색/추천은 **실시간 웹 확장 하이브리드** 모드로 동작한다.
 
+### 캐시 정책
+- **캐시를 의도적으로 도입하지 않았다.** 결과 재사용, KV 저장, TTL 설계, 입력 정규화 캐시 키 생성 전부 없다.
+- 매 호출마다 Gemini API를 새로 호출한다. 이는 결과의 정직성과 실시간성을 우선한 의도적 설계다.
+- 속도 문제는 구조 개선과 공통 유틸 분리로 대응한다.
+
+### 파이프라인
 - **검색 (`/api/search-director`)**: Gemini + `googleSearchRetrieval` 도구를 사용한 실제 웹 검색. grounding metadata가 있으면 `grounded: true`로 표시, 없으면 `grounded: false`로 모델 지식 기반임을 명시.
 - **추천 (`/api/recommend-director`)**: 3단계 파이프라인.
   1. Stage 1: 로컬 감독 풀에서 Gemini 매칭 (규칙 기반 사전 추출 + Gemini 분석)
-  2. Stage 2: **항상** 웹 검색으로 외부 후보 확장 (더 이상 조건부가 아님)
-  3. Stage 3: 로컬 + 웹 결과 병합, 중복 제거, 점수 정렬
-- **UI 라벨**: grounding 소스 유무에 따라 "웹 기반 결과" / "모델 제안" 구분. 출처 없는 결과에 "웹 검색 결과" 라벨 사용 금지.
-- **환경변수**: `GEMINI_API_KEY` (또는 `GEMINI_API_KEY_2` fallback) 필요.
+  2. Stage 2: **항상** 웹 검색으로 외부 후보 확장 — 로컬 결과 강도와 무관. localWeak 게이트 완전 제거.
+  3. Stage 3: 로컬 + 웹 결과 병합, 중복 제거 (공통 유틸 사용), grounding 품질 점수 계산
+
+### grounding 품질 평가
+단순 `grounded: boolean`이 아닌 정량 점수 (0-100). 평가 기준:
+- source 개수 (0개=0점, 3+개=30점)
+- source 도메인 다양성 (같은 도메인 반복 시 감점)
+- source 제목/URL과 감독명·작품명의 관련성 (0-35점)
+- 로컬 데이터와 웹 데이터의 상호 보강 여부 (+10점)
+- 라벨: strong (70+) / moderate (40-69) / weak (1-39) / none (0)
+
+### UI 라벨
+- `grounded=true` + strong/moderate: "웹 검색 기반 추천 감독" + 신뢰도 점수
+- `grounded=true` + weak: "웹 검색 기반 추천 감독" + "낮은 신뢰도" 경고
+- `grounded=false`: "모델 지식 기반 추천 감독"
+- source 없는 결과에 "웹 검색 결과" 라벨 사용 금지
+
+### fallback 동작
+- 웹 검색 API 실패 → 모델 지식 기반 fallback + 경고 메시지 + `mode: "model"`
+- 모든 웹 결과 로컬 중복 → `webSuggestions: []` + 디버그에 사유 기록
+- JSON 파싱 실패 → `parseFirstJsonObject()` fallback
+
+### 공통 유틸 (`_director-shared.ts`)
+search-director와 recommend-director의 중복 로직을 공통 모듈로 분리:
+- `generateSlugId()` — 웹 감독 ID 생성
+- `extractGroundingSources()` — grounding metadata에서 source 추출 및 정규화
+- `computeGroundingQuality()` — grounding 품질 점수 계산 (0-100)
+- `buildLocalNameSet()` / `isLocalDuplicate()` — 이름 기반 중복 판정
+- `clampFitScore()` / `ensureReason()` — fitScore/reason 정규화
+- `isGenericReason()` — 추천 사유 품질 검증
+
+### 환경변수
+`GEMINI_API_KEY` (또는 `GEMINI_API_KEY_2` fallback) 필요.
 
 ## Architecture Overview
 

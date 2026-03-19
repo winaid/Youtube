@@ -47,9 +47,35 @@ npm test        # 테스트 실행
 
 http://localhost:3000 에서 확인.
 
+## 감독 검색 & 추천
+
+감독 시스템은 **실시간 웹 확장 하이브리드** 모드로 동작합니다.
+
+- **검색 (`/api/search-director`)**: Gemini + `googleSearchRetrieval` 도구를 사용한 실제 웹 검색. grounding metadata 유무에 따라 `grounded: true/false` 구분.
+- **추천 (`/api/recommend-director`)**: 로컬 매칭 + **항상** 웹 검색으로 외부 후보 확장 (로컬 결과 강도와 무관).
+- **캐시 없음**: 이 단계에서 캐시는 의도적으로 도입하지 않았습니다. 모든 호출은 매번 새로 처리됩니다.
+- **grounding 품질 평가**: 단순 boolean이 아닌 정량 점수 (0-100). source 개수, 도메인 다양성, 관련성 기반.
+
+### 결과 유형
+| 구분 | 설명 |
+|------|------|
+| **로컬 추천** | 보유 감독 풀에서 Gemini가 매칭한 결과 |
+| **웹 검색 기반** | `googleSearchRetrieval` grounding이 확인된 외부 감독 |
+| **모델 지식 기반** | 웹 검색 요청했으나 grounding 없이 모델 내부 지식에서 생성된 결과 |
+
+### fallback 동작
+- 웹 검색 API 실패 시: 모델 지식 기반 fallback + 경고 표시
+- 모든 웹 결과가 로컬과 중복 시: 외부 후보 0명 + 디버그 정보로 사유 확인 가능
+
+### 속도/비용 trade-off
+- 웹 검색은 매번 Gemini Pro API를 호출합니다 (추천 1회 = 로컬 매칭 1회 + 웹 검색 1회).
+- 캐시가 없으므로 같은 시나리오를 다시 분석하면 동일한 API 비용이 발생합니다.
+- 이는 결과의 정직성과 실시간성을 우선한 의도적 설계입니다.
+
 ## 환경 변수
 
-- `GEMINI_API_KEY` — Gemini API 키 (컷 생성용)
+- `GEMINI_API_KEY` — Gemini API 키 (컷 생성, 감독 검색/추천용)
+- `GEMINI_API_KEY_2` — Gemini API 키 fallback (optional)
 - Kling API 관련 키는 서버 설정에서 관리
 
 ## 기술 스택
