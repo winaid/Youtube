@@ -159,10 +159,10 @@ describe("_latency 메타 구조", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("fast path 조건 판정", () => {
-  it("10초 3컷 + 충분한 outline → fast path 사용", () => {
+  it("10초 4컷 + 충분한 outline → fast path 사용", () => {
     const result = shouldUseFastPath({
       totalDurationSec: 10,
-      targetCuts: 3,
+      targetCuts: 4,
       outlineQualitySufficient: true,
       step1Degraded: false,
     });

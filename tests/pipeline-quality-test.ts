@@ -1,6 +1,6 @@
 /**
  * 파이프라인 품질 검증 테스트
- * - 컷 수 규칙 (10s+ = min 3, typical 3-6)
+ * - 컷 수 규칙 (6-9s = min 3, 10-15s = min 4, typical 3-6)
  * - duration 정합성
  * - 서사 해석 (detectBeatType, describeNarrativeFunction)
  * - prompt 구조 (audio 제거, narrative function 포함)
@@ -46,53 +46,53 @@ function assert(condition: boolean, label: string) {
 // ═══════════════════════════════════════════════════════════════
 // TEST 1: 컷 수 규칙
 // ═══════════════════════════════════════════════════════════════
-console.log("\n═══ TEST 1: 컷 수 규칙 (10s+ = min 3) ═══");
+console.log("\n═══ TEST 1: 컷 수 규칙 (≤5s=1, 6-9s=min3, 10-15s=min4) ═══");
 
 // recommendMinimumCutCount
-assert(recommendMinimumCutCount(5) === 1, "5초 → min 1");
-assert(recommendMinimumCutCount(9) === 1, "9초 → min 1");
-assert(recommendMinimumCutCount(10) === 3, "10초 → min 3");
-assert(recommendMinimumCutCount(12) === 3, "12초 → min 3");
-assert(recommendMinimumCutCount(15) === 3, "15초 → min 3");
-assert(recommendMinimumCutCount(30) >= 3, "30초 → min 3+");
-assert(recommendMinimumCutCount(60) >= 3, "60초 → min 3+");
+assert(recommendMinimumCutCount(5) === 1, "5초 → min 1 (micro)");
+assert(recommendMinimumCutCount(9) === 3, "9초 → min 3 (6-9s short band)");
+assert(recommendMinimumCutCount(10) === 4, "10초 → min 4 (10-15s critical)");
+assert(recommendMinimumCutCount(12) === 4, "12초 → min 4 (10-15s critical)");
+assert(recommendMinimumCutCount(15) === 4, "15초 → min 4 (10-15s critical)");
+assert(recommendMinimumCutCount(30) >= 4, "30초 → min 4+");
+assert(recommendMinimumCutCount(60) >= 4, "60초 → min 4+");
 
 // recommendCutCountRange
 const range10 = recommendCutCountRange(10);
-assert(range10.min >= 3, "10초 range.min >= 3");
+assert(range10.min >= 4, "10초 range.min >= 4 (10-15s critical)");
 const range15 = recommendCutCountRange(15);
-assert(range15.min >= 3, "15초 range.min >= 3");
-assert(range15.max >= 3 && range15.max <= 6, "15초 range.max in 3-6");
+assert(range15.min >= 4, "15초 range.min >= 4 (10-15s critical)");
+assert(range15.max >= 4 && range15.max <= 6, "15초 range.max in 4-6");
 
 // resolveCutCount
 const resolve10 = resolveCutCount({ totalDurationSec: 10 });
-assert(resolve10.cutCount >= 3, "resolveCutCount(10초) >= 3");
+assert(resolve10.cutCount >= 4, "resolveCutCount(10초) >= 4");
 
 const resolve10exact1 = resolveCutCount({ totalDurationSec: 10, exactCutCount: 1 });
-assert(resolve10exact1.cutCount >= 3, "resolveCutCount(10초, exact=1) → enforced >= 3");
+assert(resolve10exact1.cutCount >= 4, "resolveCutCount(10초, exact=1) → enforced >= 4");
 
 const resolve10exact2 = resolveCutCount({ totalDurationSec: 10, exactCutCount: 2 });
-assert(resolve10exact2.cutCount >= 3, "resolveCutCount(10초, exact=2) → enforced >= 3");
+assert(resolve10exact2.cutCount >= 4, "resolveCutCount(10초, exact=2) → enforced >= 4");
 
 const resolve5 = resolveCutCount({ totalDurationSec: 5 });
-assert(resolve5.cutCount >= 1, "resolveCutCount(5초) >= 1 (짧은 영상)");
+assert(resolve5.cutCount >= 1, "resolveCutCount(5초) >= 1 (micro)");
 
 // densityPresetToRange sparse
 const sparse10 = densityPresetToRange("sparse", 10);
-assert(sparse10.min >= 3, "sparse preset at 10초: min >= 3");
+assert(sparse10.min >= 4, "sparse preset at 10초: min >= 4 (10-15s critical)");
 
 const sparse15 = densityPresetToRange("sparse", 15);
-assert(sparse15.min >= 3, "sparse preset at 15초: min >= 3");
+assert(sparse15.min >= 4, "sparse preset at 15초: min >= 4 (10-15s critical)");
 
 // resolveSegmentPlan exactCutCount bypass 방지
 const plan10exact1 = resolveSegmentPlan({ totalDurationSec: 10, exactCutCount: 1 });
-assert(plan10exact1.totalTargetCuts >= 3, "resolveSegmentPlan(10초, exact=1) → enforced >= 3");
+assert(plan10exact1.totalTargetCuts >= 4, "resolveSegmentPlan(10초, exact=1) → enforced >= 4");
 
 const plan15exact2 = resolveSegmentPlan({ totalDurationSec: 15, exactCutCount: 2 });
-assert(plan15exact2.totalTargetCuts >= 3, "resolveSegmentPlan(15초, exact=2) → enforced >= 3");
+assert(plan15exact2.totalTargetCuts >= 4, "resolveSegmentPlan(15초, exact=2) → enforced >= 4");
 
 const plan30 = resolveSegmentPlan({ totalDurationSec: 30 });
-assert(plan30.totalTargetCuts >= 3, "resolveSegmentPlan(30초) >= 3");
+assert(plan30.totalTargetCuts >= 4, "resolveSegmentPlan(30초) >= 4");
 
 // ═══════════════════════════════════════════════════════════════
 // TEST 2: estimateAutoEditPlan

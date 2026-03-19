@@ -100,11 +100,11 @@ function goodOutline(overrides: Record<string, string> = {}) {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("evaluateFastPathEligibility — 기본 조건", () => {
-  it("10초 3컷 + 단순 스토리 + 좋은 outline → eligible", () => {
+  it("10초 4컷 + 단순 스토리 + 좋은 outline → eligible", () => {
     const result = evaluateFastPathEligibility({
       totalDurationSec: 10,
-      targetCuts: 3,
-      outlines: [goodOutline(), goodOutline(), goodOutline()],
+      targetCuts: 4,
+      outlines: [goodOutline(), goodOutline(), goodOutline(), goodOutline()],
       step1Degraded: false,
       storyText: "한 소년이 도시를 걷는다.",
     });

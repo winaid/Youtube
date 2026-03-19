@@ -225,12 +225,12 @@ for (const [label, input] of Object.entries(TEST_INPUTS)) {
   // 2. resolveCutCount (15초 기준)
   const cutDecision = resolveCutCount({ totalDurationSec: TOTAL_DURATION });
   console.log(`    resolveCutCount(15초): ${cutDecision.cutCount}컷`);
-  assert(cutDecision.cutCount >= 3, `${label}: 15초 → min 3컷`);
+  assert(cutDecision.cutCount >= 4, `${label}: 15초 → min 4컷 (10-15s critical)`);
 
   // 3. resolveSegmentPlan
   const segPlan = resolveSegmentPlan({ totalDurationSec: TOTAL_DURATION });
   console.log(`    segmentPlan: ${segPlan.totalTargetCuts}컷, segments: ${segPlan.segments.length}`);
-  assert(segPlan.totalTargetCuts >= 3, `${label}: segmentPlan >= 3컷`);
+  assert(segPlan.totalTargetCuts >= 4, `${label}: segmentPlan >= 4컷 (10-15s critical)`);
 
   // 4. script analysis summary
   const phaseA = analyzeScriptPhaseA(input.text);

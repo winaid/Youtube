@@ -1390,7 +1390,7 @@ function buildUltraCompactStep1Prompt(
   editorialSummary?: string,
 ): string {
   const storySnippet = storyText.slice(0, 400);
-  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 12초초과→최소3컷,9~12초→최소3컷,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 6~9초→최소3컷,10~15초→4~6컷,16초이상→생성불가,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
 시나리오: ${storySnippet}
 
 {"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],

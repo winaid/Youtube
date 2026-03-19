@@ -115,7 +115,7 @@ describe("buildOwnerSummary", () => {
     const log = [
       entry({ durationBand: "shortform-critical", failureTags: ["too-slow"] }),
       entry({ durationBand: "shortform-critical", failureTags: ["ok"] }),
-      entry({ durationBand: "shortform-base", failureTags: ["too-slow"] }),
+      entry({ durationBand: "short", failureTags: ["too-slow"] }),
     ];
     const s = buildOwnerSummary(log);
     expect(s.criticalBandFailCount).toBe(1);

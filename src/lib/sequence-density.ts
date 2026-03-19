@@ -30,22 +30,16 @@ export const SEQUENCE_MIN_DURATION = 8;
  * 각 시퀀스는 Kling 1회 생성 단위(8–15s).
  * 시퀀스 내부의 샷 수는 multi-shot-planner가 관리.
  *
- * heuristic 기준 (시퀀스 수, 내부 샷이 아님):
- *   8–15s:  1 시퀀스
- *   16–30s: 2 시퀀스
- *   31–45s: 3 시퀀스
- *   46–60s: 4 시퀀스
+ * 확정 규칙 (2026-03):
+ *   ≤5초: 1컷 (micro), 6~9초: 3컷 (short), 10~15초: 4컷 (critical)
+ *   DENSITY_POLICY는 레거시 — recommendMinimumCutCount()가 실제 source of truth.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
   { maxSec: 5, minCuts: 1 },
-  { maxSec: 8, minCuts: 1 },
-  { maxSec: 15, minCuts: 1 },
-  { maxSec: 30, minCuts: 2 },
-  { maxSec: 60, minCuts: 4 },
-  { maxSec: 120, minCuts: 8 },
-  { maxSec: 300, minCuts: 20 },
-  { maxSec: Infinity, minCuts: 20 },
+  { maxSec: 9, minCuts: 3 },
+  { maxSec: 15, minCuts: 4 },
+  { maxSec: Infinity, minCuts: 4 },
 ];
 
 // ═══════════════════════════════════════════════════════════════════

@@ -19,7 +19,7 @@ import {
 import { recommendMinimumCutCount, recommendCutCountRange } from "../functions/api/_sequence-density";
 
 // ═══════════════════════════════════════════════════════════════════
-// 1. 10초 입력 → 최소 3컷 유지
+// 1. 10초 입력 → 최소 4컷 유지 (10~15초 = shortform-critical)
 // ═══════════════════════════════════════════════════════════════════
 describe("10초 입력", () => {
   it("최소 4컷을 유지한다 (10~15초 = shortform-critical)", () => {
@@ -31,13 +31,13 @@ describe("10초 입력", () => {
     expect(plan.cutCount).toBeGreaterThanOrEqual(4);
   });
 
-  it("density minimum이 3 이상이다", () => {
-    expect(recommendMinimumCutCount(10)).toBeGreaterThanOrEqual(3);
+  it("density minimum이 4이다 (10~15초 = shortform-critical)", () => {
+    expect(recommendMinimumCutCount(10)).toBe(4);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 2. 12초 입력 → 최소 3컷 유지
+// 2. 12초 입력 → 최소 4컷 유지 (10~15초 = shortform-critical)
 // ═══════════════════════════════════════════════════════════════════
 describe("12초 입력", () => {
   it("최소 4컷을 유지한다 (10~15초 = shortform-critical)", () => {
