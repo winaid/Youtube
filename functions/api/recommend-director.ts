@@ -10,6 +10,54 @@ interface LocalDirectorInfo {
   style: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Debug Types
+// ═══════════════════════════════════════════════════════════════════
+
+interface StageStatus {
+  extractSignals: "ok" | "weak" | "failed";
+  localMatch: "ok" | "empty" | "invalid_ids" | "filtered_out" | "failed";
+  webSearch: "not_attempted" | "attempted_success" | "attempted_empty" | "failed";
+  finalAssembly: "ok" | "empty" | "failed";
+}
+
+interface StageReasons {
+  extractSignals?: string;
+  localMatch?: string;
+  webSearch?: string;
+  finalAssembly?: string;
+}
+
+interface DirectorRecommendationDebug {
+  stageStatus: StageStatus;
+  stageReasons: StageReasons;
+  extractedGenres: string[];
+  extractedMoods: string[];
+  extractedKeywords: string[];
+  consideredLocalCount: number;
+  consideredLocalIds: string[];
+  validLocalCount: number;
+  invalidIdsRemoved: string[];
+  rejectedLocalIds: string[];
+  localRejectionReasons: string[];
+  attemptedWebSearch: boolean;
+  webSearchProvider: string | null;
+  webSearchQuery: string | null;
+  webSearchResultCount: number;
+  webSearchAcceptedCount: number;
+  webSearchRejectedCount: number;
+  webSearchRejectionReasons: string[];
+  localResultCount: number;
+  externalResultCount: number;
+  finalResultCount: number;
+  emptyReason?: string;
+  modelUsed: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Main Handler
+// ═══════════════════════════════════════════════════════════════════
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const { storyText, localDirectors } = await context.request.json() as {
@@ -21,94 +69,84 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "storyText is required" }, { status: 400 });
     }
 
+    const validLocalIds = new Set((localDirectors || []).map(d => d.id));
+    const directorPoolSize = validLocalIds.size;
+
+    // ── Debug state ──
+    const stageStatus: StageStatus = {
+      extractSignals: "failed",
+      localMatch: "failed",
+      webSearch: "not_attempted",
+      finalAssembly: "failed",
+    };
+    const stageReasons: StageReasons = {};
+
+    let extractedGenres: string[] = [];
+    let extractedMoods: string[] = [];
+    let extractedKeywords: string[] = [];
+    let consideredLocalIds: string[] = [];
+    let rejectedLocalIds: string[] = [];
+    let localRejectionReasons: string[] = [];
+    let invalidIdsRemoved: string[] = [];
+
+    // Web search state
+    let attemptedWebSearch = false;
+    let webSearchProvider: string | null = null;
+    let webSearchQuery: string | null = null;
+    let webSearchResultCount = 0;
+    let webSearchAcceptedCount = 0;
+    let webSearchRejectedCount = 0;
+    let webSearchRejectionReasons: string[] = [];
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1: Gemini 기반 로컬 매칭 (기존 로직)
+    // ═══════════════════════════════════════════════════════════
+
     const localList = (localDirectors || [])
       .map((d) => `- id:"${d.id}" | ${d.nameKo} (${d.name}) | ${d.region} | ${d.style}`)
       .join("\n");
 
-    const prompt = `당신은 세계 최고의 영화 연출 전문가이자 AI 영상 감독 매칭 시스템입니다.
+    const localPrompt = `당신은 영화 연출 전문가이자 AI 영상 감독 매칭 시스템입니다.
 
 ## 분석할 시나리오
 ${storyText.slice(0, 1200)}
 
-## 현재 보유 감독 목록 (로컬) — 총 ${(localDirectors || []).length}명
+## 보유 감독 목록 — 총 ${directorPoolSize}명
 ${localList}
 
----
-
 ## 임무
-위 시나리오를 분석하여 가장 잘 어울리는 감독을 추천하세요.
+위 시나리오를 분석하고, 보유 감독 목록에서 가장 잘 어울리는 감독 1~3명을 추천하세요.
 
-### STEP 1: 시나리오 분석 (반드시 _pipeline에 기록)
-- 장르, 무드, 시각적 특성 파악
-- 핵심 시각 요소 (역사적 배경, 색감, 규모, 분위기 등)
-- 추출한 장르, 무드, 키워드를 _pipeline 필드에 반드시 기록
+### 분석 결과 기록 (반드시 포함)
+- extractedGenres: 장르 키워드 배열
+- extractedMoods: 무드 키워드 배열
+- extractedKeywords: 핵심 시각 키워드 배열
 
-### STEP 2: 로컬 감독 매칭
-- 위 보유 감독 목록에서 최소 1명, 최대 3명을 fitScore(0-100) 순으로 선별
-- 반드시 1명 이상은 추천해야 함 (가장 가까운 감독이라도 선택)
-- 각 감독이 이 시나리오와 어울리는 구체적 이유 (시각적 기법 위주로)
-- reason은 반드시 시나리오의 구체적 요소(장르, 배경, 감정)와 감독의 기법을 연결하는 2문장
-- id는 반드시 위 보유 감독 목록에 있는 id만 사용 (새로 만들지 말 것)
-- 만약 목록에서 어울리는 감독을 찾기 어렵더라도, 가장 가까운 1명을 fitScore 30 이상으로 반드시 포함
+### 로컬 감독 매칭 규칙
+- 반드시 목록에 있는 id만 사용 (새로 만들지 말 것)
+- 각 감독에 fitScore(0-100)과 reason(한국어 2문장) 포함
+- 목록에 어울리는 감독이 없어도 가장 가까운 1명을 fitScore 30 이상으로 포함
+- 검토했지만 제외한 감독이 있으면 rejectedLocalIds와 rejectionReasons에 기록
 
-### STEP 3: 웹 추천 감독 (로컬에 없는 감독)
-- 보유 목록에 없지만 이 시나리오에 더 완벽히 어울리는 실제 감독 1~2명 추천
-- 반드시 1명 이상 추천해야 함
-- 실존하는 감독만 추천 (허구 감독 절대 금지)
-- 로컬 목록에 있는 감독과 중복 금지
-- 각각 signatureTechniques 포함
-- reason은 반드시 시나리오의 구체적 요소와 감독의 대표 기법을 연결하는 2문장
-
-## 출력 형식 (순수 JSON만, 마크다운 펜스 없이)
-
+## 출력 형식 (순수 JSON)
 {
   "_pipeline": {
-    "extractedGenres": ["장르1", "장르2"],
-    "extractedMoods": ["무드1", "무드2"],
-    "extractedKeywords": ["키워드1", "키워드2", "키워드3"],
+    "extractedGenres": [],
+    "extractedMoods": [],
+    "extractedKeywords": [],
     "consideredLocalCount": 0,
-    "consideredLocalIds": ["검토한 감독 id들"],
-    "rejectedLocalIds": ["fitScore가 너무 낮아 제외한 감독 id들"],
-    "rejectionReasons": ["제외 이유 간단 설명"]
+    "consideredLocalIds": [],
+    "rejectedLocalIds": [],
+    "rejectionReasons": []
   },
   "analysis": "시나리오 특성 요약 2~3줄 (한국어)",
   "localMatches": [
-    {
-      "id": "기존 감독 id (위 목록의 id 그대로)",
-      "fitScore": 0-100,
-      "reason": "이 시나리오와 잘 맞는 구체적 이유 1~2문장 (한국어)"
-    }
-  ],
-  "webSuggestions": [
-    {
-      "id": "region-lastname 슬러그 (예: eu-tarr, jp-miike)",
-      "name": "영어 이름",
-      "nameKo": "한국어 이름",
-      "region": "한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아 중 하나",
-      "style": "쉼표 구분 스타일 키워드 (한국어, 최대 5개)",
-      "description": "연출 스타일 설명 2~3문장 (한국어)",
-      "reason": "이 시나리오와 잘 맞는 구체적 이유 1~2문장 (한국어)",
-      "fitScore": 0-100,
-      "signatureTechniques": {
-        "cameraWork": "영어",
-        "colorPalette": "영어",
-        "lighting": "영어",
-        "editingStyle": "영어",
-        "moodKeywords": "영어"
-      },
-      "notableWorks": ["대표작1", "대표작2", "대표작3"]
-    }
+    { "id": "기존 감독 id", "fitScore": 0-100, "reason": "한국어 2문장" }
   ]
-}
+}`;
 
-중요: _pipeline 필드를 반드시 포함해야 합니다. 이 필드가 없으면 응답이 무효 처리됩니다.
-중요: localMatches는 반드시 1개 이상, webSuggestions도 반드시 1개 이상이어야 합니다. 빈 배열은 허용하지 않습니다.`;
-
-    // ── 감독 추천은 경량 태스크 → Flash 우선, 실패 시 PRO fallback ──
-    // 시나리오 분석 + 매칭은 간단한 추론이므로 Flash로 충분하고 3-5배 빠름.
-
-    const requestBody = {
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    const localRequestBody = {
+      contents: [{ role: "user", parts: [{ text: localPrompt }] }],
       generationConfig: {
         temperature: 0.4,
         maxOutputTokens: 2048,
@@ -116,162 +154,327 @@ ${localList}
       },
     };
 
-    // 1차 시도: FLASH (빠른 응답 우선)
-    console.log(`[recommend-director] 1차 시도: model=${GEMINI_MODEL_FLASH}, tools=none`);
+    console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=flash, pool=${directorPoolSize})`);
+
     let res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(localRequestBody),
     });
 
-    // 1차 실패 시 PRO fallback (품질은 높지만 느림)
     if (!res.ok) {
       const errText1 = await res.text();
       console.warn(`[recommend-director] FLASH 실패(${res.status}), PRO fallback. detail: ${errText1.slice(0, 300)}`);
       res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(localRequestBody),
       });
     }
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`[recommend-director] 최종 실패: status=${res.status}, detail=${errText.slice(0, 500)}`);
+      console.error(`[recommend-director] 로컬 매칭 최종 실패: status=${res.status}`);
+      stageStatus.localMatch = "failed";
+      stageReasons.localMatch = `API 실패 (${res.status})`;
       return geminiErrorResponse(res, errText, "recommend-director");
     }
+
+    const modelUsed = res.url?.includes("flash") ? "flash" : res.url?.includes("pro") ? "pro" : "unknown";
 
     const data = await res.json() as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
 
-    let parsed;
+    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(text) as Record<string, unknown>;
     } catch {
-      // Gemini sometimes appends trailing text after the JSON object.
-      // Extract the first balanced top-level {} to avoid parse errors.
-      parsed = parseFirstJsonObject(text) ?? { localMatches: [], webSuggestions: [] };
+      parsed = (parseFirstJsonObject(text) as Record<string, unknown>) ?? { localMatches: [] };
     }
 
-    // ── Pipeline stage tracking ──
-    const validLocalIds = new Set((localDirectors || []).map(d => d.id));
-    const directorPoolSize = validLocalIds.size;
+    // ── Extract pipeline metadata ──
+    const geminiPipeline = (parsed._pipeline ?? {}) as Record<string, unknown>;
+    extractedGenres = Array.isArray(geminiPipeline.extractedGenres) ? geminiPipeline.extractedGenres as string[] : [];
+    extractedMoods = Array.isArray(geminiPipeline.extractedMoods) ? geminiPipeline.extractedMoods as string[] : [];
+    extractedKeywords = Array.isArray(geminiPipeline.extractedKeywords) ? geminiPipeline.extractedKeywords as string[] : [];
+    consideredLocalIds = Array.isArray(geminiPipeline.consideredLocalIds) ? geminiPipeline.consideredLocalIds as string[] : [];
+    rejectedLocalIds = Array.isArray(geminiPipeline.rejectedLocalIds) ? geminiPipeline.rejectedLocalIds as string[] : [];
+    localRejectionReasons = Array.isArray(geminiPipeline.rejectionReasons) ? geminiPipeline.rejectionReasons as string[] : [];
 
-    // Stage 0: Extract Gemini's pipeline metadata
-    const geminiPipeline = parsed._pipeline ?? {};
-    const extractedGenres: string[] = Array.isArray(geminiPipeline.extractedGenres) ? geminiPipeline.extractedGenres : [];
-    const extractedMoods: string[] = Array.isArray(geminiPipeline.extractedMoods) ? geminiPipeline.extractedMoods : [];
-    const extractedKeywords: string[] = Array.isArray(geminiPipeline.extractedKeywords) ? geminiPipeline.extractedKeywords : [];
-    const consideredLocalCount: number = typeof geminiPipeline.consideredLocalCount === "number" ? geminiPipeline.consideredLocalCount : -1;
-    const consideredLocalIds: string[] = Array.isArray(geminiPipeline.consideredLocalIds) ? geminiPipeline.consideredLocalIds : [];
-    const rejectedLocalIds: string[] = Array.isArray(geminiPipeline.rejectedLocalIds) ? geminiPipeline.rejectedLocalIds : [];
-    const rejectionReasons: string[] = Array.isArray(geminiPipeline.rejectionReasons) ? geminiPipeline.rejectionReasons : [];
+    // Signal extraction status
+    if (extractedGenres.length > 0 || extractedMoods.length > 0) {
+      stageStatus.extractSignals = "ok";
+      stageReasons.extractSignals = `genres=${extractedGenres.length}, moods=${extractedMoods.length}, keywords=${extractedKeywords.length}`;
+    } else {
+      stageStatus.extractSignals = "weak";
+      stageReasons.extractSignals = "장르/무드 신호를 추출하지 못함";
+    }
 
-    // Stage 1: Raw Gemini output counts
-    const rawLocalMatches = Array.isArray(parsed.localMatches) ? parsed.localMatches : [];
-    const rawWebSuggestions = Array.isArray(parsed.webSuggestions) ? parsed.webSuggestions : [];
-    const geminiLocalCount = rawLocalMatches.length;
-    const geminiWebCount = rawWebSuggestions.length;
+    // ── Validate local matches ──
+    const rawLocalMatches = Array.isArray(parsed.localMatches) ? parsed.localMatches as Array<Record<string, unknown>> : [];
+    invalidIdsRemoved = rawLocalMatches.filter(m => !validLocalIds.has(String(m.id))).map(m => String(m.id));
+    let localMatches = rawLocalMatches.filter(m => validLocalIds.has(String(m.id)));
 
-    // Stage 2: Filter hallucinated localMatch ids
-    const invalidIds = rawLocalMatches.filter((m: { id: string }) => !validLocalIds.has(m.id)).map((m: { id: string }) => m.id);
-    let localMatches = rawLocalMatches.filter((m: { id: string }) => validLocalIds.has(m.id));
-    const afterIdValidationLocal = localMatches.length;
-
-    // Stage 3: Clamp fitScore to 0-100
+    // Clamp fitScore + ensure reason
     for (const m of localMatches) {
       if (typeof m.fitScore === "number") m.fitScore = Math.max(0, Math.min(100, Math.round(m.fitScore)));
-    }
-    const webSuggestions = [...rawWebSuggestions];
-    for (const s of webSuggestions) {
-      if (typeof s.fitScore === "number") s.fitScore = Math.max(0, Math.min(100, Math.round(s.fitScore)));
-    }
-
-    // Stage 4: Ensure reason is non-empty
-    for (const m of localMatches) {
       if (!m.reason || typeof m.reason !== "string") m.reason = "(이유 미제공)";
     }
-    for (const s of webSuggestions) {
-      if (!s.reason || typeof s.reason !== "string") s.reason = "(이유 미제공)";
+
+    if (localMatches.length > 0) {
+      stageStatus.localMatch = "ok";
+      stageReasons.localMatch = `${localMatches.length}명 매칭 성공`;
+    } else if (invalidIdsRemoved.length > 0) {
+      stageStatus.localMatch = "invalid_ids";
+      stageReasons.localMatch = `Gemini가 생성한 id ${invalidIdsRemoved.length}개가 목록에 없어 제거됨`;
+    } else if (rawLocalMatches.length === 0) {
+      stageStatus.localMatch = "empty";
+      stageReasons.localMatch = "Gemini가 로컬 매치를 반환하지 않음";
     }
 
-    // Stage 5: Final counts
+    if (invalidIdsRemoved.length > 0) {
+      console.warn(`[recommend-director] 환각 id ${invalidIdsRemoved.length}개 제거: ${invalidIdsRemoved.join(", ")}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 2: 웹 검색 기반 외부 감독 추천
+    // ═══════════════════════════════════════════════════════════
+    // 로컬 결과가 약하거나 (0~1명, fitScore < 60) 비었을 때 실행
+    // Google AI의 googleSearchRetrieval tool을 사용해서 실제 검색
+
+    let webSuggestions: Array<Record<string, unknown>> = [];
+    const localWeak = localMatches.length === 0
+      || (localMatches.length === 1 && (localMatches[0].fitScore as number) < 60);
+
+    if (localWeak) {
+      attemptedWebSearch = true;
+
+      // 검색 쿼리 구성
+      const genreStr = extractedGenres.slice(0, 3).join(" ");
+      const moodStr = extractedMoods.slice(0, 2).join(" ");
+      const keyStr = extractedKeywords.slice(0, 2).join(" ");
+      webSearchQuery = `best film directors for ${genreStr} ${moodStr} ${keyStr} cinematography style`.trim();
+
+      console.log(`[recommend-director] STEP 2: 웹 검색 시도 — query="${webSearchQuery}"`);
+
+      try {
+        // Gemini with googleSearchRetrieval tool — 실제 웹 검색
+        const webSearchBody = {
+          contents: [{ role: "user", parts: [{ text: `Based on web search results, recommend 2-3 real film/animation directors whose visual style best matches this scenario:
+
+Scenario keywords: ${genreStr} ${moodStr} ${keyStr}
+Scenario excerpt: ${storyText.slice(0, 400)}
+
+For each director, provide:
+- name (English)
+- nameKo (Korean)
+- region: one of 한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아
+- style: comma-separated Korean style keywords (max 5)
+- description: 2-3 sentences in Korean about their visual directing style
+- reason: 2 sentences in Korean why this director fits the scenario
+- fitScore: 0-100
+- signatureTechniques: { cameraWork, colorPalette, lighting, editingStyle, moodKeywords } all in English
+- notableWorks: array of 3 representative works
+
+Return as JSON: { "directors": [...] }
+Only recommend real, existing directors. No fictional directors.` }] }],
+          tools: [{ googleSearchRetrieval: {} }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 3072,
+          },
+        };
+
+        webSearchProvider = "gemini-google-search-retrieval";
+
+        const webRes = await fetchWithAuth(
+          context.env,
+          buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(webSearchBody),
+          },
+        );
+
+        if (webRes.ok) {
+          const webData = await webRes.json() as {
+            candidates?: {
+              content?: { parts?: { text?: string }[] };
+              groundingMetadata?: {
+                searchEntryPoint?: { renderedContent?: string };
+                groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
+              };
+            }[];
+          };
+
+          const webText = webData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+
+          // grounding metadata 확인 — 실제 검색이 이루어졌는지 증거
+          const grounding = webData?.candidates?.[0]?.groundingMetadata;
+          const groundingChunks = grounding?.groundingChunks ?? [];
+          if (groundingChunks.length > 0) {
+            console.log(`[recommend-director] 웹 검색 grounding 확인: ${groundingChunks.length}개 소스`);
+            webSearchProvider = `gemini-google-search-retrieval (${groundingChunks.length} sources)`;
+          }
+
+          let webParsed: Record<string, unknown>;
+          try {
+            webParsed = JSON.parse(webText) as Record<string, unknown>;
+          } catch {
+            webParsed = (parseFirstJsonObject(webText) as Record<string, unknown>) ?? {};
+          }
+
+          const rawWebDirs = Array.isArray(webParsed.directors) ? webParsed.directors as Array<Record<string, unknown>> : [];
+          webSearchResultCount = rawWebDirs.length;
+
+          // 로컬 목록과 중복 제거 + slug id 생성
+          const localNames = new Set((localDirectors || []).map(d => d.name.toLowerCase()));
+          for (const d of rawWebDirs) {
+            const name = String(d.name || "").toLowerCase();
+            if (localNames.has(name)) {
+              webSearchRejectedCount++;
+              webSearchRejectionReasons.push(`"${d.name}" already in local pool`);
+              continue;
+            }
+            if (!d.name || !d.nameKo) {
+              webSearchRejectedCount++;
+              webSearchRejectionReasons.push(`missing name/nameKo`);
+              continue;
+            }
+
+            // Generate slug id
+            const region = String(d.region || "미국");
+            const regionSlug: Record<string, string> = {
+              "한국": "kr", "일본": "jp", "중국": "cn", "유럽": "eu",
+              "미국": "us", "인도": "in", "중동": "me", "동남아": "sea",
+              "중남미": "la", "아프리카": "af", "오세아니아": "oc",
+            };
+            const rSlug = regionSlug[region] ?? "xx";
+            const nameSlug = String(d.name).split(" ").pop()?.toLowerCase().replace(/[^a-z]/g, "") ?? "unknown";
+            const webId = `web-${rSlug}-${nameSlug}`;
+
+            // Clamp fitScore + ensure reason
+            if (typeof d.fitScore === "number") d.fitScore = Math.max(0, Math.min(100, Math.round(d.fitScore)));
+            if (!d.reason || typeof d.reason !== "string") d.reason = "(이유 미제공)";
+
+            webSuggestions.push({ ...d, id: webId, _source: "web_search" });
+            webSearchAcceptedCount++;
+          }
+
+          if (webSuggestions.length > 0) {
+            stageStatus.webSearch = "attempted_success";
+            stageReasons.webSearch = `검색 결과 ${webSearchResultCount}개 중 ${webSearchAcceptedCount}개 채택`;
+          } else {
+            stageStatus.webSearch = "attempted_empty";
+            stageReasons.webSearch = webSearchResultCount > 0
+              ? `검색 결과 ${webSearchResultCount}개 모두 로컬 중복 또는 불완전`
+              : "검색 결과 없음";
+          }
+        } else {
+          const webErr = await webRes.text();
+          console.warn(`[recommend-director] 웹 검색 실패(${webRes.status}): ${webErr.slice(0, 300)}`);
+          stageStatus.webSearch = "failed";
+          stageReasons.webSearch = `API 실패 (${webRes.status})`;
+        }
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.warn(`[recommend-director] 웹 검색 예외: ${errMsg}`);
+        stageStatus.webSearch = "failed";
+        stageReasons.webSearch = `예외: ${errMsg.slice(0, 100)}`;
+      }
+    } else {
+      stageStatus.webSearch = "not_attempted";
+      stageReasons.webSearch = "로컬 결과 충분 — 웹 검색 불필요";
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 3: Final Assembly
+    // ═══════════════════════════════════════════════════════════
+
     const finalLocalCount = localMatches.length;
     const finalWebCount = webSuggestions.length;
     const finalCount = finalLocalCount + finalWebCount;
 
-    // ── Build emptyReason (when result is 0) ──
-    let emptyReason: string | null = null;
+    let emptyReason: string | undefined;
     if (finalCount === 0) {
-      if (geminiLocalCount === 0 && geminiWebCount === 0) {
-        // Gemini itself returned nothing
-        if (extractedGenres.length === 0 && extractedMoods.length === 0) {
-          emptyReason = "genre_mood_not_detected";
-        } else if (directorPoolSize === 0) {
-          emptyReason = "empty_director_pool";
-        } else if (consideredLocalCount === 0) {
-          emptyReason = "no_local_candidates_considered";
-        } else {
-          emptyReason = "gemini_returned_empty";
-        }
-      } else if (geminiLocalCount > 0 && afterIdValidationLocal === 0) {
+      if (stageStatus.extractSignals === "weak") {
+        emptyReason = "genre_mood_not_detected";
+      } else if (directorPoolSize === 0) {
+        emptyReason = "empty_director_pool";
+      } else if (stageStatus.localMatch === "invalid_ids") {
         emptyReason = "all_local_ids_hallucinated";
+      } else if (stageStatus.webSearch === "attempted_empty") {
+        emptyReason = "web_search_returned_empty";
+      } else if (stageStatus.webSearch === "failed") {
+        emptyReason = "web_search_failed_and_no_local";
       } else {
-        emptyReason = "post_validation_eliminated_all";
+        emptyReason = "no_candidates_found";
       }
+      stageStatus.finalAssembly = "empty";
+      stageReasons.finalAssembly = emptyReason;
+    } else {
+      stageStatus.finalAssembly = "ok";
+      stageReasons.finalAssembly = `local=${finalLocalCount}, web=${finalWebCount}`;
     }
 
-    // ── Log pipeline diagnostics ──
-    const pipelineSummary = {
-      inputStoryLength: Math.min(storyText.length, 1200),
-      directorPoolSize,
+    // ── Build debug payload ──
+    const debug: DirectorRecommendationDebug = {
+      stageStatus,
+      stageReasons,
       extractedGenres,
       extractedMoods,
       extractedKeywords,
-      consideredLocalCount,
-      geminiLocalCount,
-      geminiWebCount,
-      invalidIdsRemoved: invalidIds.length,
-      invalidIds: invalidIds.length > 0 ? invalidIds : undefined,
-      afterIdValidationLocal,
-      finalLocalCount,
-      finalWebCount,
-      finalCount,
+      consideredLocalCount: typeof geminiPipeline.consideredLocalCount === "number"
+        ? geminiPipeline.consideredLocalCount as number : consideredLocalIds.length,
+      consideredLocalIds,
+      validLocalCount: finalLocalCount,
+      invalidIdsRemoved,
+      rejectedLocalIds,
+      localRejectionReasons,
+      attemptedWebSearch,
+      webSearchProvider,
+      webSearchQuery,
+      webSearchResultCount,
+      webSearchAcceptedCount,
+      webSearchRejectedCount,
+      webSearchRejectionReasons,
+      localResultCount: finalLocalCount,
+      externalResultCount: finalWebCount,
+      finalResultCount: finalCount,
       emptyReason,
+      modelUsed,
     };
 
-    console.log("[recommend-director] pipeline:", JSON.stringify(pipelineSummary));
-    if (invalidIds.length > 0) {
-      console.warn(`[recommend-director] 환각 id ${invalidIds.length}개 제거: ${invalidIds.join(", ")}`);
-    }
-    if (finalCount === 0) {
-      console.warn(`[recommend-director] 빈 결과 — emptyReason=${emptyReason}`);
-    }
+    // ── Log pipeline ──
+    console.log("[recommend-director] pipeline:", JSON.stringify({
+      stages: stageStatus,
+      local: finalLocalCount,
+      web: finalWebCount,
+      total: finalCount,
+      emptyReason,
+      webSearched: attemptedWebSearch,
+    }));
 
-    // Determine which model ultimately succeeded
-    const modelUsed = res.url?.includes("flash") ? "flash"
-      : res.url?.includes("pro") ? "pro"
-      : "unknown";
+    if (finalCount === 0) {
+      console.warn(`[recommend-director] 빈 결과 — emptyReason=${emptyReason}, stages=${JSON.stringify(stageStatus)}`);
+    }
 
     return Response.json({
-      analysis: parsed.analysis ?? "",
+      analysis: (parsed.analysis as string) ?? "",
       localMatches,
       webSuggestions,
       _meta: {
         modelUsed,
-        invalidIdsRemoved: invalidIds.length,
+        invalidIdsRemoved: invalidIdsRemoved.length,
         directorPoolSize,
         storyLengthUsed: Math.min(storyText.length, 1200),
+        attemptedWebSearch,
+        webSearchProvider,
       },
-      _debug: {
-        ...pipelineSummary,
-        rejectedLocalIds,
-        rejectionReasons,
-        consideredLocalIds,
-        modelUsed,
-      },
+      _debug: debug,
     });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
