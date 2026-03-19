@@ -337,6 +337,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       id: string; name: string; nameKo: string; region: Region; style: string;
       description: string; reason: string; fitScore: number;
       signatureTechniques?: SignatureTechniques; notableWorks?: string[];
+      grounded?: boolean;
+      groundingQuality?: GroundingQualityInfo;
     }[];
   } | null>(null);
   const [isRecommending, setIsRecommending] = useState(false);
@@ -1295,7 +1297,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       {directorRecommendation.webSuggestions.map((sug) => {
                         const alreadyAdded = customDirectors.some((d) => d.id === sug.id);
                         const isSelected = directorPersona === sug.id;
-                        const gq = (sug as Record<string, unknown>).groundingQuality as GroundingQualityInfo | undefined;
+                        const gq = sug.groundingQuality;
                         const groundingLabel = gq?.label === "strong" ? "높은 신뢰도"
                           : gq?.label === "moderate" ? "보통 신뢰도"
                           : gq?.label === "weak" ? "낮은 신뢰도"
@@ -1360,13 +1362,13 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                             <p className="text-[10px]" style={{ color: "#888" }}>{sug.style}</p>
                             <p className="text-[10px] leading-relaxed mt-0.5" style={{ color: "#666" }}>{sug.reason}</p>
                             {/* source 기반 여부 — grounded일 때만 표시 */}
-                            {(sug as Record<string, unknown>).grounded && gq && gq.sourceCount > 0 && (
+                            {sug.grounded && gq && gq.sourceCount > 0 && (
                               <p className="text-[8px] mt-0.5" style={{ color: "#16a34a90" }}>
                                 웹 소스 {gq.sourceCount}개 참조 (신뢰도 {gq.score}/100)
                               </p>
                             )}
                             {/* grounded가 아닐 때 정직하게 표시 */}
-                            {!(sug as Record<string, unknown>).grounded && (
+                            {!sug.grounded && (
                               <p className="text-[8px] mt-0.5" style={{ color: "#9ca3af" }}>
                                 모델 지식 기반 추천
                               </p>
