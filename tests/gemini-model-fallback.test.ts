@@ -172,7 +172,7 @@ describe("grounded vs fallback vs mixed 결과 구분", () => {
   });
 
   it("Flash-Lite 폴백 결과는 절대 grounded=true가 아님", () => {
-    // Flash-Lite 폴백은 googleSearchRetrieval 없이 호출되므로 grounded=false
+    // Flash-Lite 폴백은 google_search 없이 호출되므로 grounded=false
     const flashLiteFallbackResult = {
       finalModel: GEMINI_MODEL_FLASH,
       fallbackUsed: true,
