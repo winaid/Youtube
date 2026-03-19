@@ -275,10 +275,12 @@ export function isLocalDuplicate(
   const normWeb = normalizeName(webName);
   const normWebKo = webNameKo ? normalizeName(webNameKo) : null;
 
-  for (const localName of localNameSet) {
+  // Set 이터레이션 호환성: Array.from 사용
+  const localNames = Array.from(localNameSet);
+  for (let i = 0; i < localNames.length; i++) {
+    const localName = localNames[i];
     if (normWeb === localName) return true;
     if (normWebKo && normWebKo === localName) return true;
-    // isSameDirector로 유사 판정 (영문끼리만, 한글은 완전 일치만)
     if (isSameDirector(normWeb, localName)) return true;
     if (normWebKo && isSameDirector(normWebKo, localName)) return true;
   }

@@ -727,6 +727,34 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
+    // ── 멀티샷 최소 샷 수 강제 (6초+ = 최소 3샷) ──
+    // LLM이 2샷만 생성한 경우, 절대 규칙 위반. 부족한 샷을 자동 삽입.
+    if (req.multiShot && req.multiShot.length > 0 && req.multiShot.length < 3 && normalizedDuration >= 6 && serverMaxShots >= 3) {
+      const currentCount = req.multiShot.length;
+      const targetCount = normalizedDuration <= 8 ? 3
+        : normalizedDuration <= 12 ? 4
+        : Math.min(5, serverMaxShots);
+
+      if (currentCount < targetCount) {
+        console.warn(`[Kling] 멀티샷 최소 강제: ${currentCount}샷 → ${targetCount}샷 (${normalizedDuration}s, min=3)`);
+        const basePrompt = finalPromptForProvider || "";
+        const totalDur = req.multiShot.reduce((s: number, sh: KlingMultiShot) => s + (parseFloat(sh.duration) || 0), 0);
+        const perShotDur = Math.max(2, Math.floor(totalDur / targetCount));
+        const ROLE_PREFIXES: Record<number, string[]> = {
+          3: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Resolving close-up] "],
+          4: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
+          5: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
+        };
+        const prefixes = ROLE_PREFIXES[targetCount] ?? ROLE_PREFIXES[3]!;
+        const repairedShots: KlingMultiShot[] = Array.from({ length: targetCount }, (_, i) => ({
+          index: i + 1,
+          prompt: `${prefixes[i] ?? ""}${basePrompt}`.slice(0, 512),
+          duration: String(i === targetCount - 1 ? totalDur - perShotDur * (targetCount - 1) : perShotDur),
+        }));
+        req.multiShot = repairedShots;
+      }
+    }
+
     // 멀티샷 서버 클램프 (모델 capability 초과 방지)
     if (req.multiShot && req.multiShot.length > 0 && serverMaxShots > 0) {
       req.multiShot = normalizeMultiShots(modelUsed, req.multiShot, normalizedDuration);
