@@ -47,13 +47,13 @@ describe("planRecommendedShotCount", () => {
     expect(count8).toBeLessThanOrEqual(3);
   });
 
-  it("9-12초 → 3-4샷", () => {
+  it("9-12초 → 3-6샷 (물리적 한계까지 허용)", () => {
     const count9 = planRecommendedShotCount(model, 9);
     const count12 = planRecommendedShotCount(model, 12);
     expect(count9).toBeGreaterThanOrEqual(3);
-    expect(count9).toBeLessThanOrEqual(4);
+    expect(count9).toBeLessThanOrEqual(4); // floor(9/2)=4
     expect(count12).toBeGreaterThanOrEqual(3);
-    expect(count12).toBeLessThanOrEqual(4);
+    expect(count12).toBeLessThanOrEqual(6); // 모델 상한 6
   });
 
   it("13-15초 → 4-6샷", () => {
@@ -218,7 +218,7 @@ describe("buildDefaultMultiShot", () => {
     });
 
     expect(shots.length).toBeGreaterThanOrEqual(3);
-    expect(shots.length).toBeLessThanOrEqual(4);
+    expect(shots.length).toBeLessThanOrEqual(6); // 물리적 한계까지 허용
 
     // role 시퀀스 존재
     expect(shots[0].role).toBe("establish");

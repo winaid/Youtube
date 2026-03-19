@@ -157,15 +157,11 @@ export function getMaxShots(modelId: string, durationSec: number): number {
   if (!cap.supportsMultiShot) return 0;
   if (durationSec <= 3) return 0;
 
+  // 멀티샷은 많을수록 좋음 — 인위적 durationLimit 제거.
+  // 유일한 제약: 모델 하드 리밋(6) + 물리적 한계(샷당 최소 2초).
   const modelLimit = cap.maxShots;
-  let durationLimit: number;
-  if (durationSec <= 5) durationLimit = 2;
-  else if (durationSec <= 7) durationLimit = 3;
-  else if (durationSec <= 10) durationLimit = 4;
-  else durationLimit = modelLimit;
-
   const physicalLimit = Math.floor(durationSec / cap.minShotDuration);
-  return Math.min(modelLimit, durationLimit, physicalLimit);
+  return Math.min(modelLimit, physicalLimit);
 }
 
 /**

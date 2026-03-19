@@ -159,9 +159,9 @@ export const RETENTION_ROLE_PATTERNS: Record<number, ShotRole[]> = {
 const SHOT_COUNT_RANGES: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 3,  min: 1, max: 1 },
   { maxSec: 5,  min: 2, max: 2 },
-  { maxSec: 8,  min: 2, max: 3 },
-  { maxSec: 12, min: 3, max: 4 },
-  { maxSec: 15, min: 4, max: 6 },
+  { maxSec: 8,  min: 2, max: 4 },   // 8÷2=4 물리적 한계
+  { maxSec: 12, min: 3, max: 6 },   // 모델 상한 6
+  { maxSec: 15, min: 4, max: 6 },   // 모델 상한 6
 ];
 
 /** scene type별 shot count 보정 */
