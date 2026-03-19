@@ -1280,131 +1280,166 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   </div>
                 )}
 
-                {/* 웹 추천 감독 */}
-                {directorRecommendation.webSuggestions.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
-                        {directorRecommendation.webSuggestions.some((s: Record<string, unknown>) => s.grounded)
-                          ? "웹 검색 기반 추천 감독"
-                          : "모델 지식 기반 추천 감독"}
-                      </span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>
-                        {directorRecommendation.webSuggestions.length}명
-                      </span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {directorRecommendation.webSuggestions.map((sug) => {
-                        const alreadyAdded = customDirectors.some((d) => d.id === sug.id);
-                        const isSelected = directorPersona === sug.id;
-                        const gq = sug.groundingQuality;
-                        const groundingLabel = gq?.label === "strong" ? "높은 신뢰도"
-                          : gq?.label === "moderate" ? "보통 신뢰도"
-                          : gq?.label === "weak" ? "낮은 신뢰도"
-                          : null;
-                        const groundingColor = gq?.label === "strong" ? "#16a34a"
-                          : gq?.label === "moderate" ? "#ca8a04"
-                          : gq?.label === "weak" ? "#dc2626"
-                          : "#999";
-
-                        return (
-                          <button
-                            key={sug.id}
-                            onClick={() => {
-                              if (!alreadyAdded) {
-                                const newDir = {
-                                  id: sug.id,
-                                  name: sug.name,
-                                  nameKo: sug.nameKo,
-                                  region: sug.region,
-                                  style: sug.style,
-                                  description: sug.description,
-                                  persona: "",
-                                  signatureTechniques: sug.signatureTechniques,
-                                  notableWorks: sug.notableWorks,
-                                };
-                                setCustomDirectors((prev) => {
-                                  if (prev.some((d) => d.id === newDir.id)) return prev;
-                                  const updated = [...prev, newDir];
-                                  persistCustomDirectors(updated);
-                                  return updated;
-                                });
-                              }
-                              setDirectorPersona(sug.id);
-                            }}
-                            className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
-                            style={{
-                              background: isSelected ? "#22c55e15" : "white",
-                              border: `1px solid ${isSelected ? "#22c55e" : "#22c55e30"}`,
-                            }}
-                          >
-                            <div className="flex items-center justify-between mb-0.5">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-semibold" style={{ color: "#333" }}>{sug.nameKo}</span>
-                                <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "#787fff10", color: "#787fff" }}>{sug.region}</span>
-                                {isSelected && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e", color: "white" }}>선택됨</span>}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {/* grounding 품질 라벨 — source 있을 때만 표시 */}
-                                {groundingLabel && (
-                                  <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: `${groundingColor}10`, color: groundingColor }}>
-                                    {groundingLabel}
-                                  </span>
-                                )}
-                                <span
-                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                  style={{ background: sug.fitScore >= 85 ? "#22c55e15" : "#fff78715", color: sug.fitScore >= 85 ? "#16a34a" : "#7a7000" }}
-                                >
-                                  {sug.fitScore}%
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-[10px]" style={{ color: "#888" }}>{sug.style}</p>
-                            <p className="text-[10px] leading-relaxed mt-0.5" style={{ color: "#666" }}>{sug.reason}</p>
-                            {/* source 기반 여부 — grounded일 때만 표시 */}
-                            {sug.grounded && gq && gq.sourceCount > 0 && (
-                              <p className="text-[8px] mt-0.5" style={{ color: "#16a34a90" }}>
-                                웹 소스 {gq.sourceCount}개 참조 (신뢰도 {gq.score}/100)
-                              </p>
-                            )}
-                            {/* grounded가 아닐 때 정직하게 표시 */}
-                            {!sug.grounded && (
-                              <p className="text-[8px] mt-0.5" style={{ color: "#9ca3af" }}>
-                                모델 지식 기반 추천
-                              </p>
-                            )}
-                            {!alreadyAdded && (
-                              <p className="text-[9px] mt-1" style={{ color: "#22c55e" }}>+ 클릭하면 자동으로 저장됩니다</p>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 웹 추천이 0명일 때 — 디버그 정보 표시 */}
-                {directorRecommendation.webSuggestions.length === 0 && directorRecommendation.localMatches.length > 0 && (() => {
+                {/* ── 외부 추천 감독 섹션 ── */}
+                {/* 웹 검색이 시도되었으면 결과 유무와 관계없이 섹션 표시 */}
+                {(() => {
                   const debug = (directorRecommendation as Record<string, unknown>)._debug as Record<string, unknown> | undefined;
-                  if (!debug) return null;
+                  const webAttempted = debug?.attemptedWebSearch ?? false;
+                  const webSugs = directorRecommendation.webSuggestions;
+                  const hasWebResults = webSugs.length > 0;
+
+                  // 웹 검색 시도 안 했으면 섹션 자체 미표시
+                  if (!webAttempted) return null;
+
                   return (
-                    <div className="text-[9px] px-2 py-1.5 rounded" style={{ background: "#f8fafc", border: "1px solid #e2e8f010", color: "#94a3b8" }}>
-                      <p className="font-medium">웹 확장 결과 0명</p>
-                      <div className="mt-0.5 space-y-0.5">
-                        {debug.attemptedWebSearch ? (
-                          <>
-                            <p>웹 검색: 시도됨</p>
-                            {debug.webSearchQuery && <p>쿼리: {String(debug.webSearchQuery).slice(0, 50)}</p>}
-                            <p>원시 결과: {String(debug.webSearchResultCount ?? 0)}명</p>
-                            <p>중복 제거: {String(debug.webSearchRejectedCount ?? 0)}명</p>
-                            {Array.isArray(debug.webSearchRejectionReasons) && debug.webSearchRejectionReasons.length > 0 && (
-                              <p>사유: {(debug.webSearchRejectionReasons as string[]).slice(0, 3).join(", ")}</p>
-                            )}
-                          </>
-                        ) : (
-                          <p>웹 검색: 미시도</p>
+                    <div className="space-y-1.5">
+                      {/* 섹션 구분선 */}
+                      {directorRecommendation.localMatches.length > 0 && (
+                        <div className="border-t pt-2 mt-1" style={{ borderColor: "#e2e8f040" }} />
+                      )}
+
+                      {/* 섹션 헤더 */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
+                          {hasWebResults
+                            ? (webSugs.some(s => s.grounded) ? "🌐 웹 검색 기반 외부 감독" : "💡 모델 지식 기반 외부 감독")
+                            : "🌐 외부 감독 탐색"}
+                        </span>
+                        {hasWebResults && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>
+                            {webSugs.length}명
+                          </span>
                         )}
                       </div>
+
+                      {/* 외부 후보가 있을 때: 카드 표시 */}
+                      {hasWebResults && (
+                        <div className="space-y-1.5">
+                          {webSugs.map((sug) => {
+                            const alreadyAdded = customDirectors.some((d) => d.id === sug.id);
+                            const isSelected = directorPersona === sug.id;
+                            const gq = sug.groundingQuality;
+                            const groundingLabel = gq?.label === "strong" ? "높은 신뢰도"
+                              : gq?.label === "moderate" ? "보통 신뢰도"
+                              : gq?.label === "weak" ? "낮은 신뢰도"
+                              : null;
+                            const groundingColor = gq?.label === "strong" ? "#16a34a"
+                              : gq?.label === "moderate" ? "#ca8a04"
+                              : gq?.label === "weak" ? "#dc2626"
+                              : "#999";
+
+                            return (
+                              <button
+                                key={sug.id}
+                                onClick={() => {
+                                  if (!alreadyAdded) {
+                                    const newDir = {
+                                      id: sug.id,
+                                      name: sug.name,
+                                      nameKo: sug.nameKo,
+                                      region: sug.region,
+                                      style: sug.style,
+                                      description: sug.description,
+                                      persona: "",
+                                      signatureTechniques: sug.signatureTechniques,
+                                      notableWorks: sug.notableWorks,
+                                    };
+                                    setCustomDirectors((prev) => {
+                                      if (prev.some((d) => d.id === newDir.id)) return prev;
+                                      const updated = [...prev, newDir];
+                                      persistCustomDirectors(updated);
+                                      return updated;
+                                    });
+                                  }
+                                  setDirectorPersona(sug.id);
+                                }}
+                                className="w-full text-left p-2.5 rounded-lg transition-all hover:shadow-sm"
+                                style={{
+                                  background: isSelected ? "#22c55e15" : "white",
+                                  border: `1px solid ${isSelected ? "#22c55e" : "#22c55e30"}`,
+                                }}
+                              >
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-semibold" style={{ color: "#333" }}>{sug.nameKo}</span>
+                                    <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "#787fff10", color: "#787fff" }}>{sug.region}</span>
+                                    {isSelected && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e", color: "white" }}>선택됨</span>}
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {groundingLabel && (
+                                      <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: `${groundingColor}10`, color: groundingColor }}>
+                                        {groundingLabel}
+                                      </span>
+                                    )}
+                                    <span
+                                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                      style={{ background: sug.fitScore >= 85 ? "#22c55e15" : "#fff78715", color: sug.fitScore >= 85 ? "#16a34a" : "#7a7000" }}
+                                    >
+                                      {sug.fitScore}%
+                                    </span>
+                                  </div>
+                                </div>
+                                <p className="text-[10px]" style={{ color: "#888" }}>{sug.style}</p>
+                                <p className="text-[10px] leading-relaxed mt-0.5" style={{ color: "#666" }}>{sug.reason}</p>
+                                {sug.grounded && gq && gq.sourceCount > 0 && (
+                                  <p className="text-[8px] mt-0.5" style={{ color: "#16a34a90" }}>
+                                    웹 소스 {gq.sourceCount}개 참조 (신뢰도 {gq.score}/100)
+                                  </p>
+                                )}
+                                {!sug.grounded && (
+                                  <p className="text-[8px] mt-0.5" style={{ color: "#9ca3af" }}>
+                                    모델 지식 기반 추천
+                                  </p>
+                                )}
+                                {!alreadyAdded && (
+                                  <p className="text-[9px] mt-1" style={{ color: "#22c55e" }}>+ 클릭하면 자동으로 저장됩니다</p>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* 외부 후보 0명: 이유 표시 (항상 보이게) */}
+                      {!hasWebResults && (
+                        <div className="text-[9px] px-2 py-1.5 rounded" style={{ background: "#f8fafc", border: "1px solid #e2e8f020", color: "#94a3b8" }}>
+                          <p className="font-medium" style={{ color: "#64748b" }}>외부 감독 후보를 찾지 못했습니다</p>
+                          <div className="mt-1 space-y-0.5">
+                            {(() => {
+                              const ss = (debug as Record<string, unknown>)?.stageStatus as Record<string, string> | undefined;
+                              const webStatus = ss?.webSearch ?? "unknown";
+                              const rawCount = Number(debug?.webSearchResultCount ?? 0);
+                              const rejectedCount = Number(debug?.webSearchRejectedCount ?? 0);
+                              const attemptCount = Number(debug?.webSearchAttemptCount ?? 1);
+                              const retryReason = debug?.webSearchRetryReason as string | undefined;
+
+                              if (webStatus === "failed") {
+                                return (
+                                  <>
+                                    <p>웹 검색 실패 → 모델 폴백도 결과 없음</p>
+                                    {debug?.webSearchProvider && <p>방식: {String(debug.webSearchProvider).slice(0, 50)}</p>}
+                                    <p className="mt-0.5" style={{ color: "#b0b0b0" }}>다시 시도하면 결과가 달라질 수 있습니다.</p>
+                                  </>
+                                );
+                              }
+
+                              return (
+                                <>
+                                  <p>웹 검색 원시 결과: {rawCount}명</p>
+                                  {rawCount > 0 && <p>로컬 중복으로 제거: {rejectedCount}명</p>}
+                                  {attemptCount > 1 && <p>재시도: {attemptCount}회 (사유: {retryReason ?? "중복 전멸"})</p>}
+                                  {Array.isArray(debug?.webSearchRejectionReasons) && (debug.webSearchRejectionReasons as string[]).length > 0 && (
+                                    <p className="truncate">제거 사유: {(debug.webSearchRejectionReasons as string[]).slice(0, 3).join(", ")}</p>
+                                  )}
+                                  {rawCount === 0 && (
+                                    <p className="mt-0.5" style={{ color: "#b0b0b0" }}>시나리오를 더 구체적으로 작성하면 외부 감독 탐색 품질이 올라갑니다.</p>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

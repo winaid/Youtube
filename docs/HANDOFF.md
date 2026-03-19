@@ -97,19 +97,57 @@ V1 완성 단계. 핵심 파이프라인/프롬프트/규칙이 구현 완료되
 - `grounded=false`: "모델 지식 기반 추천 감독"
 - source 없는 결과에 "웹 검색 결과" 라벨 사용 금지
 
-### fallback 동작
-- 웹 검색 API 실패 → 모델 지식 기반 fallback + 경고 메시지 + `mode: "model"`
-- 모든 웹 결과 로컬 중복 → `webSuggestions: []` + 디버그에 사유 기록
-- JSON 파싱 실패 → `parseFirstJsonObject()` fallback
+### 외부 감독 잔존 보장 전략
+외부(웹) 감독 후보가 0명으로 사라지는 문제를 구조적으로 방지:
+
+1. **영문 전용 웹 검색 쿼리**: 한글 장르/무드를 영문으로 변환하여 Google Search Retrieval API 400 에러 방지.
+   - `로맨스` → `romance`, `SF` → `sci-fi`, `차가운` → `cold` 등
+2. **웹 검색 실패 시 모델 폴백**: 웹 검색이 400/500 에러를 반환하면, `googleSearchRetrieval` 없이 모델 지식만으로 재시도.
+3. **중복 전멸 시 재시도**: 1차 웹 결과가 전부 로컬 중복으로 제거되면, 제외 목록을 강화한 2차 프롬프트로 재시도 (temperature 0.5로 상향).
+4. **프롬프트 강화**: 영문명+한글명 쌍으로 제외 조건 명시, 별칭/우회 추천 금지, 지역 다양성 요구 (최소 2개 지역), 유명 감독 쏠림 방지.
+
+### 중복 제거 기준
+- **영문 이름**: 정규화(lowercase + 공백/하이픈 제거) 후 완전 일치 또는 부분 일치 (짧은 쪽 5자 이상 + 긴 쪽 길이의 60% 이상).
+  - "Park" vs "Park Chan-wook" → false (4자 < 5자 최소)
+  - "Miyazaki" vs "Miyazaki Hayao" → true (8자 ≥ 5자, 8/13 = 61%)
+- **한글 이름**: 완전 일치만 허용. 한글은 2-4자가 풀네임이므로 부분 일치 위험.
+  - "박" vs "박찬욱" → false (다른 사람일 수 있음)
+  - "봉준호" vs "봉준호" → true
+- 웹 결과 내부 중복도 제거 (같은 감독이 2번 반환되는 경우)
+
+### fallback 동작 (6가지 구분)
+| 상황 | 처리 | 디버그 정보 |
+|------|------|------------|
+| 웹 검색 성공 + 외부 후보 충분 | 정상 반환 | `attemptedWebSearch: true, webSearchAcceptedCount > 0` |
+| 웹 검색 성공 + 후보 전부 중복 제거 | **2차 재시도** (강화된 제외 조건) | `webSearchRetryReason, webSearchAttemptCount: 2` |
+| 웹 검색 성공 + 관련성 낮아 제거 | 사유 기록 | `webSearchRejectionReasons` |
+| 웹 검색 실패 (400/500) | **모델 지식 폴백** | `webSearchProvider: "model-fallback (web failed 400)"` |
+| 웹 검색 성공 + grounding 품질 낮음 | 반환 + weak 라벨 | `groundingQuality.label: "weak"` |
+| search-director는 되지만 recommend-director 외부 0 | 재시도 로직 적용 | `webSearchAttemptCount, webSearchRetryReason` |
+
+### 캐시를 쓰지 않고 품질을 올린 방식
+- 프롬프트 구조화 강화 (제외 조건 명시, 다양성 요구, 구체적 사유 요구)
+- 영문 쿼리로 API 안정성 확보
+- 실패 시 자동 폴백/재시도 (캐시가 아니라 구조적 안전장치)
+- 중복 제거 정밀화 (과도한 제거 방지)
+- 디버그 메타 강화로 문제 원인 즉시 파악 가능
 
 ### 공통 유틸 (`_director-shared.ts`)
 search-director와 recommend-director의 중복 로직을 공통 모듈로 분리:
 - `generateSlugId()` — 웹 감독 ID 생성
 - `extractGroundingSources()` — grounding metadata에서 source 추출 및 정규화
 - `computeGroundingQuality()` — grounding 품질 점수 계산 (0-100)
+- `isSameDirector()` — 이름 유사도 기반 동일 인물 판정 (영문 60% 부분일치, 한글 완전일치)
 - `buildLocalNameSet()` / `isLocalDuplicate()` — 이름 기반 중복 판정
 - `clampFitScore()` / `ensureReason()` — fitScore/reason 정규화
 - `isGenericReason()` — 추천 사유 품질 검증
+
+### UI 구조 — 로컬 vs 외부 추천 분리
+- **보유 감독 추천** (보라색 #787fff): 로컬 풀에서 매칭된 감독
+- **외부 감독 탐색** (초록색 #22c55e): 웹 검색 또는 모델 지식 기반 새 감독
+- 외부 추천 섹션은 웹 검색이 시도되면 **항상 표시** (0명이어도 이유 설명)
+- 외부 후보 0명 시: 원시 결과 수, 중복 제거 수, 재시도 여부, 제거 사유를 표시
+- grounded 여부, 신뢰도 점수, 소스 개수를 과장 없이 표시
 
 ### 환경변수
 `GEMINI_API_KEY` (또는 `GEMINI_API_KEY_2` fallback) 필요.

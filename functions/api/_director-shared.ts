@@ -226,16 +226,26 @@ function normalizeName(name: string): string {
 /**
  * 두 감독 이름이 동일 인물인지 판정.
  * - 정규화된 이름 완전 일치
- * - 또는 한쪽이 다른 쪽의 부분 문자열 (성만 겹치는 경우 방지: 3자 이상)
+ * - 부분 문자열 매칭: 짧은 쪽이 긴 쪽 길이의 60% 이상일 때만 허용
+ *   (성만 겹치는 경우 방지: "park" vs "parkchannwook" 같은 false positive 차단)
+ * - 한글 이름: 2자 이상이면 완전 일치만 허용 (한글은 2-3자가 풀네임)
  */
 export function isSameDirector(nameA: string, nameB: string): boolean {
   const a = normalizeName(nameA);
   const b = normalizeName(nameB);
   if (a === b) return true;
-  // 부분 일치: 짧은 쪽이 3자 이상이고 긴 쪽에 포함
+
+  // 한글 이름끼리 비교: 완전 일치만 허용 (한글은 2~4자가 풀네임)
+  const isKoreanA = /[가-힣]/.test(a);
+  const isKoreanB = /[가-힣]/.test(b);
+  if (isKoreanA && isKoreanB) return false; // 완전 일치 아니면 다른 사람
+
+  // 영문 부분 일치: 짧은 쪽이 긴 쪽 길이의 60% 이상이고 5자 이상일 때만
   const shorter = a.length <= b.length ? a : b;
   const longer = a.length > b.length ? a : b;
-  if (shorter.length >= 3 && longer.includes(shorter)) return true;
+  if (shorter.length >= 5 && longer.includes(shorter) && shorter.length >= longer.length * 0.6) {
+    return true;
+  }
   return false;
 }
 
@@ -255,14 +265,23 @@ export function buildLocalNameSet(
 
 /**
  * 웹 감독이 로컬 풀과 중복인지 검사.
+ * 정규화된 이름의 완전 일치 또는 isSameDirector 기반 유사 판정.
  */
 export function isLocalDuplicate(
   webName: string,
   webNameKo: string | undefined,
   localNameSet: Set<string>,
 ): boolean {
-  if (localNameSet.has(normalizeName(webName))) return true;
-  if (webNameKo && localNameSet.has(normalizeName(webNameKo))) return true;
+  const normWeb = normalizeName(webName);
+  const normWebKo = webNameKo ? normalizeName(webNameKo) : null;
+
+  for (const localName of localNameSet) {
+    if (normWeb === localName) return true;
+    if (normWebKo && normWebKo === localName) return true;
+    // isSameDirector로 유사 판정 (영문끼리만, 한글은 완전 일치만)
+    if (isSameDirector(normWeb, localName)) return true;
+    if (normWebKo && isSameDirector(normWebKo, localName)) return true;
+  }
   return false;
 }
 

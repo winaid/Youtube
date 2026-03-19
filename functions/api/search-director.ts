@@ -3,6 +3,7 @@ import {
   generateSlugId,
   extractGroundingSources,
   computeGroundingQuality,
+  isSameDirector,
   clampFitScore,
   ensureReason,
   type GroundingSource,
@@ -62,13 +63,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── Step 1: Gemini + googleSearchRetrieval (실제 웹 검색) ──
-    const webSearchPrompt = `You are a world-class film/animation encyclopedia with access to web search.
+    const webSearchPrompt = `You are a world-class film/animation director discovery engine with web search access.
 The user searched for: "${query}"
 
 The query could be a director's name, a movie/anime/animation title, or a visual style keyword.
 Use web search results to find real, existing directors matching this query.
 Provide accurate, up-to-date information grounded in real sources.
 
+## DIVERSITY RULES
+1. Include directors from at least 2 different regions when possible.
+2. Do NOT list only the most famous directors — include at least 1 lesser-known but relevant director.
+3. Avoid repeating directors with very similar styles. Show variety in visual approaches.
+4. If the query is a movie/anime title, find the actual director AND 3-4 stylistically similar directors.
+
+## OUTPUT FORMAT
 Return a JSON object with a "directors" array of up to 5 matching directors. Each object must have:
 - id: unique slug like "region-lastname" (e.g. "kr-bong", "jp-miyazaki", "eu-nolan")
 - name: English name (real, existing director only)
@@ -79,8 +87,6 @@ Return a JSON object with a "directors" array of up to 5 matching directors. Eac
 - matchedBy: why matched (e.g. "작품: 기생충" or "이름 일치" or "스타일: 네오느와르")
 - signatureTechniques: { cameraWork, colorPalette, lighting, editingStyle, moodKeywords } all in English
 - notableWorks: array of 3-5 representative work titles
-
-If the query is a movie/anime title, find the director of that work AND suggest similar-style directors.
 
 Return ONLY valid JSON: { "directors": [...] }
 If no match, return { "directors": [] }`;
@@ -234,14 +240,15 @@ If no match, return { "directors": [] }`;
       mode = "model";
     }
 
-    // 중복 제거 (같은 name)
-    const seen = new Set<string>();
-    directors = directors.filter(d => {
-      const key = d.name.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // 중복 제거 — isSameDirector 기반 (영문명 + 한글명 모두 검사)
+    const uniqueDirectors: DirectorSearchResult[] = [];
+    for (const d of directors) {
+      const isDup = uniqueDirectors.some(
+        existing => isSameDirector(existing.name, d.name) || isSameDirector(existing.nameKo, d.nameKo)
+      );
+      if (!isDup) uniqueDirectors.push(d);
+    }
+    directors = uniqueDirectors;
 
     console.log(`[search-director] 완료: mode=${mode}, directors=${directors.length}, sources=${groundingSources.length}`);
 

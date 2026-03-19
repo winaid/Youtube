@@ -297,6 +297,29 @@ export function mergePreExtractedSignals(
  * 사전 추출 신호 기반으로 더 나은 웹 검색 쿼리 생성.
  * 기존 쿼리가 너무 빈약할 때 (genres+moods+keywords 모두 짧을 때) 보강.
  */
+/**
+ * 한글 장르/무드를 영문으로 변환하는 맵.
+ * 웹 검색 쿼리는 반드시 영문으로 구성해야 Google Search Retrieval API가 400을 반환하지 않는다.
+ */
+const GENRE_KO_TO_EN: Record<string, string> = {
+  "로맨스": "romance", "호러": "horror", "스릴러": "thriller", "코미디": "comedy",
+  "액션": "action", "SF": "sci-fi", "판타지": "fantasy", "드라마": "drama",
+  "다큐멘터리": "documentary", "무협": "martial arts", "느와르": "noir",
+  "청춘": "coming-of-age", "전쟁": "war", "멜로": "melodrama",
+  "애니메이션": "animation", "뮤지컬": "musical",
+};
+const MOOD_KO_TO_EN: Record<string, string> = {
+  "따뜻한": "warm", "차가운": "cold", "불안한": "anxious", "쓸쓸한": "lonely",
+  "몽환적": "dreamlike", "초현실적": "surreal", "우울한": "melancholic",
+  "서정적": "lyrical", "공포": "fearful", "긴장": "tense", "유머": "humorous",
+  "비장한": "epic", "잔잔한": "calm", "역동적": "dynamic", "신비로운": "mysterious",
+  "노스탤지어": "nostalgic", "퇴폐적": "decadent", "철학적": "philosophical",
+};
+
+function toEnglish(term: string): string {
+  return GENRE_KO_TO_EN[term] || MOOD_KO_TO_EN[term] || term;
+}
+
 export function buildEnhancedWebSearchQuery(
   genres: string[],
   moods: string[],
@@ -305,10 +328,10 @@ export function buildEnhancedWebSearchQuery(
 ): { query: string; queryReasons: string[] } {
   const queryReasons: string[] = [];
 
-  // 기본 소재 수집
-  const genreParts = genres.slice(0, 3);
-  const moodParts = moods.slice(0, 2);
-  const keyParts = keywords.slice(0, 2);
+  // 기본 소재 수집 — 반드시 영문 변환
+  const genreParts = genres.slice(0, 3).map(toEnglish);
+  const moodParts = moods.slice(0, 2).map(toEnglish);
+  const keyParts = keywords.slice(0, 2).map(toEnglish);
 
   // 추가 보강: visual hints → 영문 스타일 키워드
   const visualStyleMap: Record<string, string> = {
@@ -336,7 +359,7 @@ export function buildEnhancedWebSearchQuery(
       if (visualStyleMap[vh]) extraVisual.push(visualStyleMap[vh]);
     }
     if (extraVisual.length > 0) {
-      queryReasons.push(`visual hints补充 query: ${extraVisual.join(", ")}`);
+      queryReasons.push(`visual hints → query: ${extraVisual.join(", ")}`);
     }
   }
 
@@ -354,7 +377,7 @@ export function buildEnhancedWebSearchQuery(
       if (formatMap[fh]) extraFormat.push(formatMap[fh]);
     }
     if (extraFormat.length > 0) {
-      queryReasons.push(`format hints补充 query: ${extraFormat.join(", ")}`);
+      queryReasons.push(`format hints → query: ${extraFormat.join(", ")}`);
     }
   }
 
@@ -392,7 +415,7 @@ export function buildEnhancedWebSearchQuery(
   }
 
   const query = `best film directors for ${allParts.join(" ")} cinematography style`;
-  queryReasons.push(`query built from ${allParts.length} signal parts`);
+  queryReasons.push(`query built from ${allParts.length} signal parts (all English)`);
 
   return { query, queryReasons };
 }
@@ -442,6 +465,10 @@ interface DirectorRecommendationDebug {
   webSearchAcceptedCount: number;
   webSearchRejectedCount: number;
   webSearchRejectionReasons: string[];
+  webSearchAttemptCount: number;
+  webSearchRawBeforeDedup: number;
+  webSearchDedupRemoved: number;
+  webSearchRetryReason: string | null;
   localResultCount: number;
   externalResultCount: number;
   finalResultCount: number;
@@ -707,13 +734,17 @@ ${localList}
     // ═══════════════════════════════════════════════════════════
 
     let webSuggestions: Array<Record<string, unknown>> = [];
+    // 외부 후보 잔존 보장을 위한 추적 변수
+    let webSearchAttemptCount = 0;
+    let webSearchRawBeforeDedup = 0;
+    let webSearchDedupRemoved = 0;
+    let webSearchRetryReason: string | null = null;
+
     // ── 항상 웹 검색 실행 — 로컬 결과 강도와 무관하게 외부 후보 확장 ──
-    // 이전에는 localWeak 조건이 있었으나 완전 제거함.
-    // 보유 감독이 잘 맞더라도 외부 감독 후보가 반드시 함께 나와야 한다.
     {
       attemptedWebSearch = true;
 
-      // 검색 쿼리 구성 — 사전 추출 신호로 보강
+      // 검색 쿼리 구성 — 사전 추출 신호로 보강 (반드시 영문)
       const enhanced = buildEnhancedWebSearchQuery(extractedGenres, extractedMoods, extractedKeywords, preSignals);
       webSearchQuery = enhanced.query;
       if (enhanced.queryReasons.length > 0) {
@@ -725,44 +756,129 @@ ${localList}
 
       console.log(`[recommend-director] STEP 2: 웹 검색 시도 — query="${webSearchQuery}", localNames=${localNameSet.size}`);
 
-      try {
-        // ── 로컬 감독 이름을 제외 조건에 명시하여 외부 후보가 실제로 남도록 유도 ──
-        const localNameExclusion = (localDirectors || [])
-          .map(d => d.name)
-          .slice(0, 20)
-          .join(", ");
+      // ── 로컬 감독 이름 + 한글명을 모두 제외 조건에 명시 ──
+      const localNameExclusionPairs = (localDirectors || [])
+        .slice(0, 20)
+        .map(d => `${d.name} (${d.nameKo})`)
+        .join(", ");
 
-        const webSearchBody = {
-          contents: [{ role: "user", parts: [{ text: `Based on web search results, recommend 3-4 real film/animation directors whose visual style best matches this scenario.
+      // ── 웹 검색 프롬프트: 제외 조건 강화 + 다양성 유도 ──
+      const buildWebPrompt = (retryNote: string = "") => `You are a film/animation director discovery engine with web search access.
+Your mission: find directors who are NOT in the user's existing collection but whose visual style matches the scenario.
 
-IMPORTANT: Do NOT recommend any of these directors (they are already in the local pool): ${localNameExclusion}
+## STRICT EXCLUSION LIST — do NOT recommend any of these directors under any name, alias, or reference:
+${localNameExclusionPairs}
 
-Recommend directors who are NOT in the above list. Look for lesser-known or different-region directors with matching styles.
+This means:
+- Do NOT suggest any director whose English name, Korean name, or common alias matches anyone above
+- Do NOT suggest the same director under a different romanization or spelling
+- Do NOT reference their notable works as a way to indirectly suggest them
+- If you are unsure whether a director is in the exclusion list, do NOT include them
+${retryNote}
+## SCENARIO CONTEXT
+Keywords: ${extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ")} | ${extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ")}
+Excerpt: ${storyText.slice(0, 400)}
 
-Scenario keywords: ${extractedGenres.slice(0, 3).join(" ")} ${extractedMoods.slice(0, 2).join(" ")} ${extractedKeywords.slice(0, 2).join(" ")}
-Scenario excerpt: ${storyText.slice(0, 400)}
+## REQUIREMENTS
+1. Recommend exactly 4 real, existing directors. No fictional directors.
+2. All 4 must be OUTSIDE the exclusion list above.
+3. Include at least 2 directors from DIFFERENT regions (e.g., not all from the same country).
+4. Avoid only listing the most famous directors — include at least 1 lesser-known but stylistically relevant director.
+5. Each director must have a specific, concrete reason tied to the scenario (not generic praise).
 
-For each director, provide:
-- name (English)
-- nameKo (Korean)
+## OUTPUT FORMAT (strict JSON)
+Return ONLY valid JSON: { "directors": [...] }
+Each director object must have:
+- name: English name (real, existing director only)
+- nameKo: Korean name
 - region: one of 한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아
 - style: comma-separated Korean style keywords (max 5)
-- description: 2-3 sentences in Korean about their visual directing style
-- reason: 2 sentences in Korean why this director fits the scenario
+- description: 2-3 sentences in Korean about their visual directing style — be SPECIFIC about techniques
+- reason: 2 sentences in Korean why this director fits THIS specific scenario (not generic)
 - fitScore: 0-100
 - signatureTechniques: { cameraWork, colorPalette, lighting, editingStyle, moodKeywords } all in English
-- notableWorks: array of 3 representative works
+- notableWorks: array of 3 representative works`;
 
-Return as JSON: { "directors": [...] }
-Only recommend real, existing directors. No fictional directors.` }] }],
+      /**
+       * 웹 검색 결과를 파싱하고 중복 제거하는 내부 함수.
+       * 재시도 시에도 동일 로직 사용.
+       */
+      const processWebResponse = (
+        webText: string,
+        sources: ReturnType<typeof extractGroundingSources>,
+        label: string,
+      ) => {
+        let webParsed: Record<string, unknown>;
+        try {
+          webParsed = JSON.parse(webText) as Record<string, unknown>;
+        } catch {
+          webParsed = (parseFirstJsonObject(webText) as Record<string, unknown>) ?? {};
+        }
+
+        const rawWebDirs = Array.isArray(webParsed.directors) ? webParsed.directors as Array<Record<string, unknown>> : [];
+        const accepted: Array<Record<string, unknown>> = [];
+        let rejected = 0;
+        const reasons: string[] = [];
+
+        for (const d of rawWebDirs) {
+          if (!d.name || !d.nameKo) {
+            rejected++;
+            reasons.push(`missing name/nameKo`);
+            continue;
+          }
+
+          // 중복 판정 — 공통 유틸 사용
+          if (isLocalDuplicate(String(d.name), String(d.nameKo), localNameSet)) {
+            rejected++;
+            reasons.push(`"${d.name}" already in local pool`);
+            continue;
+          }
+
+          // 웹 결과 내부 중복 제거
+          const normName = String(d.name).toLowerCase().replace(/[\s\-_.]/g, "");
+          if (accepted.some(a => String(a.name).toLowerCase().replace(/[\s\-_.]/g, "") === normName)) {
+            rejected++;
+            reasons.push(`"${d.name}" duplicate within web results`);
+            continue;
+          }
+
+          const region = String(d.region || "미국");
+          const webId = generateSlugId(String(d.name), region);
+
+          // grounding 품질 점수 계산
+          const relevanceKeywords = [
+            String(d.name), String(d.nameKo),
+            ...(Array.isArray(d.notableWorks) ? d.notableWorks.map(String) : []),
+          ];
+          const groundingQuality = computeGroundingQuality(sources, relevanceKeywords, false);
+
+          accepted.push({
+            ...d,
+            id: webId,
+            fitScore: clampFitScore(d.fitScore),
+            reason: ensureReason(d.reason),
+            _source: label,
+            grounded: sources.length > 0,
+            sources: sources.length > 0 ? sources : undefined,
+            groundingQuality,
+          });
+        }
+
+        return { accepted, rejected, reasons, rawCount: rawWebDirs.length };
+      };
+
+      try {
+        webSearchProvider = "gemini-google-search-retrieval";
+        webSearchAttemptCount = 1;
+
+        const webSearchBody = {
+          contents: [{ role: "user", parts: [{ text: buildWebPrompt() }] }],
           tools: [{ googleSearchRetrieval: {} }],
           generationConfig: {
             temperature: 0.3,
             maxOutputTokens: 3072,
           },
         };
-
-        webSearchProvider = "gemini-google-search-retrieval";
 
         const webRes = await fetchWithAuth(
           context.env,
@@ -797,70 +913,136 @@ Only recommend real, existing directors. No fictional directors.` }] }],
             console.log(`[recommend-director] grounding 소스 없음 — 모델 지식 기반 응답`);
           }
 
-          let webParsed: Record<string, unknown>;
-          try {
-            webParsed = JSON.parse(webText) as Record<string, unknown>;
-          } catch {
-            webParsed = (parseFirstJsonObject(webText) as Record<string, unknown>) ?? {};
-          }
+          const result = processWebResponse(webText, sources, "web_search");
+          webSearchResultCount = result.rawCount;
+          webSearchRawBeforeDedup = result.rawCount;
+          webSearchAcceptedCount = result.accepted.length;
+          webSearchRejectedCount = result.rejected;
+          webSearchRejectionReasons = result.reasons;
+          webSearchDedupRemoved = result.rejected;
+          webSuggestions = result.accepted;
 
-          const rawWebDirs = Array.isArray(webParsed.directors) ? webParsed.directors as Array<Record<string, unknown>> : [];
-          webSearchResultCount = rawWebDirs.length;
-          console.log(`[recommend-director] 웹 검색 원시 결과: ${webSearchResultCount}명`);
+          console.log(`[recommend-director] 웹 검색 1차: 원시=${result.rawCount}, 채택=${result.accepted.length}, 제거=${result.rejected}`);
 
-          for (const d of rawWebDirs) {
-            if (!d.name || !d.nameKo) {
-              webSearchRejectedCount++;
-              webSearchRejectionReasons.push(`missing name/nameKo`);
-              continue;
+          // ── 외부 후보 잔존 보장: 1차 결과가 전부 제거되면 2차 재시도 ──
+          if (result.accepted.length === 0 && result.rawCount > 0) {
+            webSearchRetryReason = `1차 웹 결과 ${result.rawCount}명 전부 로컬 중복 제거됨 → 제외 조건 강화 재시도`;
+            console.log(`[recommend-director] ${webSearchRetryReason}`);
+            webSearchAttemptCount = 2;
+
+            const retryNote = `\n## RETRY NOTE\nYour previous response contained ONLY directors already in the exclusion list.\nYou MUST find completely different directors this time.\nDo NOT repeat: ${result.reasons.filter(r => r.includes("already in local pool")).map(r => r.replace(" already in local pool", "").replace(/"/g, "")).join(", ")}\n`;
+
+            const retryBody = {
+              contents: [{ role: "user", parts: [{ text: buildWebPrompt(retryNote) }] }],
+              tools: [{ googleSearchRetrieval: {} }],
+              generationConfig: { temperature: 0.5, maxOutputTokens: 3072 },
+            };
+
+            const retryRes = await fetchWithAuth(
+              context.env,
+              buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(retryBody),
+              },
+            );
+
+            if (retryRes.ok) {
+              const retryData = await retryRes.json() as {
+                candidates?: {
+                  content?: { parts?: { text?: string }[] };
+                  groundingMetadata?: {
+                    groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
+                  };
+                }[];
+              };
+              const retryText = retryData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+              const retryGrounding = retryData?.candidates?.[0]?.groundingMetadata;
+              const retrySources = extractGroundingSources(retryGrounding?.groundingChunks);
+              const retryResult = processWebResponse(retryText, retrySources, "web_search_retry");
+
+              webSearchResultCount += retryResult.rawCount;
+              webSearchAcceptedCount += retryResult.accepted.length;
+              webSearchRejectedCount += retryResult.rejected;
+              webSearchRejectionReasons.push(...retryResult.reasons.map(r => `[retry] ${r}`));
+              webSuggestions.push(...retryResult.accepted);
+
+              console.log(`[recommend-director] 2차 재시도: 원시=${retryResult.rawCount}, 채택=${retryResult.accepted.length}`);
+            } else {
+              console.warn(`[recommend-director] 2차 재시도 실패(${retryRes.status})`);
             }
-
-            // 중복 판정 — 공통 유틸 사용
-            if (isLocalDuplicate(String(d.name), String(d.nameKo), localNameSet)) {
-              webSearchRejectedCount++;
-              webSearchRejectionReasons.push(`"${d.name}" already in local pool`);
-              continue;
-            }
-
-            const region = String(d.region || "미국");
-            const webId = generateSlugId(String(d.name), region);
-
-            // grounding 품질 점수 계산
-            const relevanceKeywords = [
-              String(d.name), String(d.nameKo),
-              ...(Array.isArray(d.notableWorks) ? d.notableWorks.map(String) : []),
-            ];
-            const groundingQuality = computeGroundingQuality(sources, relevanceKeywords, false);
-
-            webSuggestions.push({
-              ...d,
-              id: webId,
-              fitScore: clampFitScore(d.fitScore),
-              reason: ensureReason(d.reason),
-              _source: "web_search",
-              grounded: sources.length > 0,
-              sources: sources.length > 0 ? sources : undefined,
-              groundingQuality,
-            });
-            webSearchAcceptedCount++;
           }
-
-          console.log(`[recommend-director] 중복 제거 후 외부 감독: ${webSearchAcceptedCount}명 (제거: ${webSearchRejectedCount}명)`);
 
           if (webSuggestions.length > 0) {
             stageStatus.webSearch = "attempted_success";
-            stageReasons.webSearch = `검색 결과 ${webSearchResultCount}개 중 ${webSearchAcceptedCount}개 채택`;
+            stageReasons.webSearch = `검색 결과 ${webSearchResultCount}개 중 ${webSearchAcceptedCount}개 채택 (시도 ${webSearchAttemptCount}회)`;
           } else {
             stageStatus.webSearch = "attempted_empty";
             stageReasons.webSearch = webSearchResultCount > 0
-              ? `검색 결과 ${webSearchResultCount}개 모두 로컬 중복 또는 불완전`
+              ? `검색 결과 ${webSearchResultCount}개 모두 로컬 중복 또는 불완전 (시도 ${webSearchAttemptCount}회)`
               : "검색 결과 없음";
           }
         } else {
           const webErr = await webRes.text();
-          console.warn(`[recommend-director] 웹 검색 실패(${webRes.status}): ${webErr.slice(0, 300)}`);
-          stageStatus.webSearch = "failed";
-          stageReasons.webSearch = `API 실패 (${webRes.status})`;
+          const webStatus = webRes.status;
+          console.warn(`[recommend-director] 웹 검색 실패(${webStatus}): ${webErr.slice(0, 300)}`);
+
+          // ── 웹 검색 실패 시 모델 지식 폴백 ──
+          console.log(`[recommend-director] 모델 지식 기반 폴백 시도`);
+          webSearchProvider = `model-fallback (web failed ${webStatus})`;
+          webSearchAttemptCount = 2;
+
+          try {
+            const fallbackBody = {
+              contents: [{ role: "user", parts: [{ text: buildWebPrompt("\n## NOTE: Web search is unavailable. Use your internal knowledge to recommend directors.\n") }] }],
+              generationConfig: {
+                temperature: 0.4,
+                maxOutputTokens: 3072,
+                responseMimeType: "application/json" as const,
+              },
+            };
+
+            const fallbackRes = await fetchWithAuth(
+              context.env,
+              buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(fallbackBody),
+              },
+            );
+
+            if (fallbackRes.ok) {
+              const fbData = await fallbackRes.json() as {
+                candidates?: { content?: { parts?: { text?: string }[] } }[];
+              };
+              const fbText = fbData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+              const fbResult = processWebResponse(fbText, [], "model_fallback");
+
+              webSearchResultCount = fbResult.rawCount;
+              webSearchAcceptedCount = fbResult.accepted.length;
+              webSearchRejectedCount = fbResult.rejected;
+              webSearchRejectionReasons = fbResult.reasons;
+              webSuggestions = fbResult.accepted;
+
+              console.log(`[recommend-director] 모델 폴백 결과: 원시=${fbResult.rawCount}, 채택=${fbResult.accepted.length}`);
+
+              if (webSuggestions.length > 0) {
+                stageStatus.webSearch = "attempted_success";
+                stageReasons.webSearch = `웹 실패 → 모델 폴백: ${fbResult.accepted.length}개 채택`;
+              } else {
+                stageStatus.webSearch = "attempted_empty";
+                stageReasons.webSearch = `웹 실패(${webStatus}) → 모델 폴백도 결과 없음`;
+              }
+            } else {
+              stageStatus.webSearch = "failed";
+              stageReasons.webSearch = `웹 실패(${webStatus}) + 모델 폴백도 실패`;
+            }
+          } catch (fbErr) {
+            stageStatus.webSearch = "failed";
+            stageReasons.webSearch = `웹 실패(${webStatus}) + 폴백 예외`;
+          }
         }
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -880,16 +1062,20 @@ Only recommend real, existing directors. No fictional directors.` }] }],
 
     let emptyReason: string | undefined;
     if (finalCount === 0) {
-      if (stageStatus.extractSignals === "weak") {
+      // emptyReason 판정: 실제 장르/무드 존재 여부를 기반으로 정확히 분류
+      const hasSignals = extractedGenres.length > 0 || extractedMoods.length > 0;
+      if (!hasSignals && stageStatus.extractSignals === "weak") {
         emptyReason = "genre_mood_not_detected";
       } else if (directorPoolSize === 0) {
         emptyReason = "empty_director_pool";
       } else if (stageStatus.localMatch === "invalid_ids") {
         emptyReason = "all_local_ids_hallucinated";
-      } else if (stageStatus.webSearch === "attempted_empty") {
+      } else if (stageStatus.webSearch === "attempted_empty" && stageStatus.localMatch === "empty") {
         emptyReason = "web_search_returned_empty";
-      } else if (stageStatus.webSearch === "failed") {
+      } else if (stageStatus.webSearch === "failed" && stageStatus.localMatch !== "ok") {
         emptyReason = "web_search_failed_and_no_local";
+      } else if (stageStatus.localMatch === "empty" && stageStatus.webSearch !== "attempted_success") {
+        emptyReason = "no_candidates_found";
       } else {
         emptyReason = "no_candidates_found";
       }
@@ -921,6 +1107,10 @@ Only recommend real, existing directors. No fictional directors.` }] }],
       webSearchAcceptedCount,
       webSearchRejectedCount,
       webSearchRejectionReasons,
+      webSearchAttemptCount,
+      webSearchRawBeforeDedup,
+      webSearchDedupRemoved,
+      webSearchRetryReason,
       localResultCount: finalLocalCount,
       externalResultCount: finalWebCount,
       finalResultCount: finalCount,
