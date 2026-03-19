@@ -149,8 +149,8 @@ describe("6~9초 band: 최소 3컷", () => {
     expect(result.canGenerate).toBe(false);
     const lowCut = getIssuesByCode(result.issues, "cut_count_too_low");
     expect(lowCut.length).toBe(1);
-    expect(lowCut[0].messageKo).toContain("최소 3컷");
-    expect(lowCut[0].messageKo).toContain("2컷");
+    expect(lowCut[0].messageKo).toContain("최소 3개 시퀀스");
+    expect(lowCut[0].messageKo).toContain("2개");
   });
 
   it("6초 + 3컷 → 통과", () => {
@@ -194,8 +194,8 @@ describe("10~15초 band: 4~6컷 필수", () => {
     expect(result.canGenerate).toBe(false);
     const lowCut = getIssuesByCode(result.issues, "cut_count_too_low");
     expect(lowCut.length).toBe(1);
-    expect(lowCut[0].messageKo).toContain("4~6컷");
-    expect(lowCut[0].messageKo).toContain("3컷");
+    expect(lowCut[0].messageKo).toContain("4~6개 시퀀스");
+    expect(lowCut[0].messageKo).toContain("3개");
   });
 
   it("10초 + 4컷 → 통과", () => {
@@ -225,7 +225,7 @@ describe("10~15초 band: 4~6컷 필수", () => {
     const highCut = getIssuesByCode(result.issues, "cut_count_too_high");
     expect(highCut.length).toBe(1);
     expect(highCut[0].severity).toBe("blocking");
-    expect(highCut[0].messageKo).toContain("7컷");
+    expect(highCut[0].messageKo).toContain("7개");
   });
 });
 
@@ -233,29 +233,36 @@ describe("10~15초 band: 4~6컷 필수", () => {
 // 4. 16초+ → 생성 불가
 // ═══════════════════════════════════════════════════════════════════
 
-describe("16초+: 생성 불가", () => {
-  it("16초 → duration_band_not_supported", () => {
-    const { cuts, durations } = makeCutsWithTotal(4, 16);
+describe("16초+: 개별 컷 duration 초과", () => {
+  it("개별 컷 16초 → cut_duration_too_long (Kling 15초 상한)", () => {
+    const cuts = [makeCut({ cutNumber: 1, durationSec: 16 })];
+    const durations = new Map([[1, 16]]);
     const result = runPreflightValidation(makeInput(cuts, durations));
     expect(result.canGenerate).toBe(false);
-    const notSupported = getIssuesByCode(result.issues, "duration_band_not_supported");
-    expect(notSupported.length).toBe(1);
-    expect(notSupported[0].messageKo).toContain("15초를 초과");
-    expect(notSupported[0].messageKo).toContain("지원하지 않습니다");
+    const tooLong = getIssuesByCode(result.issues, "cut_duration_too_long");
+    expect(tooLong.length).toBe(1);
+    expect(tooLong[0].messageKo).toContain("15초");
   });
 
-  it("20초 → duration_band_not_supported", () => {
-    const { cuts, durations } = makeCutsWithTotal(5, 20);
+  it("총 런타임 > 15초라도 개별 컷이 15초 이내면 band 에러 없음 (multi-segment)", () => {
+    // 10컷 × 13초 = 130초 — multi-segment 콘텐츠, 각 컷은 15초 이내
+    const { cuts, durations } = makeCutsWithTotal(10, 130);
     const result = runPreflightValidation(makeInput(cuts, durations));
-    const notSupported = getIssuesByCode(result.issues, "duration_band_not_supported");
-    expect(notSupported.length).toBe(1);
+    const bandIssues = getIssuesByCode(result.issues, "duration_band_not_supported");
+    expect(bandIssues.length).toBe(0);
   });
 
-  it("16초에서는 cut_count 에러가 나오지 않음 (over-limit에서 조기 리턴)", () => {
-    const { cuts, durations } = makeCutsWithTotal(2, 16);
+  it("multi-segment에서 일부 컷만 16초 → 해당 컷만 cut_duration_too_long", () => {
+    const cuts = [
+      makeCut({ cutNumber: 1, durationSec: 16 }),
+      makeCut({ cutNumber: 2, durationSec: 15 }),
+      makeCut({ cutNumber: 3, durationSec: 14 }),
+    ];
+    const durations = new Map([[1, 16], [2, 15], [3, 14]]);
     const result = runPreflightValidation(makeInput(cuts, durations));
-    const cutIssues = result.issues.filter(i => i.code === "cut_count_too_low" || i.code === "cut_count_too_high");
-    expect(cutIssues.length).toBe(0); // over-limit에서 조기 리턴되므로
+    const tooLong = getIssuesByCode(result.issues, "cut_duration_too_long");
+    expect(tooLong.length).toBe(1);
+    expect(tooLong[0].cutNumber).toBe(1);
   });
 });
 
@@ -374,17 +381,17 @@ describe("getCutDisplayTitle", () => {
 });
 
 describe("getCutSubInfo", () => {
-  it("기본: 컷 N · 1샷 · N초", () => {
-    expect(getCutSubInfo(makeCut({ cutNumber: 2, durationSec: 5 }))).toBe("컷 2 · 1샷 · 5초");
+  it("기본: 시퀀스 N · 1샷 · N초", () => {
+    expect(getCutSubInfo(makeCut({ cutNumber: 2, durationSec: 5 }))).toBe("시퀀스 2 · 1샷 · 5초");
   });
 
   it("멀티샷이면 샷 수 표시", () => {
     const ms: MultiShotPrompt[] = [{ index: 1, prompt: "a", duration: "3" }, { index: 2, prompt: "b", duration: "2" }];
-    expect(getCutSubInfo(makeCut({ cutNumber: 1, durationSec: 5 }), new Map([[1, ms]]))).toBe("컷 1 · 2샷 · 5초");
+    expect(getCutSubInfo(makeCut({ cutNumber: 1, durationSec: 5 }), new Map([[1, ms]]))).toBe("시퀀스 1 · 2샷 · 5초");
   });
 
   it("원테이크면 원테이크 표시", () => {
-    expect(getCutSubInfo(makeCut({ cutNumber: 1, durationSec: 8, intentionalOneTake: true }))).toBe("컷 1 · 원테이크 · 8초");
+    expect(getCutSubInfo(makeCut({ cutNumber: 1, durationSec: 8, intentionalOneTake: true }))).toBe("시퀀스 1 · 원테이크 · 8초");
   });
 });
 
@@ -398,23 +405,24 @@ describe("에러 메시지 품질", () => {
     const result = runPreflightValidation(makeInput(cuts, durations));
     const issue = getIssuesByCode(result.issues, "cut_count_too_low")[0];
     expect(issue.messageKo).toContain("6~9초");
-    expect(issue.messageKo).toContain("최소 3컷");
+    expect(issue.messageKo).toContain("최소 3개 시퀀스");
   });
 
-  it("10~15초 4~6컷 메시지", () => {
+  it("10~15초 4~6개 시퀀스 메시지", () => {
     const { cuts, durations } = makeCutsWithTotal(3, 12);
     const result = runPreflightValidation(makeInput(cuts, durations));
     const issue = getIssuesByCode(result.issues, "cut_count_too_low")[0];
     expect(issue.messageKo).toContain("10~15초");
-    expect(issue.messageKo).toContain("4~6컷");
+    expect(issue.messageKo).toContain("4~6개 시퀀스");
   });
 
-  it("15초 초과 지원 불가 메시지", () => {
-    const { cuts, durations } = makeCutsWithTotal(4, 18);
+  it("개별 컷 16초 → cut_duration_too_long 메시지", () => {
+    const cuts = [makeCut({ cutNumber: 1, durationSec: 16 })];
+    const durations = new Map([[1, 16]]);
     const result = runPreflightValidation(makeInput(cuts, durations));
-    const issue = getIssuesByCode(result.issues, "duration_band_not_supported")[0];
-    expect(issue.messageKo).toContain("지원하지 않습니다");
+    const issue = getIssuesByCode(result.issues, "cut_duration_too_long")[0];
     expect(issue.messageKo).toContain("15초");
+    expect(issue.messageKo).toContain("초과");
   });
 
   it("cut_count_too_high 메시지에 '줄여' 포함", () => {
@@ -435,6 +443,6 @@ describe("에러 메시지 품질", () => {
     const result = runPreflightValidation(makeInput(cuts, durations));
     const structIssues = getIssuesByCode(result.issues, "invalid_duration_structure");
     expect(structIssues.length).toBe(1);
-    expect(structIssues[0].messageKo).toContain("컷당 최대 4초");
+    expect(structIssues[0].messageKo).toContain("시퀀스당 최대 4초");
   });
 });

@@ -119,17 +119,23 @@ export function reconcileShortformPlan(opts: {
 
   const bandPolicy = resolveShortformBandPolicy(totalDurationSec);
 
-  // over-limit band → 생성 불가, 최소한의 fallback plan 반환
+  // multi-segment 콘텐츠 (> 15s) → shortform band 규칙 비적용.
+  // 15초 초과는 여러 Kling 세그먼트로 구성된 장편 콘텐츠이므로
+  // shortform rhythm을 적용하지 않고, density/persona 기반으로 진행.
   if (bandPolicy.band === "over-limit") {
-    notes.push(`totalDuration(${totalDurationSec}s) exceeds shortform limit (15s) — generation not supported`);
+    const effectiveCuts = exactCutCount && exactCutCount > 0
+      ? exactCutCount
+      : Math.max(densityTargetCuts, Math.ceil(totalDurationSec / 15));
+    const effectiveSecPerCut = Math.round(totalDurationSec / effectiveCuts);
+    notes.push(`totalDuration(${totalDurationSec}s) > 15s — multi-segment mode, shortform rhythm 비적용`);
     return {
-      cutCount: densityTargetCuts,
-      secPerCut: personaSecPerCut,
+      cutCount: effectiveCuts,
+      secPerCut: Math.min(effectiveSecPerCut, 15),
       totalDurationSec,
       bandPolicy,
       personaWantedSecPerCut: personaSecPerCut,
       densityTargetCuts,
-      reconciled: true,
+      reconciled: effectiveCuts !== densityTargetCuts,
       reconciliationNotes: notes,
       directorPaceDownweighted: false,
       shortformRhythmApplied: false,

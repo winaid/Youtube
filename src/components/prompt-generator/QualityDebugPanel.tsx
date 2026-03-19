@@ -46,10 +46,11 @@ export default function QualityDebugPanel({ output, meta, sampleHint }: Props) {
   const cutShotCounts = output.cuts.map(c => c.multiShot?.length || 1);
 
   // Minimum expected cuts for this duration
-  const expectedMinCuts = is13to15 ? 4
-    : (totalDuration >= 10 && totalDuration < 13) ? 3
-    : totalDuration < 10 ? 1
-    : Math.max(3, Math.ceil(totalDuration / 15));
+  // 확정 규칙: ≤5s=1, 6-9s=3, 10-15s=4, 16s+=segment 기반 (각 segment ≤15s)
+  const expectedMinCuts = totalDuration <= 5 ? 1
+    : totalDuration <= 9 ? 3
+    : totalDuration <= 15 ? 4
+    : Math.max(4, Math.ceil(totalDuration / 15));
 
   // Generate rationale messages
   const rationale: string[] = meta?.rationale ? [...meta.rationale] : [];
@@ -70,7 +71,7 @@ export default function QualityDebugPanel({ output, meta, sampleHint }: Props) {
     rationale.push("Outline-only path로 생성됨 — 디테일이 제한적일 수 있습니다.");
   }
   if (cutCount < expectedMinCuts) {
-    rationale.push(`컷 수(${cutCount})가 정책 최소(${expectedMinCuts})보다 적습니다.`);
+    rationale.push(`시퀀스 수(${cutCount})가 정책 최소(${expectedMinCuts})보다 적습니다.`);
   }
   if (output.degraded) {
     rationale.push(`자동 조정됨: ${output.degradedReason ?? "사유 미상"}`);

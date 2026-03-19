@@ -166,7 +166,7 @@ export function getCutDisplayTitle(
 
 /**
  * 보조 정보 라인 생성.
- * 예: "컷 1 · 2샷 · 8초"
+ * 예: "시퀀스 1 · 2샷 · 8초"
  */
 export function getCutSubInfo(
   cut: Cut,
@@ -176,7 +176,7 @@ export function getCutSubInfo(
   const duration = canonicalDurations?.get(cut.cutNumber) ?? cut.durationSec;
   const shots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
   const shotInfo = shots.length > 1 ? `${shots.length}샷` : cut.intentionalOneTake ? "원테이크" : "1샷";
-  return `컷 ${cut.cutNumber} · ${shotInfo} · ${duration}초`;
+  return `시퀀스 ${cut.cutNumber} · ${shotInfo} · ${duration}초`;
 }
 
 function truncateTitle(text: string, maxLength: number): string {
@@ -196,7 +196,7 @@ export function runPreflightValidation(input: PreflightInput): PreflightResult {
 
   // ── 1. 컷 존재 검사 ──
   if (input.cuts.length === 0) {
-    issues.push({ severity: "blocking", messageKo: "생성할 컷이 없습니다.", code: "no_cuts" });
+    issues.push({ severity: "blocking", messageKo: "생성할 시퀀스가 없습니다.", code: "no_cuts" });
   }
 
   // ── 2. 스타일 검사 ──
@@ -244,17 +244,15 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
     return sum + (input.canonicalDurations.get(cut.cutNumber) ?? cut.durationSec);
   }, 0);
 
-  const bandRule = getSequenceBandRule(totalDuration);
-
-  // ── 16초 초과 → 생성 불가 ──
-  if (!bandRule.supported) {
-    issues.push({
-      severity: "blocking",
-      code: "duration_band_not_supported",
-      messageKo: `총 길이 ${totalDuration}초 — 15초를 초과하는 영상은 현재 shortform 생성 규칙에서 지원하지 않습니다. 총 길이를 15초 이하로 줄여 주세요.`,
-    });
-    return; // 지원 불가이므로 세부 검사 불필요
+  // ── multi-segment 콘텐츠 (총 런타임 > 15초) ──
+  // band 규칙은 개별 컷 단위. 총 런타임이 15초를 넘으면
+  // 여러 개의 Kling 세그먼트로 구성된 콘텐츠이므로 band 규칙 적용 안 함.
+  // 개별 컷의 duration 상한(15초)은 checkCut의 cut_duration_too_long이 처리.
+  if (totalDuration > SEQUENCE_MAX_TOTAL_DURATION) {
+    return;
   }
+
+  const bandRule = getSequenceBandRule(totalDuration);
 
   // 밴드별 라벨
   const bandLabel = bandRule.band === "short"
@@ -269,10 +267,10 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
       severity: "blocking",
       code: "cut_count_too_low",
       messageKo: bandRule.band === "shortform-critical"
-        ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}컷으로 구성해야 합니다. 현재 ${cutCount}컷이라 생성할 수 없습니다. 컷을 추가해 주세요.`
+        ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}개 시퀀스로 구성해야 합니다. 현재 ${cutCount}개라 생성할 수 없습니다. 시퀀스를 추가해 주세요.`
         : bandRule.band === "short"
-          ? `${bandLabel}은 최소 ${bandRule.minCuts}컷 이상이어야 합니다. 현재 ${cutCount}컷이라 생성할 수 없습니다. 컷을 추가해 주세요.`
-          : `${bandLabel}은 최소 ${bandRule.minCuts}컷이 필요합니다. 현재 ${cutCount}컷입니다.`,
+          ? `${bandLabel}은 최소 ${bandRule.minCuts}개 시퀀스 이상이어야 합니다. 현재 ${cutCount}개라 생성할 수 없습니다. 시퀀스를 추가해 주세요.`
+          : `${bandLabel}은 최소 ${bandRule.minCuts}개 시퀀스가 필요합니다. 현재 ${cutCount}개입니다.`,
     });
   }
 
@@ -283,8 +281,8 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
       severity: isHardLimit ? "blocking" : "warning",
       code: "cut_count_too_high",
       messageKo: isHardLimit
-        ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}컷으로 구성해야 합니다. 현재 ${cutCount}컷이라 너무 많습니다. 컷 수를 ${bandRule.maxCuts}개 이하로 줄여 주세요.`
-        : `${bandLabel}에 ${cutCount}컷은 권장 상한(${bandRule.maxCuts}컷)을 초과합니다. 컷을 줄이는 것을 권장합니다.`,
+        ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}개 시퀀스로 구성해야 합니다. 현재 ${cutCount}개라 너무 많습니다. ${bandRule.maxCuts}개 이하로 줄여 주세요.`
+        : `${bandLabel}에 ${cutCount}개 시퀀스는 권장 상한(${bandRule.maxCuts}개)을 초과합니다. 시퀀스를 줄이는 것을 권장합니다.`,
     });
   }
 
@@ -296,7 +294,7 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
         issues.push({
           severity: "blocking",
           code: "invalid_duration_structure",
-          messageKo: `컷 ${cut.cutNumber}: ${duration}초 — ${bandLabel}에서는 컷당 최대 ${bandRule.maxSecPerCut}초입니다. 각 컷 길이를 줄여 주세요.`,
+          messageKo: `시퀀스 ${cut.cutNumber}: ${duration}초 — ${bandLabel}에서는 시퀀스당 최대 ${bandRule.maxSecPerCut}초입니다. 길이를 줄여 주세요.`,
           cutNumber: cut.cutNumber,
         });
       }
@@ -368,7 +366,7 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
     issues.push({
       severity: "blocking",
       code: "cut_duration_too_short",
-      messageKo: `컷 ${cutNum}: ${duration}초 — 최소 ${modelCap.minDuration}초 이상 필요합니다.`,
+      messageKo: `시퀀스 ${cutNum}: ${duration}초 — 최소 ${modelCap.minDuration}초 이상 필요합니다.`,
       cutNumber: cutNum,
     });
   }
@@ -376,7 +374,7 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
     issues.push({
       severity: "blocking",
       code: "cut_duration_too_long",
-      messageKo: `컷 ${cutNum}: ${duration}초 — 최대 ${modelCap.maxDuration}초를 초과합니다.`,
+      messageKo: `시퀀스 ${cutNum}: ${duration}초 — 최대 ${modelCap.maxDuration}초를 초과합니다.`,
       cutNumber: cutNum,
     });
   }
@@ -388,7 +386,7 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
     issues.push({
       severity: "blocking",
       code: "cut_no_prompt",
-      messageKo: `컷 ${cutNum}: 프롬프트 또는 장면 설명이 비어 있습니다.`,
+      messageKo: `시퀀스 ${cutNum}: 프롬프트 또는 장면 설명이 비어 있습니다.`,
       cutNumber: cutNum,
     });
   }
@@ -402,7 +400,7 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
       issues.push({
         severity: "blocking",
         code: "cut_too_many_shots",
-        messageKo: `컷 ${cutNum}: 샷 ${multiShot.length}개 — 최대 ${maxShots}개 (${duration}초 기준)`,
+        messageKo: `시퀀스 ${cutNum}: 샷 ${multiShot.length}개 — 최대 ${maxShots}개 (${duration}초 기준)`,
         cutNumber: cutNum,
       });
     }
@@ -413,7 +411,7 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
       issues.push({
         severity: "warning",
         code: "cut_empty_shot_prompt",
-        messageKo: `컷 ${cutNum}: 샷 ${emptyShots.map(s => s.index).join(",")}의 프롬프트가 비어 있습니다.`,
+        messageKo: `시퀀스 ${cutNum}: 샷 ${emptyShots.map(s => s.index).join(",")}의 프롬프트가 비어 있습니다.`,
         cutNumber: cutNum,
       });
     }
@@ -424,7 +422,7 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
       issues.push({
         severity: "warning",
         code: "cut_shot_duration_mismatch",
-        messageKo: `컷 ${cutNum}: 샷 시간 합계 ${durationSum}초 ≠ 전체 ${duration}초`,
+        messageKo: `시퀀스 ${cutNum}: 샷 시간 합계 ${durationSum}초 ≠ 전체 ${duration}초`,
         cutNumber: cutNum,
       });
     }
