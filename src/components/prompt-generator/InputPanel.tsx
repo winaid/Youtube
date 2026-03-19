@@ -1159,7 +1159,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                           <p className="font-medium" style={{ color: "#94a3b8" }}>파이프라인 추적</p>
 
                           {/* Stage status 4종 */}
-                          {(debug as Record<string, unknown>).stageStatus && ((): React.ReactNode => {
+                          {!!(debug as Record<string, unknown>).stageStatus && ((): React.ReactNode => {
                             const ss = (debug as Record<string, unknown>).stageStatus as Record<string, string>;
                             const sr = ((debug as Record<string, unknown>).stageReasons ?? {}) as Record<string, string>;
                             const statusIcon = (s: string) => s === "ok" || s === "attempted_success" ? "✅" : s === "failed" ? "❌" : s.includes("empty") || s === "weak" ? "⚠️" : "⬜";
@@ -1186,10 +1186,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                               <><span className="col-span-2" style={{ color: "#f59e0b" }}>장르/무드 추출 실패</span></>
                             )}
                             {/* 웹 검색 정보 */}
-                            {(debug as Record<string, unknown>).attemptedWebSearch && (
+                            {!!(debug as Record<string, unknown>).attemptedWebSearch && (
                               <>
                                 <span>웹 검색</span><span>시도됨</span>
-                                {(debug as Record<string, unknown>).webSearchQuery && (
+                                {!!(debug as Record<string, unknown>).webSearchQuery && (
                                   <><span>검색 쿼리</span><span className="truncate">{String((debug as Record<string, unknown>).webSearchQuery).slice(0, 40)}</span></>
                                 )}
                                 <span>검색 결과</span><span>{String((debug as Record<string, unknown>).webSearchResultCount ?? 0)}개</span>
