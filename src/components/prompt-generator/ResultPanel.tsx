@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset, DEFAULT_VIDEO_CONFIG } from "@/types";
+import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset, DEFAULT_VIDEO_CONFIG, type YouTubeSEO } from "@/types";
 import { resolveModelForWorkflow } from "@/lib/kling-capability";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { checkBatchBudget, BATCH_BUDGET_SECONDS } from "@/lib/batch-runtime-budget";
@@ -130,6 +130,15 @@ export default function ResultPanel({
   // SRT
   const [srtContent, setSrtContent] = useState<string | null>(null);
   const [srtLoading, setSrtLoading] = useState(false);
+  const [srtError, setSrtError] = useState<string | null>(null);
+  // SEO
+  const [seoResult, setSeoResult] = useState<YouTubeSEO | null>(null);
+  const [seoLoading, setSeoLoading] = useState(false);
+  const [seoError, setSeoError] = useState<string | null>(null);
+  // Thumbnail
+  const [thumbnailImages, setThumbnailImages] = useState<{ base64: string; mimeType: string }[]>([]);
+  const [thumbnailLoading, setThumbnailLoading] = useState(false);
+  const [thumbnailError, setThumbnailError] = useState<string | null>(null);
   // 캐릭터 얼굴 레퍼런스
   const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
   // Kling Custom Element assets
@@ -326,6 +335,114 @@ export default function ResultPanel({
     dragItemRef.current = null;
     setDragOverIndex(null);
   }, []);
+
+  // ── SEO 생성 콜백 ──
+  const handleRunSeo = useCallback(async () => {
+    if (!result) return;
+    setSeoLoading(true);
+    setSeoError(null);
+    try {
+      const res = await fetch("/api/generate-seo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectTitle: result.projectTitle || storyText?.slice(0, 50) || "Untitled",
+          conceptSummary: result.conceptSummary || storyText || "",
+          scenes: result.cuts.map((c) => ({ sceneDescription: c.sceneDescription })),
+          region: region || "Global",
+          animationMode: animationMode || "",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.titles) {
+          setSeoResult(data as YouTubeSEO);
+        } else {
+          setSeoError("SEO 데이터가 비어있습니다");
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setSeoError(errData.error || `SEO 생성 실패 (${res.status})`);
+      }
+    } catch (err) {
+      console.error("[generate-seo]", err);
+      setSeoError("네트워크 오류 — SEO 생성 실패");
+    }
+    setSeoLoading(false);
+  }, [result, storyText, region, animationMode]);
+
+  // ── 썸네일 생성 콜백 ──
+  const handleRunThumbnail = useCallback(async () => {
+    if (!result) return;
+    setThumbnailLoading(true);
+    setThumbnailError(null);
+    try {
+      const prompt = seoResult?.thumbnailPrompt
+        || `YouTube thumbnail for: ${result.projectTitle || storyText?.slice(0, 80) || "AI video"}. Cinematic, high contrast, eye-catching.`;
+      const res = await fetch("/api/generate-thumbnail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectTitle: result.projectTitle || "",
+          conceptSummary: result.conceptSummary || storyText || "",
+          thumbnailPrompt: prompt,
+          aspectRatio: "16:9",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.images && data.images.length > 0) {
+          setThumbnailImages(data.images);
+        } else {
+          setThumbnailError("썸네일 이미지가 생성되지 않았습니다");
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setThumbnailError(errData.error || `썸네일 생성 실패 (${res.status})`);
+      }
+    } catch (err) {
+      console.error("[generate-thumbnail]", err);
+      setThumbnailError("네트워크 오류 — 썸네일 생성 실패");
+    }
+    setThumbnailLoading(false);
+  }, [result, seoResult, storyText]);
+
+  // ── SRT 생성 콜백 (OneClickPipeline용) ──
+  const handleRunSrt = useCallback(async () => {
+    if (!result) return;
+    setSrtLoading(true);
+    setSrtError(null);
+    try {
+      const res = await fetch("/api/generate-srt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenes: result.cuts.map((c) => ({
+            cutNumber: c.cutNumber,
+            sceneDescription: c.sceneDescription,
+            durationSec: c.durationSec,
+          })),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.srt) {
+          setSrtContent(data.srt);
+        } else {
+          throw new Error("SRT 데이터가 비어있습니다");
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `SRT 생성 실패 (${res.status})`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "SRT 생성 실패";
+      setSrtError(msg);
+      throw err; // re-throw for OneClickPipeline to catch
+    } finally {
+      setSrtLoading(false);
+    }
+  }, [result]);
 
   if (status === "idle") {
     return (
@@ -785,6 +902,7 @@ export default function ResultPanel({
                   disabled={srtLoading}
                   onClick={async () => {
                     setSrtLoading(true);
+                    setSrtError(null);
                     try {
                       const res = await fetch("/api/generate-srt", {
                         method: "POST",
@@ -808,9 +926,17 @@ export default function ResultPanel({
                           a.download = `subtitles-${Date.now()}.srt`;
                           a.click();
                           URL.revokeObjectURL(url);
+                        } else {
+                          setSrtError("SRT 데이터가 비어있습니다");
                         }
+                      } else {
+                        const errData = await res.json().catch(() => ({}));
+                        setSrtError(errData.error || `SRT 생성 실패 (${res.status})`);
                       }
-                    } catch (err) { console.error("[generate-srt]", err); }
+                    } catch (err) {
+                      console.error("[generate-srt]", err);
+                      setSrtError("네트워크 오류 — SRT 생성 실패");
+                    }
                     setSrtLoading(false);
                   }}
                 >
@@ -819,8 +945,31 @@ export default function ResultPanel({
               </div>
             </div>
 
+            {srtError && (
+              <div className="p-2 rounded-lg text-[10px]" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a530" }}>
+                SRT 오류: {srtError}
+              </div>
+            )}
             {srtContent && (
               <div className="p-2 rounded-lg text-[10px] font-mono max-h-32 overflow-auto" style={{ background: "#1e1e2e", color: "#cdd6f4" }}>
+                <div className="flex justify-between items-center mb-1">
+                  <Badge className="text-[8px] text-white" style={{ background: "#22c55e" }}>SRT 생성 완료</Badge>
+                  <button
+                    className="text-[9px] underline"
+                    style={{ color: "#787fff" }}
+                    onClick={() => {
+                      const blob = new Blob([srtContent], { type: "text/plain;charset=utf-8" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `subtitles-${Date.now()}.srt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    다시 다운로드
+                  </button>
+                </div>
                 <pre>{srtContent}</pre>
               </div>
             )}
@@ -1055,9 +1204,151 @@ export default function ResultPanel({
             />
           )}
 
-          {/* 영상 히스토리 — 데모에서는 숨김 */}
+          {/* ── 원클릭 파이프라인 ── */}
+          <OneClickPipeline
+            hasCuts={result.cuts.length > 0}
+            hasVideo={videoGen.completedCount > 0}
+            hasSrt={!!srtContent}
+            hasBgm={false}
+            hasSeo={!!seoResult}
+            onRunVideoGeneration={() => videoGen.startAutoGeneration()}
+            onRunSrt={handleRunSrt}
+            onRunBgm={async () => { /* BGM — 추후 구현 */ }}
+            onRunSeo={handleRunSeo}
+            onRunThumbnail={handleRunThumbnail}
+          />
 
-          {/* 원클릭 파이프라인 — 데모에서는 숨김 */}
+          {/* ── 유튜브 업로드 준비 상태 ── */}
+          <Card className="overflow-hidden border" style={{ borderColor: "#787fff30" }}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm" style={{ color: "#334155" }}>
+                업로드 준비 상태
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "영상", done: videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0, detail: `${videoGen.completedCount}/${videoGen.totalCount}` },
+                  { label: "자막 (SRT)", done: !!srtContent, detail: srtError || undefined },
+                  { label: "SEO", done: !!seoResult, detail: seoError || undefined },
+                  { label: "썸네일", done: thumbnailImages.length > 0, detail: thumbnailError || undefined },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-1.5 text-[11px]">
+                    <span style={{ color: item.done ? "#22c55e" : item.detail && !item.done ? "#ef4444" : "#999" }}>
+                      {item.done ? "✓" : item.detail && !item.done ? "✗" : "○"}
+                    </span>
+                    <span style={{ color: item.done ? "#334155" : "#999" }}>{item.label}</span>
+                    {item.detail && !item.done && (
+                      <span className="text-[9px] text-red-400 truncate max-w-[120px]">{item.detail}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {videoGen.completedCount === videoGen.totalCount && videoGen.totalCount > 0 && srtContent && seoResult && thumbnailImages.length > 0 && (
+                <div className="text-[11px] text-center py-1 rounded" style={{ background: "#22c55e15", color: "#16a34a" }}>
+                  모든 에셋 준비 완료 — 유튜브 업로드 가능
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ── SEO 결과 표시 ── */}
+          {seoError && (
+            <div className="p-2 rounded-lg text-[10px]" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a530" }}>
+              SEO 오류: {seoError}
+            </div>
+          )}
+          {seoResult && (
+            <Card className="overflow-hidden border" style={{ borderColor: "#22c55e30" }}>
+              <CardHeader className="pb-1">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs" style={{ color: "#16a34a" }}>유튜브 SEO</CardTitle>
+                  <Badge className="text-[8px] text-white" style={{ background: "#22c55e" }}>생성 완료</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 text-[11px]">
+                <div>
+                  <span className="font-medium text-muted-foreground">제목 후보:</span>
+                  <ul className="mt-1 space-y-0.5">
+                    {seoResult.titles.map((t, i) => (
+                      <li key={i} className="cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded text-[11px]"
+                        onClick={() => { navigator.clipboard.writeText(t); }}
+                        title="클릭하여 복사"
+                      >
+                        {i + 1}. {t}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span className="font-medium text-muted-foreground">설명:</span>
+                  <p className="text-[10px] mt-0.5 whitespace-pre-wrap bg-gray-50 rounded p-1.5 max-h-24 overflow-auto">{seoResult.description}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-muted-foreground">태그:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {seoResult.tags.slice(0, 15).map((tag, i) => (
+                      <Badge key={i} variant="outline" className="text-[9px]">{tag}</Badge>
+                    ))}
+                  </div>
+                </div>
+                {seoResult.hashtags.length > 0 && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">해시태그:</span>
+                    <span className="text-[10px] ml-1">{seoResult.hashtags.join(" ")}</span>
+                  </div>
+                )}
+                <button
+                  className="text-[9px] underline"
+                  style={{ color: "#787fff" }}
+                  onClick={() => {
+                    const text = `제목: ${seoResult.titles[0]}\n\n설명:\n${seoResult.description}\n\n태그: ${seoResult.tags.join(", ")}\n\n해시태그: ${seoResult.hashtags.join(" ")}`;
+                    navigator.clipboard.writeText(text);
+                  }}
+                >
+                  전체 복사
+                </button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── 썸네일 결과 표시 ── */}
+          {thumbnailError && (
+            <div className="p-2 rounded-lg text-[10px]" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a530" }}>
+              썸네일 오류: {thumbnailError}
+            </div>
+          )}
+          {thumbnailImages.length > 0 && (
+            <Card className="overflow-hidden border" style={{ borderColor: "#22c55e30" }}>
+              <CardHeader className="pb-1">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs" style={{ color: "#16a34a" }}>썸네일</CardTitle>
+                  <Badge className="text-[8px] text-white" style={{ background: "#22c55e" }}>생성 완료</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2">
+                  {thumbnailImages.map((img, i) => (
+                    <div key={i} className="relative group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`data:${img.mimeType};base64,${img.base64}`}
+                        alt={`썸네일 ${i + 1}`}
+                        className="w-full rounded border cursor-pointer"
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = `data:${img.mimeType};base64,${img.base64}`;
+                          a.download = `thumbnail-${i + 1}.png`;
+                          a.click();
+                        }}
+                        title="클릭하여 다운로드"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         </>
       )}
