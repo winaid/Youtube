@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useMemo } from "react";
 import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } from "@/types";
 import { inferShotRole } from "@/lib/multishot-validation";
-import { runPreflightValidation, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
+import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -206,7 +206,7 @@ export default function VideoGenerationPanel({
                 color: preflight.blockingCount > 0 ? "#991B1B" : preflight.warningCount > 0 ? "#92400E" : "#166534",
               }}>
                 {preflight.blockingCount > 0
-                  ? `생성 전 확인이 필요합니다 (${preflight.blockingCount}건)`
+                  ? `⛔ 생성할 수 없습니다 — ${preflight.blockingCount}건의 문제를 해결해 주세요`
                   : preflight.warningCount > 0
                     ? `참고 사항 ${preflight.warningCount}건`
                     : "준비 완료"}
@@ -305,7 +305,9 @@ export default function VideoGenerationPanel({
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-sm font-medium">장면 {cut.cutNumber}</span>
+                      <span className="text-sm font-medium truncate max-w-[180px]" title={getCutDisplayTitle(cut, canonicalMultiShots, 60)}>
+                        {getCutDisplayTitle(cut, canonicalMultiShots)}
+                      </span>
 
                       {/* 엔진 배지 — 완료 후 실제 사용 엔진 표시, 완료 전엔 회색 */}
                       {clip.engineUsed ? (
@@ -337,7 +339,7 @@ export default function VideoGenerationPanel({
                       ))}
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                      {cut.sceneDescription}
+                      {getCutSubInfo(cut, canonicalMultiShots, canonicalDurations)}
                     </p>
                     {/* 멀티샷 서브샷 목록 — canonical-first */}
                     {(() => {
