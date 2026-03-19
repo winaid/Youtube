@@ -1314,18 +1314,45 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                       )}
 
                       {/* 섹션 헤더 */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold" style={{ color: "#22c55e" }}>
-                          {hasWebResults
-                            ? (webSugs.some(s => s.grounded) ? "🌐 웹 검색 기반 외부 감독" : "💡 모델 지식 기반 외부 감독")
-                            : "🌐 외부 감독 탐색"}
-                        </span>
-                        {hasWebResults && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>
-                            {webSugs.length}명
-                          </span>
-                        )}
-                      </div>
+                      {(() => {
+                        const meta = (directorRecommendation as Record<string, unknown>)._meta as Record<string, unknown> | undefined;
+                        const resultMode = meta?.resultMode as string | undefined;
+                        const recoveredAtStage = meta?.recoveredAtStage as number | null | undefined;
+                        const isFallback = resultMode === "fallback";
+                        const isMixed = resultMode === "mixed";
+                        const headerColor = isFallback ? "#ca8a04" : "#22c55e";
+                        const headerIcon = hasWebResults
+                          ? (isFallback ? "💡" : isMixed ? "🔀" : "🌐")
+                          : "🌐";
+                        const headerLabel = hasWebResults
+                          ? (isFallback ? "모델 지식 기반 외부 감독"
+                            : isMixed ? "웹+모델 혼합 외부 감독"
+                            : "웹 검색 기반 외부 감독")
+                          : "외부 감독 탐색";
+
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-semibold" style={{ color: headerColor }}>
+                              {headerIcon} {headerLabel}
+                            </span>
+                            {hasWebResults && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: `${headerColor}10`, color: headerColor }}>
+                                {webSugs.length}명
+                              </span>
+                            )}
+                            {hasWebResults && recoveredAtStage && recoveredAtStage > 1 && (
+                              <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "#6366f110", color: "#6366f1" }}>
+                                재시도 후 복구
+                              </span>
+                            )}
+                            {hasWebResults && isFallback && (
+                              <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "#ca8a0410", color: "#ca8a04" }}>
+                                웹 기반 아님
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* 외부 후보가 있을 때: 카드 표시 */}
                       {hasWebResults && (
@@ -1421,18 +1448,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                           <p className="font-medium" style={{ color: "#64748b" }}>외부 감독 후보를 찾지 못했습니다</p>
                           <div className="mt-1 space-y-0.5">
                             {(() => {
-                              const ss = (debug as Record<string, unknown>)?.stageStatus as Record<string, string> | undefined;
-                              const webStatus = ss?.webSearch ?? "unknown";
-                              const rawCount = Number(debug?.webSearchResultCount ?? 0);
-                              const rejectedCount = Number(debug?.webSearchRejectedCount ?? 0);
-                              const attemptCount = Number(debug?.webSearchAttemptCount ?? 1);
-                              const retryReason = debug?.webSearchRetryReason as string | undefined;
-                              const emptyReasons = (debug?.webSearchEmptyReasons ?? []) as string[];
+                              const meta = (directorRecommendation as Record<string, unknown>)._meta as Record<string, unknown> | undefined;
+                              const attemptCount = Number(meta?.retryCount ?? debug?.webSearchAttemptCount ?? 1);
+                              const timeoutOccurred = meta?.timeoutOccurred as boolean | undefined;
+                              const finalReasonCodes = (debug?.finalReasonCodes ?? []) as string[];
+                              const retryStages = (debug?.retryStages ?? []) as Array<Record<string, unknown>>;
                               const queryCorrected = debug?.webSearchQueryCorrected as boolean | undefined;
 
-                              const EMPTY_REASON_LABELS: Record<string, string> = {
+                              const REASON_LABELS: Record<string, string> = {
                                 parse_failed: "AI 응답 파싱 실패",
                                 provider_failed: "웹 검색 API 에러",
+                                provider_timeout: "웹 검색 타임아웃",
                                 provider_empty: "AI가 감독 목록을 생성하지 않음",
                                 duplicate_filtered_all: "모든 후보가 보유 감독과 중복",
                                 weak_query: "검색 신호가 약해 일반적인 결과만 나옴",
@@ -1441,38 +1467,50 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                                 fallback_empty: "모든 재시도 후에도 결과 없음",
                               };
 
-                              if (webStatus === "failed") {
-                                return (
-                                  <>
-                                    <p>웹 검색 실패 → 모델 폴백도 결과 없음</p>
-                                    {debug?.webSearchProvider && <p>방식: {String(debug.webSearchProvider).slice(0, 50)}</p>}
-                                    <p className="mt-0.5" style={{ color: "#b0b0b0" }}>다시 시도하면 결과가 달라질 수 있습니다.</p>
-                                  </>
-                                );
-                              }
-
                               return (
                                 <>
-                                  {emptyReasons.length > 0 ? (
+                                  {/* 기본 UX: 핵심 사유만 */}
+                                  {finalReasonCodes.length > 0 ? (
                                     <div className="space-y-0.5">
-                                      {emptyReasons.map((reason: string, i: number) => (
-                                        <p key={i} style={{ color: reason === "duplicate_filtered_all" ? "#ca8a04" : "#94a3b8" }}>
-                                          • {EMPTY_REASON_LABELS[reason] ?? reason}
+                                      {[...new Set(finalReasonCodes)].map((reason: string, i: number) => (
+                                        <p key={i} style={{ color: reason === "duplicate_filtered_all" ? "#ca8a04" : reason.includes("timeout") ? "#ef4444" : "#94a3b8" }}>
+                                          • {REASON_LABELS[reason] ?? reason}
                                         </p>
                                       ))}
                                     </div>
                                   ) : (
-                                    <>
-                                      <p>웹 검색 원시 결과: {rawCount}명</p>
-                                      {rawCount > 0 && <p>탈락: {rejectedCount}명</p>}
-                                    </>
+                                    <p>검색 결과를 확보하지 못했습니다</p>
                                   )}
-                                  {attemptCount > 1 && <p>재시도: {attemptCount}회{retryReason ? ` (${retryReason.slice(0, 50)})` : ""}</p>}
+
+                                  {/* 요약 정보 */}
+                                  {attemptCount > 1 && <p>총 {attemptCount}단계 시도</p>}
+                                  {timeoutOccurred && <p style={{ color: "#ef4444" }}>타임아웃 발생 → 폴백 사용</p>}
                                   {queryCorrected && <p style={{ color: "#6366f1" }}>검색 쿼리 자동 보정됨</p>}
-                                  {Array.isArray(debug?.webSearchRejectionReasons) && (debug.webSearchRejectionReasons as string[]).length > 0 && (
-                                    <p className="truncate">상세: {(debug.webSearchRejectionReasons as string[]).slice(0, 3).join(", ")}</p>
+
+                                  {/* 디버그 펼침: retryStages 요약 */}
+                                  {retryStages.length > 0 && (
+                                    <details className="mt-1">
+                                      <summary className="cursor-pointer" style={{ color: "#94a3b8" }}>파이프라인 상세</summary>
+                                      <div className="mt-0.5 space-y-0.5 pl-2" style={{ borderLeft: "1px solid #e2e8f020" }}>
+                                        {retryStages.map((s: Record<string, unknown>, i: number) => (
+                                          <div key={i}>
+                                            <span style={{ color: Number(s.acceptedCount) > 0 ? "#16a34a" : "#94a3b8" }}>
+                                              Stage {String(s.stage)}: {String(s.name).replace("stage", "S").replace("_", " ")}
+                                            </span>
+                                            {" → "}
+                                            {Number(s.acceptedCount) > 0
+                                              ? <span style={{ color: "#16a34a" }}>{String(s.acceptedCount)}명 채택</span>
+                                              : <span>{(s.emptyReasons as string[])?.join(", ") || "실패"}</span>
+                                            }
+                                            {!!s.timeoutOccurred && <span style={{ color: "#ef4444" }}> (timeout)</span>}
+                                            {!!s.grounded && <span style={{ color: "#16a34a" }}> (grounded)</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </details>
                                   )}
-                                  <p className="mt-0.5" style={{ color: "#b0b0b0" }}>시나리오를 더 구체적으로 작성하면 외부 감독 탐색 품질이 올라갑니다.</p>
+
+                                  <p className="mt-1" style={{ color: "#b0b0b0" }}>시나리오를 더 구체적으로 작성하면 외부 감독 탐색 품질이 올라갑니다.</p>
                                 </>
                               );
                             })()}

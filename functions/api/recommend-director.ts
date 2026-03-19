@@ -420,6 +420,83 @@ export function buildEnhancedWebSearchQuery(
   return { query, queryReasons };
 }
 
+/**
+ * weak_query 자동 보정: 시나리오 텍스트에서 핵심 명사를 추출하여 영문 쿼리로 변환.
+ * buildEnhancedWebSearchQuery가 generic query를 생성했을 때 호출.
+ */
+export function correctWeakQuery(storyText: string): { query: string; reason: string } | null {
+  const keyNounPatterns = [
+    /(?:전사|전투|전쟁|군대|병사)/g, /(?:사무라이|무사|검객)/g,
+    /(?:우주|행성|은하|외계)/g, /(?:AI|로봇|인공지능)/g,
+    /(?:범죄|수사|추격|살인)/g, /(?:사랑|연인|이별)/g,
+    /(?:마법|환상|판타지)/g, /(?:스파르타|로마|중세)/g,
+    /(?:도시|골목|거리|빌딩)/g, /(?:바다|산|숲|자연)/g,
+    /(?:학교|학생|선생|교실)/g, /(?:가족|부모|아이|형제)/g,
+    /(?:요리|음식|셰프|레스토랑)/g, /(?:음악|밴드|콘서트|노래)/g,
+    /(?:스포츠|경기|선수|올림픽)/g, /(?:기억|꿈|무의식)/g,
+    /(?:시간|과거|미래|역사)/g, /(?:동물|야생|사파리)/g,
+  ];
+  const nounEnMap: Record<string, string> = {
+    "전사": "warrior", "전투": "battle", "전쟁": "war", "군대": "military", "병사": "soldier",
+    "사무라이": "samurai", "무사": "warrior", "검객": "swordsman",
+    "우주": "space", "행성": "planet", "은하": "galaxy", "외계": "alien",
+    "AI": "AI", "로봇": "robot", "인공지능": "AI",
+    "범죄": "crime", "수사": "investigation", "추격": "chase", "살인": "murder",
+    "사랑": "love", "연인": "romance", "이별": "breakup",
+    "마법": "magic", "환상": "fantasy", "판타지": "fantasy",
+    "스파르타": "Sparta", "로마": "Rome", "중세": "medieval",
+    "도시": "urban", "골목": "alley", "거리": "street", "빌딩": "building",
+    "바다": "ocean", "산": "mountain", "숲": "forest", "자연": "nature",
+    "학교": "school", "학생": "student", "가족": "family", "부모": "parents",
+    "요리": "cooking", "음식": "food", "셰프": "chef",
+    "음악": "music", "밴드": "band", "콘서트": "concert",
+    "스포츠": "sports", "경기": "competition", "선수": "athlete",
+    "기억": "memory", "꿈": "dream", "무의식": "subconscious",
+    "시간": "time", "과거": "past", "미래": "future", "역사": "history",
+    "동물": "animal", "야생": "wild",
+  };
+  const foundNouns: string[] = [];
+  for (const pattern of keyNounPatterns) {
+    const matches = storyText.match(pattern);
+    if (matches) {
+      for (const m of matches) {
+        const en = nounEnMap[m];
+        if (en && !foundNouns.includes(en)) foundNouns.push(en);
+      }
+    }
+  }
+  if (foundNouns.length > 0) {
+    const correctedParts = foundNouns.slice(0, 3).join(" ");
+    return {
+      query: `best film directors for ${correctedParts} visual storytelling cinematography`,
+      reason: `weak_query 보정: generic → ${correctedParts}`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Stage 2용 쿼리 단순화: 기존 쿼리에서 핵심 키워드만 남기고 "unique lesser-known" 추가.
+ * Stage 1과 반드시 다른 쿼리를 생성한다.
+ */
+export function simplifyQueryForRetry(
+  originalQuery: string,
+  genres: string[],
+  moods: string[],
+): string {
+  // 장르/무드에서 상위 2개만 사용
+  const topGenres = genres.slice(0, 2).map(toEnglish).filter(Boolean);
+  const topMoods = moods.slice(0, 1).map(toEnglish).filter(Boolean);
+  const parts = [...topGenres, ...topMoods].filter(Boolean);
+  if (parts.length === 0) {
+    // 원래 쿼리에서 "best film directors for " 이후를 추출하고 축약
+    const afterPrefix = originalQuery.replace(/^best film directors for\s*/i, "");
+    const words = afterPrefix.split(/\s+/).slice(0, 3);
+    return `unique lesser-known film directors ${words.join(" ")} visual style`;
+  }
+  return `unique lesser-known film directors ${parts.join(" ")} visual style`;
+}
+
 interface LocalDirectorInfo {
   id: string;
   name: string;
@@ -452,7 +529,8 @@ interface StageReasons {
  */
 export type WebSearchEmptyReason =
   | "parse_failed"              // JSON 파싱 실패 — 모델이 자연어로 응답
-  | "provider_failed"           // 웹 검색 API 자체 에러 (HTTP 에러)
+  | "provider_failed"           // 웹 검색 API HTTP 에러 (non-timeout)
+  | "provider_timeout"          // 웹 검색 API 타임아웃 (AbortError / 504)
   | "provider_empty"            // API 성공이지만 모델이 감독 목록 자체를 안 줌
   | "duplicate_filtered_all"    // 후보 전멸 — 로컬 풀과 전부 중복
   | "weak_query"                // 검색 쿼리가 약해 의미 있는 결과 못 얻음
@@ -460,6 +538,26 @@ export type WebSearchEmptyReason =
   | "validation_rejected_all"   // 기타 유효성 검증으로 전원 탈락
   | "fallback_empty"            // 모든 재시도/폴백까지 0건
   | "unknown";                  // 분류 불가
+
+/**
+ * 재시도 파이프라인 한 단계의 실행 기록.
+ */
+export interface RetryStageLog {
+  stage: number;
+  name: string;
+  model: string;
+  grounded: boolean;
+  normalizedQuery: string;
+  timeoutOccurred: boolean;
+  httpStatus: number | null;
+  rawResultCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  emptyReasons: WebSearchEmptyReason[];
+  triggerReason: string;
+  partialRecoveryCount: number;
+  durationMs: number;
+}
 
 interface DirectorRecommendationDebug {
   stageStatus: StageStatus;
@@ -490,13 +588,25 @@ interface DirectorRecommendationDebug {
   externalResultCount: number;
   finalResultCount: number;
   emptyReason?: string;
-  /** 웹 검색 0건 세부 원인 코드 목록 — attempted_empty일 때만 채워짐 */
+  /** 웹 검색 0건 세부 원인 코드 목록 */
   webSearchEmptyReasons?: WebSearchEmptyReason[];
+  /** 최종 원인 코드 목록 (파이프라인 전체 요약) */
+  finalReasonCodes?: WebSearchEmptyReason[];
   /** 쿼리 보정 여부 및 보정 사유 */
   webSearchQueryCorrected?: boolean;
   webSearchQueryCorrectionReason?: string;
   /** 필드 누락으로 부분 복구된 후보 수 */
   webSearchPartialRecoveryCount?: number;
+  /** 재시도 파이프라인 각 단계 기록 */
+  retryStages?: RetryStageLog[];
+  /** 최종 provider */
+  finalProvider?: string;
+  /** 최종 결과가 grounded인지 */
+  finalGrounded?: boolean;
+  /** 폴백 사용 여부 */
+  fallbackUsed?: boolean;
+  /** 타임아웃 발생 여부 */
+  timeoutOccurred?: boolean;
   modelUsed: string;
   preExtracted?: PreExtractedSignals;
   signalMergeReasons?: string[];
@@ -769,11 +879,10 @@ ${localList}
     }
 
     // ═══════════════════════════════════════════════════════════
-    // STEP 2: 웹 검색 기반 외부 감독 추천 — 항상 실행
+    // STEP 2: 웹 검색 기반 외부 감독 추천 — Stage-based retry pipeline
     // ═══════════════════════════════════════════════════════════
 
     let webSuggestions: Array<Record<string, unknown>> = [];
-    // 외부 후보 잔존 보장을 위한 추적 변수
     let webSearchAttemptCount = 0;
     let webSearchRawBeforeDedup = 0;
     let webSearchDedupRemoved = 0;
@@ -782,80 +891,58 @@ ${localList}
     let webSearchQueryCorrected = false;
     let webSearchQueryCorrectionReason: string | undefined;
     let webSearchPartialRecoveryCount = 0;
+    const retryStagesLog: RetryStageLog[] = [];
+    let finalProvider = "";
+    let finalGrounded = false;
+    let fallbackUsed = false;
+    let pipelineTimeoutOccurred = false;
 
-    // ── 항상 웹 검색 실행 — 로컬 결과 강도와 무관하게 외부 후보 확장 ──
+    // ── Stage-based retry pipeline — reason code가 다음 action을 결정 ──
     {
       attemptedWebSearch = true;
 
-      // 검색 쿼리 구성 — 사전 추출 신호로 보강 (반드시 영문)
+      // ── 검색 쿼리 구성 ──
       const enhanced = buildEnhancedWebSearchQuery(extractedGenres, extractedMoods, extractedKeywords, preSignals);
       webSearchQuery = enhanced.query;
       if (enhanced.queryReasons.length > 0) {
-        signalDetails.push(`web query: ${enhanced.queryReasons.join("; ")}`)
+        signalDetails.push(`web query: ${enhanced.queryReasons.join("; ")}`);
       }
 
-      // ── weak_query 자동 보정: 신호가 약하면 시나리오 키워드로 직접 보강 ──
+      // ── weak_query 자동 보정 ──
       const isWeakQuery = enhanced.queryReasons.some(r => r.includes("generic storytelling"));
       if (isWeakQuery && storyText.length > 30) {
-        // 시나리오에서 핵심 명사를 직접 추출해 쿼리 보강
-        const keyNounPatterns = [
-          /(?:전사|전투|전쟁|군대|병사)/g, /(?:사무라이|무사|검객)/g,
-          /(?:우주|행성|은하|외계)/g, /(?:AI|로봇|인공지능)/g,
-          /(?:범죄|수사|추격|살인)/g, /(?:사랑|연인|이별)/g,
-          /(?:마법|환상|판타지)/g, /(?:스파르타|로마|중세)/g,
-          /(?:도시|골목|거리|빌딩)/g, /(?:바다|산|숲|자연)/g,
-        ];
-        const foundNouns: string[] = [];
-        const nounEnMap: Record<string, string> = {
-          "전사": "warrior", "전투": "battle", "전쟁": "war", "사무라이": "samurai",
-          "우주": "space", "AI": "AI", "로봇": "robot", "범죄": "crime",
-          "사랑": "love", "마법": "magic", "스파르타": "Sparta", "도시": "urban",
-          "바다": "ocean", "자연": "nature", "숲": "forest",
-        };
-        for (const pattern of keyNounPatterns) {
-          const matches = storyText.match(pattern);
-          if (matches) {
-            for (const m of matches) {
-              const en = nounEnMap[m];
-              if (en && !foundNouns.includes(en)) foundNouns.push(en);
-            }
-          }
-        }
-        if (foundNouns.length > 0) {
-          const correctedParts = foundNouns.slice(0, 3).join(" ");
-          webSearchQuery = `best film directors for ${correctedParts} visual storytelling cinematography`;
+        const corrected = correctWeakQuery(storyText);
+        if (corrected) {
+          webSearchQuery = corrected.query;
           webSearchQueryCorrected = true;
-          webSearchQueryCorrectionReason = `weak_query 보정: generic → ${correctedParts}`;
-          signalDetails.push(webSearchQueryCorrectionReason);
+          webSearchQueryCorrectionReason = corrected.reason;
+          signalDetails.push(corrected.reason);
         }
       }
 
-      // 로컬 감독 이름 목록 (중복 판정용) — 공통 유틸 사용
       const localNameSet = buildLocalNameSet(localDirectors || []);
 
-      console.log(`[recommend-director] STEP 2: 웹 검색 시도 — query="${webSearchQuery}", localNames=${localNameSet.size}`);
+      console.log(`[recommend-director] STEP 2: 웹 검색 파이프라인 시작 — query="${webSearchQuery}", localNames=${localNameSet.size}`);
 
-      // ── 로컬 감독 이름 + 한글명을 모두 제외 조건에 명시 ──
+      // ── 로컬 감독 제외 목록 (재시도별 강도 다름) ──
       const localNameExclusionPairs = (localDirectors || [])
         .slice(0, 20)
         .map(d => `${d.name} (${d.nameKo})`)
         .join(", ");
 
-      // ── 웹 검색 프롬프트: 제외 조건 강화 + 다양성 유도 ──
-      const buildWebPrompt = (retryNote: string = "") => `You are a film/animation director discovery engine with web search access.
+      // ── 프롬프트 빌더 ──
+      const buildWebPrompt = (opts: { retryNote?: string; strengthenExclusion?: boolean; queryOverride?: string } = {}) => {
+        const { retryNote = "", strengthenExclusion = false, queryOverride } = opts;
+        const exclusionBlock = strengthenExclusion
+          ? `## STRICT EXCLUSION LIST — do NOT recommend ANY of these directors under ANY name, alias, romanization, or indirect reference:\n${localNameExclusionPairs}\n\nCRITICAL: This exclusion is absolute. Do not recommend:\n- The same person under different spelling (e.g., "Park Chan Wook" vs "Park Chan-wook")\n- Films directed by excluded directors as indirect references\n- Directors commonly confused with excluded directors\nIf you are unsure, do NOT include them.\n`
+          : `## STRICT EXCLUSION LIST — do NOT recommend any of these directors under any name, alias, or reference:\n${localNameExclusionPairs}\n\nThis means:\n- Do NOT suggest any director whose English name, Korean name, or common alias matches anyone above\n- Do NOT suggest the same director under a different romanization or spelling\n- Do NOT reference their notable works as a way to indirectly suggest them\n- If you are unsure whether a director is in the exclusion list, do NOT include them\n`;
+        const kw = queryOverride || `${extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ")} | ${extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ")}`;
+        return `You are a film/animation director discovery engine with web search access.
 Your mission: find directors who are NOT in the user's existing collection but whose visual style matches the scenario.
 
-## STRICT EXCLUSION LIST — do NOT recommend any of these directors under any name, alias, or reference:
-${localNameExclusionPairs}
-
-This means:
-- Do NOT suggest any director whose English name, Korean name, or common alias matches anyone above
-- Do NOT suggest the same director under a different romanization or spelling
-- Do NOT reference their notable works as a way to indirectly suggest them
-- If you are unsure whether a director is in the exclusion list, do NOT include them
-${retryNote}
+${exclusionBlock}${retryNote}
 ## SCENARIO CONTEXT
-Keywords: ${extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ")} | ${extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ")}
+Keywords: ${kw}
 Excerpt: ${storyText.slice(0, 400)}
 
 ## REQUIREMENTS
@@ -877,6 +964,7 @@ Each director object must have:
 - fitScore: 0-100
 - signatureTechniques: { cameraWork, colorPalette, lighting, editingStyle, moodKeywords } all in English
 - notableWorks: array of 3 representative works`;
+      };
 
       /**
        * 웹 검색 결과를 파싱하고 중복 제거하는 내부 함수.
@@ -1030,428 +1118,332 @@ Each director object must have:
         return { accepted, rejected, reasons, rawCount: rawWebDirs.length, emptyReasons, partialRecoveryCount };
       };
 
-      try {
-        webSearchProvider = "gemini-google-search-retrieval";
-        webSearchAttemptCount = 1;
+      // ═══════════════════════════════════════════════════════════
+      // Flat stage pipeline — reason code가 다음 stage를 결정
+      // ═══════════════════════════════════════════════════════════
 
-        const webSearchBody = {
-          contents: [{ role: "user", parts: [{ text: buildWebPrompt() }] }],
-          tools: [{ googleSearchRetrieval: {} }],
+      /**
+       * 하나의 Gemini API 호출을 실행하고 결과를 파싱하는 캡슐화 단위.
+       */
+      const callGeminiForDirectors = async (opts: {
+        model: string;
+        prompt: string;
+        useGrounding: boolean;
+        label: string;
+        forceMimeType?: boolean;
+      }): Promise<{
+        accepted: Array<Record<string, unknown>>;
+        rejected: number;
+        reasons: string[];
+        rawCount: number;
+        emptyReasons: WebSearchEmptyReason[];
+        partialRecoveryCount: number;
+        grounded: boolean;
+        httpStatus: number | null;
+        timeoutOccurred: boolean;
+        rawSnippet: string;
+        durationMs: number;
+      }> => {
+        const start = Date.now();
+        const body: Record<string, unknown> = {
+          contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
           generationConfig: {
-            temperature: 0.3,
+            temperature: opts.useGrounding ? 0.3 : 0.5,
             maxOutputTokens: 3072,
+            ...(opts.forceMimeType ? { responseMimeType: "application/json" as const } : {}),
           },
+          ...(opts.useGrounding ? { tools: [{ googleSearchRetrieval: {} }] } : {}),
         };
 
-        const webRes = await fetchWithAuth(
-          context.env,
-          buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(webSearchBody),
-          },
-        );
-
-        if (webRes.ok) {
-          const webData = await webRes.json() as {
-            candidates?: {
-              content?: { parts?: { text?: string }[] };
-              groundingMetadata?: {
-                searchEntryPoint?: { renderedContent?: string };
-                groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
-              };
-            }[];
+        let res: Response;
+        try {
+          res = await fetchWithAuth(
+            context.env,
+            buildGeminiUrl(context.env, opts.model),
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+          );
+        } catch (err) {
+          const duration = Date.now() - start;
+          const isTimeout = err instanceof DOMException && err.name === "AbortError";
+          console.warn(`[recommend-director] callGemini 예외 (${opts.label}): ${isTimeout ? "TIMEOUT" : (err instanceof Error ? err.message : String(err))}`);
+          return {
+            accepted: [], rejected: 0, reasons: [], rawCount: 0,
+            emptyReasons: [isTimeout ? "provider_timeout" : "provider_failed"],
+            partialRecoveryCount: 0, grounded: false,
+            httpStatus: null, timeoutOccurred: isTimeout,
+            rawSnippet: "", durationMs: duration,
           };
-
-          const webText = webData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-
-          // ── 디버그: raw 응답 텍스트 기록 (JSON 파싱 실패 추적용) ──
-          webSearchRawSnippet = webText.slice(0, 200);
-          console.log(`[recommend-director] 웹 검색 raw 응답 (first 500): ${webText.slice(0, 500)}`);
-
-          // grounding source 추출 — 공통 유틸 사용
-          const grounding = webData?.candidates?.[0]?.groundingMetadata;
-          const sources = extractGroundingSources(grounding?.groundingChunks);
-          if (sources.length > 0) {
-            console.log(`[recommend-director] 웹 검색 grounding 확인: ${sources.length}개 소스`);
-            webSearchProvider = `gemini-google-search-retrieval (${sources.length} sources)`;
-          } else {
-            console.log(`[recommend-director] grounding 소스 없음 — 모델 지식 기반 응답`);
-          }
-
-          const result = processWebResponse(webText, sources, "web_search");
-          webSearchResultCount = result.rawCount;
-          webSearchRawBeforeDedup = result.rawCount;
-          webSearchAcceptedCount = result.accepted.length;
-          webSearchRejectedCount = result.rejected;
-          webSearchRejectionReasons = result.reasons;
-          webSearchDedupRemoved = result.rejected;
-          webSuggestions = result.accepted;
-          webSearchEmptyReasons.push(...result.emptyReasons);
-          webSearchPartialRecoveryCount += result.partialRecoveryCount;
-
-          console.log(`[recommend-director] 웹 검색 1차: 원시=${result.rawCount}, 채택=${result.accepted.length}, 제거=${result.rejected}, emptyReasons=${result.emptyReasons.join(",") || "none"}`);
-
-          // ── 외부 후보 잔존 보장 ──
-          // Case A: 원시 결과 > 0이지만 전부 중복 제거 → 재시도
-          // Case B: 원시 결과 = 0 (모델이 감독을 반환하지 않음) → 모델 폴백
-          if (result.accepted.length === 0) {
-            if (result.rawCount > 0) {
-              // Case A: 중복 전멸 → 제외 조건 강화 재시도
-              webSearchRetryReason = `1차 웹 결과 ${result.rawCount}명 전부 로컬 중복 제거됨 → 제외 조건 강화 재시도`;
-              console.log(`[recommend-director] ${webSearchRetryReason}`);
-              webSearchAttemptCount = 2;
-
-              const retryNote = `\n## RETRY NOTE\nYour previous response contained ONLY directors already in the exclusion list.\nYou MUST find completely different directors this time.\nDo NOT repeat: ${result.reasons.filter(r => r.includes("already in local pool")).map(r => r.replace(" already in local pool", "").replace(/"/g, "")).join(", ")}\n`;
-
-              const retryBody = {
-                contents: [{ role: "user", parts: [{ text: buildWebPrompt(retryNote) }] }],
-                tools: [{ googleSearchRetrieval: {} }],
-                generationConfig: { temperature: 0.5, maxOutputTokens: 3072 },
-              };
-
-              const retryRes = await fetchWithAuth(
-                context.env,
-                buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(retryBody),
-                },
-              );
-
-              if (retryRes.ok) {
-                const retryData = await retryRes.json() as {
-                  candidates?: {
-                    content?: { parts?: { text?: string }[] };
-                    groundingMetadata?: {
-                      groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
-                    };
-                  }[];
-                };
-                const retryText = retryData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-                console.log(`[recommend-director] 재시도 raw (first 300): ${retryText.slice(0, 300)}`);
-                const retryGrounding = retryData?.candidates?.[0]?.groundingMetadata;
-                const retrySources = extractGroundingSources(retryGrounding?.groundingChunks);
-                const retryResult = processWebResponse(retryText, retrySources, "web_search_retry");
-
-                webSearchResultCount += retryResult.rawCount;
-                webSearchAcceptedCount += retryResult.accepted.length;
-                webSearchRejectedCount += retryResult.rejected;
-                webSearchRejectionReasons.push(...retryResult.reasons.map(r => `[retry] ${r}`));
-                webSuggestions.push(...retryResult.accepted);
-
-                console.log(`[recommend-director] 2차 재시도: 원시=${retryResult.rawCount}, 채택=${retryResult.accepted.length}`);
-              } else {
-                console.warn(`[recommend-director] 2차 재시도 실패(${retryRes.status})`);
-              }
-            } else {
-              // Case B: 원시 결과 0명 → 모델이 directors 배열을 반환하지 않음 → 모델 폴백
-              // googleSearchRetrieval 도구 사용 시 Gemini가 JSON이 아닌 자연어를 반환하는 경우가 많음.
-              // 폴백은 단순한 프롬프트 + responseMimeType: "application/json"으로 강제.
-              webSearchRetryReason = `웹 검색 200 OK but rawCount=0 (JSON 파싱 실패 또는 빈 응답) → 모델 폴백`;
-              console.log(`[recommend-director] ${webSearchRetryReason}`);
-              webSearchAttemptCount = 2;
-
-              // 로컬 감독 제외 목록 (간결하게)
-              const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
-              const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
-              const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
-
-              // ── 단순화된 폴백 프롬프트: JSON 출력 성공률 최대화 ──
-              const simpleFallbackPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario.
-Do NOT recommend: ${excludeNames}.
-Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean description","reason":"Korean reason","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]}]}`;
-
-              try {
-                const fallbackBody = {
-                  contents: [{ role: "user", parts: [{ text: simpleFallbackPrompt }] }],
-                  generationConfig: {
-                    temperature: 0.5,
-                    maxOutputTokens: 3072,
-                    responseMimeType: "application/json" as const,
-                  },
-                };
-
-                const fallbackRes = await fetchWithAuth(
-                  context.env,
-                  buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(fallbackBody),
-                  },
-                );
-
-                if (fallbackRes.ok) {
-                  const fbData = await fallbackRes.json() as {
-                    candidates?: { content?: { parts?: { text?: string }[] } }[];
-                  };
-                  const fbText = fbData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-                  console.log(`[recommend-director] 모델 폴백 raw (first 300): ${fbText.slice(0, 300)}`);
-                  const fbResult = processWebResponse(fbText, [], "model_fallback_after_empty");
-
-                  webSearchResultCount += fbResult.rawCount;
-                  webSearchAcceptedCount += fbResult.accepted.length;
-                  webSearchRejectedCount += fbResult.rejected;
-                  webSearchRejectionReasons.push(...fbResult.reasons.map(r => `[fallback] ${r}`));
-                  webSuggestions.push(...fbResult.accepted);
-                  webSearchProvider = `${webSearchProvider} + model-fallback`;
-
-                  console.log(`[recommend-director] 모델 폴백: 원시=${fbResult.rawCount}, 채택=${fbResult.accepted.length}`);
-
-                  // ── 모델 폴백도 0명이면 Flash 모델로 최종 시도 ──
-                  if (fbResult.accepted.length === 0) {
-                    console.log(`[recommend-director] 모델 폴백도 0명 → Flash 모델 최종 시도`);
-                    webSearchAttemptCount = 3;
-                    try {
-                      const flashRes = await fetchWithAuth(
-                        context.env,
-                        buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
-                        {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(fallbackBody),
-                        },
-                      );
-                      if (flashRes.ok) {
-                        const flashData = await flashRes.json() as {
-                          candidates?: { content?: { parts?: { text?: string }[] } }[];
-                        };
-                        const flashText = flashData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-                        console.log(`[recommend-director] Flash 폴백 raw (first 300): ${flashText.slice(0, 300)}`);
-                        const flashResult = processWebResponse(flashText, [], "flash_fallback");
-                        webSearchResultCount += flashResult.rawCount;
-                        webSearchAcceptedCount += flashResult.accepted.length;
-                        webSuggestions.push(...flashResult.accepted);
-                        if (flashResult.accepted.length > 0) {
-                          webSearchProvider = `${webSearchProvider} + flash-fallback`;
-                        }
-                        console.log(`[recommend-director] Flash 폴백: 원시=${flashResult.rawCount}, 채택=${flashResult.accepted.length}`);
-                      }
-                    } catch { /* Flash 폴백 실패 — 무시 */ }
-                  }
-                } else {
-                  console.warn(`[recommend-director] 모델 폴백 API 실패(${fallbackRes.status})`);
-                }
-              } catch (fbErr) {
-                console.warn(`[recommend-director] 모델 폴백 예외: ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`);
-              }
-            }
-          }
-
-          if (webSuggestions.length > 0) {
-            stageStatus.webSearch = "attempted_success";
-            stageReasons.webSearch = `검색 결과 ${webSearchResultCount}개 중 ${webSearchAcceptedCount}개 채택 (시도 ${webSearchAttemptCount}회)`;
-          } else {
-            stageStatus.webSearch = "attempted_empty";
-            // 최종 0건 사유를 세분화된 코드로 남김
-            if (webSearchEmptyReasons.length === 0) {
-              webSearchEmptyReasons.push("fallback_empty");
-            }
-            const reasonSummary = webSearchEmptyReasons.join(", ");
-            stageReasons.webSearch = webSearchResultCount > 0
-              ? `검색 결과 ${webSearchResultCount}개 모두 탈락 [${reasonSummary}] (시도 ${webSearchAttemptCount}회)`
-              : `검색 결과 없음 [${reasonSummary}] (시도 ${webSearchAttemptCount}회)`;
-          }
-        } else {
-          const webErr = await webRes.text();
-          const webStatus = webRes.status;
-          console.warn(`[recommend-director] 웹 검색 실패(${webStatus}): ${webErr.slice(0, 300)}`);
-          webSearchEmptyReasons.push("provider_failed");
-
-          // ── 웹 검색 실패 시 모델 지식 폴백 (단순 프롬프트) ──
-          console.log(`[recommend-director] 모델 지식 기반 폴백 시도`);
-          webSearchProvider = `model-fallback (web failed ${webStatus})`;
-          webSearchAttemptCount = 2;
-
-          try {
-            const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
-            const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
-            const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
-
-            const simpleFallbackPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario.
-Do NOT recommend: ${excludeNames}.
-Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean description","reason":"Korean reason","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]}]}`;
-
-            const fallbackBody = {
-              contents: [{ role: "user", parts: [{ text: simpleFallbackPrompt }] }],
-              generationConfig: {
-                temperature: 0.5,
-                maxOutputTokens: 3072,
-                responseMimeType: "application/json" as const,
-              },
-            };
-
-            const fallbackRes = await fetchWithAuth(
-              context.env,
-              buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(fallbackBody),
-              },
-            );
-
-            if (fallbackRes.ok) {
-              const fbData = await fallbackRes.json() as {
-                candidates?: { content?: { parts?: { text?: string }[] } }[];
-              };
-              const fbText = fbData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-              const fbResult = processWebResponse(fbText, [], "model_fallback");
-
-              webSearchResultCount = fbResult.rawCount;
-              webSearchAcceptedCount = fbResult.accepted.length;
-              webSearchRejectedCount = fbResult.rejected;
-              webSearchRejectionReasons = fbResult.reasons;
-              webSuggestions = fbResult.accepted;
-
-              console.log(`[recommend-director] 모델 폴백 결과: 원시=${fbResult.rawCount}, 채택=${fbResult.accepted.length}`);
-              webSearchEmptyReasons.push(...fbResult.emptyReasons);
-
-              if (webSuggestions.length > 0) {
-                stageStatus.webSearch = "attempted_success";
-                stageReasons.webSearch = `웹 실패 → 모델 폴백: ${fbResult.accepted.length}개 채택`;
-              } else {
-                // ── Pro 폴백도 실패 → Flash 최종 시도 ──
-                console.log(`[recommend-director] 모델 폴백(Pro)도 0명 → Flash 최종 시도`);
-                webSearchAttemptCount = 3;
-                try {
-                  const flashRes = await fetchWithAuth(
-                    context.env,
-                    buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(fallbackBody),
-                    },
-                  );
-                  if (flashRes.ok) {
-                    const flashData = await flashRes.json() as {
-                      candidates?: { content?: { parts?: { text?: string }[] } }[];
-                    };
-                    const flashText = flashData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-                    console.log(`[recommend-director] Flash 폴백(failed path) raw (first 300): ${flashText.slice(0, 300)}`);
-                    const flashResult = processWebResponse(flashText, [], "flash_fallback_after_fail");
-                    webSearchResultCount += flashResult.rawCount;
-                    webSearchAcceptedCount += flashResult.accepted.length;
-                    webSuggestions.push(...flashResult.accepted);
-                    webSearchEmptyReasons.push(...flashResult.emptyReasons);
-                    if (flashResult.accepted.length > 0) {
-                      webSearchProvider = `${webSearchProvider} + flash-fallback`;
-                    }
-                    console.log(`[recommend-director] Flash 폴백(failed path): 원시=${flashResult.rawCount}, 채택=${flashResult.accepted.length}`);
-                  }
-                } catch { /* Flash 폴백 실패 — 무시 */ }
-
-                if (webSuggestions.length > 0) {
-                  stageStatus.webSearch = "attempted_success";
-                  stageReasons.webSearch = `웹 실패 → Flash 폴백: ${webSuggestions.length}개 채택`;
-                } else {
-                  webSearchEmptyReasons.push("fallback_empty");
-                  stageStatus.webSearch = "attempted_empty";
-                  const reasonSummary = webSearchEmptyReasons.join(", ");
-                  stageReasons.webSearch = `웹 실패(${webStatus}) → 모든 폴백 실패 [${reasonSummary}]`;
-                }
-              }
-            } else {
-              // Pro 폴백 API도 실패 → Flash 시도
-              console.log(`[recommend-director] Pro 폴백도 HTTP 실패(${fallbackRes.status}) → Flash 시도`);
-              webSearchAttemptCount = 3;
-              try {
-                const flashRes2 = await fetchWithAuth(
-                  context.env,
-                  buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(fallbackBody),
-                  },
-                );
-                if (flashRes2.ok) {
-                  const flashData2 = await flashRes2.json() as {
-                    candidates?: { content?: { parts?: { text?: string }[] } }[];
-                  };
-                  const flashText2 = flashData2?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-                  const flashResult2 = processWebResponse(flashText2, [], "flash_fallback_after_fail");
-                  webSearchResultCount += flashResult2.rawCount;
-                  webSearchAcceptedCount += flashResult2.accepted.length;
-                  webSuggestions.push(...flashResult2.accepted);
-                  webSearchEmptyReasons.push(...flashResult2.emptyReasons);
-                  if (flashResult2.accepted.length > 0) {
-                    webSearchProvider = `${webSearchProvider} + flash-fallback`;
-                    stageStatus.webSearch = "attempted_success";
-                    stageReasons.webSearch = `웹+Pro 실패 → Flash 폴백: ${flashResult2.accepted.length}개 채택`;
-                  } else {
-                    webSearchEmptyReasons.push("fallback_empty");
-                    stageStatus.webSearch = "attempted_empty";
-                    stageReasons.webSearch = `웹+Pro+Flash 모두 실패 [${webSearchEmptyReasons.join(", ")}]`;
-                  }
-                } else {
-                  webSearchEmptyReasons.push("fallback_empty");
-                  stageStatus.webSearch = "failed";
-                  stageReasons.webSearch = `웹(${webStatus})+Pro+Flash 모두 실패`;
-                }
-              } catch {
-                webSearchEmptyReasons.push("fallback_empty");
-                stageStatus.webSearch = "failed";
-                stageReasons.webSearch = `웹(${webStatus})+Pro 실패+Flash 예외`;
-              }
-            }
-          } catch (fbErr) {
-            // ── Pro 폴백 예외 → Flash 최종 시도 ──
-            console.warn(`[recommend-director] Pro 폴백 예외: ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`);
-            webSearchAttemptCount = 3;
-            try {
-              const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
-              const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
-              const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
-              const emergencyPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario. Do NOT recommend: ${excludeNames}. Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"미국","fitScore":75}]}`;
-              const emergencyRes = await fetchWithAuth(
-                context.env,
-                buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    contents: [{ role: "user", parts: [{ text: emergencyPrompt }] }],
-                    generationConfig: { temperature: 0.5, maxOutputTokens: 2048, responseMimeType: "application/json" as const },
-                  }),
-                },
-              );
-              if (emergencyRes.ok) {
-                const eData = await emergencyRes.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-                const eText = eData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-                const eResult = processWebResponse(eText, [], "flash_emergency_fallback");
-                webSuggestions.push(...eResult.accepted);
-                webSearchEmptyReasons.push(...eResult.emptyReasons);
-                if (eResult.accepted.length > 0) {
-                  stageStatus.webSearch = "attempted_success";
-                  stageReasons.webSearch = `웹+Pro 예외 → Flash 긴급 폴백: ${eResult.accepted.length}개 채택`;
-                } else {
-                  webSearchEmptyReasons.push("fallback_empty");
-                  stageStatus.webSearch = "attempted_empty";
-                  stageReasons.webSearch = `웹+Pro 예외+Flash 결과 없음 [${webSearchEmptyReasons.join(", ")}]`;
-                }
-              } else {
-                webSearchEmptyReasons.push("fallback_empty");
-                stageStatus.webSearch = "failed";
-                stageReasons.webSearch = `웹(${webStatus})+Pro 예외+Flash 실패`;
-              }
-            } catch {
-              webSearchEmptyReasons.push("fallback_empty");
-              stageStatus.webSearch = "failed";
-              stageReasons.webSearch = `웹(${webStatus})+폴백 전부 예외`;
-            }
-          }
         }
-      } catch (e) {
-        const errMsg = e instanceof Error ? e.message : String(e);
-        console.warn(`[recommend-director] 웹 검색 예외: ${errMsg}`);
-        stageStatus.webSearch = "failed";
-        stageReasons.webSearch = `예외: ${errMsg.slice(0, 100)}`;
+
+        const duration = Date.now() - start;
+        const httpStatus = res.status;
+
+        // timeout via 504 TIMEOUT code from fetchWithKeyFallback
+        if (!res.ok) {
+          let errBody = "";
+          try { errBody = await res.text(); } catch { /* ignore */ }
+          const isTimeout = httpStatus === 504 && errBody.includes('"TIMEOUT"');
+          console.warn(`[recommend-director] callGemini HTTP ${httpStatus} (${opts.label}): ${errBody.slice(0, 200)}`);
+          return {
+            accepted: [], rejected: 0, reasons: [], rawCount: 0,
+            emptyReasons: [isTimeout ? "provider_timeout" : "provider_failed"],
+            partialRecoveryCount: 0, grounded: false,
+            httpStatus, timeoutOccurred: isTimeout,
+            rawSnippet: errBody.slice(0, 100), durationMs: duration,
+          };
+        }
+
+        // 성공 — 파싱
+        const data = await res.json() as {
+          candidates?: {
+            content?: { parts?: { text?: string }[] };
+            groundingMetadata?: { groundingChunks?: Array<{ web?: { uri: string; title: string } }> };
+          }[];
+        };
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
+        const snippet = text.slice(0, 200);
+        const grChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        const sources = extractGroundingSources(grChunks);
+        const isGrounded = opts.useGrounding && sources.length > 0;
+
+        const result = processWebResponse(text, sources, opts.label);
+        return {
+          ...result,
+          grounded: isGrounded,
+          httpStatus,
+          timeoutOccurred: false,
+          rawSnippet: snippet,
+          durationMs: duration,
+        };
+      };
+
+      // ── Stage execution ──
+      const MAX_STAGES = 4;
+      let currentStageQuery = webSearchQuery!;
+      let stageAccepted: Array<Record<string, unknown>> = [];
+      let allEmptyReasons: WebSearchEmptyReason[] = [];
+      let recoveredAtStage: number | null = null;
+
+      for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
+        // ── 이미 후보 확보되면 종료 ──
+        if (stageAccepted.length > 0) break;
+
+        let stageLabel: string;
+        let model: string;
+        let prompt: string;
+        let useGrounding: boolean;
+        let forceMimeType: boolean;
+        let triggerReason: string;
+
+        if (stageNum === 1) {
+          // ── STAGE 1: Grounded 웹 검색 (Pro + googleSearchRetrieval) ──
+          stageLabel = "stage1_grounded_web";
+          model = GEMINI_MODEL_PRO;
+          prompt = buildWebPrompt();
+          useGrounding = true;
+          forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
+          triggerReason = "initial";
+        } else if (stageNum === 2) {
+          // ── STAGE 2: 웹 검색 복구 (쿼리 단순화 + grounding 유지 시도) ──
+          // Stage 1에서 parse_failed/provider_empty/weak_query/missing_required_fields/validation_rejected_all
+          const prevReasons = allEmptyReasons;
+          const shouldSkipToStage3 = prevReasons.includes("duplicate_filtered_all");
+          const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
+
+          if (shouldSkipToStage3) { continue; } // stage 3에서 처리
+          if (shouldSkipToStage4) {
+            // stage 4로 점프 (stage 2, 3 건너뜀)
+            // stageNum을 3으로 설정하면 for loop에서 4로 증가
+            continue;
+          }
+
+          // 쿼리를 Stage 1과 다르게 단순화
+          const simplifiedQuery = simplifyQueryForRetry(currentStageQuery, extractedGenres, extractedMoods);
+          currentStageQuery = simplifiedQuery;
+
+          const retryNote = prevReasons.includes("parse_failed")
+            ? "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n"
+            : "\n## RETRY: Previous search returned unusable results. Return DIFFERENT directors this time.\n";
+
+          stageLabel = "stage2_query_retry";
+          model = GEMINI_MODEL_PRO;
+          prompt = buildWebPrompt({ retryNote, queryOverride: simplifiedQuery });
+          useGrounding = true;
+          forceMimeType = false;
+          triggerReason = `stage1 failed: ${prevReasons.join(",")}`;
+        } else if (stageNum === 3) {
+          // ── STAGE 3: Duplicate 전용 복구 ──
+          const prevReasons = allEmptyReasons;
+          const hasDuplicate = prevReasons.includes("duplicate_filtered_all");
+          const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
+
+          if (!hasDuplicate || shouldSkipToStage4) { continue; }
+
+          // 이전에 중복으로 거부된 이름들을 추가 제외
+          const prevRejectedNames = retryStagesLog
+            .flatMap(s => s.emptyReasons.includes("duplicate_filtered_all") ? [] : [])
+          ;
+          const dupRetryNote = `\n## DUPLICATE RECOVERY RETRY\nYour previous responses contained ONLY directors already in the user's collection.\nYou MUST find completely different, lesser-known directors this time.\nDo NOT recommend any director even remotely similar to: ${localNameExclusionPairs}\nFind directors from underrepresented regions or indie film scenes.\n`;
+
+          stageLabel = "stage3_duplicate_recovery";
+          model = GEMINI_MODEL_PRO;
+          prompt = buildWebPrompt({ retryNote: dupRetryNote, strengthenExclusion: true });
+          useGrounding = true;
+          forceMimeType = false;
+          triggerReason = "duplicate_filtered_all";
+        } else {
+          // ── STAGE 4: 모델 지식 폴백 (grounded=false, JSON 강제) ──
+          stageLabel = "stage4_model_fallback";
+
+          // provider_timeout/provider_failed가 2회 이상이면 Flash, 아니면 Pro
+          const timeoutCount = retryStagesLog.filter(s => s.timeoutOccurred).length;
+          const failCount = retryStagesLog.filter(s => s.emptyReasons.includes("provider_failed")).length;
+          model = (timeoutCount + failCount >= 2) ? GEMINI_MODEL_FLASH : GEMINI_MODEL_PRO;
+
+          const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
+          const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
+          const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
+
+          prompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario.\nDo NOT recommend: ${excludeNames}.\nReturn JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean description","reason":"Korean reason","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]}]}`;
+          useGrounding = false;
+          forceMimeType = true;
+          triggerReason = `all prior stages failed: ${allEmptyReasons.join(",")}`;
+          fallbackUsed = true;
+        }
+
+        webSearchAttemptCount = stageNum;
+        console.log(`[recommend-director] STAGE ${stageNum} (${stageLabel}): model=${model}, grounding=${useGrounding}, query="${currentStageQuery.slice(0, 60)}..."`);
+
+        const stageResult = await callGeminiForDirectors({
+          model, prompt, useGrounding, label: stageLabel, forceMimeType,
+        });
+
+        // ── Stage 기록 ──
+        const stageLog: RetryStageLog = {
+          stage: stageNum,
+          name: stageLabel,
+          model,
+          grounded: stageResult.grounded,
+          normalizedQuery: currentStageQuery,
+          timeoutOccurred: stageResult.timeoutOccurred,
+          httpStatus: stageResult.httpStatus,
+          rawResultCount: stageResult.rawCount,
+          acceptedCount: stageResult.accepted.length,
+          rejectedCount: stageResult.rejected,
+          emptyReasons: stageResult.emptyReasons,
+          triggerReason,
+          partialRecoveryCount: stageResult.partialRecoveryCount,
+          durationMs: stageResult.durationMs,
+        };
+        retryStagesLog.push(stageLog);
+
+        // ── 결과 수집 ──
+        if (stageResult.timeoutOccurred) pipelineTimeoutOccurred = true;
+        webSearchRawBeforeDedup += stageResult.rawCount;
+        webSearchPartialRecoveryCount += stageResult.partialRecoveryCount;
+        if (stageResult.rawSnippet && !webSearchRawSnippet) {
+          webSearchRawSnippet = stageResult.rawSnippet;
+        }
+        webSearchRejectionReasons.push(...stageResult.reasons.map(r => `[${stageLabel}] ${r}`));
+        allEmptyReasons.push(...stageResult.emptyReasons);
+
+        if (stageResult.accepted.length > 0) {
+          stageAccepted.push(...stageResult.accepted);
+          recoveredAtStage = stageNum;
+          finalProvider = `${model} (${stageLabel})`;
+          finalGrounded = stageResult.grounded;
+          console.log(`[recommend-director] STAGE ${stageNum} 성공: ${stageResult.accepted.length}명 채택 (grounded=${stageResult.grounded})`);
+        } else {
+          console.log(`[recommend-director] STAGE ${stageNum} 실패: emptyReasons=${stageResult.emptyReasons.join(",")}, rawCount=${stageResult.rawCount}`);
+        }
       }
+
+      // ── Stage 4도 실패했으면 Flash 긴급 폴백 (Stage 4가 Pro였을 때만) ──
+      if (stageAccepted.length === 0 && retryStagesLog.length >= 4) {
+        const lastStage = retryStagesLog[retryStagesLog.length - 1];
+        if (lastStage.model !== GEMINI_MODEL_FLASH) {
+          console.log(`[recommend-director] Stage 4 Pro 실패 → Flash 긴급 폴백`);
+          const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
+          const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
+          const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
+          const emergencyPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario. Do NOT recommend: ${excludeNames}. Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"미국","fitScore":75}]}`;
+
+          const flashResult = await callGeminiForDirectors({
+            model: GEMINI_MODEL_FLASH,
+            prompt: emergencyPrompt,
+            useGrounding: false,
+            label: "stage4_flash_emergency",
+            forceMimeType: true,
+          });
+          webSearchAttemptCount++;
+          retryStagesLog.push({
+            stage: 5,
+            name: "stage4_flash_emergency",
+            model: GEMINI_MODEL_FLASH,
+            grounded: false,
+            normalizedQuery: currentStageQuery,
+            timeoutOccurred: flashResult.timeoutOccurred,
+            httpStatus: flashResult.httpStatus,
+            rawResultCount: flashResult.rawCount,
+            acceptedCount: flashResult.accepted.length,
+            rejectedCount: flashResult.rejected,
+            emptyReasons: flashResult.emptyReasons,
+            triggerReason: "stage4_pro_failed",
+            partialRecoveryCount: flashResult.partialRecoveryCount,
+            durationMs: flashResult.durationMs,
+          });
+          if (flashResult.accepted.length > 0) {
+            stageAccepted.push(...flashResult.accepted);
+            recoveredAtStage = 5;
+            finalProvider = `${GEMINI_MODEL_FLASH} (flash_emergency)`;
+            finalGrounded = false;
+            fallbackUsed = true;
+          }
+          allEmptyReasons.push(...flashResult.emptyReasons);
+        }
+      }
+
+      // ── 최종 결과 수집 ──
+      webSuggestions = stageAccepted;
+      webSearchResultCount = retryStagesLog.reduce((sum, s) => sum + s.rawResultCount, 0);
+      webSearchAcceptedCount = stageAccepted.length;
+      webSearchRejectedCount = retryStagesLog.reduce((sum, s) => sum + s.rejectedCount, 0);
+      webSearchDedupRemoved = webSearchRejectedCount;
+      webSearchEmptyReasons = allEmptyReasons;
+
+      // ── finalReasonCodes 결정 ──
+      if (stageAccepted.length === 0) {
+        if (allEmptyReasons.length === 0) allEmptyReasons.push("fallback_empty");
+        webSearchRetryReason = `${retryStagesLog.length} stages 실행, 전부 실패: ${[...new Set(allEmptyReasons)].join(", ")}`;
+      }
+
+      if (!finalProvider) {
+        finalProvider = retryStagesLog.length > 0 ? retryStagesLog[retryStagesLog.length - 1].model : "none";
+      }
+
+      // ── resultMode 결정 ──
+      const hasGroundedResults = stageAccepted.some(s => s.grounded === true);
+      const hasUngroundedResults = stageAccepted.some(s => s.grounded !== true);
+      const resultMode: "grounded" | "fallback" | "mixed" | "empty" =
+        stageAccepted.length === 0 ? "empty"
+        : (hasGroundedResults && hasUngroundedResults) ? "mixed"
+        : hasGroundedResults ? "grounded"
+        : "fallback";
+
+      webSearchProvider = finalProvider;
+
+      // ── stageStatus/stageReasons 설정 ──
+      if (stageAccepted.length > 0) {
+        stageStatus.webSearch = "attempted_success";
+        const recoveryNote = recoveredAtStage && recoveredAtStage > 1 ? ` (stage ${recoveredAtStage}에서 복구)` : "";
+        stageReasons.webSearch = `${webSearchAcceptedCount}명 채택, ${resultMode} 모드${recoveryNote} (시도 ${webSearchAttemptCount}회)`;
+      } else {
+        stageStatus.webSearch = allEmptyReasons.includes("provider_failed") || allEmptyReasons.includes("provider_timeout") ? "failed" : "attempted_empty";
+        const reasonSummary = [...new Set(allEmptyReasons)].join(", ");
+        stageReasons.webSearch = `전부 실패 [${reasonSummary}] (시도 ${webSearchAttemptCount}회)`;
+      }
+
+      console.log(`[recommend-director] pipeline 완료: accepted=${stageAccepted.length}, mode=${resultMode}, stages=${retryStagesLog.length}, reasons=${[...new Set(allEmptyReasons)].join(",")}`);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1520,9 +1512,16 @@ Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region
       finalResultCount: finalCount,
       emptyReason,
       webSearchEmptyReasons: webSearchEmptyReasons.length > 0 ? webSearchEmptyReasons : undefined,
+      finalReasonCodes: webSuggestions.length === 0 && webSearchEmptyReasons.length > 0
+        ? [...new Set(webSearchEmptyReasons)] : undefined,
       webSearchQueryCorrected: webSearchQueryCorrected || undefined,
       webSearchQueryCorrectionReason: webSearchQueryCorrectionReason || undefined,
       webSearchPartialRecoveryCount: webSearchPartialRecoveryCount > 0 ? webSearchPartialRecoveryCount : undefined,
+      retryStages: retryStagesLog.length > 0 ? retryStagesLog : undefined,
+      finalProvider: finalProvider || undefined,
+      finalGrounded: attemptedWebSearch ? finalGrounded : undefined,
+      fallbackUsed: fallbackUsed || undefined,
+      timeoutOccurred: pipelineTimeoutOccurred || undefined,
       modelUsed,
       preExtracted: preSignals,
       signalMergeReasons: mergeResult.mergeReasons,
@@ -1553,6 +1552,16 @@ Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region
         storyLengthUsed: Math.min(storyText.length, 1200),
         attemptedWebSearch,
         webSearchProvider,
+        resultMode: attemptedWebSearch ? (
+          webSuggestions.length === 0 ? "empty" :
+          webSuggestions.some((s: Record<string, unknown>) => s.grounded === true) && webSuggestions.some((s: Record<string, unknown>) => s.grounded !== true) ? "mixed" :
+          webSuggestions.some((s: Record<string, unknown>) => s.grounded === true) ? "grounded" : "fallback"
+        ) : undefined,
+        retryCount: webSearchAttemptCount,
+        recoveredAtStage: retryStagesLog.length > 0 ? (retryStagesLog.find(s => s.acceptedCount > 0)?.stage ?? null) : undefined,
+        fallbackUsed,
+        finalGrounded,
+        timeoutOccurred: pipelineTimeoutOccurred || undefined,
       },
       _debug: debug,
     });

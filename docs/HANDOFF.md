@@ -200,38 +200,79 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 - Visual breathing: slow 1.20x > natural 1.15x > fast 1.08x
 - Rhetorical pause: slow 1.3x > natural 1.0x > fast 0.5x
 
-### 감독 추천 웹 검색 빈 결과 자동 복구
+### 감독 추천 웹 검색 — Flat Stage Retry Pipeline
 
-#### 빈 결과 원인 분류 (WebSearchEmptyReason)
-| 코드 | 의미 |
-|------|------|
-| `parse_failed` | AI 응답이 JSON이 아닌 자연어 — 자연어 목록 파싱 시도 |
-| `provider_failed` | 웹 검색 API 자체 HTTP 에러 |
-| `provider_empty` | API 성공이지만 감독 목록 자체가 없음 |
-| `duplicate_filtered_all` | 모든 후보가 로컬 풀과 중복 |
-| `missing_required_fields` | name/nameKo 둘 다 없어 전원 탈락 |
-| `validation_rejected_all` | 기타 유효성 검증으로 전원 탈락 |
-| `fallback_empty` | 모든 재시도/폴백 후에도 0건 |
+#### 파이프라인 개요
+STEP 2 (웹 검색 외부 감독 추천)는 중첩 if/else/try/catch 대신 **flat stage pipeline**으로 구현됨.
+각 stage는 이전 stage의 `emptyReasons`(reason code)에 따라 다음 action을 결정한다.
 
-#### 자동 복구 전략
-1. **파싱 강화**: `directors`, `recommendations`, `results`, `suggestions`, `data`, `items` 키 모두 탐색
-2. **자연어 목록 추출**: `"1. Director Name (한글명) - Description"` 패턴 인식
-3. **필드 완화**: name 또는 nameKo 중 하나만 있으면 나머지를 복사하여 복구
-4. **자동 재시도**: 1차 웹+grounding → 2차 제외 강화 재시도 → 3차 모델 폴백 → 4차 Flash 폴백 (최대 4회)
-5. **weak_query 보정**: 신호가 약하면 시나리오 키워드에서 직접 명사를 추출해 쿼리 재구성
+#### Stage 구조
+| Stage | 목적 | 모델 | Grounding | Trigger |
+|-------|------|------|-----------|---------|
+| 1 | Grounded 웹 검색 | Pro | O (googleSearchRetrieval) | 항상 (initial) |
+| 2 | 웹 검색 복구 (쿼리 단순화 + grounding 유지) | Pro | O | parse_failed, provider_empty, weak_query, missing_required_fields, validation_rejected_all |
+| 3 | Duplicate 전용 복구 (제외 강화) | Pro | O | duplicate_filtered_all |
+| 4 | 모델 지식 폴백 (JSON 강제, grounded=false) | Pro or Flash | X | provider_timeout, provider_failed, 또는 stage 2/3 실패 후 |
+| 4+ | Flash 긴급 폴백 | Flash | X | stage 4 Pro도 실패 시 |
 
-#### 디버그에서 확인할 수 있는 정보
-- `webSearchEmptyReasons`: 0건 세부 원인 코드 배열
-- `webSearchQueryCorrected`: 쿼리 자동 보정 여부
-- `webSearchPartialRecoveryCount`: 필드 누락 복구된 후보 수
-- `webSearchAttemptCount`: 재시도 횟수 (1~4)
-- `webSearchRejectionReasons`: 개별 탈락 사유 목록
-- `webSearchRawSnippet`: 원본 응답 첫 200자
+- 성공하면 즉시 종료. 최대 4+1 stage.
+- 같은 쿼리 반복 금지: stage 2는 `simplifyQueryForRetry`로 쿼리 변경.
+
+#### Reason code → Action 매핑
+| Code | 의미 | → Action |
+|------|------|----------|
+| `parse_failed` | JSON 파싱 실패 | Stage 2 (포맷 강제) |
+| `provider_failed` | HTTP 에러 | Stage 4 (네트워크 문제) |
+| `provider_timeout` | API 타임아웃 (30초) | Stage 4 (네트워크 문제) |
+| `provider_empty` | 감독 목록 자체 없음 | Stage 2 (쿼리 단순화) |
+| `duplicate_filtered_all` | 전원 로컬 중복 | Stage 3 (제외 강화) |
+| `weak_query` | 쿼리가 너무 일반적 | Stage 2 (쿼리 재작성) |
+| `missing_required_fields` | name/nameKo 둘 다 없음 | Stage 2 (포맷 강제) |
+| `validation_rejected_all` | 유효성 검증 전원 탈락 | Stage 2 (포맷 강제) |
+| `fallback_empty` | 모든 재시도 실패 | 최종 종료 |
+
+#### Timeout 처리
+- 모든 Gemini API 호출에 30초 AbortController 타임아웃 적용 (`FETCH_TIMEOUT_MS`)
+- 타임아웃 시: `provider_timeout` reason → stage 4로 이동
+- 이전 138초 hang 문제 해결
+
+#### Query Normalization
+- Stage 1: `buildEnhancedWebSearchQuery` + `correctWeakQuery` (신호 약할 때)
+- Stage 2: `simplifyQueryForRetry` — 상위 장르/무드만 남기고 "lesser-known" 키워드 추가
+- Stage 3: 쿼리 동일하되 제외 목록 강화 + temperature 변경
+- Stage 4: 장르/무드만 사용하는 단순 프롬프트
+
+#### Duplicate Recovery (Stage 3)
+- 영문명, 한글명, alias, 대표작 기반 강화 제외
+- "실질적으로 같은 인물" 금지 명시
+- 언더레프리젠트된 지역/인디 씬 감독 탐색 유도
+- 재시도 후에도 전멸이면 `duplicate_filtered_all`이 `finalReasonCodes`에 남음
+
+#### 결과 모드 (resultMode)
+- `grounded`: 모든 후보가 웹 grounding 기반
+- `fallback`: 모든 후보가 모델 지식 기반 (grounded=false)
+- `mixed`: grounded + fallback 혼합 (stage 1 일부 + stage 4 보강)
+- `empty`: 후보 없음
+
+#### 디버그 메타 (`_debug`)
+- `retryStages: RetryStageLog[]` — 각 stage 실행 기록 (model, grounded, query, timeout, httpStatus, counts, durationMs)
+- `finalReasonCodes` — 0건 시 중복 제거된 원인 코드 목록
+- `finalProvider` — 최종 결과 제공 모델
+- `finalGrounded` — 최종 결과 grounding 여부
+- `fallbackUsed` — 모델 폴백 사용 여부
+- `timeoutOccurred` — 파이프라인 내 타임아웃 발생 여부
+- `resultMode` — grounded/fallback/mixed/empty (`_meta`에도 포함)
+- `recoveredAtStage` — 복구 성공 stage 번호 (`_meta`에도 포함)
 
 #### UI 표시
-- 외부 후보 0명: 세분화된 사유 표시 (파싱 실패 / 중복 전멸 / API 에러 등)
-- 중복 전멸 시 노란색 강조
-- 쿼리 자동 보정 시 보라색 알림
+- **기본 UX**: 복구 성공 시 "재시도 후 복구" 뱃지, fallback 시 "웹 기반 아님" 뱃지
+- **0건 시**: `finalReasonCodes` 기반 한글 메시지 + timeout/쿼리 보정 상태
+- **디버그 펼침**: `<details>` 안에 retryStages 전체 요약 (stage별 성공/실패, grounded, timeout)
+
+#### 비용/지연 Trade-off
+- 최악 시 5회 Gemini 호출 (Stage 1~4 + Flash 긴급)
+- 각 호출 최대 30초 → 파이프라인 최대 ~150초 (모두 타임아웃 시)
+- 일반적으로 Stage 1에서 성공: ~2-5초, 1회 호출
 
 4. **endState 전파** (submitContinuitySequence): 세그먼트 순차 생성 시 이전 세그먼트의 확정된 endState가 다음 세그먼트의 startState로 전파
 
