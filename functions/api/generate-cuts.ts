@@ -64,12 +64,12 @@ const FAST_PATH_MAX_CUTS = 5;
 // 각 retry 경로에서 리터럴 값 대신 이 상수를 사용.
 // 변경 시 여기만 수정하면 전 경로에 반영됨.
 
-/** Step1 초기 요청 maxOutputTokens 상한 */
-const STEP1_MAX_TOKENS = 32768;
+/** Step1 초기 요청 maxOutputTokens 상한 (Gemini 3.1 Pro max: 65536) */
+const STEP1_MAX_TOKENS = 65536;
 /** Higher-token retry / compact retry maxOutputTokens */
-const STEP1_RETRY_MAX_TOKENS = 32768;
+const STEP1_RETRY_MAX_TOKENS = 65536;
 /** Ultra-compact retry maxOutputTokens */
-const STEP1_ULTRA_MAX_TOKENS = 16384;
+const STEP1_ULTRA_MAX_TOKENS = 32768;
 /** Step1 per-outline 토큰 추정 (14개 필드 경량 스키마) */
 const STEP1_TOKENS_PER_OUTLINE = 400;
 /** Step1 초기 요청 타임아웃 (ms) — 55초로 단축하여 빠른 fallback 전환 */
@@ -1089,9 +1089,9 @@ ${(() => {
     return `[${base},"multiShot":[${exampleShots.join(",")}]}]`;
   })()}`;
 
-  // 배치 크기에 비례한 토큰 예산: 컷당 ≈1200 tokens, 최소 8192, 최대 16384
+  // 배치 크기에 비례한 토큰 예산: 컷당 ≈1200 tokens, 최소 8192, 최대 32768
   const estimatedDetailTokens = batchOutlines.length * 1200 + 500;
-  const maxTokens = Math.min(16384, Math.max(8192, Math.ceil(estimatedDetailTokens * 1.3)));
+  const maxTokens = Math.min(32768, Math.max(8192, Math.ceil(estimatedDetailTokens * 1.3)));
   console.info(`[cuts:${stepLabel}] model=${MODEL_DETAIL} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
 
   let result = await streamingGenerate(env, MODEL_DETAIL, {
@@ -1102,11 +1102,11 @@ ${(() => {
   console.info(`[cuts:${stepLabel}] responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
 
   // Truncation retry: maxTokens 상향 후 재시도
-  if (result.truncated && result.text && maxTokens < 16384) {
-    console.warn(`[cuts:${stepLabel}] TRUNCATED — retrying with maxTokens=16384 (was ${maxTokens})`);
+  if (result.truncated && result.text && maxTokens < 32768) {
+    console.warn(`[cuts:${stepLabel}] TRUNCATED — retrying with maxTokens=32768 (was ${maxTokens})`);
     result = await streamingGenerate(env, MODEL_DETAIL, {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 16384, responseMimeType: "application/json" },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 32768, responseMimeType: "application/json" },
     });
     console.info(`[cuts:${stepLabel}] retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
   }
