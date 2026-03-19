@@ -331,31 +331,12 @@ describe("O3 getMaxShots — duration 기반 policy", () => {
     expect(getMaxShots(o3, 3)).toBe(0);
   });
 
-  it("4~5초: 최대 2개", () => {
-    expect(getMaxShots(o3, 4)).toBe(2);
-    expect(getMaxShots(o3, 5)).toBe(2);
-  });
-
-  it("6~7초: 최대 3개", () => {
-    expect(getMaxShots(o3, 6)).toBe(3);
-    expect(getMaxShots(o3, 7)).toBe(3);
-  });
-
-  it("8~10초: 최대 4개", () => {
-    expect(getMaxShots(o3, 8)).toBe(4);
-    expect(getMaxShots(o3, 9)).toBe(4);
-    expect(getMaxShots(o3, 10)).toBe(4);
-  });
-
-  it("11~15초: 최대 6개 (O3 하드 리밋, 물리적 상한 내)", () => {
-    expect(getMaxShots(o3, 11)).toBe(5); // floor(11/2) = 5
-    expect(getMaxShots(o3, 12)).toBe(6);
+  it("4초 이상: 모델 하드 리밋(6)까지 허용", () => {
+    expect(getMaxShots(o3, 4)).toBe(6);
+    expect(getMaxShots(o3, 5)).toBe(6);
+    expect(getMaxShots(o3, 8)).toBe(6);
+    expect(getMaxShots(o3, 10)).toBe(6);
     expect(getMaxShots(o3, 15)).toBe(6);
-  });
-
-  it("물리적 상한: floor(duration / minShotDuration) 초과 불가", () => {
-    expect(getMaxShots(o3, 5)).toBeLessThanOrEqual(Math.floor(5 / 2));
-    expect(getMaxShots(o3, 4)).toBeLessThanOrEqual(Math.floor(4 / 2));
   });
 });
 
@@ -376,12 +357,12 @@ describe("normalizeMultiShots", () => {
     expect(normalizeMultiShots(o3, shots, 3)).toHaveLength(0);
   });
 
-  it("O3 8초에서 6개 → 4개로 clamp", () => {
+  it("O3 8초에서 6개 → 6개 허용 (모델 리밋 내)", () => {
     const sixShots = Array.from({ length: 6 }, (_, i) => ({
       index: i + 1, prompt: `Shot ${i + 1}`, duration: "2",
     }));
     const result = normalizeMultiShots(o3, sixShots, 8);
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(6);
   });
 
   it("index 재정렬: slice 후에도 1-based 순차", () => {
@@ -441,8 +422,8 @@ describe("fast density + capability clamp 조합", () => {
     expect(getMaxShots(o3, 3)).toBe(0);
   });
 
-  it("10초 segment, 2컷 = 각 5초 → O3 최대 2개", () => {
-    expect(getMaxShots(o3, 5)).toBe(2);
+  it("10초 segment, 2컷 = 각 5초 → O3 최대 6개", () => {
+    expect(getMaxShots(o3, 5)).toBe(6);
   });
 
   it("15초 segment, 1컷 = 15초 → O3 최대 6개", () => {

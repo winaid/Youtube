@@ -258,6 +258,24 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 
 정책은 동일 (Pro 우선, Flash-Lite 폴백), 구현 방식이 다를 뿐.
 
+#### Pipeline Status vs Result Provenance (혼동 금지)
+- **Pipeline status** (`attempted_success`/`failed`/`empty`): "파이프라인이 에러 없이 끝났는지"
+- **Result provenance** (`grounded`/`fallback`/`mixed`): "최종 결과의 실제 출처"
+- `attempted_success` + `resultMode: fallback` = 파이프라인은 성공했지만 grounding 없이 모델 지식 결과
+- UI 상단 요약/하단 라벨 모두 provenance 기준 사용 ("웹 기반 N" / "모델 보완 N")
+
+#### Provenance 메타 (`_meta`)
+| 필드 | 의미 |
+|------|------|
+| `groundedExternalCount` | 웹 근거 있는 외부 후보 수 |
+| `fallbackExternalCount` | 모델 지식 기반 외부 후보 수 |
+| `resultMode` | grounded / fallback / mixed / empty |
+| `localMatchCount` | 보유 감독 매치 수 |
+| `externalCandidateCount` | 외부 후보 총 수 |
+
+#### 멀티샷 정책
+- duration > 3초이면 모델 하드 리밋(6)까지 샷 허용 (기존 duration 기반 제한 제거)
+
 ### 감독 추천 웹 검색 — Flat Stage Retry Pipeline
 
 #### 파이프라인 개요

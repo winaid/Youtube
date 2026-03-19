@@ -262,12 +262,10 @@ export function getCapability(modelId: string): KlingModelCapability {
  *
  * 정책:
  *   - duration ≤ 3초: 0 (multiShot 비활성)
- *   - duration ≤ 5초: min(2, maxShots)
- *   - duration ≤ 7초: min(3, maxShots)
- *   - duration ≤ 10초: min(4, maxShots)
- *   - duration > 10초: maxShots (모델 하드 리밋)
+ *   - duration > 3초: maxShots (모델 하드 리밋, 보통 6)
  *
- * 추가 제약: floor(duration / minShotDuration)을 초과할 수 없음
+ * duration > 3초이면 모델이 지원하는 최대 샷 수(6)까지 허용.
+ * 각 샷의 최소 길이는 clampShotDuration에서 보정.
  */
 export function getMaxShots(modelId: string, durationSec: number): number {
   const cap = getCapability(modelId);
@@ -275,20 +273,7 @@ export function getMaxShots(modelId: string, durationSec: number): number {
   if (!cap.supportsMultiShot) return 0;
   if (durationSec <= 3) return 0;
 
-  // 모델 하드 리밋
-  const modelLimit = cap.maxShots;
-
-  // duration 기반 자연스러운 상한
-  let durationLimit: number;
-  if (durationSec <= 5) durationLimit = 2;
-  else if (durationSec <= 7) durationLimit = 3;
-  else if (durationSec <= 10) durationLimit = 4;
-  else durationLimit = modelLimit;
-
-  // 물리적 상한: 각 샷이 minShotDuration 이상이어야 함
-  const physicalLimit = Math.floor(durationSec / cap.minShotDuration);
-
-  return Math.min(modelLimit, durationLimit, physicalLimit);
+  return cap.maxShots;
 }
 
 /**

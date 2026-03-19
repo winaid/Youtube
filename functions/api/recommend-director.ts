@@ -1517,14 +1517,35 @@ Each director object must have:
       signalMergeReasons: mergeResult.mergeReasons,
     };
 
-    // ── Log pipeline ──
-    console.log("[recommend-director] pipeline:", JSON.stringify({
+    // ── Provenance 계산 ──
+    const groundedExternalCount = webSuggestions.filter((s: Record<string, unknown>) => s.grounded === true).length;
+    const fallbackExternalCount = webSuggestions.filter((s: Record<string, unknown>) => s.grounded !== true).length;
+    const computedResultMode: "grounded" | "fallback" | "mixed" | "empty" =
+      finalWebCount === 0 ? "empty"
+      : groundedExternalCount > 0 && fallbackExternalCount > 0 ? "mixed"
+      : groundedExternalCount > 0 ? "grounded"
+      : "fallback";
+
+    // ── Log: 성공/실패 무관하게 항상 provenance 포함 ──
+    console.log("[recommend-director] result:", JSON.stringify({
+      // pipeline status
+      pipelineStatus: stageStatus.webSearch,
       stages: stageStatus,
-      local: finalLocalCount,
-      web: finalWebCount,
+      // provenance — 실제 결과 출처
+      resultMode: computedResultMode,
+      localMatchCount: finalLocalCount,
+      externalCandidateCount: finalWebCount,
+      groundedExternalCount,
+      fallbackExternalCount,
+      // model info
+      finalModel: finalProvider,
+      finalGrounded,
+      fallbackUsed,
+      retryCount: webSearchAttemptCount,
+      recoveredAtStage: retryStagesLog.find(s => s.acceptedCount > 0)?.stage ?? null,
+      // totals
       total: finalCount,
       emptyReason,
-      webSearched: attemptedWebSearch,
     }));
 
     if (finalCount === 0) {
@@ -1542,13 +1563,16 @@ Each director object must have:
         storyLengthUsed: Math.min(storyText.length, 1200),
         attemptedWebSearch,
         webSearchProvider,
-        resultMode: attemptedWebSearch ? (
-          webSuggestions.length === 0 ? "empty" :
-          webSuggestions.some((s: Record<string, unknown>) => s.grounded === true) && webSuggestions.some((s: Record<string, unknown>) => s.grounded !== true) ? "mixed" :
-          webSuggestions.some((s: Record<string, unknown>) => s.grounded === true) ? "grounded" : "fallback"
-        ) : undefined,
+        // provenance — 실제 결과 출처 기준
+        resultMode: computedResultMode,
+        localMatchCount: finalLocalCount,
+        externalCandidateCount: finalWebCount,
+        groundedExternalCount,
+        fallbackExternalCount,
+        // model & retry
+        finalModel: finalProvider || undefined,
         retryCount: webSearchAttemptCount,
-        recoveredAtStage: retryStagesLog.length > 0 ? (retryStagesLog.find(s => s.acceptedCount > 0)?.stage ?? null) : undefined,
+        recoveredAtStage: retryStagesLog.find(s => s.acceptedCount > 0)?.stage ?? null,
         fallbackUsed,
         finalGrounded,
         timeoutOccurred: pipelineTimeoutOccurred || undefined,

@@ -367,3 +367,63 @@ describe("stage pipeline 흐름 시뮬레이션", () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Provenance 계산 — groundedExternalCount / fallbackExternalCount
+// ═══════════════════════════════════════════════════════════════════
+
+describe("provenance 계산", () => {
+  function computeProvenance(webSuggestions: Array<{ grounded: boolean }>) {
+    const groundedExternalCount = webSuggestions.filter(s => s.grounded === true).length;
+    const fallbackExternalCount = webSuggestions.filter(s => s.grounded !== true).length;
+    const resultMode: "grounded" | "fallback" | "mixed" | "empty" =
+      webSuggestions.length === 0 ? "empty"
+      : groundedExternalCount > 0 && fallbackExternalCount > 0 ? "mixed"
+      : groundedExternalCount > 0 ? "grounded"
+      : "fallback";
+    return { groundedExternalCount, fallbackExternalCount, resultMode };
+  }
+
+  it("전부 grounded → resultMode=grounded, groundedCount=4", () => {
+    const p = computeProvenance([
+      { grounded: true }, { grounded: true }, { grounded: true }, { grounded: true },
+    ]);
+    expect(p.resultMode).toBe("grounded");
+    expect(p.groundedExternalCount).toBe(4);
+    expect(p.fallbackExternalCount).toBe(0);
+  });
+
+  it("전부 fallback → resultMode=fallback, fallbackCount=4", () => {
+    const p = computeProvenance([
+      { grounded: false }, { grounded: false }, { grounded: false }, { grounded: false },
+    ]);
+    expect(p.resultMode).toBe("fallback");
+    expect(p.groundedExternalCount).toBe(0);
+    expect(p.fallbackExternalCount).toBe(4);
+  });
+
+  it("혼합 → resultMode=mixed, grounded 2 + fallback 2", () => {
+    const p = computeProvenance([
+      { grounded: true }, { grounded: true }, { grounded: false }, { grounded: false },
+    ]);
+    expect(p.resultMode).toBe("mixed");
+    expect(p.groundedExternalCount).toBe(2);
+    expect(p.fallbackExternalCount).toBe(2);
+  });
+
+  it("빈 결과 → resultMode=empty", () => {
+    const p = computeProvenance([]);
+    expect(p.resultMode).toBe("empty");
+    expect(p.groundedExternalCount).toBe(0);
+    expect(p.fallbackExternalCount).toBe(0);
+  });
+
+  it("grounded 1 + fallback 3 → mixed", () => {
+    const p = computeProvenance([
+      { grounded: true }, { grounded: false }, { grounded: false }, { grounded: false },
+    ]);
+    expect(p.resultMode).toBe("mixed");
+    expect(p.groundedExternalCount).toBe(1);
+    expect(p.fallbackExternalCount).toBe(3);
+  });
+});

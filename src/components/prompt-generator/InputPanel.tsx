@@ -1074,18 +1074,23 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   const localCount = directorRecommendation.localMatches.length;
                   const webCount = directorRecommendation.webSuggestions.length;
                   const totalCount = localCount + webCount;
+                  const meta = (directorRecommendation as Record<string, unknown>)._meta as Record<string, unknown> | undefined;
                   const debug = (directorRecommendation as Record<string, unknown>)._debug as Record<string, unknown> | undefined;
                   const genres = (debug?.extractedGenres as string[]) ?? [];
                   const moods = (debug?.extractedMoods as string[]) ?? [];
                   const invalidRemoved = (debug?.invalidIdsRemoved as number) ?? 0;
+                  // provenance 기준 — 실제 결과 출처
+                  const groundedCount = Number(meta?.groundedExternalCount ?? 0);
+                  const fallbackCount = Number(meta?.fallbackExternalCount ?? 0);
                   return totalCount > 0 ? (
                     <>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-semibold" style={{ color: "#787fff" }}>
                         {totalCount}명 추천됨
                       </span>
                       {localCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#787fff10", color: "#787fff" }}>보유 {localCount}</span>}
-                      {webCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#22c55e10", color: "#22c55e" }}>웹 검색 {webCount}</span>}
+                      {groundedCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#16a34a10", color: "#16a34a" }}>웹 기반 {groundedCount}</span>}
+                      {fallbackCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#ca8a0410", color: "#ca8a04" }}>모델 보완 {fallbackCount}</span>}
                       {invalidRemoved > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "#ef444410", color: "#ef4444" }}>ID필터 -{invalidRemoved}</span>}
                     </div>
                     {(genres.length > 0 || moods.length > 0) && (
