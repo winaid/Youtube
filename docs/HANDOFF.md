@@ -237,6 +237,27 @@ search-director와 recommend-director의 중복 로직을 공통 모듈로 분�
 - Flash-Lite: 더 빠르고 저렴하지만 품질 하락 가능
 - 일반적으로 Pro에서 성공: 추가 비용 없음. 폴백 시 2회 호출 비용
 
+#### Grounded Search Tool
+- 지원 형식: `tools: [{ google_search: {} }]` (Gemini 2.0+/3.x)
+- **구형 `googleSearchRetrieval`은 전부 제거됨** — 400 bad request 원인이었음
+- 사용 파일: `search-director.ts`, `recommend-director.ts` (stage 1-3), `generate-chat.ts`
+- grounding metadata 구조는 동일: `groundingMetadata.groundingChunks[].web`
+
+#### 400 vs transient failure 처리
+- 400 bad request: 요청 구조 문제 → **폴백 안 함**, 요청 수정 필요
+- 429/503/524/504(TIMEOUT)/500(EXHAUSTED): transient → Flash-Lite 폴백
+- `shouldFallbackToAltModel(status, body)` 함수로 판별
+
+#### recommend-director 예외 구조
+이 파일은 `fetchWithModelFallback` 공통 래퍼를 **부분적으로만** 사용:
+- **STEP 1 (로컬 매칭)**: `fetchWithModelFallback` 사용 (Pro→Flash-Lite 자동 폴백)
+- **STEP 2 (웹 검색 pipeline)**: `callGeminiForDirectors` 내부에서 직접 `fetchWithAuth` 사용
+  - Stage 1-3: `GEMINI_MODEL_PRO` + grounding
+  - Stage 4: `GEMINI_MODEL_FLASH` (항상 Flash-Lite, 조건부 아님)
+  - 이유: stage별 모델 선택과 grounded 여부가 명시적으로 보여야 하므로
+
+정책은 동일 (Pro 우선, Flash-Lite 폴백), 구현 방식이 다를 뿐.
+
 ### 감독 추천 웹 검색 — Flat Stage Retry Pipeline
 
 #### 파이프라인 개요

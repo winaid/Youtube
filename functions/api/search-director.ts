@@ -62,7 +62,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       warnings.push("검색어가 너무 짧습니다. 더 구체적인 검색어를 사용해보세요.");
     }
 
-    // ── Step 1: Gemini + googleSearchRetrieval (실제 웹 검색) ──
+    // ── Step 1: Gemini + google_search (실제 웹 검색) ──
     const webSearchPrompt = `You are a world-class film/animation director discovery engine with web search access.
 The user searched for: "${query}"
 
@@ -93,7 +93,7 @@ If no match, return { "directors": [] }`;
 
     const webBody = {
       contents: [{ role: "user", parts: [{ text: webSearchPrompt }] }],
-      tools: [{ googleSearchRetrieval: {} }],
+      tools: [{ google_search: {} }],
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 4096,

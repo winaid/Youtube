@@ -17,8 +17,10 @@ import {
   GEMINI_MODEL_IMAGE,
   GEMINI_MODEL_IMAGE_FB,
   isRetryableError,
+  shouldFallbackToAltModel,
   type ModelFallbackMeta,
 } from "../functions/api/_gemini-keys";
+import * as fs from "fs";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. 모델 상수 값 검증
@@ -208,5 +210,102 @@ describe("recommend-director 모델 정책", () => {
     const emptyReasons = ["provider_timeout"] as const;
     const shouldGoToFlashLite = emptyReasons.includes("provider_timeout");
     expect(shouldGoToFlashLite).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Grounded search tool migration — 구형 googleSearchRetrieval 제거
+// ═══════════════════════════════════════════════════════════════════
+
+describe("grounded search tool migration", () => {
+  it("search-director.ts에 구형 googleSearchRetrieval이 없음", () => {
+    const content = fs.readFileSync("functions/api/search-director.ts", "utf-8");
+    expect(content).not.toContain("googleSearchRetrieval");
+    expect(content).toContain("google_search");
+  });
+
+  it("recommend-director.ts에 구형 googleSearchRetrieval이 없음", () => {
+    const content = fs.readFileSync("functions/api/recommend-director.ts", "utf-8");
+    expect(content).not.toContain("googleSearchRetrieval");
+    expect(content).toContain("google_search");
+  });
+
+  it("generate-chat.ts는 이미 google_search 사용", () => {
+    const content = fs.readFileSync("functions/api/generate-chat.ts", "utf-8");
+    expect(content).not.toContain("googleSearchRetrieval");
+    expect(content).toContain("google_search");
+  });
+
+  it("레포 전체에 구형 googleSearchRetrieval이 남아있지 않음 (테스트 제외)", () => {
+    const apiDir = "functions/api";
+    const files = fs.readdirSync(apiDir).filter(f => f.endsWith(".ts"));
+    for (const file of files) {
+      const content = fs.readFileSync(`${apiDir}/${file}`, "utf-8");
+      expect(content).not.toContain("googleSearchRetrieval");
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. 400 bad request vs transient failure 구분
+// ═══════════════════════════════════════════════════════════════════
+
+describe("400 bad request vs transient failure 구분", () => {
+  it("400 bad request → 폴백 안 함 (요청 구조 문제)", () => {
+    expect(shouldFallbackToAltModel(400, "Invalid tool: googleSearchRetrieval")).toBe(false);
+  });
+
+  it("400 invalid schema → 폴백 안 함", () => {
+    expect(shouldFallbackToAltModel(400, '{"error":{"code":400,"message":"Invalid value"}}')).toBe(false);
+  });
+
+  it("429 rate limit → 폴백 함 (transient)", () => {
+    expect(shouldFallbackToAltModel(429, "Rate limit exceeded")).toBe(true);
+  });
+
+  it("503 overloaded → 폴백 함 (transient)", () => {
+    expect(shouldFallbackToAltModel(503, "Service unavailable")).toBe(true);
+  });
+
+  it("504 TIMEOUT → 폴백 함 (transient)", () => {
+    expect(shouldFallbackToAltModel(504, '{"error":"Gemini API timeout (30000ms)","code":"TIMEOUT"}')).toBe(true);
+  });
+
+  it("524 cloudflare timeout → 폴백 함 (transient)", () => {
+    expect(shouldFallbackToAltModel(524, "")).toBe(true);
+  });
+
+  it("500 RESOURCE_EXHAUSTED → 폴백 함 (transient)", () => {
+    expect(shouldFallbackToAltModel(500, "RESOURCE_EXHAUSTED")).toBe(true);
+  });
+
+  it("500 일반 에러 → 폴백 안 함", () => {
+    expect(shouldFallbackToAltModel(500, "Internal server error")).toBe(false);
+  });
+
+  it("404 model deprecated → 폴백 안 함", () => {
+    expect(shouldFallbackToAltModel(404, "is not found. It might not be available")).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. recommend-director STEP 1 로컬 매칭 — Pro 우선
+// ═══════════════════════════════════════════════════════════════════
+
+describe("recommend-director STEP 1 로컬 매칭", () => {
+  it("STEP 1 로컬 매칭이 Pro 우선 호출 (Flash primary가 아님)", () => {
+    const content = fs.readFileSync("functions/api/recommend-director.ts", "utf-8");
+    // 구형 Flash-first 패턴이 없어야 함
+    expect(content).not.toMatch(/STEP 1.*model=flash/);
+    // fetchWithModelFallback 사용
+    expect(content).toContain("fetchWithModelFallback");
+  });
+
+  it("Stage 4는 항상 GEMINI_MODEL_FLASH (조건부가 아님)", () => {
+    const content = fs.readFileSync("functions/api/recommend-director.ts", "utf-8");
+    // 구형 조건부 패턴이 없어야 함
+    expect(content).not.toContain("(timeoutCount + failCount >= 2) ? GEMINI_MODEL_FLASH : GEMINI_MODEL_PRO");
+    // Stage 4는 항상 Flash-Lite
+    expect(content).toMatch(/Stage 4.*항상.*Flash-Lite/);
   });
 });

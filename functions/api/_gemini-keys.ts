@@ -639,9 +639,13 @@ export interface ModelFallbackMeta {
 
 /**
  * 주어진 HTTP status/body가 모델 폴백을 유발하는 transient 에러인지 판별.
+ *
+ * 400 bad request (invalid tool field, malformed schema 등)는 false — 요청 자체가 틀린 것이므로
+ * 모델을 바꿔도 같은 에러가 남. 이런 경우 폴백이 아닌 요청 구조 수정이 필요.
  */
-function shouldFallbackToAltModel(status: number, body: string): boolean {
+export function shouldFallbackToAltModel(status: number, body: string): boolean {
   if (isDeprecatedModelError(status, body)) return false; // 모델 자체가 없으면 폴백도 무의미
+  if (status === 400) return false; // bad request — 요청 구조 문제, 폴백 무의미
   if (status === 504 && body.includes('"TIMEOUT"')) return true; // timeout
   if (status === 429) return true; // rate limit
   if (status === 503) return true; // overloaded

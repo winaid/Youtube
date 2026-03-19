@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import {
   generateSlugId,
   extractGroundingSources,
@@ -740,23 +740,13 @@ ${localList}
       },
     };
 
-    console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=flash, pool=${directorPoolSize})`);
+    console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=pro→flash-lite fallback, pool=${directorPoolSize})`);
 
-    let res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_FLASH), {
+    const { response: res } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(localRequestBody),
     });
-
-    if (!res.ok) {
-      const errText1 = await res.text();
-      console.warn(`[recommend-director] FLASH 실패(${res.status}), PRO fallback. detail: ${errText1.slice(0, 300)}`);
-      res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_PRO), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(localRequestBody),
-      });
-    }
 
     if (!res.ok) {
       const errText = await res.text();
@@ -1152,7 +1142,7 @@ Each director object must have:
             maxOutputTokens: 3072,
             ...(opts.forceMimeType ? { responseMimeType: "application/json" as const } : {}),
           },
-          ...(opts.useGrounding ? { tools: [{ googleSearchRetrieval: {} }] } : {}),
+          ...(opts.useGrounding ? { tools: [{ google_search: {} }] } : {}),
         };
 
         let res: Response;
@@ -1236,7 +1226,7 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Pro + googleSearchRetrieval) ──
+          // ── STAGE 1: Grounded 웹 검색 (Pro + google_search) ──
           stageLabel = "stage1_grounded_web";
           model = GEMINI_MODEL_PRO;
           prompt = buildWebPrompt();
@@ -1297,8 +1287,8 @@ Each director object must have:
 
           // provider_timeout/provider_failed가 2회 이상이면 Flash, 아니면 Pro
           const timeoutCount = retryStagesLog.filter(s => s.timeoutOccurred).length;
-          const failCount = retryStagesLog.filter(s => s.emptyReasons.includes("provider_failed")).length;
-          model = (timeoutCount + failCount >= 2) ? GEMINI_MODEL_FLASH : GEMINI_MODEL_PRO;
+          // Stage 4는 항상 Flash-Lite 폴백 — Pro는 Stage 1-3에서 시도 완료
+          model = GEMINI_MODEL_FLASH;
 
           const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
           const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
