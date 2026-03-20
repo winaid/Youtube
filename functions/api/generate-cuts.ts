@@ -9,7 +9,7 @@
  *   Step2: maxTokens=8192~16384  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192~16384  (컷 N/2+1~N 상세) — Step2와 병렬
  */
-import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO, parseFirstJsonObject, parseFirstJsonArray } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, parseFirstJsonObject, parseFirstJsonArray } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
@@ -593,6 +593,7 @@ async function step1Outlines(
   scriptAnalysisHint?: string,
   continuityBlock?: string,
   deepAnalysisBriefBlock?: string,
+  modelOverride?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
 
   // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
@@ -746,9 +747,10 @@ JSON만 출력:
   // 안전 마진 1.5배 → 최소 4096, 최대 STEP1_MAX_TOKENS
   const estimatedTokens = 200 + cutCount * STEP1_TOKENS_PER_OUTLINE + 200;
   const step1MaxTokens = Math.min(STEP1_MAX_TOKENS, Math.max(4096, Math.ceil(estimatedTokens * 1.5)));
-  console.info(`[cuts:step1] model=${MODEL_OUTLINE} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens} cap=${STEP1_MAX_TOKENS} timeoutMs=${STEP1_TIMEOUT_MS}`);
+  const effectiveModel = modelOverride || MODEL_OUTLINE;
+  console.info(`[cuts:step1] model=${effectiveModel} promptLen=${prompt.length} cutCount=${cutCount} maxTokens=${step1MaxTokens} estimatedTokens=${estimatedTokens} cap=${STEP1_MAX_TOKENS} timeoutMs=${STEP1_TIMEOUT_MS}`);
 
-  let result = await streamingGenerate(env, MODEL_OUTLINE, {
+  let result = await streamingGenerate(env, effectiveModel, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.5, maxOutputTokens: step1MaxTokens, responseMimeType: "application/json" },
   }, { timeoutMs: STEP1_TIMEOUT_MS });
@@ -771,7 +773,7 @@ JSON만 출력:
       if (step1MaxTokens < STEP1_RETRY_MAX_TOKENS) {
         console.warn(`[cuts:step1] RETRY with higher maxTokens=${STEP1_RETRY_MAX_TOKENS} (was ${step1MaxTokens}) timeoutMs=${STEP1_TIMEOUT_MS}`);
         parseMode = "higher_tokens_retry";
-        result = await streamingGenerate(env, MODEL_OUTLINE, {
+        result = await streamingGenerate(env, effectiveModel, {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: { temperature: 0.4, maxOutputTokens: STEP1_RETRY_MAX_TOKENS, responseMimeType: "application/json" },
         }, { timeoutMs: STEP1_TIMEOUT_MS });
@@ -799,7 +801,7 @@ outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emoti
 
 JSON만: {"characterSeeds":[...],"outlines":[...]}`;
 
-        result = await streamingGenerate(env, MODEL_OUTLINE, {
+        result = await streamingGenerate(env, effectiveModel, {
           contents: [{ role: "user", parts: [{ text: compactPrompt }] }],
           generationConfig: { temperature: 0.3, maxOutputTokens: STEP1_RETRY_MAX_TOKENS, responseMimeType: "application/json" },
         }, { timeoutMs: STEP1_TIMEOUT_MS });
@@ -826,7 +828,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
         ? editorialPlanningBlock.split("\n").filter(l => l.startsWith("- ")).map(l => l.replace(/^-\s*/, "").split(":")[0]).slice(0, 3).join(", ")
         : undefined;
       const ultraPrompt = buildUltraCompactStep1Prompt(storyText, directorNameKo, cutCount, secPerCut, ultraEditorial ? `[편집: ${ultraEditorial}]` : undefined);
-      const ultraResult = await streamingGenerate(env, MODEL_OUTLINE, {
+      const ultraResult = await streamingGenerate(env, effectiveModel, {
         contents: [{ role: "user", parts: [{ text: ultraPrompt }] }],
         generationConfig: { temperature: 0.3, maxOutputTokens: STEP1_ULTRA_MAX_TOKENS, responseMimeType: "application/json" },
       }, { timeoutMs: STEP1_ULTRA_TIMEOUT_MS });
@@ -952,6 +954,7 @@ async function step23DetailBatch(
   generationPersonaBlock: string,  // buildGenerationPersonaBlock() 결과
   characterPersonaBlock: string,   // buildCharacterPersonaBlock() 결과
   editorialSummary: string,        // buildCompactEditorialSummary() 결과 — step2/3 재강조용
+  modelOverride?: string,
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -1260,9 +1263,10 @@ ${(() => {
   // 배치 크기에 비례한 토큰 예산: 컷당 ≈1200 tokens, 최소 8192, 최대 32768
   const estimatedDetailTokens = batchOutlines.length * 1200 + 500;
   const maxTokens = Math.min(32768, Math.max(8192, Math.ceil(estimatedDetailTokens * 1.3)));
-  console.info(`[cuts:${stepLabel}] model=${MODEL_DETAIL} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
+  const effectiveDetailModel = modelOverride || MODEL_DETAIL;
+  console.info(`[cuts:${stepLabel}] model=${effectiveDetailModel} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
 
-  let result = await streamingGenerate(env, MODEL_DETAIL, {
+  let result = await streamingGenerate(env, effectiveDetailModel, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.75, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
   });
@@ -1272,7 +1276,7 @@ ${(() => {
   // Truncation retry: maxTokens 상향 후 재시도
   if (result.truncated && result.text && maxTokens < 32768) {
     console.warn(`[cuts:${stepLabel}] TRUNCATED — retrying with maxTokens=32768 (was ${maxTokens})`);
-    result = await streamingGenerate(env, MODEL_DETAIL, {
+    result = await streamingGenerate(env, effectiveDetailModel, {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7, maxOutputTokens: 32768, responseMimeType: "application/json" },
     });
@@ -2068,8 +2072,40 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           }
         }
 
+        // Pro 재시도 실패 → Flash 모델로 폴백 시도 (품질 저하 감수)
+        if (!retrySuccess && providerStatus === 429) {
+          console.warn("[generate-cuts] step1 Pro 429 exhausted — trying Flash model fallback");
+          try {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
+            ({ characterSeeds, outlines } = await step1Outlines(
+              context.env,
+              String(storyText),
+              String(directorNameKo || directorName),
+              String(directorPersona ?? ""),
+              targetCuts,
+              secPerCut,
+              contentMode,
+              generationPersonaBlock,
+              characterPersonaBlock,
+              editorialPlanningBlock,
+              scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
+              continuityPromptBlock || undefined,
+              deepAnalysisBriefBlock || undefined,
+              GEMINI_MODEL_FLASH,
+            ));
+            retrySuccess = true;
+            step1Degraded = true;
+            step1DegradedReason = `Pro 429 → Flash model fallback 성공 (품질 저하 가능)`;
+            step1Warnings.push(step1DegradedReason);
+          } catch (flashErr) {
+            const flashMsg = flashErr instanceof Error ? flashErr.message : String(flashErr);
+            console.warn("[generate-cuts] Flash fallback also failed:", flashMsg.slice(0, 200));
+          }
+        }
+
         if (!retrySuccess) {
-          // All retries failed — return 503 with user-friendly message
+          // All retries + Flash fallback failed — return error
           const is429 = providerStatus === 429;
           return Response.json({
             ok: false,
@@ -2435,9 +2471,30 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             console.warn(`[generate-cuts] step2/3 429 retry ${attempt} failed:`, retryMsg);
           }
         }
+        // Pro 재시도 실패 → Flash 모델로 한 번 더 시도
+        if (!retrySuccess) {
+          console.warn("[generate-cuts] step2/3 Pro 429 exhausted — trying Flash model");
+          try {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            [details1, details2] = await Promise.all([
+              step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH),
+              batch2.length > 0
+                ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH)
+                : Promise.resolve([]),
+            ]);
+            retrySuccess = true;
+            step1Degraded = true;
+            step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + "step2/3 Pro 429 → Flash fallback 성공";
+            step1Warnings.push("step2/3: Flash model fallback (품질 저하 가능)");
+            console.log("[generate-cuts] step2/3 Flash fallback succeeded");
+          } catch (flashErr) {
+            const flashMsg = flashErr instanceof Error ? flashErr.message : String(flashErr);
+            console.warn("[generate-cuts] step2/3 Flash fallback failed:", flashMsg.slice(0, 200));
+          }
+        }
         if (!retrySuccess) {
           const providerReason = "AI 서버 요청 한도 초과로 세부 장면 보강을 건너뛰었습니다";
-          console.warn(`[generate-cuts] step2/3 429 retries exhausted — falling back to outline-only`);
+          console.warn(`[generate-cuts] step2/3 429 retries + Flash exhausted — falling back to outline-only`);
           step1Warnings.push(`step2/3 provider 429: ${providerReason}`);
           step1Degraded = true;
           step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + providerReason;
