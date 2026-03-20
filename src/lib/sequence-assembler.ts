@@ -10,7 +10,7 @@
 
 import type { Cut, VideoGenerationConfig, StructuredSequenceDocument, PhysicsRules, SequenceDensityScore, TemporalBeat } from "@/types";
 import { collectFailureModeNegatives, getGenreTemplate } from "@/lib/prompt-architecture";
-import { getStyleById, getStyleByLegacyMode } from "@/data/style-catalog";
+import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { videoPromptJsonToShotPlan } from "@/lib/sequence-plan";
 import { runSanitizePipeline, stripMetaLabels } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
@@ -385,10 +385,17 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
 
   const isEnv = isEnvironmentScene(cut.shotCategory);
 
+  // Style rendering rules — camera/motion defaults for shots without explicit direction
+  const styleRenderRules = styleEntry ? getStyleRenderingRules(styleEntry.id) : undefined;
+
   // Camera: environment 씬이면 공통 규칙 적용
+  // non-env 씬에서 명시적 카메라 없으면 스타일 렌더링 규칙의 기본값 적용
+  const defaultMotion = styleRenderRules?.cameraDefaults
+    ? styleRenderRules.cameraDefaults.split(".")[0].trim().slice(0, 60)
+    : "slow push-in";
   let framing = isEnv ? "WS" : (json?.shotSize || "MS");
   let angle = isEnv ? (json?.cameraAngle || "overhead") : (json?.cameraAngle || "eye-level");
-  let motion = json?.cameraMovement || cut.cameraDirection || "slow push-in";
+  let motion = json?.cameraMovement || cut.cameraDirection || defaultMotion;
 
   if (isEnv) {
     const cam = enforceEnvironmentCamera({
@@ -430,8 +437,24 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     styleNeg.push(...raw);
   }
 
+  // Style persona anti-drift: failureCriteria → failureMode negatives
+  // "만화적 외곽선, 평면적 색감" 같은 실패 기준을 네거티브로 주입
+  const persona = styleEntry ? getStylePersona(styleEntry.id) : undefined;
+  const personaFailNeg: string[] = [];
+  if (persona?.failureCriteria) {
+    const failTokens = persona.failureCriteria
+      .replace(/[이가]?\s*보이면\s*실패\.?/g, "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(s => s.length > 2 && s.length < 60);
+    personaFailNeg.push(...failTokens);
+  }
+
   const sceneNeg = getGenreTemplate(cut.shotCategory)?.commonNegatives || [];
-  const failureNeg = collectFailureModeNegatives(cut.videoPrompt || cut.sceneDescription);
+  const failureNeg = [
+    ...collectFailureModeNegatives(cut.videoPrompt || cut.sceneDescription),
+    ...personaFailNeg,
+  ];
   const userNeg = config.negativePrompt
     ? config.negativePrompt.split(",").map(s => s.trim()).filter(Boolean)
     : [];
@@ -452,8 +475,20 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     mediumLock = "physical map surface — not a landscape, not a 3D render, not a CGI scene";
   }
 
+  // globalStyle = positivePrompt + persona aesthetic + rendering character rules
+  // 스타일 정체성을 프롬프트에 강하게 주입
+  const styleBlockParts = [styleLabel];
+  if (persona?.aesthetic) {
+    // 페르소나 미학 요약을 영어로 변환하지 않고 그대로 사용 — Kling은 한영 혼합 처리 가능
+    // 단 너무 길면 잘라냄
+    styleBlockParts.push(persona.aesthetic.slice(0, 120));
+  }
+  if (styleRenderRules?.characterRules) {
+    styleBlockParts.push(styleRenderRules.characterRules.split(".").slice(0, 2).join("."));
+  }
+  const rawGlobalStyle = styleBlockParts.filter(Boolean).join(". ");
   // Environment: globalStyle에 positive 키워드 보장 (공통 헬퍼)
-  const globalStyle = isEnv ? enrichEnvironmentPositives(styleLabel) : styleLabel;
+  const globalStyle = isEnv ? enrichEnvironmentPositives(rawGlobalStyle) : rawGlobalStyle;
 
   const result: SingleShotDocument = {
     shotId: `shot_${cut.cutNumber}`,

@@ -1603,8 +1603,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             totalSegments: cutsRef.current.length,
             isLastSegment: cut.continuitySegment.isLastSegment ?? (cutNumber === cutsRef.current.length),
             prevEndState: cut.continuitySegment.startState as unknown as Record<string, unknown> | undefined,
-            characterLock: "",
-            visualLock: "",
+            characterLock: cut.characterConsistency || "",
+            visualLock: cut.videoPromptJson?.styleSuffix || "",
           },
         } : {}),
         extraFields: {
