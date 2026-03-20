@@ -21,6 +21,7 @@ import {
   deduplicatePromptClauses,
   normalizeSceneContradictions,
   extractGlobalAnchors,
+  extractStyleAnchor,
   cleanShotPrompt,
   clampKlingDuration,
   normalizeAspectRatio,
@@ -436,6 +437,101 @@ describe("single-shot flow", () => {
     const payload = buildNormalizedKlingPayload(SIMPLE_INPUT);
     const summaries = generateSummariesFromNormalizedPayload(payload);
     expect(summaries).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Style anchor injection into per-shot prompts
+// ═══════════════════════════════════════════════════════════════════
+
+describe("style anchor injection into per-shot prompts", () => {
+  it("extractStyleAnchor detects claymation tokens", () => {
+    const anchor = extractStyleAnchor(
+      "claymation stop-motion, fingerprint texture, warm practical light. Dim 1900s dental room.",
+    );
+    expect(anchor).toContain("claymation");
+    expect(anchor).toContain("stop-motion");
+    expect(anchor).toContain("fingerprint texture");
+  });
+
+  it("extractStyleAnchor returns empty for non-stylized prompts", () => {
+    const anchor = extractStyleAnchor("A cat walks across a sunny garden.");
+    expect(anchor).toBe("");
+  });
+
+  it("claymation style is injected into every per-shot prompt", () => {
+    const payload = buildNormalizedKlingPayload(DENTAL_INPUT);
+    const entries = getMultiPromptFromPayload(payload);
+
+    for (const entry of entries) {
+      expect(entry.prompt.toLowerCase()).toMatch(/claymation|stop-motion|fingerprint/);
+    }
+  });
+
+  it("style injection is logged in cleanup log", () => {
+    const payload = buildNormalizedKlingPayload(DENTAL_INPUT);
+    const hasStyleLog = payload._meta.cleanupLog.some(log => log.includes("[style-anchor]"));
+    expect(hasStyleLog).toBe(true);
+  });
+
+  it("does not double-inject if shot already mentions the style", () => {
+    const input: KlingPayloadNormalizerInput = {
+      prompt: "claymation stop-motion, dental room. Dim 1900s workshop.",
+      negativePrompt: "",
+      model: "kling-o3-text-to-video",
+      durationSec: 6,
+      multiShot: [
+        { index: 1, prompt: "Wide claymation dental room view.", duration: "3" },
+        { index: 2, prompt: "Close-up of drill on tray.", duration: "3" },
+      ],
+    };
+    const payload = buildNormalizedKlingPayload(input);
+    const entries = getMultiPromptFromPayload(payload);
+
+    // Shot 1 already has "claymation" — should NOT be double-prefixed
+    const shot1Occurrences = (entries[0].prompt.match(/claymation/gi) || []).length;
+    expect(shot1Occurrences).toBe(1);
+
+    // Shot 2 should now have it injected
+    expect(entries[1].prompt.toLowerCase()).toContain("claymation");
+  });
+
+  it("non-stylized prompts get no injection", () => {
+    const input: KlingPayloadNormalizerInput = {
+      prompt: "A cat walks across a sunny garden.",
+      negativePrompt: "",
+      model: "kling-o3-text-to-video",
+      durationSec: 6,
+      multiShot: [
+        { index: 1, prompt: "Cat approaches the fence.", duration: "3" },
+        { index: 2, prompt: "Cat jumps over the fence.", duration: "3" },
+      ],
+    };
+    const payload = buildNormalizedKlingPayload(input);
+    const entries = getMultiPromptFromPayload(payload);
+
+    // No style anchor should be injected for a generic prompt
+    expect(entries[0].prompt).not.toMatch(/claymation|stop-motion|watercolor/i);
+    expect(entries[1].prompt).not.toMatch(/claymation|stop-motion|watercolor/i);
+  });
+
+  it("watercolor style is also injected", () => {
+    const input: KlingPayloadNormalizerInput = {
+      prompt: "Watercolor painting of a forest. Soft brushstrokes visible.",
+      negativePrompt: "",
+      model: "kling-o3-text-to-video",
+      durationSec: 6,
+      multiShot: [
+        { index: 1, prompt: "Wide view of trees in morning light.", duration: "3" },
+        { index: 2, prompt: "Close-up of leaves with dew drops.", duration: "3" },
+      ],
+    };
+    const payload = buildNormalizedKlingPayload(input);
+    const entries = getMultiPromptFromPayload(payload);
+
+    for (const entry of entries) {
+      expect(entry.prompt.toLowerCase()).toContain("watercolor");
+    }
   });
 });
 

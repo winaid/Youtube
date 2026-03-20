@@ -140,6 +140,16 @@ export function normalizeSceneContradictions(text: string): { text: string; log:
   return { text: result, log };
 }
 
+const STYLE_MEDIUM_RE = /\b(claymation|stop[\s-]?motion|clay\s+figure|fingerprint\s+texture|handcrafted|paper[\s-]?collage|felt[\s-]?craft|wooden[\s-]?puppet|handmade[\s-]?miniature|watercolor|oil\s+paint(?:ing)?|pencil\s+sketch|charcoal|ink\s+wash|anime|cel[\s-]?shad(?:ed|ing)|pixel\s+art|voxel|low[\s-]?poly|retro\s+(?:8|16)[\s-]?bit)\b/gi;
+
+export function extractStyleAnchor(prompt: string): string {
+  STYLE_MEDIUM_RE.lastIndex = 0;
+  const matches = prompt.match(STYLE_MEDIUM_RE);
+  if (!matches || matches.length === 0) return "";
+  const unique = [...new Set(matches.map(m => m.toLowerCase().trim()))];
+  return unique.slice(0, 3).join(", ");
+}
+
 export function extractGlobalAnchors(prompt: string): string {
   const clauses = prompt.split(/\.\s+/).filter(s => s.trim().length > 3);
   const globalPatterns = [
@@ -221,6 +231,21 @@ export function buildNormalizedKlingPayload(input: KlingPayloadNormalizerInput):
       ...s,
       duration: String(s.duration),
     }));
+
+    // Inject style anchor into each per-shot prompt.
+    const styleAnchor = extractStyleAnchor(prompt);
+    if (styleAnchor) {
+      normalizedMultiPrompt = normalizedMultiPrompt.map(s => {
+        const shotLower = s.prompt.toLowerCase();
+        const alreadyHasStyle = styleAnchor.split(", ").some(token => shotLower.includes(token));
+        if (alreadyHasStyle) return s;
+        return {
+          ...s,
+          prompt: `${styleAnchor}. ${s.prompt}`,
+        };
+      });
+      cleanupLog.push(`[style-anchor] Injected "${styleAnchor}" into ${normalizedMultiPrompt.length} per-shot prompts`);
+    }
 
     const globalOnly = extractGlobalAnchors(prompt);
     if (globalOnly.length > 20) {

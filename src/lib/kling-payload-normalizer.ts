@@ -182,6 +182,32 @@ export function normalizeSceneContradictions(text: string): { text: string; log:
   return { text: result, log };
 }
 
+// ── Style Anchor Extraction (for per-shot injection) ──
+
+/**
+ * Visual medium patterns that MUST be reinforced in every per-shot prompt.
+ * When present in the global prompt, these define the entire visual style
+ * (e.g., claymation, watercolor) and must not be left to the top-level alone
+ * — Kling's multi-shot mode weights per-shot prompts heavily.
+ */
+const STYLE_MEDIUM_RE = /\b(claymation|stop[\s-]?motion|clay\s+figure|fingerprint\s+texture|handcrafted|paper[\s-]?collage|felt[\s-]?craft|wooden[\s-]?puppet|handmade[\s-]?miniature|watercolor|oil\s+paint(?:ing)?|pencil\s+sketch|charcoal|ink\s+wash|anime|cel[\s-]?shad(?:ed|ing)|pixel\s+art|voxel|low[\s-]?poly|retro\s+(?:8|16)[\s-]?bit)\b/gi;
+
+/**
+ * Extract a compact style anchor string from the global prompt.
+ * Returns a short phrase like "claymation stop-motion" or "watercolor animation"
+ * that can be prepended to each per-shot prompt to reinforce visual medium.
+ *
+ * Returns empty string if no strong visual-medium signal is detected.
+ */
+export function extractStyleAnchor(prompt: string): string {
+  STYLE_MEDIUM_RE.lastIndex = 0;
+  const matches = prompt.match(STYLE_MEDIUM_RE);
+  if (!matches || matches.length === 0) return "";
+  // Deduplicate and take first 3 unique tokens
+  const unique = [...new Set(matches.map(m => m.toLowerCase().trim()))];
+  return unique.slice(0, 3).join(", ");
+}
+
 // ── Global Anchor Extraction ──
 
 /**
@@ -308,6 +334,25 @@ export function buildNormalizedKlingPayload(input: KlingPayloadNormalizerInput):
       ...s,
       duration: String(s.duration),
     }));
+
+    // Inject style anchor into each per-shot prompt.
+    // Kling's multi-shot mode weights per-shot prompts heavily, so visual medium
+    // tokens (claymation, watercolor, etc.) must appear in EVERY shot — not just
+    // the global prompt — to avoid the model defaulting to photorealistic.
+    const styleAnchor = extractStyleAnchor(prompt);
+    if (styleAnchor) {
+      normalizedMultiPrompt = normalizedMultiPrompt.map(s => {
+        // Only inject if shot doesn't already mention the style
+        const shotLower = s.prompt.toLowerCase();
+        const alreadyHasStyle = styleAnchor.split(", ").some(token => shotLower.includes(token));
+        if (alreadyHasStyle) return s;
+        return {
+          ...s,
+          prompt: `${styleAnchor}. ${s.prompt}`,
+        };
+      });
+      cleanupLog.push(`[style-anchor] Injected "${styleAnchor}" into ${normalizedMultiPrompt.length} per-shot prompts`);
+    }
 
     // When multiShot is present, top-level prompt should be global-only
     const globalOnly = extractGlobalAnchors(prompt);
