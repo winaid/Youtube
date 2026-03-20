@@ -44,22 +44,21 @@ describe("generate-cuts auto duration — server simulation", () => {
     expect(r.basis).toBe("emergency_fallback");
   });
 
-  it("explicit 4 → 4", () => {
+  it("explicit 4 → clamped to 8 (DURATION_MIN=DURATION_MAX=8)", () => {
     const r = simulateServerDuration(4);
-    expect(r.secPerCut).toBe(4);
+    expect(r.secPerCut).toBe(8);
     expect(r.basis).toBe("explicit");
   });
 
-  it("explicit 10 → 10", () => {
+  it("explicit 10 → clamped to 8 (DURATION_MAX=8)", () => {
     const r = simulateServerDuration(10);
-    expect(r.secPerCut).toBe(10);
+    expect(r.secPerCut).toBe(8);
     expect(r.basis).toBe("explicit");
   });
 
-  it("explicit cutDuration이 8초 fallback을 덮어쓰지 않음", () => {
+  it("explicit cutDuration is clamped to 8 (fixed duration policy)", () => {
     const r = simulateServerDuration(4);
-    expect(r.secPerCut).not.toBe(8);
-    expect(r.secPerCut).toBe(4);
+    expect(r.secPerCut).toBe(8);
   });
 });
 
@@ -81,15 +80,16 @@ describe("mock-generator auto duration parity", () => {
     expect(r.basis).toBe("emergency_fallback");
   });
 
-  it("auto + totalDuration=60 + cutCount=10 → computed 6초", () => {
+  it("auto + totalDuration=60 + cutCount=10 → computed clamped to 8", () => {
     const r = computeAutoDuration({ totalDurationSeconds: 60, cutCount: 10 });
-    expect(r.duration).toBe(6);
+    // 60/10=6 → clamped to DURATION_MIN(8)
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("computed");
   });
 
-  it("explicit 4 + totalDuration=60 → explicit 우선", () => {
+  it("explicit 4 + totalDuration=60 → explicit clamped to 8", () => {
     const r = simulateMockDuration(4, 60);
-    expect(r.duration).toBe(4);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("explicit");
   });
 });
@@ -102,9 +102,11 @@ describe("safeDuration regression", () => {
   it("safeDuration은 computeAutoDuration 이후에 사용해야 함", () => {
     // auto 해석 → computeAutoDuration으로 basis 결정 → safeDuration으로 클램핑
     const auto = computeAutoDuration({ sceneType: "environment" });
+    // environment scene default = 4 (raw, not clamped in step 4 without editorialPace)
+    // safeDuration(4) → clamped to DURATION_MIN(8)
     const final = safeDuration(auto.duration);
-    expect(final).toBe(4); // environment default lowered from 5 to 4
-    expect(final).not.toBe(DURATION_FALLBACK);
+    expect(final).toBe(8);
+    expect(final).toBe(DURATION_FALLBACK);
   });
 
   it("safeDuration(0) → fallback (0을 직접 넣으면 아직 fallback)", () => {

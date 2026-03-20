@@ -61,12 +61,12 @@ describe("estimateNarrationDuration", () => {
     expect(est.totalWithBreathingSec).toBeLessThanOrEqual(33);
   });
 
-  it("100 pure Korean chars → ~22s at fast pace", () => {
+  it("100 pure Korean chars → ~20s at fast pace", () => {
     const text = "가".repeat(100);
     const est = estimateNarrationDuration(text, "fast");
-    // v2: 100 / 5.0 = 20s base * 1.08 breathing ≈ 21.6s
-    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(20);
-    expect(est.totalWithBreathingSec).toBeLessThanOrEqual(26);
+    // v2: 100 / 5.5 = 18.18s base * 1.08 breathing ≈ 19.6s
+    expect(est.totalWithBreathingSec).toBeGreaterThanOrEqual(18);
+    expect(est.totalWithBreathingSec).toBeLessThanOrEqual(24);
   });
 });
 

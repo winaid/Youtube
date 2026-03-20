@@ -489,14 +489,15 @@ describe("I. 비교 결과 요약 — 체감 차이 확인", () => {
       beatBeats: (r.beatTemplate.match(/\[/g) || []).length,
     }));
 
-    // 최소 3개 이상의 차이 축이 있어야 함
+    // 차이 축 검증 — duration은 8초 고정, 나머지에서 차이 발생
     const durationSet = new Set(table.map(t => t.duration));
     const shotSet = new Set(table.map(t => t.shotSize));
     const cameraSet = new Set(table.map(t => t.cameraStyle));
     const transitionSet = new Set(table.map(t => t.transition));
 
-    // duration은 2종 이상 (propulsive vs formalist/lyrical)
-    expect(durationSet.size).toBeGreaterThanOrEqual(2);
+    // duration은 8초 고정 → 1종
+    expect(durationSet.size).toBe(1);
+    expect([...durationSet][0]).toBe(8);
     // shot size는 3종 이상
     expect(shotSet.size).toBeGreaterThanOrEqual(3);
     // camera style은 3종 이상

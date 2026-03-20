@@ -198,12 +198,12 @@ describe("Layer 2→3: 시퀀스 내부 멀티샷", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("48초 시나리오: 3-Layer 전체 흐름", () => {
-  it("48초 → 4 시퀀스 (12s × 4)", () => {
-    // 48초 총 런타임 → ceil(48/15) = 4 시퀀스
-    expect(recommendMinimumCutCount(48)).toBe(4);
+  it("48초 → 6 시퀀스 (ceil(48/8))", () => {
+    // 48초 총 런타임 → ceil(48/8) = 6 시퀀스
+    expect(recommendMinimumCutCount(48)).toBe(6);
   });
 
-  it("4 × 12s 시퀀스 → densifyCuts 분할 불필요", () => {
+  it("4 × 12s 시퀀스 → densifyCuts 분할 필요 (4 < min=6) + VEO 8s clamping", () => {
     const cuts = [
       { durationSec: 12 },
       { durationSec: 12 },
@@ -211,7 +211,8 @@ describe("48초 시나리오: 3-Layer 전체 흐름", () => {
       { durationSec: 12 },
     ];
     const result = densifyCuts(cuts, 48);
-    expect(result.length).toBe(4); // 이미 충분
+    // min=6, needed=2 splits, then VEO 8s clamping splits 12s → 2×6s
+    expect(result.length).toBe(8);
   });
 
   it("각 12s 시퀀스 → 내부 3-6 멀티샷", () => {
@@ -227,17 +228,17 @@ describe("48초 시나리오: 3-Layer 전체 흐름", () => {
     }
   });
 
-  it("48초 전체: 4시퀀스 × ~3.5샷 = ~14 내부 멀티샷 (마이크로컷이 아님)", () => {
-    const totalShots = Array.from({ length: 4 }, (_, i) =>
+  it("48초 전체: 6시퀀스 × ~3.5샷 = ~21 내부 멀티샷 (마이크로컷이 아님)", () => {
+    const totalShots = Array.from({ length: 6 }, (_, i) =>
       buildDefaultMultiShot({
-        durationSec: 12,
+        durationSec: 8,
         sceneType: "cinematic_sequence",
         basePrompt: `Seq ${i}`,
         modelId: MODEL,
       }).length,
     ).reduce((s, n) => s + n, 0);
 
-    expect(totalShots).toBeGreaterThanOrEqual(12); // 4 × 3
-    expect(totalShots).toBeLessThanOrEqual(24); // 4 × 6
+    expect(totalShots).toBeGreaterThanOrEqual(18); // 6 × 3
+    expect(totalShots).toBeLessThanOrEqual(36); // 6 × 6
   });
 });

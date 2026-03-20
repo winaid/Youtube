@@ -19,30 +19,32 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. segment 분해 기본", () => {
-  it("1) 15초 = 1 segment, full_sequence scope", () => {
+  it("1) 15초 = 2 segments (8 + 7), segment scope", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
-    expect(plan.segmentCount).toBe(1);
-    expect(plan.currentPlanningScope).toBe("full_sequence");
-    expect(plan.segments).toHaveLength(1);
-    expect(plan.segments[0].segmentDurationSec).toBe(15);
-  });
-
-  it("2) 120초 = 8 segments, segment scope", () => {
-    const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    expect(plan.segmentCount).toBe(8);
-    expect(plan.currentPlanningScope).toBe("segment");
-    expect(plan.segments).toHaveLength(8);
-    plan.segments.forEach(s => expect(s.segmentDurationSec).toBe(15));
-  });
-
-  it("3) 20초 = 2 segments (15 + 5)", () => {
-    const plan = resolveSegmentPlan({ totalDurationSec: 20 });
     expect(plan.segmentCount).toBe(2);
-    expect(plan.segments[0].segmentDurationSec).toBe(15);
-    expect(plan.segments[1].segmentDurationSec).toBe(5);
+    expect(plan.currentPlanningScope).toBe("segment");
+    expect(plan.segments).toHaveLength(2);
+    expect(plan.segments[0].segmentDurationSec).toBe(8);
+    expect(plan.segments[1].segmentDurationSec).toBe(7);
   });
 
-  it("4) 0초 → fallback to VEO_SEGMENT_CAP(15)", () => {
+  it("2) 120초 = 15 segments, segment scope", () => {
+    const plan = resolveSegmentPlan({ totalDurationSec: 120 });
+    expect(plan.segmentCount).toBe(15);
+    expect(plan.currentPlanningScope).toBe("segment");
+    expect(plan.segments).toHaveLength(15);
+    plan.segments.forEach(s => expect(s.segmentDurationSec).toBe(8));
+  });
+
+  it("3) 20초 = 3 segments (8 + 8 + 4)", () => {
+    const plan = resolveSegmentPlan({ totalDurationSec: 20 });
+    expect(plan.segmentCount).toBe(3);
+    expect(plan.segments[0].segmentDurationSec).toBe(8);
+    expect(plan.segments[1].segmentDurationSec).toBe(8);
+    expect(plan.segments[2].segmentDurationSec).toBe(4);
+  });
+
+  it("4) 0초 → fallback to VEO_SEGMENT_CAP(8)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 0 });
     expect(plan.totalDurationSec).toBe(VEO_SEGMENT_CAP);
     expect(plan.segmentCount).toBe(1);
@@ -54,10 +56,10 @@ describe("A. segment 분해 기본", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. per-segment cut budget", () => {
-  it("5) 15초 segment → cutRange {4, 6}", () => {
+  it("5) 8초 segment → cutRange {3, 6}", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
-    const seg = plan.segments[0];
-    expect(seg.cutRange.min).toBeGreaterThanOrEqual(4);
+    const seg = plan.segments[0]; // first segment is 8s
+    expect(seg.cutRange.min).toBeGreaterThanOrEqual(3);
     expect(seg.cutRange.max).toBeLessThanOrEqual(6);
   });
 

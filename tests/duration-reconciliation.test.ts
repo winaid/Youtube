@@ -427,21 +427,21 @@ describe("computeAutoDuration", () => {
     expect(r.basis).toBe("computed");
   });
 
-  it("auto + sceneType=environment → 고정 8초", () => {
+  it("auto + sceneType=environment → 4초 (scene default, 클램핑 전)", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
-    expect(r.duration).toBe(8);
+    expect(r.duration).toBe(4);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("auto + sceneType=character-driven → 고정 8초", () => {
+  it("auto + sceneType=character-driven → 5초 (scene default, 클램핑 전)", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "character-driven" });
-    expect(r.duration).toBe(8);
+    expect(r.duration).toBe(5);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("auto + sceneType=transition-atmosphere → 고정 8초", () => {
+  it("auto + sceneType=transition-atmosphere → 3초 (scene default, 클램핑 전)", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "transition-atmosphere" });
-    expect(r.duration).toBe(8);
+    expect(r.duration).toBe(3);
     expect(r.basis).toBe("scene_default");
   });
 
@@ -458,28 +458,28 @@ describe("computeAutoDuration", () => {
   });
 
   it("우선순위: explicit > recommended > computed > scene_default > fallback", () => {
-    // 모든 정보 있을 때 explicit 우선
+    // 모든 정보 있을 때 explicit 우선 (클램핑으로 8)
     const r1 = computeAutoDuration({
       cutDuration: 4, recommendedDuration: 6, totalDurationSeconds: 90, cutCount: 10, sceneType: "environment",
     });
     expect(r1.basis).toBe("explicit");
-    expect(r1.duration).toBe(4);
+    expect(r1.duration).toBe(8);
 
-    // explicit 없으면 recommended
+    // explicit 없으면 recommended (클램핑으로 8)
     const r2 = computeAutoDuration({
       cutDuration: 0, recommendedDuration: 6, totalDurationSeconds: 90, cutCount: 10, sceneType: "environment",
     });
     expect(r2.basis).toBe("recommended");
-    expect(r2.duration).toBe(6);
+    expect(r2.duration).toBe(8);
 
-    // recommended도 없으면 computed
+    // recommended도 없으면 computed (90/10=9 → 클램핑 8)
     const r3 = computeAutoDuration({
       cutDuration: 0, totalDurationSeconds: 90, cutCount: 10, sceneType: "environment",
     });
     expect(r3.basis).toBe("computed");
-    expect(r3.duration).toBe(9); // 90/10
+    expect(r3.duration).toBe(8);
 
-    // computed도 불가면 scene_default
+    // computed도 불가면 scene_default (raw scene value, 클램핑 없음)
     const r4 = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
     expect(r4.basis).toBe("scene_default");
     expect(r4.duration).toBe(4);
