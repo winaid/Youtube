@@ -19,15 +19,17 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. segment densityMinimum", () => {
-  it("1) 15초 segment → densityMinimum = 4 (숏폼 리듬)", () => {
+  it("1) 8초 segment (first of 15s total) → densityMinimum = 3", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 15 });
-    expect(plan.segments[0].densityMinimum).toBe(4);
+    // 15s → 2 segments (8+7). First segment 8s → densityMinimum=3
+    expect(plan.segments[0].densityMinimum).toBe(3);
   });
 
-  it("2) 5초 remainder segment → densityMinimum = 1", () => {
+  it("2) 4초 remainder segment (20s total) → densityMinimum = 1", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 20 });
-    expect(plan.segments[1].densityMinimum).toBe(
-      recommendMinimumCutCount(5),
+    // 20s → 3 segments (8+8+4). Last segment=4s
+    expect(plan.segments[2].densityMinimum).toBe(
+      recommendMinimumCutCount(4),
     );
   });
 
@@ -47,25 +49,28 @@ describe("A. segment densityMinimum", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. remainder segment budget", () => {
-  it("4) 25초 → 15초 + 10초 remainder", () => {
+  it("4) 25초 → 3×8초 + 1초 remainder", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 25 });
-    expect(plan.segments[0].segmentDurationSec).toBe(15);
-    expect(plan.segments[1].segmentDurationSec).toBe(10);
+    // ceil(25/8)=4 segments: [8, 8, 8, 1]
+    expect(plan.segments[0].segmentDurationSec).toBe(8);
+    expect(plan.segments[1].segmentDurationSec).toBe(8);
+    expect(plan.segments[2].segmentDurationSec).toBe(8);
+    expect(plan.segments[3].segmentDurationSec).toBe(1);
   });
 
-  it("5) 25초 remainder(10초) cutRange는 singleSegmentRange(10) 기반", () => {
+  it("5) 25초 remainder(1초) cutRange는 singleSegmentRange(1) 기반", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 25 });
-    const rem = plan.segments[1];
-    // 10초 → RANGE_PRESETS: 10-15s → {4, 6}, densityMinimum=4
-    expect(rem.cutRange.min).toBeGreaterThanOrEqual(4);
-    expect(rem.cutRange.max).toBeLessThanOrEqual(6);
+    const rem = plan.segments[3]; // last segment = 1s
+    // 1초 → RANGE_PRESETS: ≤5s → {1, 2}, densityMinimum=1
+    expect(rem.cutRange.min).toBeGreaterThanOrEqual(1);
+    expect(rem.cutRange.max).toBeLessThanOrEqual(2);
   });
 
-  it("6) 90초 = 정확히 6 segments, remainder 없음", () => {
-    const plan = resolveSegmentPlan({ totalDurationSec: 90 });
-    expect(plan.segmentCount).toBe(6);
+  it("6) 64초 = 정확히 8 segments, remainder 없음", () => {
+    const plan = resolveSegmentPlan({ totalDurationSec: 64 });
+    expect(plan.segmentCount).toBe(8);
     plan.segments.forEach(seg => {
-      expect(seg.segmentDurationSec).toBe(15);
+      expect(seg.segmentDurationSec).toBe(8);
     });
   });
 });
@@ -82,15 +87,16 @@ describe("C. edge cases", () => {
     expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(1);
   });
 
-  it("8) 300초 = 20 segments", () => {
+  it("8) 300초 = 38 segments", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 300 });
-    expect(plan.segmentCount).toBe(20);
+    // ceil(300/8)=38 segments
+    expect(plan.segmentCount).toBe(38);
     expect(plan.totalTargetCuts).toBeGreaterThan(plan.currentSegmentTargetCuts);
   });
 
   it("9) exact cutCount=1, 120초 → densityMinimum이 preferredCutTarget을 올림", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120, exactCutCount: 1 });
-    // exactCutCount=1이지만 densityMinimum=4 (15초 segment)이므로 최소 4
+    // exactCutCount=1이지만 densityMinimum=3 (8초 segment)이므로 최소 3
     expect(plan.segments[0].preferredCutTarget).toBeGreaterThanOrEqual(1);
   });
 
@@ -105,15 +111,15 @@ describe("C. edge cases", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. targetCuts 정합성", () => {
-  it("11) currentSegmentTargetCuts ≤ 15 (단일 호출 cap)", () => {
+  it("11) currentSegmentTargetCuts ≤ 8 (단일 호출 cap)", () => {
     [15, 30, 60, 90, 120].forEach(dur => {
       const plan = resolveSegmentPlan({ totalDurationSec: dur });
-      expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(15);
+      expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(8);
     });
   });
 
-  it("12) 120초 totalTargetCuts ≫ 15 (전체 시퀀스는 15 cap 없음)", () => {
+  it("12) 120초 totalTargetCuts ≫ 8 (전체 시퀀스는 8 cap 없음)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    expect(plan.totalTargetCuts).toBeGreaterThan(15);
+    expect(plan.totalTargetCuts).toBeGreaterThan(8);
   });
 });

@@ -23,13 +23,14 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. currentPlanningScope", () => {
-  it("1) ≤15초 → full_sequence", () => {
-    expect(resolveSegmentPlan({ totalDurationSec: 10 }).currentPlanningScope).toBe("full_sequence");
-    expect(resolveSegmentPlan({ totalDurationSec: 15 }).currentPlanningScope).toBe("full_sequence");
+  it("1) ≤8초 → full_sequence", () => {
+    expect(resolveSegmentPlan({ totalDurationSec: 5 }).currentPlanningScope).toBe("full_sequence");
+    expect(resolveSegmentPlan({ totalDurationSec: 8 }).currentPlanningScope).toBe("full_sequence");
   });
 
-  it("2) >15초 → segment", () => {
-    expect(resolveSegmentPlan({ totalDurationSec: 16 }).currentPlanningScope).toBe("segment");
+  it("2) >8초 → segment", () => {
+    expect(resolveSegmentPlan({ totalDurationSec: 9 }).currentPlanningScope).toBe("segment");
+    expect(resolveSegmentPlan({ totalDurationSec: 15 }).currentPlanningScope).toBe("segment");
     expect(resolveSegmentPlan({ totalDurationSec: 120 }).currentPlanningScope).toBe("segment");
   });
 });
@@ -44,16 +45,16 @@ describe("B. total vs current segment target 분리", () => {
     expect(plan.totalTargetCuts).toBeGreaterThan(plan.currentSegmentTargetCuts);
   });
 
-  it("4) 15초 → totalTargetCuts = currentSegmentTargetCuts", () => {
-    const plan = resolveSegmentPlan({ totalDurationSec: 15 });
+  it("4) 8초 → totalTargetCuts = currentSegmentTargetCuts (single segment)", () => {
+    const plan = resolveSegmentPlan({ totalDurationSec: 8 });
     expect(plan.totalTargetCuts).toBe(plan.currentSegmentTargetCuts);
   });
 
-  it("5) 120초 totalTargetCuts = 8 × per-segment target (동일 duration segments)", () => {
+  it("5) 120초 totalTargetCuts = 15 × per-segment target (동일 duration segments)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 120 });
-    // 모든 segment가 15초이므로 동일 target
+    // 모든 segment가 8초이므로 동일 target
     const perSeg = plan.segments[0].preferredCutTarget;
-    expect(plan.totalTargetCuts).toBe(perSeg * 8);
+    expect(plan.totalTargetCuts).toBe(perSeg * 15);
   });
 });
 
