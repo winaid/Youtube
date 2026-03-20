@@ -33,10 +33,10 @@ export interface DurationReconcileResult {
   basis: "secondsPerScene" | "sceneCount" | "auto";
 }
 
-/** VEO 지원 범위: 고정 8초 정책. UI 0~8, 실제 전송은 8초 고정. */
+/** VEO 지원 범위: 고정 8초 정책. UI 선택 불가, 항상 8초. */
 export const DURATION_MIN = 8;
 export const DURATION_MAX = 8;
-export const DURATION_SLIDER_MIN = 0;
+export const DURATION_SLIDER_MIN = 8;
 export const DURATION_SLIDER_MAX = 8;
 
 /**

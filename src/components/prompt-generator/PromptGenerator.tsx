@@ -22,7 +22,7 @@ export default function PromptGenerator() {
   const [activeTab, setActiveTab] = useState<"prompt" | "story">("prompt");
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
-  const [secondsPerScene, setSecondsPerScene] = useState<number>(0);
+  const [secondsPerScene, setSecondsPerScene] = useState<number>(8); // VEO 정책: 8초 고정
 
   // ── Draft state ──
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);

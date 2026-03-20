@@ -121,9 +121,9 @@ export default function VideoSettingsPanel({
     update({ referenceImages: newImages });
   };
 
-  // 예상 비용 계산 (fast 모드 고정)
+  // 예상 비용 계산 (fast 모드, 8초 고정)
   const pricePerSec = 0.15;
-  const estimatedCost = pricePerSec * (config.durationSeconds ?? 6) * config.sampleCount;
+  const estimatedCost = pricePerSec * 8 * config.sampleCount;
 
   const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };
 
@@ -153,7 +153,7 @@ export default function VideoSettingsPanel({
               {modeLabels[config.videoMode ?? "extend"]}
             </Badge>
             <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#c4b800" }}>
-              {config.durationSeconds}s | {config.resolution} | {config.aspectRatio}
+              8s | {config.resolution} | {config.aspectRatio}
             </Badge>
             <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#787fff" }}>
               ~${estimatedCost.toFixed(2)}/clip
@@ -619,7 +619,7 @@ export default function VideoSettingsPanel({
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              $0.15/초 x {config.durationSeconds}초 x {config.sampleCount}변형
+              $0.15/초 x 8초 x {config.sampleCount}변형
             </p>
           </div>
         </CardContent>

@@ -41,9 +41,9 @@ interface ResultPanelProps {
   directorName?: string;
   region?: string;
   animationMode?: string;
-  /** 부모가 소유하는 시퀀스당 초 */
+  /** 시퀀스당 초 — VEO 정책상 항상 8 (고정) */
   secondsPerScene?: number;
-  /** VideoSettingsPanel에서 duration 변경 시 부모에 통지 */
+  /** 시퀀스당 초 변경 콜백 (8 고정) */
   onSecondsPerSceneChange?: (v: number) => void;
 }
 

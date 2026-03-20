@@ -70,9 +70,9 @@ interface InputPanelProps {
   /** 드래프트/샘플에서 전체 입력 상태를 복원할 때 사용 */
   prefillInput?: PromptInput | null;
   onPrefillInputConsumed?: () => void;
-  /** 부모가 소유하는 시퀀스당 초 (0=자동, 3-15=명시) */
+  /** 시퀀스당 초 — VEO 정책상 항상 8 (고정) */
   secondsPerScene: number;
-  /** 시퀀스당 초 변경 콜백 */
+  /** 시퀀스당 초 변경 콜백 (8 고정) */
   onSecondsPerSceneChange: (v: number) => void;
   /** 결과가 이미 생성되었는지 여부 — 사전 계획 요약 표시 제어 */
   hasResult?: boolean;
@@ -294,9 +294,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [isSearching, setIsSearching] = useState(false);
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>(loadCustomDirectors);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
-  // cutDuration은 부모(PromptGenerator)가 소유. 여기서는 prop alias만 사용.
-  const cutDuration = secondsPerScene;
-  const setCutDuration = onSecondsPerSceneChange;
+  // VEO 정책: 8초 고정. 부모에게 항상 8초를 보고.
+  const cutDuration = 8;
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [editingDensity, setEditingDensity] = useState<EditingDensityPreset>("auto");
   const [customCutRange, setCustomCutRange] = useState<CutCountRange>({ min: 3, max: 5 });
@@ -377,12 +376,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       } else {
         setCutCount("auto");
       }
-      if (prefillInput.cutDuration && prefillInput.cutDuration > 0) {
-        setCutDuration(prefillInput.cutDuration);
-      }
+      // cutDuration은 8초 고정 — prefill 값 무시
       onPrefillInputConsumed?.();
     }
-  }, [prefillInput, onPrefillInputConsumed, setCutDuration]);
+  }, [prefillInput, onPrefillInputConsumed]);
 
   const allDirectors = useMemo(() => [...directors, ...customDirectors], [customDirectors]);
   const filteredDirectors = useMemo(() => allDirectors.filter((d) => d.region === region), [allDirectors, region]);
@@ -897,19 +894,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
     const payloadCutCount = cutCount === "auto"
       ? (aiCutRecommendation?.recommendedCuts ?? undefined)
       : cutCount;
-    const payloadCutDuration = cutDuration === 0
-      ? (aiCutRecommendation?.recommendedDuration ?? undefined)
-      : cutDuration;
+    const payloadCutDuration = 8; // VEO 정책: 8초 고정
     console.info("[InputPanel:handleSubmit] duration 진단", {
       durationState: duration,
       totalSec,
       effectiveTotalSec,
-      storyEstimate: {
-        estimatedTotalSec: storyEstimate.estimatedTotalSec,
-        basis: storyEstimate.basis,
-        metrics: storyEstimate.metrics,
-      },
-      cutDurationSlider: cutDuration,
+      cutDuration: 8,
       cutCountState: cutCount,
       aiCutRecommendation,
       payloadDuration: duration,
@@ -938,9 +928,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       cutCount: cutCount === "auto"
         ? (aiCutRecommendation?.recommendedCuts ?? undefined)
         : cutCount,
-      cutDuration: cutDuration === 0
-        ? (aiCutRecommendation?.recommendedDuration ?? undefined)
-        : cutDuration,
+      cutDuration: 8, // VEO 정책: 8초 고정
       preferredCutCountRange: resolvedRange,
       customDirector: selectedDir && customDirectors.some((d) => d.id === selectedDir.id)
         ? selectedDir
@@ -960,8 +948,8 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       effectiveTotalSec,
       storyTextLength: storyText.length,
       hasAnalysisHint: !!scriptAnalysisHint,
-      warning: duration === "auto" && !finalPayload.cutCount && !finalPayload.cutDuration
-        ? "⚠ auto 모드에서 cutCount·cutDuration 모두 undefined — mock-generator fallback 경로 진입"
+      warning: duration === "auto" && !finalPayload.cutCount
+        ? "⚠ auto 모드에서 cutCount undefined — mock-generator fallback 경로 진입"
         : undefined,
     });
 
@@ -2222,7 +2210,6 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                 style={{ background: "#22c55e0a", border: "1px solid #22c55e25" }}
                 onClick={() => {
                   setCutCount(aiCutRecommendation.recommendedCuts);
-                  setCutDuration(aiCutRecommendation.recommendedDuration);
                 }}
               >
                 <div className="flex items-center gap-2 flex-wrap">
@@ -2233,7 +2220,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                     {aiCutRecommendation.recommendedCuts}시퀀스
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: "#dcfce7", color: "#15803d" }}>
-                    × {aiCutRecommendation.recommendedDuration}초
+                    × 8초 (고정)
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "#e0f2fe", color: "#0369a1" }}>
                     = {aiCutRecommendation.totalSeconds}초
@@ -2289,84 +2276,17 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
 
-          {/* 시퀀스당 초 (슬라이더) */}
+          {/* 시퀀스 길이 (VEO 정책: 8초 고정) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>시퀀스당 초</Label>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{ background: cutDuration === 0 ? "#f0f0ff" : "#787fff15", color: cutDuration === 0 ? "#787fff" : "#5a5ecc" }}>
-                {cutDuration === 0 ? "자동" : `${cutDuration}초`}
+              <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>시퀀스 길이</Label>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{ background: "#4285f415", color: "#4285f4" }}>
+                8초 멀티샷 고정
               </span>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={15}
-              step={1}
-              value={cutDuration}
-              onChange={(e) => setCutDuration(Number(e.target.value))}
-              className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
-              style={{ accentColor: "#787fff" }}
-            />
-            <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
-              <span>자동</span>
-              <span>15초</span>
-            </div>
-            {/* 프리셋 빠른 버튼 */}
-            <div className="flex gap-1">
-              {([0, 4, 6, 8, 10, 15] as const).map((sec) => {
-                const isVeoOnly = sec >= 10;
-                const isSelected = cutDuration === sec;
-                return (
-                  <button
-                    key={sec}
-                    className="flex-1 h-6 rounded text-[10px] font-medium transition-all relative"
-                    style={
-                      isSelected
-                        ? { background: "#787fff", color: "white" }
-                        : isVeoOnly
-                          ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
-                          : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
-                    }
-                    onClick={() => setCutDuration(sec)}
-                  >
-                    {sec === 0 ? "자동" : `${sec}`}
-                    {isVeoOnly && !isSelected && (
-                      <span
-                        className="absolute -top-0.5 -right-0.5 text-[6px] px-0.5 rounded leading-tight"
-                        style={{ background: "#f97316", color: "white" }}
-                      >
-                        K
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
             <p className="text-[9px] text-muted-foreground">
-              {cutDuration === 0
-                ? "총 길이와 시퀀스 수를 기준으로 자동 계산"
-                : cutDuration >= 1 && cutDuration < DURATION_MIN
-                  ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MIN}초 (최소 허용 길이로 보정)`
-                  : cutDuration > DURATION_MAX
-                    ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MAX}초 (최대 허용 길이로 보정)`
-                    : cutDuration >= 10
-                      ? `⚠ ${cutDuration}초는 VEO 전용 — 각 시퀀스를 ${cutDuration}초 기준으로 생성`
-                      : `각 시퀀스를 ${cutDuration}초 기준으로 생성`}
+              VEO는 8초 멀티샷 생성만 지원합니다. 더 긴 영상은 연장(extend)으로 이어붙입니다.
             </p>
-            {/* reconciliation 미리보기 */}
-            {cutDuration > 0 && cutCount !== "auto" && typeof cutCount === "number" && (
-              <p className="text-[9px]" style={{ color: "#b45309" }}>
-                {(() => {
-                  const applied = Math.min(DURATION_MAX, Math.max(DURATION_MIN, cutDuration));
-                  const expectedTotal = applied * cutCount;
-                  const durationNum = typeof duration === "number" ? duration : 0;
-                  if (durationNum > 0 && Math.abs(expectedTotal - durationNum) > 1) {
-                    return `⚠ ${applied}초 × ${cutCount}시퀀스 = ${expectedTotal}초 (목표 ${durationNum}초와 차이 ${Math.abs(expectedTotal - durationNum)}초)`;
-                  }
-                  return `${applied}초 × ${cutCount}시퀀스 = ${expectedTotal}초`;
-                })()}
-              </p>
-            )}
           </div>
 
           <div className="border-t" style={{ borderColor: "#e8e9f0" }} />
@@ -2476,27 +2396,19 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         {(() => {
           const isAutoLen = duration === "auto";
           const isAutoCut = cutCount === "auto";
-          const isAutoDur = cutDuration === 0;
-          const allAuto = isAutoLen && isAutoCut && isAutoDur;
-          const hasManualOverride = isAutoLen && (!isAutoCut || !isAutoDur);
+          const allAuto = isAutoLen && isAutoCut;
+          const hasManualOverride = isAutoLen && !isAutoCut;
 
-          if (hasManualOverride && storyText.trim().length >= 20) {
-            const manualParts: string[] = [];
-            if (!isAutoCut && typeof cutCount === "number") manualParts.push(`시퀀스 수: ${cutCount}`);
-            if (!isAutoDur) manualParts.push(`시퀀스당 초: ${cutDuration}초`);
-            const totalSec = typeof cutCount === "number" && cutDuration > 0
-              ? cutCount * Math.min(DURATION_MAX, Math.max(DURATION_MIN, cutDuration))
-              : null;
+          if (hasManualOverride && storyText.trim().length >= 20 && typeof cutCount === "number") {
+            const totalSec = cutCount * 8;
             return (
               <div className="px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{ background: "#fef3c7", border: "1px solid #fde68a" }}>
                 <p className="font-semibold" style={{ color: "#92400e" }}>
-                  영상 길이: 자동 / {manualParts.join(", ")}: 수동
+                  영상 길이: 자동 / 시퀀스 수: {cutCount} (수동)
                 </p>
-                {totalSec !== null && (
-                  <p style={{ color: "#b45309" }}>
-                    실제 생성: {totalSec}초 (auto 추정과 무관하게 수동값 우선 적용)
-                  </p>
-                )}
+                <p style={{ color: "#b45309" }}>
+                  예상: {cutCount}시퀀스 × 8초 = {totalSec}초
+                </p>
               </div>
             );
           }
