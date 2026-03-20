@@ -362,29 +362,57 @@ function buildMultiShotFromBeats(
 ): KlingMultiShot[] {
   const beats = seq.temporalBeats!;
   const shots = seq.shots;
+  const plan = seq.shotPlan;
+
+  // Camera framing maps for human-readable output
+  const framingMap: Record<string, string> = {
+    ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up",
+    MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot",
+    WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view",
+  };
 
   // If we have per-shot descriptors that align with beats, prefer them (richer data)
   if (shots && shots.length >= beats.length) {
-    return shots.slice(0, maxShots).map((shot, i) => ({
-      index: i + 1,
-      prompt: [
-        shot.focus,
-        shot.subject,
-        shot.action !== shot.subject ? shot.action : "",
-        shot.environment,
-        shot.moodLighting,
-      ].filter(Boolean).join(". ").slice(0, 500),
-      duration: String(Math.round(shot.endSec - shot.startSec)),
-    }));
+    return shots.slice(0, maxShots).map((shot, i) => {
+      const camFraming = framingMap[shot.camera?.framing] || shot.camera?.framing || "";
+      const camAngle = shot.camera?.angle?.replace(/_/g, "-") || "";
+      const camMotion = shot.camera?.motion && shot.camera.motion !== "static" ? shot.camera.motion : "";
+      const camLine = [camFraming, camAngle, camMotion].filter(Boolean).join(", ");
+
+      return {
+        index: i + 1,
+        prompt: [
+          camLine,
+          shot.subject,
+          shot.action !== shot.subject ? shot.action : "",
+          shot.environment,
+          shot.moodLighting,
+          shot.focus,
+        ].filter(Boolean).join(". ").slice(0, 500),
+        duration: String(Math.round(shot.endSec - shot.startSec)),
+      };
+    });
   }
 
-  // Fallback: use temporalBeats focus + base prompt context
-  const concreteAnchors = extractConcreteAnchors(basePrompt);
-  const anchorStr = concreteAnchors.slice(0, 3).join(", ");
+  // Fallback: use temporalBeats focus + shotPlan context (camera, environment, mood)
+  // Each beat gets the global scene identity + its specific temporal focus
+  const cam = seq.cameraPlan || plan.camera;
+  const camFraming = framingMap[
+    ("baseFraming" in cam ? (cam as typeof seq.cameraPlan).baseFraming : plan.camera.framing) ?? ""
+  ] || plan.camera.framing;
+  const camAngle = cam.angle?.replace(/_/g, "-") || "";
+  const camMotion = cam.motion && cam.motion !== "static" ? cam.motion : "";
+  const globalCam = [camFraming, camAngle, camMotion].filter(Boolean).join(", ");
+  const globalContext = [
+    plan.subject?.primary || "",
+    plan.environment || "",
+    plan.moodLighting || "",
+  ].filter(Boolean).join(". ");
 
   return beats.slice(0, maxShots).map((beat, i) => ({
     index: i + 1,
-    prompt: (anchorStr ? `${anchorStr}. ${beat.focus}` : beat.focus).slice(0, 500),
+    prompt: [globalCam, globalContext, beat.focus]
+      .filter(Boolean).join(". ").slice(0, 500),
     duration: String(Math.round(beat.endSec - beat.startSec)),
   }));
 }
