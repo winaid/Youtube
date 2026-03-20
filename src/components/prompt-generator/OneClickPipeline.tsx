@@ -16,27 +16,24 @@ interface OneClickPipelineProps {
   hasCuts: boolean;
   hasVideo: boolean;
   hasSrt: boolean;
-  hasBgm: boolean;
   hasSeo: boolean;
   // Keep old props optional for backward compatibility
   hasStoryboard?: boolean;
   onRunStoryboard?: () => Promise<void>;
   onRunVideoGeneration: () => void;
   onRunSrt: () => Promise<void>;
-  onRunBgm: () => Promise<void>;
   onRunSeo: () => Promise<void>;
   onRunThumbnail: () => Promise<void>;
 }
 
 export default function OneClickPipeline({
-  hasCuts, hasVideo: _hasVideo, hasSrt, hasBgm, hasSeo,
-  onRunVideoGeneration, onRunSrt, onRunBgm, onRunSeo, onRunThumbnail,
+  hasCuts, hasVideo: _hasVideo, hasSrt, hasSeo,
+  onRunVideoGeneration, onRunSrt, onRunSeo, onRunThumbnail,
 }: OneClickPipelineProps) {
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<PipelineStep[]>([
     { id: "video", label: "영상 자동 생성", status: "pending" },
     { id: "srt", label: "SRT 자막 생성", status: "pending" },
-    { id: "bgm", label: "BGM 추천", status: "pending" },
     { id: "seo", label: "유튜브 SEO 생성", status: "pending" },
     { id: "thumbnail", label: "썸네일 생성", status: "pending" },
   ]);
@@ -61,7 +58,6 @@ export default function OneClickPipeline({
     // Step 2-5: Run in parallel
     const parallelTasks = [
       { id: "srt", skip: hasSrt, fn: onRunSrt },
-      { id: "bgm", skip: hasBgm, fn: onRunBgm },
       { id: "seo", skip: hasSeo, fn: onRunSeo },
       { id: "thumbnail", skip: false, fn: onRunThumbnail },
     ];
@@ -111,7 +107,7 @@ export default function OneClickPipeline({
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
         <p className="text-[10px] text-muted-foreground">
-          영상 생성 → 자막 → BGM → SEO → 썸네일까지 한 번에 실행합니다.
+          영상 생성 → 자막 → SEO → 썸네일까지 한 번에 실행합니다.
         </p>
 
         {/* 파이프라인 스텝 시각화 */}

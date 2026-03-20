@@ -1221,11 +1221,9 @@ export default function ResultPanel({
             hasCuts={result.cuts.length > 0}
             hasVideo={videoGen.completedCount > 0}
             hasSrt={!!srtContent}
-            hasBgm={false}
             hasSeo={!!seoResult}
             onRunVideoGeneration={() => videoGen.startAutoGeneration()}
             onRunSrt={handleRunSrt}
-            onRunBgm={async () => { /* BGM — 추후 구현 */ }}
             onRunSeo={handleRunSeo}
             onRunThumbnail={handleRunThumbnail}
           />
