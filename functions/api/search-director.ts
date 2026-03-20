@@ -102,8 +102,8 @@ If no match, return { "directors": [] }`;
 
     console.log(`[search-director] 웹 검색 시작: query="${query}", model=${GEMINI_MODEL_PRO}`);
 
-    // grounded 웹 검색은 Pro 모델로 직접 호출 — fetchWithModelFallback 사용 시
-    // Flash-Lite 폴백에서 groundingMetadata가 누락되는 문제 방지
+    // grounded 웹 검색: Pro 모델로 직접 호출 (Flash-Lite 폴백에서 groundingMetadata 누락 방지)
+    // Pro 실패 시 아래 !webRes.ok 블록에서 Flash-Lite 폴백 처리
     const webRes = await fetchWithAuth(
       context.env,
       buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
@@ -112,7 +112,7 @@ If no match, return { "directors": [] }`;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(webBody),
       },
-      { timeoutMs: 45_000 }, // grounding은 웹 검색 지연 감안하여 타임아웃 연장
+      { timeoutMs: 25_000 }, // Cloudflare edge 30s 제한 감안
     );
 
     let directors: DirectorSearchResult[] = [];

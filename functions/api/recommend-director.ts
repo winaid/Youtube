@@ -1147,8 +1147,8 @@ Each director object must have:
 
         let res: Response;
         try {
-          // grounding 호출은 웹 검색 추가 지연 감안하여 타임아웃 연장 (45s)
-          const timeoutMs = opts.useGrounding ? 45_000 : undefined;
+          // grounding 호출은 웹 검색 추가 지연 감안, Cloudflare 30s edge 제한 내
+          const timeoutMs = opts.useGrounding ? 25_000 : undefined;
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),

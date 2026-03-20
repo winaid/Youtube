@@ -141,7 +141,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // grounded 웹 검색은 Pro 모델로 직접 호출 — fetchWithModelFallback 사용 시
     // Flash-Lite 폴백에서 google_search 도구가 무시될 수 있음
-    const res = await fetchWithAuth(
+    // Pro 실패 시 Flash-Lite로 폴백 (grounding 없이)
+    let res = await fetchWithAuth(
       context.env,
       buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
       {
@@ -157,8 +158,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           },
         }),
       },
-      { timeoutMs: 45_000 },
+      { timeoutMs: 25_000 }, // Cloudflare edge 30s 제한 감안
     );
+
+    // Pro 실패 → Flash-Lite 폴백 (grounding 없이, JSON 강제)
+    if (!res.ok) {
+      const proStatus = res.status;
+      console.warn(`[suggest-prompts] Pro 실패 (${proStatus}) → Flash-Lite 폴백`);
+      const { response: fallbackRes } = await fetchWithModelFallback(context.env, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 1.0,
+            maxOutputTokens: 2048,
+            responseMimeType: "text/plain",
+          },
+        }),
+      });
+      res = fallbackRes;
+    }
 
     if (!res.ok) {
       const errText = await res.text();
