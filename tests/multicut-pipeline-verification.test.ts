@@ -97,26 +97,26 @@ describe("테스트 1: auto duration → project total ≥ 60초", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("테스트 2: current segment ≤ 15초 유지", () => {
-  it("VEO_SEGMENT_CAP = 15", () => {
-    expect(VEO_SEGMENT_CAP).toBe(15);
+  it("VEO_SEGMENT_CAP = 8", () => {
+    expect(VEO_SEGMENT_CAP).toBe(8);
   });
 
-  it("safeDuration은 DURATION_MAX(15) 초과를 클램핑", () => {
+  it("safeDuration은 DURATION_MAX(8) 초과를 클램핑", () => {
     expect(safeDuration(20)).toBeLessThanOrEqual(DURATION_MAX);
-    expect(safeDuration(20)).toBe(15);
-    expect(safeDuration(100)).toBe(15);
+    expect(safeDuration(20)).toBe(8);
+    expect(safeDuration(100)).toBe(8);
   });
 
-  it("safeDuration은 DURATION_MIN(3) 미만을 클램핑", () => {
+  it("safeDuration은 DURATION_MIN(8) 미만을 클램핑", () => {
     expect(safeDuration(1)).toBe(DURATION_MIN);
     expect(safeDuration(2)).toBe(DURATION_MIN);
   });
 
-  it("computeAutoDuration은 15초 이하를 반환", () => {
-    // totalDuration=120s, cutCount=5 → 120/5=24s → 클램핑 → 15s
+  it("computeAutoDuration은 8초 이하를 반환", () => {
+    // totalDuration=120s, cutCount=5 → 120/5=24s → 클램핑 → 8s
     const result = computeAutoDuration({ totalDurationSeconds: 120, cutCount: 5 });
-    expect(result.duration).toBeLessThanOrEqual(15);
-    expect(result.duration).toBeGreaterThanOrEqual(3);
+    expect(result.duration).toBeLessThanOrEqual(8);
+    expect(result.duration).toBeGreaterThanOrEqual(DURATION_MIN);
   });
 
   it("resolveSegmentPlan의 각 segment는 VEO_SEGMENT_CAP 이하", () => {
@@ -131,15 +131,15 @@ describe("테스트 2: current segment ≤ 15초 유지", () => {
 // 3. fast density → currentSegmentTargetCuts 3~5+
 // ═══════════════════════════════════════════════════════════════════
 
-describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 4~6 (숏폼 리듬 정책)", () => {
-  it("15초 segment, neutral bias → targetCuts 4~6", () => {
-    const plan = resolveSegmentPlan({ totalDurationSec: 15, personaBias: "neutral" });
-    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(4);
+describe("테스트 3: 8초 segment에서 currentSegmentTargetCuts 3~6 (숏폼 리듬 정책)", () => {
+  it("8초 segment, neutral bias → targetCuts 3~6", () => {
+    const plan = resolveSegmentPlan({ totalDurationSec: 8, personaBias: "neutral" });
+    expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(3);
     expect(plan.currentSegmentTargetCuts).toBeLessThanOrEqual(6);
   });
 
-  it("15초 segment, upper bias → targetCuts ≥ 5", () => {
-    const plan = resolveSegmentPlan({ totalDurationSec: 15, personaBias: "upper" });
+  it("8초 segment, upper bias → targetCuts ≥ 5", () => {
+    const plan = resolveSegmentPlan({ totalDurationSec: 8, personaBias: "upper" });
     expect(plan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(5);
   });
 
@@ -151,22 +151,24 @@ describe("테스트 3: 15초 segment에서 currentSegmentTargetCuts 4~6 (숏폼 
     expect(recommendMinimumCutCount(12)).toBe(4);
   });
 
-  it("60초 project → multi-segment, 총 targetCuts ≥ 16", () => {
+  it("60초 project → multi-segment, 총 targetCuts ≥ 22", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 60 });
-    expect(plan.segmentCount).toBeGreaterThanOrEqual(4);
-    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(16);
+    // ceil(60/8)=8 segments
+    expect(plan.segmentCount).toBeGreaterThanOrEqual(8);
+    expect(plan.totalTargetCuts).toBeGreaterThanOrEqual(22);
   });
 
-  it("resolveCutCount(totalDurationSec=15, neutral) → cutCount 4~6", () => {
+  it("resolveCutCount(totalDurationSec=15, neutral) → cutCount 6~10 (capped at CUT_COUNT_MAX=10)", () => {
     const result = resolveCutCount({ totalDurationSec: 15, personaBias: "neutral" });
-    expect(result.cutCount).toBeGreaterThanOrEqual(4);
-    expect(result.cutCount).toBeLessThanOrEqual(6);
+    // recommendCutCountRange(15)={6,12}, midpoint=9
+    expect(result.cutCount).toBeGreaterThanOrEqual(6);
+    expect(result.cutCount).toBeLessThanOrEqual(10);
   });
 
-  it("recommendCutCountRange(15) → min = 4, max = 6", () => {
+  it("recommendCutCountRange(15) → min = 6, max = 12", () => {
     const range = recommendCutCountRange(15);
-    expect(range.min).toBe(4);
-    expect(range.max).toBe(6);
+    expect(range.min).toBe(6);
+    expect(range.max).toBe(12);
   });
 });
 

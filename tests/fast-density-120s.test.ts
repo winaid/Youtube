@@ -139,7 +139,7 @@ describe("D. server/client segment-aware parity", () => {
 
   it("15) resolveCutCount parity for 120s + preferred range", () => {
     const opts = {
-      preferredRange: { min: 32, max: 48 },
+      preferredRange: { min: 45, max: 90 },
       totalDurationSec: 120,
       personaBias: "neutral" as const,
     };
