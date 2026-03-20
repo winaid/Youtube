@@ -1,12 +1,12 @@
 # AI Cinematic Video Studio
 
-AI 기반 영상 제작 스튜디오. 원고를 입력하면 감독 페르소나와 멀티샷 프로그레션을 적용하여 Kling AI용 구조화된 영상 시퀀스를 생성합니다.
+AI 기반 영상 제작 스튜디오. 원고를 입력하면 감독 페르소나와 멀티샷 프로그레션을 적용하여 Google VEO용 구조화된 영상 시퀀스를 생성합니다.
 
 ## 핵심 개념
 
 | 개념 | 설명 |
 |------|------|
-| **컷 (Cut/장면)** | 하나의 서사 단위. 8-15초 Kling 생성 단위. 전체 영상은 여러 컷으로 구성 |
+| **컷 (Cut/장면)** | 하나의 서사 단위. 8초 VEO 생성 단위. 전체 영상은 여러 컷으로 구성 |
 | **멀티샷 (Multi-Shot)** | 한 컷 안의 내부 샷. 프레이밍 변화로 리텐션 확보 (establish→develop→peak→resolve) |
 | **변형 (Variant)** | 같은 컷의 다른 시각적 해석. 새 컷 추가가 아닌 대안 생성 |
 | **감독 페르소나** | 시각 톤(카메라/조명/색감)에만 반영. 이야기 구조는 원고를 따름 |
@@ -22,7 +22,7 @@ AI 기반 영상 제작 스튜디오. 원고를 입력하면 감독 페르소나
 
 ```
 Layer 1: 총 런타임 → 컷 분할 (sequence-density.ts)
-Layer 2: 컷 → 8-15초 Kling 세그먼트 (densifyCuts)
+Layer 2: 컷 → 8초 VEO 세그먼트 (densifyCuts)
 Layer 3: 세그먼트 내부 → 멀티샷 (multi-shot-planner.ts)
 ```
 
@@ -34,7 +34,7 @@ Layer 3: 세그먼트 내부 → 멀티샷 (multi-shot-planner.ts)
   → 멀티샷 자동 배정 (role progression)
   → 에디터 (CutCard + MultiShotEditor)
   → 검증 (Editor/Pre-submit/Server 3단계)
-  → Kling API 제출
+  → VEO API 제출 (via Gemini API)
 ```
 
 ## 개발 환경
@@ -76,13 +76,13 @@ http://localhost:3000 에서 확인.
 
 - `GEMINI_API_KEY` — Gemini API 키 (컷 생성, 감독 검색/추천용)
 - `GEMINI_API_KEY_2` — Gemini API 키 fallback (optional)
-- Kling API 관련 키는 서버 설정에서 관리
+- VEO API 관련 키는 서버 설정에서 관리
 
 ## 기술 스택
 
 - Next.js (App Router)
 - TypeScript
-- Kling AI O3 모델
+- Google VEO 모델
 - Gemini API (컷 생성)
 - Tailwind CSS + shadcn/ui
 

@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveSegmentPlan,
   recommendMinimumCutCount,
-  KLING_SEGMENT_CAP,
+  VEO_SEGMENT_CAP,
 } from "@/lib/sequence-density";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -94,9 +94,9 @@ describe("C. edge cases", () => {
     expect(plan.segments[0].preferredCutTarget).toBeGreaterThanOrEqual(1);
   });
 
-  it("10) segmentDurationCap은 항상 KLING_SEGMENT_CAP", () => {
+  it("10) segmentDurationCap은 항상 VEO_SEGMENT_CAP", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 60 });
-    expect(plan.segmentDurationCap).toBe(KLING_SEGMENT_CAP);
+    expect(plan.segmentDurationCap).toBe(VEO_SEGMENT_CAP);
   });
 });
 

@@ -295,7 +295,7 @@ section("3. Provider Prompt 직렬화");
 
 const prevPassed3 = passed;
 
-const serialized = serializeSequencePlan(plan, "kling");
+const serialized = serializeSequencePlan(plan, "veo");
 
 // shot별 프롬프트 생성
 assert(serialized.shotPrompts.length === 3, "3개 shot prompt 생성");
@@ -328,10 +328,10 @@ assert(serialized.logs.length === 3, "3개 shot의 로그");
 assert(serialized.logs[0].includedFields.includes("camera.framing"), "framing 포함 로그");
 assert(serialized.logs[0].includedFields.includes("camera.angle"), "angle 포함 로그");
 
-// Kling 직렬화 — motivation 제거
-const klingSerial = serializeSequencePlan(plan, "kling");
-const shot2Prompt = klingSerial.shotPrompts[1].prompt;
-assert(!shot2Prompt.includes("(tension"), "Kling: motivation 괄호 제거");
+// VEO 직렬화 — motivation 제거
+const veoSerial = serializeSequencePlan(plan, "veo");
+const shot2Prompt = veoSerial.shotPrompts[1].prompt;
+assert(!shot2Prompt.includes("(tension"), "VEO: motivation 괄호 제거");
 
 // global negative
 assert(serialized.globalNegative.length > 0, "global negative 생성");
@@ -348,7 +348,7 @@ const prevPassed4 = passed;
 const successResults = plan.shots.map(s => ({
   shotId: s.shotId,
   generated: true,
-  engineUsed: "kling" as const,
+  engineUsed: "veo" as const,
   finalPrompt: serialized.shotPrompts.find(sp => sp.shotId === s.shotId)!.prompt,
   verification: { overallScore: 85, issues: [] as string[] },
 }));
@@ -363,7 +363,7 @@ assert(fidelity.failureDiagnosis.primaryCause !== "authoring", "authoring failur
 const failResults = plan.shots.map((s, i) => ({
   shotId: s.shotId,
   generated: i !== 2, // shot_3 실패
-  engineUsed: "kling" as const,
+  engineUsed: "veo" as const,
   finalPrompt: i !== 2 ? serialized.shotPrompts.find(sp => sp.shotId === s.shotId)!.prompt : "",
   verification: i !== 2 ? { overallScore: 80, issues: [] as string[] } : { overallScore: 0, issues: ["generation failed"] },
 }));

@@ -185,7 +185,7 @@ describe("executeGenerateVideo", () => {
       ok: true,
       json: async () => ({
         taskId: "kling-task-123",
-        engine: "kling",
+        engine: "veo",
         status: "RUNNING",
       }),
     });
@@ -194,7 +194,7 @@ describe("executeGenerateVideo", () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ taskId: "kling-task-123", engine: "kling", status: "RUNNING" }),
+      json: async () => ({ taskId: "kling-task-123", engine: "veo", status: "RUNNING" }),
     });
     // Second call (polling) returns COMPLETED
     fetchMock.mockResolvedValueOnce({
@@ -214,7 +214,7 @@ describe("executeGenerateVideo", () => {
     expect(generateCall[0]).toBe("/api/generate-video");
     const body = JSON.parse(generateCall[1].body);
     expect(body.firstFrameBase64).toBe("RAWBASE64DATA"); // data URI prefix stripped
-    expect(body.engine).toBe("kling");
+    expect(body.engine).toBe("veo");
     expect(body.durationSeconds).toBe(6);
     expect(body.prompt).toBe("animate this");
     // Should NOT have imageUrl
@@ -238,7 +238,7 @@ describe("video polling uses POST /api/check-video", () => {
     // First call: generate-video returns taskId
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ taskId: "task-abc", engine: "kling", status: "RUNNING" }),
+      json: async () => ({ taskId: "task-abc", engine: "veo", status: "RUNNING" }),
     });
     // Second call: check-video returns RUNNING
     fetchMock.mockResolvedValueOnce({
@@ -264,7 +264,7 @@ describe("video polling uses POST /api/check-video", () => {
     expect(pollCall[1].method).toBe("POST");
     const pollBody = JSON.parse(pollCall[1].body);
     expect(pollBody.taskId).toBe("task-abc");
-    expect(pollBody.engine).toBe("kling");
+    expect(pollBody.engine).toBe("veo");
 
     // Verify final state
     const latest = callbacks.getLatest();

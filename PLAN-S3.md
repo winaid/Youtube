@@ -12,7 +12,7 @@
 interface ShotCardModel {
   index: number;           // 1-based 순차
   prompt: string;          // ≤512자
-  duration: string;        // 초 (문자열) — Kling API 규격
+  duration: string;        // 초 (문자열) — VEO API 규격
   role: ShotRole;          // 역할 분류 (신규)
   cameraHint?: string;     // 카메라 힌트 (선택)
 }
@@ -61,13 +61,13 @@ generate-cuts가 새로 생성할 때만 role 기반 가이드라인 적용.
 - 빈 prompt: 에러 (prompt.trim().length === 0)
 - index 순차: 자동 보정 (UI가 항상 1-based 순차 보장)
 
-**Export Layer** (Kling Payload Preview / Export 직전):
+**Export Layer** (VEO Payload Preview / Export 직전):
 - normalizeMultiShots() 호출 — 서버와 동일한 clamp 정책 적용
 - final-payload-validator.ts 확장 — multiShot 전용 rule 추가
 - role 분포 경고: 모든 shot이 같은 role이면 "단조로움 경고"
-- 전체 prompt 문자열 합산 길이 제한 (Kling API 한도)
+- 전체 prompt 문자열 합산 길이 제한 (VEO API 한도)
 
-**API Layer** (generate-video.ts, _kling-api.ts):
+**API Layer** (generate-video.ts, _veo-api.ts):
 - normalizeMultiShots() — 서버 사이드 최종 clamp (이미 구현됨)
 - model capability 기반 hard limit 강제 (이미 구현됨)
 - 잘못된 모델에 multiShot 전달 시 무시 (supportsMultiShot=false → 빈 배열)
@@ -103,7 +103,7 @@ generate-cuts가 새로 생성할 때만 role 기반 가이드라인 적용.
 │ └──────────────────────────────────────────────┘    │
 │                                                      │
 │ ── Validation ──────────────────────────────────     │
-│ ✅ shot 수: 3/4 (O3 8초 기준)                        │
+│ ✅ shot 수: 3/4 (VEO 8초 기준)                        │
 │ ✅ duration 합: 8초 = 8초                             │
 │ ✅ 모든 prompt 512자 이내                             │
 │ ⚠️ 모든 shot이 같은 role (develop) — 다양화 권장     │

@@ -20,13 +20,14 @@ import {
   buildMultiShotPlan,
   RETENTION_ROLE_PATTERNS,
 } from "@/lib/multi-shot-planner";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
 // ═══════════════════════════════════════════════════════════════════
 // planRecommendedShotCount
 // ═══════════════════════════════════════════════════════════════════
 
 describe("planRecommendedShotCount", () => {
-  const model = "kling-o3-text-to-video";
+  const model = VEO_DEFAULT_MODEL;
 
   it("3초 이하 → 1샷", () => {
     expect(planRecommendedShotCount(model, 3)).toBe(1);
@@ -56,7 +57,7 @@ describe("planRecommendedShotCount", () => {
   });
 
   it("multiShot 미지원 모델 → 1", () => {
-    expect(planRecommendedShotCount("kling-custom-element", 12)).toBe(1);
+    expect(planRecommendedShotCount("unknown-model", 12)).toBe(1);
   });
 });
 
@@ -137,7 +138,7 @@ describe("distributeDurations", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("shouldForceMultiShot", () => {
-  const model = "kling-o3-text-to-video";
+  const model = VEO_DEFAULT_MODEL;
 
   it("9초 이상이면 어떤 씬이든 강제", () => {
     expect(shouldForceMultiShot("default", 9, model)).toBe(true);
@@ -163,7 +164,7 @@ describe("shouldForceMultiShot", () => {
   });
 
   it("multiShot 미지원 모델 → 비강제", () => {
-    expect(shouldForceMultiShot("cinematic_sequence", 12, "kling-custom-element")).toBe(false);
+    expect(shouldForceMultiShot("cinematic_sequence", 12, "unknown-model")).toBe(false);
   });
 });
 
@@ -191,7 +192,7 @@ describe("isOneTakeAllowed", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("buildDefaultMultiShot", () => {
-  const model = "kling-o3-text-to-video";
+  const model = VEO_DEFAULT_MODEL;
 
   it("Case 1: 12s cinematic_sequence → 자동 3-4샷 + role 시퀀스", () => {
     const shots = buildDefaultMultiShot({
@@ -251,7 +252,7 @@ describe("buildDefaultMultiShot", () => {
   it("multiShot 미지원 모델 → 빈 배열", () => {
     const shots = buildDefaultMultiShot({
       durationSec: 12,
-      modelId: "kling-custom-element",
+      modelId: "unknown-model",
     });
     expect(shots).toEqual([]);
   });
@@ -262,7 +263,7 @@ describe("buildDefaultMultiShot", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("repairMissingMultiShot", () => {
-  const model = "kling-o3-text-to-video";
+  const model = VEO_DEFAULT_MODEL;
 
   it("강제 멀티샷 + 누락 → 자동 생성", () => {
     const repaired = repairMissingMultiShot({
@@ -328,7 +329,7 @@ describe("repairMissingMultiShot", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("buildMultiShotPlan", () => {
-  const model = "kling-o3-text-to-video";
+  const model = VEO_DEFAULT_MODEL;
 
   it("12s cinematic_sequence → forced plan", () => {
     const plan = buildMultiShotPlan({

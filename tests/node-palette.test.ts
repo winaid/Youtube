@@ -60,7 +60,7 @@ function makeVideoRecord(overrides: Partial<VideoRecord> = {}): VideoRecord {
   return {
     id: `vid-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     operationName: "test",
-    engine: "kling",
+    engine: "veo",
     gcsUri: "",
     proxyUri: "",
     prompt: "test prompt",

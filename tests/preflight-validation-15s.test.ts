@@ -29,6 +29,7 @@ import {
   type SequenceBandRule,
 } from "../src/lib/preflight-validation";
 import type { Cut, MultiShotPrompt } from "../src/types";
+import { VEO_DEFAULT_MODEL } from "../src/lib/veo-capability";
 
 // ═══════════════════════════════════════════════════════════════════
 // Test Helpers
@@ -56,7 +57,7 @@ function makeInput(cuts: Cut[], durations?: Map<number, number>): PreflightInput
     canonicalMultiShots: new Map(),
     canonicalDurations: durations ?? new Map(cuts.map(c => [c.cutNumber, c.durationSec])),
     styleId: "cinematic-realism",
-    modelId: "kling-o3-text-to-video",
+    modelId: VEO_DEFAULT_MODEL,
   };
 }
 

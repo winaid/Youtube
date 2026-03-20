@@ -7,7 +7,7 @@
 | File | Responsibility |
 |------|---------------|
 | `multi-shot-planner.ts` | Shot count recommendation, role assignment, duration distribution, force rules, repair logic |
-| `kling-capability.ts` | Model registry (O3/v3), maxShots, minShotDuration, eligibility checks, model resolution |
+| `veo-capability.ts` | Model registry (VEO), maxShots, minShotDuration, eligibility checks, model resolution |
 | `multishot-validation.ts` | Editor-layer validation, Studio/Batch mode checks, shot add/remove/resize with duration redistribution |
 | `final-payload-validator.ts` | 17-rule pre-submission validation. Rule 17 is force-multishot enforcement. |
 | `video-generation-core.ts` | `submitVideoGeneration()`, `pollVideoTask()`, `prepareMultiShotPayload()`, error classification |
@@ -20,9 +20,9 @@
 
 | File | Responsibility |
 |------|---------------|
-| `generate-video.ts` | Final enforcement: model selection, prompt serialization, multi-shot policy (Studio block / Batch repair), Kling API call |
-| `_kling-api.ts` | Kling client, types (`KlingMultiShot`, `KlingGenerateRequest`), error classes |
-| `_kling-capability.ts` | Server-side model registry (must stay in sync with client `kling-capability.ts`) |
+| `generate-video.ts` | Final enforcement: model selection, prompt serialization, multi-shot policy (Studio block / Batch repair), VEO API call |
+| `_veo-api.ts` | VEO client, types (`VeoGenerateRequest`), error classes |
+| `_veo-capability.ts` | Server-side model registry (must stay in sync with client `veo-capability.ts`) |
 
 ### UI Components (src/components/prompt-generator/)
 
@@ -55,19 +55,17 @@ Server normalization→ generate-video.ts (normalizeMultiShots — clamp to mode
 
 1. `useVideoGeneration.ts` `generateCut()` builds `submitParams` with multiShot array.
 2. `video-generation-core.ts` `submitVideoGeneration()` builds the HTTP body with `structuredSequence`, `multiShot`, and all metadata.
-3. `generate-video.ts` on the server serializes `structuredSequence` to a prompt string, auto-repairs multiShot if needed, normalizes shots, and submits to Kling.
+3. `generate-video.ts` on the server serializes `structuredSequence` to a prompt string, auto-repairs multiShot if needed, normalizes shots, and submits to VEO.
 
-The final Kling payload is:
+The final VEO payload uses timestamp-based prompts:
 ```
 {
-  model_name: resolved model ID,
-  prompt: serialized string (from structuredSequence),
-  negative_prompt: string,
-  duration: "5" | "10" (Kling's discrete values),
-  aspect_ratio: "16:9" | ...,
-  multi_shot?: [{ index, prompt, duration }],
-  sound: "on" | "off",
-  ... (image, element_list, etc.)
+  model: resolved model ID,
+  prompt: timestamp-formatted string (e.g., "0s: scene description, 2s: next scene, ..."),
+  negativePrompt: string,
+  duration: 8 (VEO fixed),
+  aspectRatio: "16:9" | ...,
+  ... (image, etc.)
 }
 ```
 
@@ -113,8 +111,8 @@ If you add a scene type to one, add it to all three.
 
 ### Model capability registries must match
 
-- `src/lib/kling-capability.ts` (client)
-- `functions/api/_kling-capability.ts` (server)
+- `src/lib/veo-capability.ts` (client)
+- `functions/api/_veo-capability.ts` (server)
 
 Both define model maxShots, minShotDuration, etc. A mismatch means the client plans more shots than the server allows (or vice versa), causing silent clamping or unexpected blocks.
 
@@ -127,9 +125,9 @@ useEffect(() => { ... }, [modelId, cut.durationSec, cut.shotCategory]);
 
 This intentionally excludes `onUpdate`, `cut.multiShot`, and `cut.intentionalOneTake` from the dependency array. Adding them causes an infinite update loop: the effect calls `onUpdate`, which changes the cut, which re-triggers the effect. Do not "fix" the lint warning.
 
-### KlingMultiShot has no role field
+### VEO timestamp prompts have no role field
 
-The provider API type is `{ index: number; prompt: string; duration: string }`. Roles exist only in the client's `MultiShotPrompt` type. Do not add `role` to `KlingMultiShot` unless the Kling API actually supports it.
+The provider API uses timestamp-based prompts (e.g., `"0s: description, 2s: next"`). Roles exist only in the client's `MultiShotPrompt` type. Do not add `role` to VEO payloads unless the VEO API actually supports it.
 
 ### Client repair defers to server
 
@@ -163,11 +161,11 @@ If you add a new validation or enforcement layer, check for `intentionalOneTake`
 
 ### Don't assume all models support multi-shot
 
-`kling-o3-video-edit` and `kling-custom-element` have `maxShots=0`. Always check `getMaxShots()` or `isMultiShotEligible()` before assuming multi-shot is available.
+Not all models support multi-shot. Always check `getMaxShots()` or `isMultiShotEligible()` before assuming multi-shot is available.
 
 ### Don't add duration without updating maxShots
 
-If Kling adds support for durations beyond 15s, `getMaxShots()` has duration-based limits that need updating:
+If VEO adds support for variable durations, `getMaxShots()` has duration-based limits that need updating:
 ```
 ≤5s → max 2
 ≤7s → max 3
@@ -198,7 +196,7 @@ Run all tests: `npx vitest run tests/`
 src/
   lib/
     multi-shot-planner.ts      ← shot planning core
-    kling-capability.ts        ← model registry (client)
+    veo-capability.ts          ← model registry (client)
     multishot-validation.ts    ← editor validation
     final-payload-validator.ts ← 17-rule validator
     video-generation-core.ts   ← submit + poll
@@ -215,8 +213,8 @@ src/
     useVideoGeneration.ts      ← orchestration hook
 functions/api/
   generate-video.ts            ← server enforcement
-  _kling-api.ts                ← Kling client + types
-  _kling-capability.ts         ← model registry (server)
+  _veo-api.ts                  ← VEO client + types
+  _veo-capability.ts           ← model registry (server)
 docs/
   HANDOFF.md                   ← product overview
   multishot-architecture.md    ← multi-shot deep dive

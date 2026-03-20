@@ -15,7 +15,7 @@ import {
   resolveCutCount,
   personaCutCountBias,
   recommendMinimumCutCount,
-  KLING_SEGMENT_CAP,
+  VEO_SEGMENT_CAP,
 } from "@/lib/sequence-density";
 
 import {
@@ -31,8 +31,8 @@ import {
 describe("A. editingDensity payload with duration=auto", () => {
   it("1) duration=auto 시 effectiveTotalSec 계산으로 range가 만들어짐", () => {
     // InputPanel 로직 시뮬레이션:
-    // duration="auto" → totalSec=0 → effectiveTotalSec=KLING_SEGMENT_CAP(15)
-    const effectiveTotalSec = KLING_SEGMENT_CAP; // fallback to single segment
+    // duration="auto" → totalSec=0 → effectiveTotalSec=VEO_SEGMENT_CAP(15)
+    const effectiveTotalSec = VEO_SEGMENT_CAP; // fallback to single segment
     const range = densityPresetToRange("dense", effectiveTotalSec);
     expect(range).toBeDefined();
     expect(range.min).toBeGreaterThan(0);
@@ -58,7 +58,7 @@ describe("A. editingDensity payload with duration=auto", () => {
 
 describe("B. 120초 segment-aware density", () => {
   it("4) 120초 → 8 segments (120/15=8)", () => {
-    expect(Math.ceil(120 / KLING_SEGMENT_CAP)).toBe(8);
+    expect(Math.ceil(120 / VEO_SEGMENT_CAP)).toBe(8);
   });
 
   it("5) recommendCutCountRange(120) = 8 × range(15) = {32, 48}", () => {

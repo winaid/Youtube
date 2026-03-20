@@ -6,7 +6,7 @@ This product treats multi-shot as the default operating mode for eligible clips 
 
 1. **Retention.** Single-shot video over 6-9 seconds tends to lose viewer attention. Structured shot progression (establish → develop → peak → resolve) creates rhythm.
 2. **Production quality.** Real cinematography uses shot changes. A 12-second single-take feels like raw footage, not a produced sequence.
-3. **Kling capability alignment.** Kling O3 models support up to 6 shots per generation with 2-second minimum shot duration. The product is built to use this capability by default.
+3. **VEO capability alignment.** VEO supports 4-shot multishot (2+2+2+2) per generation with 2-second minimum shot duration. The product is built to use this capability by default.
 
 ## Planning Flow
 
@@ -123,7 +123,7 @@ autoShotCount:
 
 Duration: evenly distributed, last shot absorbs remainder.
 Prompt: base prompt copied to all shots.
-Roles: NOT assigned (KlingMultiShot type has no role field).
+Roles: NOT assigned (VEO timestamp format has no role field).
 ```
 
 After auto-repair, `normalizeMultiShots()` clamps to model limits and enforces `minShotDuration`.
@@ -165,10 +165,9 @@ When a model or duration doesn't support multi-shot:
 
 | Condition | Result |
 |-----------|--------|
-| `kling-o3-video-edit` | maxShots=0. MultiShotEditor not rendered. No auto-init. |
-| `kling-custom-element` | maxShots=0. Not a video model. |
+| Non-multishot models | maxShots=0. MultiShotEditor not rendered. No auto-init. |
 | Duration ≤3s | maxShots=0. Single-shot only. No force. |
-| Unknown model | Defaults to O3 text-to-video capability (safe fallback). |
+| Unknown model | Defaults to VEO text-to-video capability (safe fallback). |
 
 **UI behavior**: CutCard's auto-init useEffect checks `getMaxShots()`. If 0, no shots are generated and the editor shows the cut without a multi-shot section. No confusing "opt into multi-shot" prompt appears.
 
@@ -179,10 +178,10 @@ When a model or duration doesn't support multi-shot:
 | File | Owns |
 |------|------|
 | `src/lib/multi-shot-planner.ts` | Planning: shot count, roles, durations, force rules |
-| `src/lib/kling-capability.ts` | Model registry, maxShots, minShotDuration, eligibility |
+| `src/lib/veo-capability.ts` | Model registry, maxShots, minShotDuration, eligibility |
 | `src/lib/multishot-validation.ts` | Editor validation, Studio/Batch mode checks, duration redistribution |
 | `src/lib/final-payload-validator.ts` | 17-rule pre-submission validation (Rule 17 = forced multi-shot) |
 | `src/lib/video-generation-core.ts` | Client-side repair, submission, polling |
 | `src/components/prompt-generator/CutCard.tsx` | Per-cut editor, auto-init, one-take toggle |
 | `src/components/prompt-generator/MultiShotEditor.tsx` | Shot-level editing UI |
-| `functions/api/generate-video.ts` | Server enforcement, auto-repair, Kling submission |
+| `functions/api/generate-video.ts` | Server enforcement, auto-repair, VEO submission |

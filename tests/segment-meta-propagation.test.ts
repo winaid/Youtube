@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveSegmentPlan,
-  KLING_SEGMENT_CAP,
+  VEO_SEGMENT_CAP,
 } from "@/lib/sequence-density";
 
 import {

@@ -2,14 +2,14 @@
  * video-prompt-serializer.test.ts — Kling 렌더러 + structuredSequence 의미 보존 테스트
  *
  * 테스트 대상:
- * 1. renderKlingPromptFromJson: locationCue/situationCue/emotionalAnchor/timingBeat 반영
+ * 1. renderPromptFromJson: locationCue/situationCue/emotionalAnchor/timingBeat 반영
  * 2. shotPlan fallback: placeIdentityAnchors/naturalMotion/temporalBeats/cameraPlan/physicsRules
  * 3. 기존 기본 동작 회귀 없음
  */
 
 import { describe, it, expect } from "vitest";
 import {
-  renderKlingPromptFromJson,
+  renderPromptFromJson,
   type VideoPromptJson,
 } from "@/lib/video-prompt-json";
 
@@ -44,28 +44,28 @@ function makeBaseJson(overrides: Partial<VideoPromptJson> = {}): VideoPromptJson
 // 1. Kling renderer — structuredSequence field preservation
 // ═══════════════════════════════════════════════════════════════════
 
-describe("renderKlingPromptFromJson — structuredSequence field preservation", () => {
+describe("renderPromptFromJson — structuredSequence field preservation", () => {
   it("should include locationCue in Kling prompt", () => {
     const json = makeBaseJson({ locationCue: "lunar crater with scattered boulders" });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("lunar crater with scattered boulders");
   });
 
   it("should include situationCue in Kling prompt", () => {
     const json = makeBaseJson({ situationCue: "fresh bootprints leading to a flag pole" });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("fresh bootprints leading to a flag pole");
   });
 
   it("should include emotionalAnchor in Kling prompt", () => {
     const json = makeBaseJson({ emotionalAnchor: "solitary flag stands against infinite darkness" });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("solitary flag stands against infinite darkness");
   });
 
   it("should include timingBeat in Kling prompt", () => {
     const json = makeBaseJson({ timingBeat: "0s-3s: wide establishing. 3s-6s: slow push reveals craters" });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("0s-3s: wide establishing");
     expect(prompt).toContain("3s-6s: slow push reveals craters");
   });
@@ -76,7 +76,7 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
       situationCue: "empty chairs, no patients",
       emotionalAnchor: "doctor slumps alone at reception desk",
     });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("dental clinic waiting room");
     expect(prompt).toContain("empty chairs, no patients");
     expect(prompt).toContain("doctor slumps alone at reception desk");
@@ -84,7 +84,7 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
 
   it("should include moodLighting in Kling prompt", () => {
     const json = makeBaseJson({ moodLighting: "warm golden hour light from the west, long shadows" });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("warm golden hour light from the west");
   });
 
@@ -92,7 +92,7 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
     const json = makeBaseJson({
       styleSuffix: "cinematic realism, no text overlay, no watermark, with natural diegetic sound and ambient audio",
     });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).not.toContain("with natural diegetic sound and ambient audio");
     expect(prompt).toContain("cinematic realism");
   });
@@ -104,7 +104,7 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
       emotionalAnchor: "",
       timingBeat: "",
     });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     // Should not have empty segments or double dots
     expect(prompt).not.toMatch(/\.\s*\.\s*\./);
     expect(prompt).not.toContain(". .");
@@ -118,13 +118,13 @@ describe("renderKlingPromptFromJson — structuredSequence field preservation", 
 describe("Kling parity — same fields rendered", () => {
   it("renderer should include locationCue", () => {
     const json = makeBaseJson({ locationCue: "rustic farmhouse kitchen" });
-    const rendered = renderKlingPromptFromJson(json);
+    const rendered = renderPromptFromJson(json);
     expect(rendered).toContain("rustic farmhouse kitchen");
   });
 
   it("renderer should include timingBeat", () => {
     const json = makeBaseJson({ timingBeat: "0s-2s: start. 2s-5s: develop" });
-    const rendered = renderKlingPromptFromJson(json);
+    const rendered = renderPromptFromJson(json);
     expect(rendered).toContain("0s-2s: start");
   });
 });
@@ -136,7 +136,7 @@ describe("Kling parity — same fields rendered", () => {
 describe("existing behavior regression", () => {
   it("should render basic shot/camera/subject/style", () => {
     const json = makeBaseJson();
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("WS shot, eye-level");
     expect(prompt).toContain("slow push-in");
     expect(prompt).toContain("barren landscape");
@@ -149,7 +149,7 @@ describe("existing behavior regression", () => {
       characterRef: "Young woman, mid-20s, dark hair in a bun, wearing a white lab coat",
       subjectAction: "leans forward to examine a document",
     });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("Young woman");
     expect(prompt).toContain("white lab coat");
     expect(prompt).toContain("leans forward");
@@ -157,7 +157,7 @@ describe("existing behavior regression", () => {
 
   it("should handle static camera movement", () => {
     const json = makeBaseJson({ cameraMovement: "static" });
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
     // "static" should not appear as a separate segment
     expect(prompt).not.toMatch(/\. static\./i);
   });
@@ -182,7 +182,7 @@ describe("lunar surface — Kling prompt quality", () => {
       styleSuffix: "cinematic realism, no text overlay, no watermark",
     });
 
-    const prompt = renderKlingPromptFromJson(json);
+    const prompt = renderPromptFromJson(json);
 
     // Key structural elements preserved
     expect(prompt).toContain("lunar crater rim");

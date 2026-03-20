@@ -18,7 +18,7 @@ import {
   DEFAULT_EDITORIAL_PERSONA,
 } from "@/types";
 import {
-  renderKlingPromptFromJson,
+  renderPromptFromJson,
 } from "@/lib/video-prompt-json";
 import type { VideoPromptJson } from "@/lib/video-prompt-json";
 import {
@@ -75,7 +75,7 @@ function simulatePayload(presetName: string): { json: VideoPromptJson; rendered:
     emotionalAnchor: "solitary figure",
   };
 
-  const rendered = renderKlingPromptFromJson(json);
+  const rendered = renderPromptFromJson(json);
   return { json, rendered, summary };
 }
 
@@ -228,7 +228,7 @@ describe("E. regression 보호", () => {
       locationCue: "lunar surface", situationCue: "landing site",
       emotionalAnchor: "first step",
     };
-    const rendered = renderKlingPromptFromJson(json);
+    const rendered = renderPromptFromJson(json);
     // 물리적으로 말이 되는 렌더링
     expect(rendered).toContain("lunar");
     expect(rendered).not.toContain("flutter");

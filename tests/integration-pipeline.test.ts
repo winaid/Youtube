@@ -6,7 +6,7 @@
  *
  * 환경 제약:
  * - GEMINI_API_KEY 없음 → 외부 LLM 호출 불가
- * - KLING_API_KEY 없음 → 영상 생성 불가
+ * - GEMINI_API_KEY 없음 → 영상 생성 불가
  * - 따라서 "코드 문제 vs 환경 문제" 분리가 목표
  */
 

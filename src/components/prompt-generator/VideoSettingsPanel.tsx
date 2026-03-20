@@ -219,53 +219,17 @@ export default function VideoSettingsPanel({
 
           <Separator />
 
-          {/* 클립 길이 (슬라이더) */}
+          {/* 클립 길이 (VEO 정책: 8초 고정) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label className="text-xs">클립 길이</Label>
-              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#787fff15", color: "#5a5ecc" }}>
-                {config.durationSeconds}초
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#4285f415", color: "#4285f4" }}>
+                8초 (고정)
               </span>
             </div>
-            <input
-              type="range"
-              min={3}
-              max={15}
-              step={1}
-              value={config.durationSeconds ?? 6}
-              onChange={(e) => {
-                const d = Number(e.target.value);
-                update({ durationSeconds: d as ClipDuration });
-              }}
-              className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
-              style={{ accentColor: "#787fff" }}
-            />
-            <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
-              <span>3초</span>
-              <span>15초</span>
-            </div>
-            {/* 프리셋 빠른 버튼 */}
-            <div className="flex gap-1">
-              {([4, 6, 8, 10, 15] as const).map((d) => {
-                const isSelected = config.durationSeconds === d;
-                return (
-                  <Button
-                    key={d}
-                    size="sm"
-                    variant={isSelected ? "default" : "outline"}
-                    className="flex-1 text-[10px] h-6 px-0 relative"
-                    style={
-                      isSelected
-                        ? { background: "#787fff", color: "white" }
-                        : {}
-                    }
-                    onClick={() => update({ durationSeconds: d as ClipDuration })}
-                  >
-                    {d}
-                  </Button>
-                );
-              })}
-            </div>
+            <p className="text-[10px] text-muted-foreground">
+              VEO는 8초 멀티샷 생성만 지원합니다. 더 긴 영상은 연장(extend)으로 이어붙입니다.
+            </p>
           </div>
 
           {/* 해상도 */}

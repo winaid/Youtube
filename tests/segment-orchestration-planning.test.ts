@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveSegmentPlan,
-  KLING_SEGMENT_CAP,
+  VEO_SEGMENT_CAP,
 } from "@/lib/sequence-density";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -42,9 +42,9 @@ describe("A. segment 분해 기본", () => {
     expect(plan.segments[1].segmentDurationSec).toBe(5);
   });
 
-  it("4) 0초 → fallback to KLING_SEGMENT_CAP(15)", () => {
+  it("4) 0초 → fallback to VEO_SEGMENT_CAP(15)", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 0 });
-    expect(plan.totalDurationSec).toBe(KLING_SEGMENT_CAP);
+    expect(plan.totalDurationSec).toBe(VEO_SEGMENT_CAP);
     expect(plan.segmentCount).toBe(1);
   });
 });

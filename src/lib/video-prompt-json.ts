@@ -3,7 +3,7 @@
  *
  * 내부 source-of-truth = VideoPromptJson (구조화된 JSON)
  * Provider 어댑터가 최종 단계에서 JSON → string 렌더링:
- *   - renderKlingPromptFromJson() → VEO 호환 프롬프트 문자열
+ *   - renderPromptFromJson() → VEO 호환 프롬프트 문자열
  */
 
 // ─── VideoPromptJson 타입 — canonical definition은 @/types/index.ts ──────────
@@ -667,7 +667,7 @@ function checkSituationEvidence(prompt: string): QualityCheckItem {
 
 /**
  * 렌더링된 프롬프트에서 비시각 메타태그를 정리하는 sanitizer
- * renderKlingPromptFromJson 호출 후 최종 정리용
+ * renderPromptFromJson 호출 후 최종 정리용
  */
 export function sanitizeRenderedPrompt(prompt: string): string {
   const s = prompt
@@ -766,7 +766,7 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
  * VideoPromptJson → VEO 호환 프롬프트 문자열
  * VEO는 더 간결한 프롬프트를 선호 — 핵심만 추출
  */
-export function renderKlingPromptFromJson(json: VideoPromptJson): string {
+export function renderPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
 
   // Shot description (VEO는 태그 형식보다 자연어)
@@ -832,7 +832,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
 /**
  * ExtendPromptJson → VEO extend 프롬프트 (간결 버전)
  */
-export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string {
+export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
 
   // 이전 씬 컨텍스트 (간결하게)
@@ -860,10 +860,10 @@ export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string 
   return parts.filter(Boolean).join(". ");
 }
 
-/** @canonical alias — use this name in new code */
-export const renderPromptFromJson = renderKlingPromptFromJson;
-/** @canonical alias — use this name in new code */
-export const renderExtendPromptFromJson = renderKlingExtendPromptFromJson;
+/** @deprecated backward compat alias */
+export const renderKlingPromptFromJson = renderPromptFromJson;
+/** @deprecated backward compat alias */
+export const renderKlingExtendPromptFromJson = renderExtendPromptFromJson;
 
 // ─── 레거시 string → JSON 파서 (기존 프롬프트 호환) ──────────────────────────
 

@@ -10,7 +10,7 @@
  *   3. verbose planning rules (buildEditorialPlanningRules)
  *   4. compact editorial summary (buildCompactEditorialSummary)
  *   5. deterministic fallback camera movement (persona-based branching)
- *   6. payload preview (renderKlingPromptFromJson)
+ *   6. payload preview (renderPromptFromJson)
  *   7. sanitizer guard 유지 (detectEditorialPersonaConflicts)
  *   8. compact/degraded 경로 persona 생존
  *
@@ -33,7 +33,7 @@ import {
   DEFAULT_EDITORIAL_PERSONA,
 } from "@/types";
 import {
-  renderKlingPromptFromJson,
+  renderPromptFromJson,
 } from "@/lib/video-prompt-json";
 import type { VideoPromptJson } from "@/lib/video-prompt-json";
 import {
@@ -78,7 +78,7 @@ interface PersonaSimResult {
   extendBeatTemplate: string;
   verboseRules: string;
   compactSummary: string;
-  klingRendered: string;
+  rendered: string;
   videoPromptJson: VideoPromptJson;
 }
 
@@ -162,7 +162,7 @@ function simulateFullPipeline(presetName: string): PersonaSimResult {
   };
 
   // 7. Kling 렌더링
-  const klingRendered = renderKlingPromptFromJson(videoPromptJson);
+  const rendered = renderPromptFromJson(videoPromptJson);
 
   return {
     name: presetName,
@@ -173,7 +173,7 @@ function simulateFullPipeline(presetName: string): PersonaSimResult {
     extendBeatTemplate,
     verboseRules,
     compactSummary,
-    klingRendered,
+    rendered,
     videoPromptJson,
   };
 }
@@ -290,7 +290,7 @@ describe("D. compact editorial summary — persona별 차이", () => {
 
   it("14) compact summary가 rendered prompt에 실제로 포함됨", () => {
     for (const r of results) {
-      expect(r.klingRendered).toContain("[EDITORIAL:");
+      expect(r.rendered).toContain("[EDITORIAL:");
     }
   });
 
@@ -307,7 +307,7 @@ describe("D. compact editorial summary — persona별 차이", () => {
 
 describe("E. Kling payload preview — persona별 체감 차이", () => {
   it("16) 4개 persona 모두 서로 다른 rendered prompt", () => {
-    const renderedSet = new Set(results.map(r => r.klingRendered));
+    const renderedSet = new Set(results.map(r => r.rendered));
     expect(renderedSet.size).toBe(4);
   });
 
@@ -318,10 +318,10 @@ describe("E. Kling payload preview — persona별 체감 차이", () => {
     const lyrical = results.find(r => r.name === "lyrical-atmospheric")!;
 
     // 실제 내용 차이
-    expect(gothic.klingRendered).toContain("creeping");
-    expect(action.klingRendered).toContain("handheld");
-    expect(formalist.klingRendered).toContain("static");
-    expect(lyrical.klingRendered).toContain("creeping");
+    expect(gothic.rendered).toContain("creeping");
+    expect(action.rendered).toContain("handheld");
+    expect(formalist.rendered).toContain("static");
+    expect(lyrical.rendered).toContain("creeping");
   });
 
   it("18) shot size가 coverage bias에 따라 다름", () => {
@@ -474,7 +474,7 @@ describe("I. 비교 결과 요약 — 체감 차이 확인", () => {
       cameraStyle: r.videoPromptJson.cameraMovement.split("(")[0].trim(),
       transition: r.videoPromptJson.transitionFromPrev,
       summaryLen: r.compactSummary.length,
-      renderedLen: r.klingRendered.length,
+      renderedLen: r.rendered.length,
       beatBeats: (r.beatTemplate.match(/\[/g) || []).length,
     }));
 

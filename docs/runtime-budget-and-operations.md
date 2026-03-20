@@ -148,7 +148,7 @@ The recovery banner shows per-job:
 
 ### Understanding Server-Repaired Jobs
 
-When a Batch mode job has `multiShotCount=0` in its stored metadata, the server may have auto-repaired it. The stored metadata reflects what the **client sent**, not what the server ultimately submitted to Kling. This is a known limitation — there's no explicit "was auto-repaired" flag yet.
+When a Batch mode job has `multiShotCount=0` in its stored metadata, the server may have auto-repaired it. The stored metadata reflects what the **client sent**, not what the server ultimately submitted to VEO. This is a known limitation — there's no explicit "was auto-repaired" flag yet.
 
 ## Throughput Philosophy
 
@@ -170,4 +170,4 @@ Studio Mode is designed around craft:
 1. **Budget creep.** Large batches (30+ clips × 12s) easily exceed 300s. The warning is shown but not enforced as a hard block on the client side.
 2. **Recovery pile-up.** Long-running jobs in `timeout_recoverable` accumulate in localStorage. Auto-cleanup handles >100 jobs, but clusters of stuck jobs may confuse users.
 3. **Server repair divergence.** If a user recovers a Batch job that was server-repaired, the recovery metadata shows the original (possibly zero-shot) intent, not the repaired structure.
-4. **Model access 403s.** If an O3 model becomes unavailable, the system falls back to v3 (maxShots=3, minShotDuration=3s). This changes the multi-shot limits but doesn't break the flow.
+4. **Model access 403s.** If a VEO model becomes unavailable, the system falls back to a lower-capability model (maxShots=3, minShotDuration=3s). This changes the multi-shot limits but doesn't break the flow.

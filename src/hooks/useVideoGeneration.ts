@@ -1529,10 +1529,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         engine,
       });
 
-      // VEO extend: sourceVideo = 이전 클립의 videoUri (VEO video URI)
-      // Priority B: sourceVideo 누락 시 명시적 경고 + 메타데이터 기록
+      // VEO extend: sourceVideo = 이전 클립의 안정 URI (canonicalVideoUri 우선)
+      // previousVideoUri가 이미 data: URI를 필터링한 우선순위 결과이므로 그대로 사용
       const sourceVideo = (videoMode === "extend" && cutNumber > 1)
-        ? (prevClip?.rawVideoUri ?? "")
+        ? (previousVideoUri ?? "")
         : "";
 
       let continuityDegradation: string | undefined;

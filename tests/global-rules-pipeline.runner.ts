@@ -437,7 +437,7 @@ console.log("\n[11] Final payload validation — expanded rules");
     negatives: [],
     framing: "WS",
     shotCategory: "battle",
-    provider: "kling",
+    provider: "veo",
     characterRef: "young person, casual modern clothing, t-shirt and jeans",
   });
   assert(v1.issues.some(i => i.rule === "character_ref_era_mismatch"), "Character ref era mismatch detected");
@@ -448,7 +448,7 @@ console.log("\n[11] Final payload validation — expanded rules");
     negatives: [],
     framing: "WS",
     shotCategory: "environment",
-    provider: "kling",
+    provider: "veo",
     actionText: "then the wind blows, and then the fog rolls in, followed by rain, subsequently the sun breaks through, and finally a rainbow appears",
   });
   assert(v2.issues.some(i => i.rule === "overloaded_shot"), "Overloaded shot detected in validation");
@@ -459,7 +459,7 @@ console.log("\n[11] Final payload validation — expanded rules");
     negatives: [],
     framing: "WS",
     shotCategory: "character-driven",
-    provider: "kling",
+    provider: "veo",
     motion: "static",
     actionText: "then he walks, and then runs, followed by jumping, subsequently climbing, next swimming, finally resting",
   });
@@ -575,7 +575,7 @@ console.log("\n[15] Map visualization — concrete cues");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "map-graphic",
-    provider: "kling",
+    provider: "veo",
   });
   const mapCueIssue = valResult.issues.find(i => i.rule === "map_concrete_cues_missing");
   assert(!!mapCueIssue, "Validator detects missing map concrete cues");
@@ -586,7 +586,7 @@ console.log("\n[15] Map visualization — concrete cues");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "map-graphic",
-    provider: "kling",
+    provider: "veo",
   });
   const absIssue = absValResult.issues.find(i => i.rule === "map_abstract_terms");
   assert(!!absIssue, "Validator detects abstract terms in map");
@@ -603,7 +603,7 @@ console.log("\n[16] Positive keyword validation");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "environment",
-    provider: "kling",
+    provider: "veo",
   });
   const posIssue = valResult.issues.find(i => i.rule === "positive_keywords_missing");
   assert(!!posIssue, "Validator detects missing positive keywords for environment");
@@ -614,7 +614,7 @@ console.log("\n[16] Positive keyword validation");
     negatives: ["watermark"],
     framing: "WS",
     shotCategory: "environment",
-    provider: "kling",
+    provider: "veo",
   });
   const noPosIssue = fullResult.issues.find(i => i.rule === "positive_keywords_missing");
   assert(!noPosIssue, "No positive keyword issue when all are present");
@@ -673,7 +673,7 @@ console.log("\n[18] Video history status helpers");
   const baseRecord: VideoRecord = {
     id: "vid-test-1",
     operationName: "op-1",
-    engine: "kling",
+    engine: "veo",
     gcsUri: "",
     proxyUri: "",
     prompt: "test",
@@ -789,7 +789,7 @@ console.log("\n[21] Final payload pos/neg — Avoid: section handling");
     negatives: ["watermark", "caption", "subtitle", "blurry"],
     framing: "WS",
     shotCategory: "environment",
-    provider: "kling",
+    provider: "veo",
   });
   const posNegErrors = valResult.issues.filter(i => i.rule === "pos_neg_conflict");
   assert(posNegErrors.length === 0, "No pos_neg_conflict when watermark only in 'no watermark' and 'Avoid:' sections");
@@ -799,7 +799,7 @@ console.log("\n[21] Final payload pos/neg — Avoid: section handling");
     prompt: "A watermark-style logo on the mountain. Avoid: blurry",
     negatives: ["watermark"],
     framing: "WS",
-    provider: "kling",
+    provider: "veo",
   });
   const realConflict = conflictResult.issues.filter(i => i.rule === "pos_neg_conflict");
   assert(realConflict.length > 0, "Real pos_neg_conflict detected when bare watermark in body");
@@ -821,7 +821,7 @@ console.log("\n[22] serializeForProvider end-to-end pos/neg cleanup");
   doc.negatives.sceneSpecific = ["photorealistic"]; // conflict with style!
   doc.negatives.failureMode = ["cinematic"]; // conflict with style!
 
-  const serialized = serializeForProvider(doc, "kling");
+  const serialized = serializeForProvider(doc, "veo");
   const finalPrompt = serialized.prompt;
 
   // The serialized prompt should NOT have pos/neg conflicts after auto-fix
@@ -862,7 +862,7 @@ console.log("\n[23] Full Tiananmen Square scenario");
   assert(result.doc.camera.motion !== "Static wide shot", "Tiananmen: static motion normalized");
 
   // 4. Serialize and verify no pos/neg conflicts
-  const serialized = serializeForProvider(result.doc, "kling");
+  const serialized = serializeForProvider(result.doc, "veo");
   const issues = serialized.debug.sections._validationIssues || "";
   const posNeg = issues.split(" | ").filter(s => s.includes("pos_neg_conflict"));
   assert(posNeg.length === 0, `Tiananmen: 0 pos_neg_conflict in final payload (got ${posNeg.length})`);
@@ -878,7 +878,7 @@ console.log("\n[24] buildFinalProviderPayload — single path");
     scene: { shotCategory: "environment", environment: "vast mountain range", moodLighting: "golden hour light" },
     global: { style: "cinematic realism", styleId: "live-action", aspectRatio: "16:9", totalDurationSec: 8 },
   });
-  const result = buildFinalProviderPayload({ document: doc, provider: "kling" });
+  const result = buildFinalProviderPayload({ document: doc, provider: "veo" });
 
   // Verify builtBy marker
   assert(result.debug.builtBy === "buildFinalProviderPayload", "builtBy marker present");
@@ -887,7 +887,7 @@ console.log("\n[24] buildFinalProviderPayload — single path");
   assert(result.debug.payloadSnapshot.length > 0, "payloadSnapshot is non-empty");
   const snapshot = JSON.parse(result.debug.payloadSnapshot);
   assert(snapshot.prompt === result.prompt, "payloadSnapshot.prompt === result.prompt (consistency)");
-  assert(snapshot.provider === "kling", "payloadSnapshot.provider === kling");
+  assert(snapshot.provider === "veo", "payloadSnapshot.provider === veo");
 
   // Verify valid output
   assert(result.prompt.length > 50, "Final prompt has sufficient length");
@@ -912,7 +912,7 @@ console.log("\n[25] pos_neg_conflict zero in final payload");
   doc.negatives.sceneSpecific = ["caption"];
   doc.negatives.failureMode = ["photorealistic", "cinematic"];
 
-  const result = buildFinalProviderPayload({ document: doc, provider: "kling" });
+  const result = buildFinalProviderPayload({ document: doc, provider: "veo" });
 
   // Extract prompt body (before "Avoid:")
   const avoidIdx = result.prompt.search(/\.\s*Avoid:\s*/i);
@@ -933,7 +933,7 @@ console.log("\n[25] pos_neg_conflict zero in final payload");
     negatives: result.negativePrompt ? result.negativePrompt.split(", ") : [],
     framing: "WS",
     shotCategory: "environment",
-    provider: "kling",
+    provider: "veo",
   });
   const posNegErrors = validation.issues.filter(i => i.rule === "pos_neg_conflict");
   assert(posNegErrors.length === 0, `Validator confirms 0 pos_neg_conflict (got ${posNegErrors.length})`);
@@ -948,7 +948,7 @@ console.log("\n[26] hard-block test");
   const cleanDoc = makeShotDoc({
     scene: { shotCategory: "environment", environment: "mountain", moodLighting: "golden hour" },
   });
-  const cleanResult = buildFinalProviderPayload({ document: cleanDoc, provider: "kling" });
+  const cleanResult = buildFinalProviderPayload({ document: cleanDoc, provider: "veo" });
   assert(!cleanResult.blocked, "Clean doc is not blocked");
   assert(cleanResult.valid, "Clean doc is valid");
 }
@@ -962,7 +962,7 @@ console.log("\n[27] payload consistency — snapshot matches prompt");
     scene: { shotCategory: "character-driven", environment: "office", moodLighting: "fluorescent light" },
     subject: { primary: "a man in a suit stands at a desk", action: "adjusting his tie" },
   });
-  const result = buildFinalProviderPayload({ document: doc, provider: "kling" });
+  const result = buildFinalProviderPayload({ document: doc, provider: "veo" });
 
   const snapshot = JSON.parse(result.debug.payloadSnapshot);
   assert(snapshot.prompt === result.prompt, "Payload snapshot prompt === actual prompt");
@@ -984,8 +984,8 @@ console.log("\n[28] preview isolation — fallback fields are debug-only");
     scene: { shotCategory: "environment", environment: "desert", moodLighting: "harsh sun" },
   });
 
-  const result1 = buildFinalProviderPayload({ document: doc1, provider: "kling" });
-  const result2 = buildFinalProviderPayload({ document: doc2, provider: "kling" });
+  const result1 = buildFinalProviderPayload({ document: doc1, provider: "veo" });
+  const result2 = buildFinalProviderPayload({ document: doc2, provider: "veo" });
 
   // Same input → same output (deterministic)
   assert(result1.prompt === result2.prompt, "Same input produces same prompt (deterministic)");
@@ -1146,12 +1146,12 @@ console.log("\n[33] Final payload pos_neg zero after full pipeline");
   doc1.negatives.sceneSpecific = ["photorealistic", "cinematic"];
 
   const normalized1 = normalizeSequence(doc1);
-  const fp1 = buildFinalProviderPayload({ document: normalized1.doc, provider: "kling" });
+  const fp1 = buildFinalProviderPayload({ document: normalized1.doc, provider: "veo" });
   const posNeg1 = fp1.debug.validationIssues.filter(v => v.includes("pos_neg_conflict"));
-  assert(posNeg1.length === 0, `Kling: 0 pos_neg_conflict, got ${posNeg1.length}: ${posNeg1.join("; ")}`);
-  assert(!fp1.blocked, `Kling: not blocked: ${fp1.blockReason || ""}`);
+  assert(posNeg1.length === 0, `VEO: 0 pos_neg_conflict, got ${posNeg1.length}: ${posNeg1.join("; ")}`);
+  assert(!fp1.blocked, `VEO: not blocked: ${fp1.blockReason || ""}`);
 
-  // Kling provider
+  // VEO provider
   const doc2 = makeShotDoc({
     scene: { shotCategory: "environment", environment: "war-torn landscape", moodLighting: "overcast" },
     subject: { primary: "devastated terrain", action: "smoke drifts across rubble" },
@@ -1161,9 +1161,9 @@ console.log("\n[33] Final payload pos_neg zero after full pipeline");
   doc2.negatives.universal = ["watermark", "caption", "subtitle", "logo"];
   doc2.negatives.sceneSpecific = ["photorealistic", "cinematic"];
   const normalized2 = normalizeSequence(doc2);
-  const fp2 = buildFinalProviderPayload({ document: normalized2.doc, provider: "kling" });
+  const fp2 = buildFinalProviderPayload({ document: normalized2.doc, provider: "veo" });
   const posNeg2 = fp2.debug.validationIssues.filter(v => v.includes("pos_neg_conflict"));
-  assert(posNeg2.length === 0, `Kling: 0 pos_neg_conflict, got ${posNeg2.length}: ${posNeg2.join("; ")}`);
+  assert(posNeg2.length === 0, `VEO: 0 pos_neg_conflict, got ${posNeg2.length}: ${posNeg2.join("; ")}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1177,7 +1177,7 @@ console.log("\n[34] Hard-block enforcement + payload snapshot");
     global: { style: "watermark cinematic photorealistic logo caption subtitle" },
   });
   doc1.negatives.universal = ["watermark", "caption", "subtitle", "logo"];
-  const fp1 = buildFinalProviderPayload({ document: doc1, provider: "kling" });
+  const fp1 = buildFinalProviderPayload({ document: doc1, provider: "veo" });
   // Builder should either fix or block — both are acceptable
   if (fp1.debug.validationIssues.some(v => v.includes("pos_neg_conflict"))) {
     assert(fp1.blocked, "Blocked when pos_neg_conflict persists");
@@ -1190,11 +1190,11 @@ console.log("\n[34] Hard-block enforcement + payload snapshot");
   const doc2 = makeShotDoc({
     scene: { shotCategory: "environment", environment: "mountain valley", moodLighting: "golden hour" },
   });
-  const fp2 = buildFinalProviderPayload({ document: doc2, provider: "kling" });
+  const fp2 = buildFinalProviderPayload({ document: doc2, provider: "veo" });
   const snap = JSON.parse(fp2.debug.payloadSnapshot);
   assert(snap.prompt === fp2.prompt, "Snapshot prompt matches actual prompt");
   assert(snap.negativePrompt === fp2.negativePrompt, "Snapshot negativePrompt matches");
-  assert(snap.provider === "kling", "Snapshot provider matches");
+  assert(snap.provider === "veo", "Snapshot provider matches");
   assert(fp2.debug.builtBy === "buildFinalProviderPayload", "builtBy marker present");
 }
 
@@ -1321,7 +1321,7 @@ console.log("\n[38] Scene Extension readiness");
 {
   // proxyUri only → NOT ready for Scene Extension
   const r1 = sceneExtensionReady({
-    id: "vid-1", operationName: "op", engine: "kling",
+    id: "vid-1", operationName: "op", engine: "veo",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
     cutNumber: 1, status: "completed", createdAt: Date.now(),
@@ -1332,7 +1332,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // canonicalVideoUri (https://) → ready
   const r2 = sceneExtensionReady({
-    id: "vid-2", operationName: "op", engine: "kling",
+    id: "vid-2", operationName: "op", engine: "veo",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
@@ -1344,7 +1344,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // canonicalVideoUri (gs://) → ready
   const r3 = sceneExtensionReady({
-    id: "vid-3", operationName: "op", engine: "kling",
+    id: "vid-3", operationName: "op", engine: "veo",
     gcsUri: "gs://bucket/video.mp4", proxyUri: "/api/proxy-video?uri=gs://bucket/video.mp4",
     canonicalVideoUri: "gs://bucket/video.mp4",
     prompt: "", mode: "generate", durationSec: 8,
@@ -1355,7 +1355,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // failed → NOT ready
   const r4 = sceneExtensionReady({
-    id: "vid-4", operationName: "op", engine: "kling",
+    id: "vid-4", operationName: "op", engine: "veo",
     gcsUri: "", proxyUri: "", canonicalVideoUri: "https://example.com/video.mp4",
     prompt: "", mode: "generate", durationSec: 8,
     cutNumber: 1, status: "failed", createdAt: Date.now(),
@@ -1364,7 +1364,7 @@ console.log("\n[38] Scene Extension readiness");
 
   // computeAssetStatus with canonical → VISIBLE_IN_LIBRARY or SCENE_EXTENSION_READY
   const proxyOnlyStatus = computeAssetStatus({
-    id: "vid-5", operationName: "op", engine: "kling",
+    id: "vid-5", operationName: "op", engine: "veo",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
     cutNumber: 1, status: "completed", createdAt: Date.now(),
@@ -1372,7 +1372,7 @@ console.log("\n[38] Scene Extension readiness");
   assert(proxyOnlyStatus === "ASSET_STORED_PUBLIC", `proxyUri only → ASSET_STORED_PUBLIC, got: ${proxyOnlyStatus}`);
 
   const canonicalStatus = computeAssetStatus({
-    id: "vid-6", operationName: "op", engine: "kling",
+    id: "vid-6", operationName: "op", engine: "veo",
     gcsUri: "", proxyUri: "/api/proxy-video?r2key=abc",
     canonicalVideoUri: "https://origin/api/proxy-video?r2key=abc",
     prompt: "", mode: "generate", durationSec: 8,
@@ -1866,7 +1866,7 @@ console.log("\n[52] assembleFromJSON dense sequence output");
   };
 
   const cfg = {
-    engine: "kling" as const,
+    engine: "veo" as const,
     durationSeconds: 8,
     aspectRatio: "16:9",
     animationMode: "live-action",
@@ -1962,7 +1962,7 @@ console.log("\n[53] Validation strictness — valid=true harder");
   };
 
   const cfg = {
-    engine: "kling" as const,
+    engine: "veo" as const,
     durationSeconds: 8,
     aspectRatio: "16:9",
     animationMode: "live-action",
@@ -2063,7 +2063,7 @@ console.log("\n[56] Lunar assembleFromJSON zero physics violations");
       locationCue: "Lunar surface, American flag",
     },
   };
-  const cfg = { engine: "kling" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
+  const cfg = { engine: "veo" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
   const result = assembleFromJSON({ cut: lunarCut as any, config: cfg as any });
   const seq = result.structuredSequence;
 
@@ -2251,7 +2251,7 @@ console.log("\n[61] assembleFromJSON produces multi-shot sequence");
       locationCue: "Sahara desert, vast dune field",
     },
   };
-  const cfg = { engine: "kling" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
+  const cfg = { engine: "veo" as const, durationSeconds: 8, aspectRatio: "16:9", animationMode: "live-action", negativePrompt: "" };
   const result = assembleFromJSON({ cut: envCut as any, config: cfg as any });
   const seq = result.structuredSequence;
 
@@ -2284,17 +2284,16 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [63] 2-API Architecture: Kling-only provider
+// [63] 2-API Architecture: VEO-only provider
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[63] 2-API Architecture: Kling-only provider");
+  console.log("\n[63] 2-API Architecture: VEO-only provider");
 
-  // PROVIDER_CAPABILITIES should only have kling
-  assert(!("veo" in PROVIDER_CAPABILITIES), "No veo in PROVIDER_CAPABILITIES");
-  assert("kling" in PROVIDER_CAPABILITIES, "kling in PROVIDER_CAPABILITIES");
-  assert(PROVIDER_CAPABILITIES.kling.id === "kling", "kling id");
-  assert(PROVIDER_CAPABILITIES.kling.supportsNegativePrompt === true, "kling supports negative prompt");
-  assert(PROVIDER_CAPABILITIES.kling.maxPromptWords === 300, "kling max 300 words");
+  // PROVIDER_CAPABILITIES should have veo
+  assert("veo" in PROVIDER_CAPABILITIES, "veo in PROVIDER_CAPABILITIES");
+  assert(PROVIDER_CAPABILITIES.veo.id === "veo", "veo id");
+  assert(PROVIDER_CAPABILITIES.veo.supportsNegativePrompt === true, "veo supports negative prompt");
+  assert(PROVIDER_CAPABILITIES.veo.maxPromptWords === 300, "veo max 300 words");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2303,10 +2302,10 @@ console.log("\n[62] Timing rebalance");
 {
   console.log("\n[64] 2-API Architecture: Provider roles");
 
-  assert(PROVIDER_ROLES.kling.role === "generation", "Kling role = generation");
+  assert(PROVIDER_ROLES.veo.role === "generation", "VEO role = generation");
   assert(PROVIDER_ROLES.gemini_qa.role === "qa", "Gemini role = qa");
-  assert(PROVIDER_ROLES.kling.capabilities.includes("text-to-video"), "Kling has text-to-video");
-  assert(PROVIDER_ROLES.kling.capabilities.includes("image-to-video"), "Kling has image-to-video");
+  assert(PROVIDER_ROLES.veo.capabilities.includes("text-to-video"), "VEO has text-to-video");
+  assert(PROVIDER_ROLES.veo.capabilities.includes("image-to-video"), "VEO has image-to-video");
   assert(PROVIDER_ROLES.gemini_qa.capabilities.includes("structuredSequence-validation"), "Gemini has validation");
   assert(PROVIDER_ROLES.gemini_qa.capabilities.includes("quality-scoring"), "Gemini has scoring");
   assert(PROVIDER_ROLES.gemini_qa.capabilities.includes("auto-fix-suggestions"), "Gemini has auto-fix");
@@ -2375,12 +2374,12 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [66] Kling-only generate path
+// [66] VEO-only generate path
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[66] Kling-only generate path");
+  console.log("\n[66] VEO-only generate path");
 
-  // serializeForProvider should default to kling
+  // serializeForProvider should default to veo
   const minDoc = {
     shotId: "s1",
     cutNumber: 1,
@@ -2401,15 +2400,15 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [67] Check-video Kling-only
+// [67] Check-video VEO-only
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[67] Check-video Kling-only");
+  console.log("\n[67] Check-video VEO-only");
 
-  // Architecture test: verify only kling provider exists
+  // Architecture test: verify veo provider exists
   const providerKeys = Object.keys(PROVIDER_CAPABILITIES);
   assert(providerKeys.length === 1, `Only 1 provider: ${providerKeys.length}`);
-  assert(providerKeys[0] === "kling", `Provider is kling: ${providerKeys[0]}`);
+  assert(providerKeys[0] === "veo", `Provider is veo: ${providerKeys[0]}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2418,11 +2417,11 @@ console.log("\n[62] Timing rebalance");
 {
   console.log("\n[68] Continuity fallback (lastFrame-based)");
 
-  // Test that video-history still works with kling engine
+  // Test that video-history still works with veo engine
   const record: VideoRecord = {
     id: "test-1",
     operationName: "task-123",
-    engine: "kling",
+    engine: "veo",
     gcsUri: "https://example.com/video.mp4",
     proxyUri: "https://proxy.example.com/video.mp4",
     canonicalVideoUri: "https://example.com/video.mp4",
@@ -2437,21 +2436,21 @@ console.log("\n[62] Timing rebalance");
   assert(canExtendScene(record) === true, "Can extend with canonical URI");
   assert(computeAssetStatus(record) === "VISIBLE_IN_LIBRARY", "Visible in library with both URIs");
 
-  // Kling video without canonical — can still use lastFrame fallback
+  // VEO video without canonical — can still use lastFrame fallback
   const noCanonical: VideoRecord = { ...record, canonicalVideoUri: undefined };
   assert(canExtendScene(noCanonical) === false, "Cannot extend without canonical");
   assert(computeAssetStatus(noCanonical) === "ASSET_STORED_PUBLIC", "Public with proxy only");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [69] Env cleanup (Kling + Gemini API key only)
+// [69] Env cleanup (VEO + Gemini API key only)
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[69] Env cleanup (Kling + Gemini API key only)");
+  console.log("\n[69] Env cleanup (VEO + Gemini API key only)");
 
-  // Architecture assertion: Kling(EvoLink) = KLING_API_KEY, Gemini(AI Studio) = GEMINI_API_KEY
-  assert(PROVIDER_CAPABILITIES.kling.id === "kling", "Kling provider active");
-  assert(PROVIDER_ROLES.kling.role === "generation", "Kling is generation engine");
+  // Architecture assertion: VEO = GEMINI_API_KEY, Gemini(AI Studio) = GEMINI_API_KEY
+  assert(PROVIDER_CAPABILITIES.veo.id === "veo", "VEO provider active");
+  assert(PROVIDER_ROLES.veo.role === "generation", "VEO is generation engine");
   assert(PROVIDER_ROLES.gemini_qa.role === "qa", "Gemini is QA engine");
   // Verify gemini_qa does NOT have video generation capability
   const geminiCaps = PROVIDER_ROLES.gemini_qa.capabilities;
@@ -2460,12 +2459,12 @@ console.log("\n[62] Timing rebalance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// [70] Lunar physics + Kling pipeline
+// [70] Lunar physics + VEO pipeline
 // ═══════════════════════════════════════════════════════════════════
 {
-  console.log("\n[70] Lunar physics + Kling pipeline");
+  console.log("\n[70] Lunar physics + VEO pipeline");
 
-  // Verify physics rules still work in Kling-only architecture
+  // Verify physics rules still work in VEO-only architecture
   const lunarRules = detectPhysicsRules("lunar surface, astronaut walking", "moon", "low gravity");
   assert(lunarRules.environmentType === "lunar", "Lunar detected");
   assert(lunarRules.hasWind === false, "No wind on moon");

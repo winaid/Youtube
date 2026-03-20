@@ -363,20 +363,23 @@ function checkCut(cut: Cut, input: PreflightInput, issues: PreflightIssue[]) {
   const multiShot = input.canonicalMultiShots.get(cutNum) ?? cut.multiShot ?? [];
   const modelCap = getCapability(input.modelId);
 
-  // ── duration 범위 ──
-  if (duration < modelCap.minDuration) {
+  // ── duration 범위 (VEO: supportedDurations 기반) ──
+  const supported = modelCap.supportedDurations;
+  const minDuration = Math.min(...supported);
+  const maxDuration = Math.max(...supported);
+  if (duration < minDuration) {
     issues.push({
       severity: "blocking",
       code: "cut_duration_too_short",
-      messageKo: `시퀀스 ${cutNum}: ${duration}초 — 최소 ${modelCap.minDuration}초 이상 필요합니다.`,
+      messageKo: `시퀀스 ${cutNum}: ${duration}초 — 최소 ${minDuration}초 이상 필요합니다.`,
       cutNumber: cutNum,
     });
   }
-  if (duration > modelCap.maxDuration) {
+  if (duration > maxDuration) {
     issues.push({
       severity: "blocking",
       code: "cut_duration_too_long",
-      messageKo: `시퀀스 ${cutNum}: ${duration}초 — 최대 ${modelCap.maxDuration}초를 초과합니다.`,
+      messageKo: `시퀀스 ${cutNum}: ${duration}초 — 최대 ${maxDuration}초를 초과합니다.`,
       cutNumber: cutNum,
     });
   }

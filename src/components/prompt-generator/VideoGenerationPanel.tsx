@@ -369,7 +369,7 @@ export default function VideoGenerationPanel({
                       const normalizedEntries = effectiveShots.map((s, idx) => ({
                         index: s.index ?? idx + 1,
                         prompt: s.prompt || "",
-                        duration: parseFloat(s.duration) || Math.round(effectiveDuration / effectiveShots.length),
+                        duration: String(parseFloat(s.duration) || Math.round(effectiveDuration / effectiveShots.length)),
                       }));
                       const summaries = generateSummariesFromNormalizedMultiPrompt(normalizedEntries);
                       return (

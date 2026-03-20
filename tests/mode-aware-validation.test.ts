@@ -12,9 +12,10 @@ import {
   validateByMode,
 } from "@/lib/multishot-validation";
 import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 import type { MultiShotPrompt } from "@/types";
 
-const MODEL = "kling-o3-text-to-video";
+const MODEL = VEO_DEFAULT_MODEL;
 
 // ═══════════════════════════════════════════════════════════════════
 // Studio Mode Validation
@@ -139,7 +140,7 @@ describe("final-payload-validator Rule 17", () => {
     prompt: "A vast mountain landscape stretches endlessly under golden hour light. Rolling hills covered in autumn foliage cascade toward the horizon. Wispy clouds drift across the amber sky. Ancient stone formations rise from the misty valley floor. Warm sidelighting creates deep shadows across the rugged terrain surface.",
     negatives: ["watermark"],
     framing: "WS",
-    provider: "kling" as const,
+    provider: "veo" as const,
     shotCategory: "environment",
     modelId: MODEL,
   };

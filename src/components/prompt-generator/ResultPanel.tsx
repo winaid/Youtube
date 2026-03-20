@@ -1008,7 +1008,6 @@ export default function ResultPanel({
                   modelId={resolveModelForWorkflow({
                     workflow: videoGen.config.workflowType,
                     hasImage: !!storyboardImages[cut.cutNumber],
-                    hasReferenceImages: (videoGen.config.referenceImages?.length ?? 0) > 0,
                   })}
                   shotSnapshots={videoGen.shotSnapshots.get(cut.cutNumber)}
                   narrationState={videoGen.shotNarrationStates.get(cut.cutNumber)}
@@ -1199,7 +1198,6 @@ export default function ResultPanel({
             modelId={resolveModelForWorkflow({
               workflow: videoGen.config.workflowType,
               hasImage: false,
-              hasReferenceImages: (videoGen.config.referenceImages?.length ?? 0) > 0,
             })}
             onStitchComplete={(result) => {
               if (result) {

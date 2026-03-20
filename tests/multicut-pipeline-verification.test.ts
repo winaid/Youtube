@@ -30,7 +30,7 @@ import {
   recommendMinimumCutCount,
   personaCutCountBias,
   recommendCutCountRange,
-  KLING_SEGMENT_CAP,
+  VEO_SEGMENT_CAP,
 } from "@/lib/sequence-density";
 import {
   computeAutoDuration,
@@ -72,10 +72,10 @@ describe("테스트 1: auto duration → project total ≥ 60초", () => {
     expect(result.basis).not.toBe("minimum");
   });
 
-  it("project total은 15초(KLING_SEGMENT_CAP)가 아니다", () => {
+  it("project total은 15초(VEO_SEGMENT_CAP)가 아니다", () => {
     const result = estimateProjectDuration(LONG_STORY);
     expect(result.estimatedTotalSec).not.toBe(15);
-    expect(result.estimatedTotalSec).not.toBe(KLING_SEGMENT_CAP);
+    expect(result.estimatedTotalSec).not.toBe(VEO_SEGMENT_CAP);
   });
 
   it("project total은 30~300초 범위 내", () => {
@@ -97,8 +97,8 @@ describe("테스트 1: auto duration → project total ≥ 60초", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("테스트 2: current segment ≤ 15초 유지", () => {
-  it("KLING_SEGMENT_CAP = 15", () => {
-    expect(KLING_SEGMENT_CAP).toBe(15);
+  it("VEO_SEGMENT_CAP = 15", () => {
+    expect(VEO_SEGMENT_CAP).toBe(15);
   });
 
   it("safeDuration은 DURATION_MAX(15) 초과를 클램핑", () => {
@@ -119,10 +119,10 @@ describe("테스트 2: current segment ≤ 15초 유지", () => {
     expect(result.duration).toBeGreaterThanOrEqual(3);
   });
 
-  it("resolveSegmentPlan의 각 segment는 KLING_SEGMENT_CAP 이하", () => {
+  it("resolveSegmentPlan의 각 segment는 VEO_SEGMENT_CAP 이하", () => {
     const plan = resolveSegmentPlan({ totalDurationSec: 90 });
     for (const seg of plan.segments) {
-      expect(seg.segmentDurationSec).toBeLessThanOrEqual(KLING_SEGMENT_CAP);
+      expect(seg.segmentDurationSec).toBeLessThanOrEqual(VEO_SEGMENT_CAP);
     }
   });
 });
@@ -361,7 +361,7 @@ describe("테스트 7: custom element 경로 검증", () => {
     }
 
     return {
-      model: "kling-custom-element",
+      model: "unknown-custom-element",
       model_params: modelParams,
     };
   }
@@ -372,7 +372,7 @@ describe("테스트 7: custom element 경로 검증", () => {
       reference_type: "image_refer",
       frontal_image: "data:image/png;base64,iVBOR...",
     });
-    expect(payload.model).toBe("kling-custom-element");
+    expect(payload.model).toBe("unknown-custom-element");
     expect(payload.model_params.element_name).toBe("주인공");
     expect(payload.model_params.reference_type).toBe("image_refer");
     expect(payload.model_params.element_image_list).toEqual({
@@ -446,7 +446,7 @@ describe("대표 시퀀스 1회 — end-to-end 메타 검증", () => {
       personaBias: "neutral",
     });
     expect(segmentPlan.segmentCount).toBeGreaterThanOrEqual(
-      Math.ceil(projectTotal / KLING_SEGMENT_CAP)
+      Math.ceil(projectTotal / VEO_SEGMENT_CAP)
     );
     expect(segmentPlan.currentSegmentTargetCuts).toBeGreaterThanOrEqual(1);
 
@@ -466,7 +466,7 @@ describe("대표 시퀀스 1회 — end-to-end 메타 검증", () => {
 
     // Step 5: project total ≠ current segment duration
     expect(projectTotal).not.toBe(segmentPlan.segmentDurationCap);
-    expect(segmentPlan.segmentDurationCap).toBe(KLING_SEGMENT_CAP);
+    expect(segmentPlan.segmentDurationCap).toBe(VEO_SEGMENT_CAP);
   });
 
   it("20문장 스토리 → 80초+ project total → 6+ segments", () => {

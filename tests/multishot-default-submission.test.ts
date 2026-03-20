@@ -6,8 +6,9 @@
 
 import { describe, it, expect } from "vitest";
 import { prepareMultiShotPayload } from "@/lib/video-generation-core";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
-const MODEL = "kling-o3-text-to-video";
+const MODEL = VEO_DEFAULT_MODEL;
 
 describe("prepareMultiShotPayload", () => {
   it("12s cinematic — 멀티샷 없으면 자동 생성 (batch)", () => {
