@@ -537,6 +537,7 @@ export type WebSearchEmptyReason =
   | "missing_required_fields"   // name/nameKo 누락으로 전원 탈락
   | "validation_rejected_all"   // 기타 유효성 검증으로 전원 탈락
   | "fallback_empty"            // 모든 재시도/폴백까지 0건
+  | "pipeline_deadline_exceeded" // 집계 타임아웃 초과
   | "unknown";                  // 분류 불가
 
 /**

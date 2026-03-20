@@ -1,6 +1,4 @@
-import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
-
-interface ProxyEnv extends GeminiEnv {
+interface ProxyEnv {
   VIDEO_BUCKET?: R2Bucket;
   VIDEO_BUCKET_DOMAIN?: string;
 }
@@ -99,9 +97,15 @@ export const onRequestGet: PagesFunction<ProxyEnv> = async (context) => {
       console.log(`[proxy-video] gs:// 변환: ${videoUri.slice(0, 60)}… → GCS API URL`);
     }
 
-    const res = await fetchWithAuth(context.env, fetchUri, {
-      method: "GET",
-    });
+    // GCS/Kling CDN은 인증 불필요 — fetchWithAuth 사용 금지 (API 키 유출 방지)
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 25_000);
+    let res: Response;
+    try {
+      res = await fetch(fetchUri, { method: "GET", signal: ac.signal });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res.ok) {
       const errText = await res.text();

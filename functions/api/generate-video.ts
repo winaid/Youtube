@@ -70,6 +70,7 @@ interface StructuredSequencePayload {
   videoPromptJson?: VideoPromptJson;
   negatives?: {
     universal: string[];
+    style?: string[];
     sceneSpecific: string[];
     failureMode: string[];
     user: string[];
