@@ -1247,53 +1247,50 @@ Each director object must have:
           forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
           triggerReason = "initial";
         } else if (stageNum === 2) {
-          // ── STAGE 2: 웹 검색 복구 (쿼리 단순화 + grounding 유지 시도) ──
-          // Stage 1에서 parse_failed/provider_empty/weak_query/missing_required_fields/validation_rejected_all
+          // ── STAGE 2: Pro + JSON (grounding 없이) ──
+          // Stage 1에서 grounding 응답이 파싱 실패했을 가능성 → JSON 강제로 Pro 재시도
           const prevReasons = allEmptyReasons;
-          const shouldSkipToStage3 = prevReasons.includes("duplicate_filtered_all");
           const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
 
-          if (shouldSkipToStage3) { continue; } // stage 3에서 처리
-          if (shouldSkipToStage4) {
-            // stage 4로 점프 (stage 2, 3 건너뜀)
-            // stageNum을 3으로 설정하면 for loop에서 4로 증가
-            continue;
-          }
+          if (shouldSkipToStage4) { continue; }
 
-          // 쿼리를 Stage 1과 다르게 단순화
-          const simplifiedQuery = simplifyQueryForRetry(currentStageQuery, extractedGenres, extractedMoods);
-          currentStageQuery = simplifiedQuery;
+          const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
 
-          const retryNote = prevReasons.includes("parse_failed")
-            ? "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n"
-            : "\n## RETRY: Previous search returned unusable results. Return DIFFERENT directors this time.\n";
-
-          stageLabel = "stage2_query_retry";
+          stageLabel = "stage2_pro_json";
           model = GEMINI_MODEL_PRO;
-          prompt = buildWebPrompt({ retryNote, queryOverride: simplifiedQuery });
-          useGrounding = true;
-          forceMimeType = false;
+          prompt = buildWebPrompt({ retryNote });
+          useGrounding = false;  // grounding 제거 → JSON 파싱 보장
+          forceMimeType = true;  // responseMimeType: "application/json" 강제
           triggerReason = `stage1 failed: ${prevReasons.join(",")}`;
         } else if (stageNum === 3) {
-          // ── STAGE 3: Duplicate 전용 복구 ──
+          // ── STAGE 3: Duplicate 전용 복구 OR grounding 재시도 (쿼리 단순화) ──
           const prevReasons = allEmptyReasons;
           const hasDuplicate = prevReasons.includes("duplicate_filtered_all");
           const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
 
-          if (!hasDuplicate || shouldSkipToStage4) { continue; }
+          if (shouldSkipToStage4) { continue; }
 
-          // 이전에 중복으로 거부된 이름들을 추가 제외
-          const prevRejectedNames = retryStagesLog
-            .flatMap(s => s.emptyReasons.includes("duplicate_filtered_all") ? [] : [])
-          ;
-          const dupRetryNote = `\n## DUPLICATE RECOVERY RETRY\nYour previous responses contained ONLY directors already in the user's collection.\nYou MUST find completely different, lesser-known directors this time.\nDo NOT recommend any director even remotely similar to: ${localNameExclusionPairs}\nFind directors from underrepresented regions or indie film scenes.\n`;
+          if (hasDuplicate) {
+            // 중복 전멸 → 강한 제외 조건으로 재시도
+            const dupRetryNote = `\n## DUPLICATE RECOVERY RETRY\nYour previous responses contained ONLY directors already in the user's collection.\nYou MUST find completely different, lesser-known directors this time.\nDo NOT recommend any director even remotely similar to: ${localNameExclusionPairs}\nFind directors from underrepresented regions or indie film scenes.\n`;
 
-          stageLabel = "stage3_duplicate_recovery";
-          model = GEMINI_MODEL_PRO;
-          prompt = buildWebPrompt({ retryNote: dupRetryNote, strengthenExclusion: true });
-          useGrounding = true;
-          forceMimeType = false;
-          triggerReason = "duplicate_filtered_all";
+            stageLabel = "stage3_duplicate_recovery";
+            model = GEMINI_MODEL_PRO;
+            prompt = buildWebPrompt({ retryNote: dupRetryNote, strengthenExclusion: true });
+            useGrounding = false;
+            forceMimeType = true;
+            triggerReason = "duplicate_filtered_all";
+          } else {
+            // Stage 2도 실패 → 쿼리 단순화 후 JSON 재시도
+            const simplifiedQuery = simplifyQueryForRetry(currentStageQuery, extractedGenres, extractedMoods);
+            currentStageQuery = simplifiedQuery;
+            stageLabel = "stage3_simplified_json";
+            model = GEMINI_MODEL_PRO;
+            prompt = buildWebPrompt({ retryNote: "\n## Return ONLY valid JSON.\n", queryOverride: simplifiedQuery });
+            useGrounding = false;
+            forceMimeType = true;
+            triggerReason = `stage2 failed: ${prevReasons.join(",")}`;
+          }
         } else {
           // ── STAGE 4: 모델 지식 폴백 (grounded=false, JSON 강제) ──
           stageLabel = "stage4_model_fallback";
