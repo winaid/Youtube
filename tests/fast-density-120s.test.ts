@@ -98,7 +98,7 @@ describe("C. resolveCutCount with totalDurationSec=120", () => {
       totalDurationSec: 120, // 실제 값
       personaBias: "neutral",
     });
-    // 120초면 더 높은 densityMinimum (ceil(120/15)=8 vs ceil(24/15)=4)
+    // 120초면 더 높은 densityMinimum (ceil(120/8)=15 vs ceil(24/8)=4)
     expect(realResult.densityMinimum).toBeGreaterThan(fakeResult.densityMinimum);
     // cutCount는 CUT_COUNT_MAX=10으로 둘 다 capped될 수 있으므로 densityMinimum으로 비교
   });
@@ -113,8 +113,8 @@ describe("C. resolveCutCount with totalDurationSec=120", () => {
     expect(result.cutCount).toBeGreaterThan(0);
   });
 
-  it("11) 15초 기본 추천이 {4, 6}으로 변경 (숏폼 리텐션)", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
+  it("11) 15초 기본 추천이 {6, 12}으로 변경 (segment-aware)", () => {
+    expect(recommendCutCountRange(15)).toEqual({ min: 6, max: 12 });
   });
 
   it("12) fast density면 상단, sparse면 하단", () => {
