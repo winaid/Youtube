@@ -71,11 +71,11 @@ export function collectPromptItems(entries: PromptHistoryEntry[]): PromptItem[] 
   return entries
     .filter(e => {
       if (!e.input) return false;
-      const text = (e.input as Record<string, unknown>).storyText as string | undefined;
+      const text = (e.input as unknown as Record<string, unknown>).storyText as string | undefined;
       return text && text.trim().length > 0;
     })
     .map(e => {
-      const input = e.input as Record<string, unknown>;
+      const input = e.input as unknown as Record<string, unknown>;
       const fullText = input.storyText as string;
       const directorPersona = (input.directorPersona as string) || undefined;
       const chainMeta = extractChainMeta(input as never);
