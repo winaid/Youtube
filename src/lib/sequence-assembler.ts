@@ -399,12 +399,20 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     motion = cam.motion;
   }
 
-  // subject.primary는 가시적 주체/행동이어야 한다.
-  // sceneDescription은 기획 라벨(예: "장면 1", "[훅 — 강렬한 도입]...")일 수 있으므로
-  // json.subjectAction이 없으면 characterConsistency나 빈 문자열로 fallback.
-  const primarySubject = json?.subjectAction
+  // subject.primary는 가시적 주체 묘사 (→ 체인의 첫 번째 비트만 사용).
+  // action은 별도 actionBeat 필드에서 추출하여 중복 방지.
+  const rawSubjectAction = json?.subjectAction || "";
+  const primarySubject = (() => {
+    // → 체인이면 첫 번째 비트만 추출 (나머지는 timing beats에서 처리)
+    if (rawSubjectAction.includes("→")) {
+      return rawSubjectAction.split("→")[0].trim();
+    }
+    return rawSubjectAction;
+  })()
     || (cut.characterConsistency ? cut.characterConsistency.replace(/^캐릭터 고정:\s*/, "").replace(/\.\s*모든 장면.*$/, "").trim() : "")
     || "";
+  // actionBeat = 실제 행동 묘사 (subjectAction과 별개)
+  const actionBeat = json?.actionBeat || "";
   const characterRef = json?.characterRef || cut.characterConsistency || undefined;
 
   const beats = parseTimingBeats(json?.timingBeat, dur);
@@ -488,7 +496,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
 
     subject: {
       primary: primarySubject,
-      action: json?.subjectAction || "",
+      action: actionBeat || "",  // actionBeat 사용 (subjectAction과 중복 방지)
       bodySignal: json?.bodySignal,
       blocking: json?.subjectBlocking,
     },
@@ -1046,10 +1054,15 @@ export function serializeForProvider(
     sections.camera = cameraLine;
   }
 
-  // 3. Location/situation cues
+  // 3. Location/situation cues (subject에 이미 포함되어 있으면 중복 방지)
   if (doc.scene.locationCue) {
-    parts.push(doc.scene.locationCue);
-    sections.locationCue = doc.scene.locationCue;
+    const subjectLower = (sections.subject || "").toLowerCase();
+    const locLower = doc.scene.locationCue.toLowerCase();
+    // locationCue가 subject에 이미 포함되어 있으면 스킵
+    if (!subjectLower.includes(locLower) && !locLower.includes(subjectLower.slice(0, 20))) {
+      parts.push(doc.scene.locationCue);
+      sections.locationCue = doc.scene.locationCue;
+    }
   }
   if (doc.scene.situationCue) {
     parts.push(doc.scene.situationCue);

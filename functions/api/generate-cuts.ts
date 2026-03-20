@@ -1257,7 +1257,11 @@ function buildDeterministicCuts(
         ];
 
   const editorialTag = editorialPersona ? `. ${buildCompactEditorialSummary(editorialPersona)}` : "";
-  const noTextSuffix = `${videoStyle}, directed by ${directorName}, no text, no watermark, no captions${editorialTag}`;
+  // 감독 스타일 핑거프린트: 이름 태그 대신 실제 스타일 키워드 사용
+  const fallbackStyleFP = directorStyle
+    ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
+    : directorName;
+  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, ${aspectRatio} aspect ratio, no text, no watermark, no captions${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
@@ -2443,7 +2447,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (det && typeof det.cutNumber === "number") detailMap.set(det.cutNumber, det);
     }
 
-    const noTextSuffix = `${videoStyle}, directed by ${String(directorName)}, no text, no watermark, no captions`;
+    // 감독 스타일 핑거프린트: 이름 태그 대신 실제 스타일 키워드 사용
+    const finalStyleFingerprint = String(directorStyle ?? "")
+      ? String(directorStyle).split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
+      : String(directorName);
+    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, ${String(aspectRatio ?? "16:9")} aspect ratio, no text, no watermark, no captions`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);
