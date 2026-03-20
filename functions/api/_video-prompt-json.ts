@@ -85,9 +85,6 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
 
 // ─── Provider 렌더러 ──────────────────────────────────────────────────────────
 
-/** @deprecated Use renderPromptFromJson. Kept for backward compat. */
-export const renderKlingPromptFromJson = renderPromptFromJson;
-
 export function renderPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
@@ -115,9 +112,6 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
   enforceCinematicRealismMedium(parts, json);
   return parts.filter(Boolean).join(". ");
 }
-
-/** @deprecated Use renderExtendPromptFromJson. Kept for backward compat. */
-export const renderKlingExtendPromptFromJson = renderExtendPromptFromJson;
 
 export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];

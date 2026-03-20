@@ -16,9 +16,6 @@
  */
 export const VEO_SEGMENT_CAP = 8;
 
-/** @deprecated backward compat alias — use VEO_SEGMENT_CAP */
-export const KLING_SEGMENT_CAP = VEO_SEGMENT_CAP;
-
 /**
  * 시퀀스 밀도 정책 — 총 런타임 대비 최소 시퀀스 수.
  * 각 시퀀스는 VEO 1회 생성 단위(8s).
