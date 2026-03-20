@@ -163,7 +163,6 @@ export default function ResultPanel({
     storyboardImages,
     storyboardEndImages,
     faceRefs,
-    elementAssets,
     onSeedDetected: (cutNumber, seed) => {
       console.log(`CUT ${cutNumber} seed: ${seed}`);
     },
