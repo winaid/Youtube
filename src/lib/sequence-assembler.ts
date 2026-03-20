@@ -1722,12 +1722,24 @@ export function assembleFromJSON(input: {
       // 이미 "shot" 포함된 값이면 그대로, 약어면 매핑, 그 외만 " shot" 접미
       const framingLabel = _framingMap[fUpper]
         || (/shot/i.test(shot.camera.framing) ? shot.camera.framing : `${shot.camera.framing} shot`);
+      const camAngle = shot.camera.angle?.replace(/_/g, "-") || "";
+      const camMotion = shot.camera.motion && shot.camera.motion !== "static"
+        ? shot.camera.motion : "";
+      const camLine = [framingLabel, camAngle, camMotion].filter(Boolean).join(", ");
       const styleTag = normalizedDoc.reinforcement.styleSuffix
         ? `. ${normalizedDoc.reinforcement.styleSuffix}`
         : "";
-      const prompt = `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}${styleTag}`.trim();
+      // 완전한 시각 묘사: camera + subject + action + environment + mood + focus
+      const prompt = [
+        camLine,
+        shot.subject,
+        shot.action !== shot.subject ? shot.action : "",
+        shot.environment,
+        shot.moodLighting,
+        shot.focus,
+      ].filter(Boolean).join(". ").trim() + styleTag;
       const duration = String(Math.max(1, shotRawDurations[i]));
-      return { index: i + 1, prompt, duration, role };
+      return { index: i + 1, prompt: prompt.slice(0, 500), duration, role };
     });
   }
 
