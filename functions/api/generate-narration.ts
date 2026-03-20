@@ -66,22 +66,30 @@ async function generateTTS(
   voiceName: string,
   speakingRate: number,
 ): Promise<{ audioBase64: string; estimatedDuration: number }> {
-  const res = await fetch(`${TTS_API_URL}?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      input: { text: text.slice(0, 5000) },
-      voice: {
-        languageCode: "ko-KR",
-        name: voiceName,
-      },
-      audioConfig: {
-        audioEncoding: "MP3",
-        speakingRate,
-        pitch: 0,
-      },
-    }),
-  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 15_000);
+  let res: Response;
+  try {
+    res = await fetch(`${TTS_API_URL}?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ac.signal,
+      body: JSON.stringify({
+        input: { text: text.slice(0, 5000) },
+        voice: {
+          languageCode: "ko-KR",
+          name: voiceName,
+        },
+        audioConfig: {
+          audioEncoding: "MP3",
+          speakingRate,
+          pitch: 0,
+        },
+      }),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -141,7 +149,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const errors: Array<{ cutNumber: number; error: string }> = [];
 
     // 각 shot별 TTS 생성 (순차 처리 — API rate limit 고려)
+    const AGGREGATE_DEADLINE_MS = 25_000; // edge timeout(30s)보다 여유 두고 마감
     for (const shot of req.shots) {
+      if (Date.now() - startMs > AGGREGATE_DEADLINE_MS) {
+        warnings.push(`Aggregate timeout ${AGGREGATE_DEADLINE_MS}ms reached — remaining ${req.shots.length - tracks.length - errors.length} shots skipped`);
+        break;
+      }
       const text = shot.narrationText?.trim();
       if (!text) {
         warnings.push(`Cut ${shot.cutNumber}: narration text empty, skipped`);

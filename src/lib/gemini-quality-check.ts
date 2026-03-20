@@ -20,6 +20,7 @@
 import type { StructuredSequenceDocument, PhysicsRules } from "@/types";
 import { detectPhysicsRules, checkPhysicsConsistency } from "@/lib/physics-rules";
 import { validateSequenceDensity } from "@/lib/shot-splitting";
+import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Quality Check Result Types
@@ -180,10 +181,6 @@ export function preflightQualityCheck(
   }
 
   // ── 8. shot splitting 필요 여부 ───────────────────────────────
-  const MULTI_SHOT_SCENE_TYPES = new Set([
-    "environment", "character-driven", "character", "crowd",
-    "battle", "map-graphic", "map_visualization", "cinematic_sequence",
-  ]);
   if (MULTI_SHOT_SCENE_TYPES.has(seq.sceneType) && (!seq.shots || seq.shots.length < 2)) {
     if (seq.durationSec > 3) {
       issues.push({

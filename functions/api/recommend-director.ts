@@ -1227,9 +1227,21 @@ Each director object must have:
       let allEmptyReasons: WebSearchEmptyReason[] = [];
       let recoveredAtStage: number | null = null;
 
+      const pipelineStartMs = Date.now();
+      const PIPELINE_DEADLINE_MS = 27_000; // edge 30s 제한 내에서 응답 마감
+
       for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
         // ── 이미 후보 확보되면 종료 ──
         if (stageAccepted.length > 0) break;
+
+        // ── 집계 타임아웃: 남은 시간 부족하면 빠르게 종료 ──
+        const elapsedMs = Date.now() - pipelineStartMs;
+        if (elapsedMs > PIPELINE_DEADLINE_MS) {
+          console.warn(`[recommend-director] Pipeline deadline ${PIPELINE_DEADLINE_MS}ms exceeded at stage ${stageNum} (${elapsedMs}ms elapsed) — breaking`);
+          allEmptyReasons.push("pipeline_deadline_exceeded");
+          pipelineTimeoutOccurred = true;
+          break;
+        }
 
         let stageLabel: string;
         let model: string;
@@ -1359,7 +1371,8 @@ Each director object must have:
       }
 
       // ── Stage 4도 실패했으면 Flash 긴급 폴백 (Stage 4가 Pro였을 때만) ──
-      if (stageAccepted.length === 0 && retryStagesLog.length >= 4) {
+      const emergencyElapsed = Date.now() - pipelineStartMs;
+      if (stageAccepted.length === 0 && retryStagesLog.length >= 4 && emergencyElapsed < PIPELINE_DEADLINE_MS) {
         const lastStage = retryStagesLog[retryStagesLog.length - 1];
         if (lastStage.model !== GEMINI_MODEL_FLASH) {
           console.log(`[recommend-director] Stage 4 Pro 실패 → Flash 긴급 폴백`);

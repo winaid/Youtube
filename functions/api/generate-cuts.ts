@@ -1209,9 +1209,6 @@ function getPhysicsForScene(storyText: string): { environmentType: string; banne
   return { environmentType: "earth_outdoor", bannedWords: [] };
 }
 
-/** MULTI_SHOT_SCENE_TYPES: 2-3 shots required */
-const MULTI_SHOT_SCENE_TYPES = ["cinematic_sequence", "character-driven", "crowd", "battle"];
-
 /**
  * 결정론적 컷 생성 — Gemini 응답 없이 입력 데이터만으로 컷 생성.
  * sceneType 글로벌 규칙 유지 (lunar 등).

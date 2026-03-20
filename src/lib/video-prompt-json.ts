@@ -6,77 +6,9 @@
  *   - renderKlingPromptFromJson() → Kling 호환 프롬프트 문자열
  */
 
-// ─── VideoPromptJson 타입 ─────────────────────────────────────────────────────
-
-export interface VideoPromptJson {
-  /** 샷 크기 */
-  shotSize: string;       // ECU | CU | MCU | MS | MLS | LS | WS | OTS | POV
-  /** 카메라 앵글 */
-  cameraAngle: string;    // eye-level | low-angle | high-angle | dutch | overhead | POV
-  /** 카메라 움직임 + 동기 */
-  cameraMovement: string; // e.g. "slow push-in (tension builds toward reveal)"
-  /** 피사체 프레임 내 위치 */
-  subjectBlocking: string; // e.g. "foreground center-frame"
-  /** 피사체 행동 */
-  subjectAction: string;  // 구체적 신체 동작 ≤15w
-  /** 핵심 행동 비트 */
-  actionBeat: string;     // 망설임/중단/follow-through 포함
-  /** 신체 시그널 (감정 라벨 금지) */
-  bodySignal: string;     // hand/gaze/posture/breath 묘사
-  /** 이 프레임에서 새로 공개되는 시각 정보 */
-  revealed: string;
-  /** 프레임 밖에 보류되는 정보 */
-  withheld: string;
-  /** 시간 비트 템플릿 */
-  timingBeat: string;     // e.g. "0s-2s: [start]. 2s-5s: [develop]. 5s-8s: [climax]"
-  /** 이전 장면과의 전환 대비 */
-  transitionFromPrev: string;
-  /** 캐릭터 외형 (verbatim) */
-  characterRef: string;   // 절대 수정 금지
-  /** 조명/무드 */
-  moodLighting: string;
-  /** 스타일 접미사 */
-  styleSuffix: string;    // videoStyle + directorStyle + aspect ratio + no text/watermark
-  // ── 즉시 인식 가능성 (Instant Readability) 3-pillar ──
-  /** 장소 정체성 시각 단서 */
-  locationCue?: string;       // e.g. "dental chair and overhead lamp"
-  /** 상황 증거 시각 단서 */
-  situationCue?: string;      // e.g. "empty waiting room, no patients"
-  /** 감정/갈등 앵커 */
-  emotionalAnchor?: string;   // e.g. "doctor slumps alone at desk"
-}
-
-/** Scene Extension용 프롬프트 JSON */
-export interface ExtendPromptJson {
-  /** 이전 장면 종료 상태 */
-  prevSceneEnd: {
-    shotType: string;
-    subjectAction: string;
-    bodySignal: string;
-  };
-  /** 전환 타입 */
-  transition: string;
-  /** 새로운 장면 */
-  newShot: {
-    shotSize: string;
-    cameraAngle: string;
-    cameraMovement: string;
-  };
-  /** 캐릭터 외형 */
-  characterRef: string;
-  /** 새 행동 */
-  newAction: string;
-  /** 행동 변화 (감정 라벨 금지) */
-  behavioralShift: string;
-  /** 새로 공개 */
-  newlyRevealed: string;
-  /** 보류 */
-  stillWithheld: string;
-  /** 시간 비트 */
-  timingBeat: string;
-  /** 스타일 접미사 */
-  styleSuffix: string;
-}
+// ─── VideoPromptJson 타입 — canonical definition은 @/types/index.ts ──────────
+import type { VideoPromptJson, ExtendPromptJson } from "@/types";
+export type { VideoPromptJson, ExtendPromptJson };
 
 // ─── 빌더 ─────────────────────────────────────────────────────────────────────
 

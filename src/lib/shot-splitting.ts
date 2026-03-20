@@ -13,6 +13,7 @@
 
 import type { TemporalBeat } from "@/types";
 import { getMinShots } from "@/lib/kling-capability";
+import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 
 /** 기본 모델 ID — shot-splitting 정책에서 최소 샷 수 조회용 */
 const DEFAULT_MODEL_ID = "kling-o3-text-to-video";
@@ -476,10 +477,6 @@ export function rebalanceShotTimings(
 // 6. Minimum Shot Count Enforcement
 // ═══════════════════════════════════════════════════════════════════
 
-const MULTI_SHOT_SCENE_TYPES = new Set([
-  "environment", "character-driven", "character", "crowd", "battle",
-  "map-graphic", "map_visualization", "cinematic_sequence",
-]);
 
 /**
  * 최소 shot 수를 강제.

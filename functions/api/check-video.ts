@@ -54,7 +54,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[check-video] Kling check error:", msg);
-      return Response.json({ status: "FAILED", error: `Kling API 오류: ${msg}` });
+      return Response.json({ status: "FAILED", error: `Kling API 오류: ${msg}` }, { status: 502 });
     }
 
     console.log("[check-video] Kling result", {
@@ -70,7 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     if (result.status === "failed") {
-      return Response.json({ status: "FAILED", error: result.error ?? "Kling generation failed" });
+      return Response.json({ status: "FAILED", error: result.error ?? "Kling generation failed" }, { status: 422 });
     }
 
     // completed
@@ -100,6 +100,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return Response.json({
       status: "FAILED",
       error: `check-video 내부 오류: ${errMsg}`,
-    });
+    }, { status: 500 });
   }
 };
