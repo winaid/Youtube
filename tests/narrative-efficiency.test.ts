@@ -105,16 +105,16 @@ describe("C. recommendMinimumCutCount 새 정책", () => {
     expect(recommendMinimumCutCount(15)).toBe(4);
   });
 
-  it("210초 → minimum 14 (ceil(210 / 15))", () => {
-    expect(recommendMinimumCutCount(210)).toBe(14);
+  it("210초 → minimum 27 (ceil(210 / 8))", () => {
+    expect(recommendMinimumCutCount(210)).toBe(27);
   });
 
-  it("120초 → minimum 8 (ceil(120 / 15))", () => {
-    expect(recommendMinimumCutCount(120)).toBe(8);
+  it("120초 → minimum 15 (ceil(120 / 8))", () => {
+    expect(recommendMinimumCutCount(120)).toBe(15);
   });
 
-  it("300초 → minimum 20 (ceil(300 / 15))", () => {
-    expect(recommendMinimumCutCount(300)).toBe(20);
+  it("300초 → minimum 38 (ceil(300 / 8))", () => {
+    expect(recommendMinimumCutCount(300)).toBe(38);
   });
 });
 
@@ -123,18 +123,19 @@ describe("C. recommendMinimumCutCount 새 정책", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("D. recommendCutCountRange 서사 친화적 범위", () => {
-  it("15초 → {4, 6}", () => {
-    expect(recommendCutCountRange(15)).toEqual({ min: 4, max: 6 });
+  it("15초 → {6, 12}", () => {
+    // floor(15/8)=1 full (8s → {3,6}) + remainder 7s → {3,6} = {6, 12}
+    expect(recommendCutCountRange(15)).toEqual({ min: 6, max: 12 });
   });
 
-  it("120초 → {32, 48}", () => {
-    // 8 × {4, 6} = {32, 48}
-    expect(recommendCutCountRange(120)).toEqual({ min: 32, max: 48 });
+  it("120초 → {45, 90}", () => {
+    // 15 full segments × {3, 6} = {45, 90}
+    expect(recommendCutCountRange(120)).toEqual({ min: 45, max: 90 });
   });
 
-  it("210초 → {56, 84}", () => {
-    // 14 × {4, 6} = {56, 84}
-    expect(recommendCutCountRange(210)).toEqual({ min: 56, max: 84 });
+  it("210초 → {79, 158}", () => {
+    // floor(210/8)=26 full × {3,6} + remainder 2s → {1,2} = {79, 158}
+    expect(recommendCutCountRange(210)).toEqual({ min: 79, max: 158 });
   });
 });
 

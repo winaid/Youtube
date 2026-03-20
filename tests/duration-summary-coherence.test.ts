@@ -65,14 +65,16 @@ describe("duration summary coherence after density expansion", () => {
     expect(summary.headline).toContain(`총 ${totalSec}초`);
 
     // 밀도 보정 후 컷 길이가 다양해지면 범위(min~max) 표시, 균일하면 평균 표시
+    // hasRhythmContrast threshold: maxDur - minDur >= 2
     const durations = densified.map(c => c.durationSec);
     const minDur = Math.min(...durations);
     const maxDur = Math.max(...durations);
-    if (minDur !== maxDur) {
+    const hasRhythmContrast = maxDur - minDur >= 2;
+    if (hasRhythmContrast) {
       // 리듬 대비가 있으면 범위 표시
       expect(summary.headline).toContain(`${minDur}~${maxDur}초`);
     } else {
-      // 균일하면 평균 표시
+      // 균일하거나 차이가 작으면 평균 표시
       const avgSec = Math.round(totalSec / densified.length * 10) / 10;
       expect(summary.headline).toContain(`평균 ${avgSec}초`);
     }

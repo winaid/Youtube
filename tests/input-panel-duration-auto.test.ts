@@ -106,16 +106,16 @@ describe("PromptGenerator initial state", () => {
 // 4. 기존 명시 duration 회귀 없음
 // ═══════════════════════════════════════════════════════════════════
 
-describe("explicit duration regression", () => {
-  it("명시 4초 → payload에 4", () => {
-    expect(toApiSecondsPerScene(4)).toBe(4);
+describe("explicit duration regression (all clamped to 8 with fixed duration policy)", () => {
+  it("명시 4초 → payload에 8 (clamped to DURATION_MIN=8)", () => {
+    expect(toApiSecondsPerScene(4)).toBe(8);
   });
 
   it("명시 8초 → payload에 8", () => {
     expect(toApiSecondsPerScene(8)).toBe(8);
   });
 
-  it("명시 15초 → payload에 15", () => {
-    expect(toApiSecondsPerScene(15)).toBe(15);
+  it("명시 15초 → payload에 8 (clamped to DURATION_MAX=8)", () => {
+    expect(toApiSecondsPerScene(15)).toBe(8);
   });
 });

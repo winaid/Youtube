@@ -146,12 +146,12 @@ describe("reconcileDuration", () => {
     expect(r.basis).toBe("secondsPerScene");
   });
 
-  it("secondsPerScene=0, sceneCount=10, total=60 → 역산 6초이지만 최소 8초로 클램핑 + 경고", () => {
+  it("secondsPerScene=0, sceneCount=10, total=60 → 역산 6초이지만 MIN=8로 클램핑, 경고 없음", () => {
     const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 10, secondsPerScene: 0 });
     expect(r.reconciledSecondsPerScene).toBe(8);
     expect(r.reconciledSceneCount).toBe(10);
-    expect(r.warnings.length).toBeGreaterThan(0);
-    expect(r.warnings[0]).toContain("범위");
+    expect(r.reconciledTotalDurationSeconds).toBe(80);
+    expect(r.warnings).toHaveLength(0);
     expect(r.basis).toBe("sceneCount");
   });
 

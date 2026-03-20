@@ -48,22 +48,24 @@ describe("A. computeServerAutoDuration — totalDurationSeconds 전달", () => {
   });
 });
 
-describe("B. client computeAutoDuration parity", () => {
-  it("7) totalDurationSeconds=120 + cutCount=10 → client도 computed 12초", () => {
+describe("B. client computeAutoDuration (fixed 8s policy)", () => {
+  it("7) totalDurationSeconds=120 + cutCount=10 → client clamped to 8", () => {
     const r = computeAutoDuration({
       totalDurationSeconds: 120,
       cutCount: 10,
     });
-    expect(r.duration).toBe(12);
+    // 120/10=12 → clamped to DURATION_MAX(8)
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("computed");
   });
 
-  it("8) totalDurationSeconds=120 + cutCount=30 → clamped to DURATION_MIN(3)", () => {
+  it("8) totalDurationSeconds=120 + cutCount=30 → clamped to DURATION_MIN(8)", () => {
     const r = computeAutoDuration({
       totalDurationSeconds: 120,
       cutCount: 30,
     });
-    expect(r.duration).toBe(4); // 120/30=4, clamped to min 3 → actually 4
+    // 120/30=4 → clamped to DURATION_MIN(8)
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("computed");
   });
 });

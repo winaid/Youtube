@@ -135,23 +135,25 @@ describe("server _duration-constants export 무결성", () => {
     expect(SERVER_DURATION_MAX).toBe(15);
   });
 
-  it("client/server DURATION_MIN 동일", () => {
-    expect(SERVER_DURATION_MIN).toBe(DURATION_MIN);
+  it("client DURATION_MIN is 8 (fixed policy), server is 3", () => {
+    expect(DURATION_MIN).toBe(8);
+    expect(SERVER_DURATION_MIN).toBe(3);
   });
 
-  it("client/server DURATION_MAX 동일", () => {
-    expect(SERVER_DURATION_MAX).toBe(DURATION_MAX);
+  it("client DURATION_MAX is 8 (fixed policy), server is 15", () => {
+    expect(DURATION_MAX).toBe(8);
+    expect(SERVER_DURATION_MAX).toBe(15);
   });
 
-  it("secPerCut reconciliation: DURATION_MIN 클램핑 동작", () => {
+  it("secPerCut reconciliation: server DURATION_MIN 클램핑 동작", () => {
     // generate-cuts.ts:1486의 패턴 시뮬레이션
     const totalDuration = 15;
     const targetCuts = 6;
     const naturalPerCut = Math.max(SERVER_DURATION_MIN, Math.round(totalDuration / targetCuts));
-    expect(naturalPerCut).toBe(SERVER_DURATION_MIN); // 15/6=2.5 → round=3 = DURATION_MIN
+    expect(naturalPerCut).toBe(SERVER_DURATION_MIN); // 15/6=2.5 → round=3 = SERVER_DURATION_MIN
   });
 
-  it("serverSafeDuration이 DURATION_MIN 기반 클램핑", () => {
+  it("serverSafeDuration이 server DURATION_MIN 기반 클램핑", () => {
     expect(serverSafeDuration(1)).toBe(SERVER_DURATION_MIN);
     expect(serverSafeDuration(2)).toBe(SERVER_DURATION_MIN);
     expect(serverSafeDuration(3)).toBe(3);
