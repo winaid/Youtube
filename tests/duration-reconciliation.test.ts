@@ -21,18 +21,18 @@ describe("toApiSecondsPerScene", () => {
     expect(toApiSecondsPerScene(0)).toBeUndefined();
   });
 
-  it("슬라이더 1~2 → 최소값 3으로 클램핑", () => {
+  it("슬라이더 1~2 → 최소값 8으로 클램핑", () => {
     expect(toApiSecondsPerScene(1)).toBe(DURATION_MIN);
     expect(toApiSecondsPerScene(2)).toBe(DURATION_MIN);
   });
 
-  it("슬라이더 3~15 → 그대로 반환", () => {
-    expect(toApiSecondsPerScene(3)).toBe(3);
+  it("슬라이더 3~15 → 고정 8초 반환", () => {
+    expect(toApiSecondsPerScene(3)).toBe(8);
     expect(toApiSecondsPerScene(8)).toBe(8);
-    expect(toApiSecondsPerScene(15)).toBe(15);
+    expect(toApiSecondsPerScene(15)).toBe(8);
   });
 
-  it("슬라이더 15 초과 → 15로 클램핑", () => {
+  it("슬라이더 15 초과 → 8로 클램핑", () => {
     expect(toApiSecondsPerScene(20)).toBe(DURATION_MAX);
   });
 });
@@ -56,24 +56,23 @@ describe("safeDuration", () => {
     expect(safeDuration(NaN)).toBe(DURATION_FALLBACK);
   });
 
-  it("4 → 4 (유효값 그대로)", () => {
-    expect(safeDuration(4)).toBe(4);
+  it("4 → 8 (고정 8초 정책으로 클램핑)", () => {
+    expect(safeDuration(4)).toBe(8);
   });
 
-  it("1 → 3 (DURATION_MIN 클램핑)", () => {
+  it("1 → 8 (DURATION_MIN 클램핑)", () => {
     expect(safeDuration(1)).toBe(DURATION_MIN);
   });
 
-  it("20 → 15 (DURATION_MAX 클램핑)", () => {
+  it("20 → 8 (DURATION_MAX 클램핑)", () => {
     expect(safeDuration(20)).toBe(DURATION_MAX);
   });
 
-  it("기존 8초 fallback이 slider 4를 덮어쓰지 않음", () => {
-    // 핵심 테스트: 사용자가 4초를 선택했을 때 safeDuration이 8로 회귀하지 않는지
+  it("모든 슬라이더 값은 고정 8초로 수렴", () => {
     const sliderValue = 4;
     const apiValue = toApiSecondsPerScene(sliderValue);
-    expect(apiValue).toBe(4);
-    expect(safeDuration(apiValue)).toBe(4);
+    expect(apiValue).toBe(8);
+    expect(safeDuration(apiValue)).toBe(8);
   });
 });
 
@@ -124,7 +123,7 @@ describe("reconcileDuration", () => {
     expect(r.basis).toBe("secondsPerScene");
   });
 
-  it("secondsPerScene=6, sceneCount=0, total=60 → sceneCount 역산=10", () => {
+  it("secondsPerScene=6, sceneCount=0, total=60 → sceneCount 역산, secondsPerScene=6 유지", () => {
     const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 0, secondsPerScene: 6 });
     expect(r.reconciledSceneCount).toBe(10);
     expect(r.reconciledSecondsPerScene).toBe(6);
@@ -147,21 +146,23 @@ describe("reconcileDuration", () => {
     expect(r.basis).toBe("secondsPerScene");
   });
 
-  it("secondsPerScene=0, sceneCount=10, total=60 → secondsPerScene 역산=6", () => {
+  it("secondsPerScene=0, sceneCount=10, total=60 → 역산 6초이지만 최소 8초로 클램핑 + 경고", () => {
     const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 10, secondsPerScene: 0 });
-    expect(r.reconciledSecondsPerScene).toBe(6);
+    expect(r.reconciledSecondsPerScene).toBe(8);
     expect(r.reconciledSceneCount).toBe(10);
+    expect(r.warnings.length).toBeGreaterThan(0);
+    expect(r.warnings[0]).toContain("범위");
     expect(r.basis).toBe("sceneCount");
   });
 
-  it("secondsPerScene=0, sceneCount=2, total=60 → 역산 30초이지만 최대 15초로 클램핑 + 경고", () => {
+  it("secondsPerScene=0, sceneCount=2, total=60 → 역산 30초이지만 최대 8초로 클램핑 + 경고", () => {
     const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 2, secondsPerScene: 0 });
     expect(r.reconciledSecondsPerScene).toBe(DURATION_MAX);
     expect(r.warnings.length).toBeGreaterThan(0);
     expect(r.warnings[0]).toContain("범위");
   });
 
-  it("secondsPerScene=5, sceneCount=0, total=0 → secondsPerScene만 유지, 나머지 0", () => {
+  it("secondsPerScene=5, sceneCount=0, total=0 → secondsPerScene 유지(5), 나머지 0", () => {
     const r = reconcileDuration({ totalDurationSeconds: 0, sceneCount: 0, secondsPerScene: 5 });
     expect(r.reconciledSecondsPerScene).toBe(5);
     expect(r.reconciledSceneCount).toBe(0);
@@ -283,15 +284,14 @@ describe("buildSequencePlan duration 동기화", () => {
 // ── regenerateShot duration 보존 ─────────────────────────────────────────────
 
 describe("regenerateShot duration 보존", () => {
-  it("[요구#8] safeDuration(cfg.durationSeconds)가 부모 shot duration을 유지", () => {
+  it("[요구#8] safeDuration(cfg.durationSeconds)는 고정 8초 반환", () => {
     // 시나리오: 부모 shot이 6초, config도 6초
     const parentShotDuration = 6;
     const cfg = { durationSeconds: parentShotDuration };
-    // regenerateShot 코드에서는 safeDuration(cfg.durationSeconds)를 사용
+    // safeDuration은 항상 8초로 클램핑 (DURATION_MIN=8, DURATION_MAX=8)
     const result = safeDuration(cfg.durationSeconds);
-    expect(result).toBe(6);
-    // 8로 회귀하지 않아야 함
-    expect(result).not.toBe(DURATION_FALLBACK);
+    expect(result).toBe(8);
+    expect(result).toBe(DURATION_FALLBACK);
   });
 
   it("[요구#8] safeDuration은 undefined config에서만 fallback", () => {
@@ -315,11 +315,11 @@ describe("상태 소유권 단일화", () => {
     expect(apiPayload).toBe(6);
   });
 
-  it("[요구#2] slider=1 입력 시 safeDuration이 3초로 보정", () => {
+  it("[요구#2] slider=1 입력 시 safeDuration이 8초로 보정", () => {
     const sliderValue = 1;
     const apiValue = toApiSecondsPerScene(sliderValue);
-    expect(apiValue).toBe(DURATION_MIN); // 3
-    // UI 보정 메시지: "입력: 1초 → 적용: 3초"
+    expect(apiValue).toBe(DURATION_MIN); // 8
+    // UI 보정 메시지: "입력: 1초 → 적용: 8초"
     const isCorrection = sliderValue >= 1 && sliderValue < DURATION_MIN;
     expect(isCorrection).toBe(true);
   });
@@ -336,9 +336,10 @@ describe("duration 충돌 경고", () => {
     expect(r.warnings[0]).toContain("불일치");
   });
 
-  it("[요구#4] sceneCount 기준 보정 시 basis=sceneCount", () => {
+  it("[요구#4] sceneCount 기준 보정 시 basis=sceneCount, secondsPerScene=8로 클램핑", () => {
     const r = reconcileDuration({ totalDurationSeconds: 60, sceneCount: 10, secondsPerScene: 0 });
     expect(r.basis).toBe("sceneCount");
+    expect(r.reconciledSecondsPerScene).toBe(8);
   });
 });
 

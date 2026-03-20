@@ -56,8 +56,11 @@ describe("planRecommendedShotCount", () => {
     expect(battleCount).toBeGreaterThanOrEqual(normalCount);
   });
 
-  it("multiShot 미지원 모델 → 1", () => {
-    expect(planRecommendedShotCount("unknown-model", 12)).toBe(1);
+  it("multiShot 미지원 모델 → VEO 고정 4샷 정책으로 동일 처리", () => {
+    // All models now use multishot (VEO_MAX_SHOTS=4), unknown model falls back to default
+    const count = planRecommendedShotCount("unknown-model", 12);
+    expect(count).toBeGreaterThanOrEqual(3);
+    expect(count).toBeLessThanOrEqual(4);
   });
 });
 
@@ -163,8 +166,9 @@ describe("shouldForceMultiShot", () => {
     expect(shouldForceMultiShot("cinematic_sequence", 3, model)).toBe(false);
   });
 
-  it("multiShot 미지원 모델 → 비강제", () => {
-    expect(shouldForceMultiShot("cinematic_sequence", 12, "unknown-model")).toBe(false);
+  it("multiShot — 모든 모델 지원 (VEO 고정 4샷 정책)", () => {
+    // All models now use multishot, so 12s cinematic_sequence is always forced
+    expect(shouldForceMultiShot("cinematic_sequence", 12, "unknown-model")).toBe(true);
   });
 });
 
@@ -249,12 +253,14 @@ describe("buildDefaultMultiShot", () => {
     expect(shots).toEqual([]);
   });
 
-  it("multiShot 미지원 모델 → 빈 배열", () => {
+  it("multiShot — 모든 모델 지원 (unknown-model도 4샷 생성)", () => {
+    // All models now use multishot (VEO fixed 4-shot policy)
     const shots = buildDefaultMultiShot({
       durationSec: 12,
       modelId: "unknown-model",
     });
-    expect(shots).toEqual([]);
+    expect(shots.length).toBeGreaterThanOrEqual(3);
+    expect(shots.length).toBeLessThanOrEqual(4);
   });
 });
 

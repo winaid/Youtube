@@ -44,23 +44,23 @@ describe("recommendMinimumCutCount", () => {
     expect(recommendMinimumCutCount(5)).toBe(1);   // ≤5s: micro, min 1
     expect(recommendMinimumCutCount(6)).toBe(3);   // 6-9s: short, min 3
     expect(recommendMinimumCutCount(7)).toBe(3);   // 6-9s: short, min 3
-    expect(recommendMinimumCutCount(8)).toBe(3);   // 6-9s: short, min 3
+    expect(recommendMinimumCutCount(8)).toBe(3);   // 6-9s: short, min 3 (≤9 branch)
     expect(recommendMinimumCutCount(9)).toBe(3);   // 6-9s: short, min 3
-    expect(recommendMinimumCutCount(10)).toBe(4);  // 10-15s: shortform-critical, min 4
-    expect(recommendMinimumCutCount(12)).toBe(4);  // 10-15s: shortform-critical, min 4
-    expect(recommendMinimumCutCount(13)).toBe(4);  // 10-15s: shortform-critical, min 4
-    expect(recommendMinimumCutCount(15)).toBe(4);  // 10-15s: shortform-critical, min 4
+    expect(recommendMinimumCutCount(10)).toBe(4);  // >9s: max(4, ceil(10/8)) = 4
+    expect(recommendMinimumCutCount(12)).toBe(4);  // >9s: max(4, ceil(12/8)) = 4
+    expect(recommendMinimumCutCount(13)).toBe(4);  // >9s: max(4, ceil(13/8)) = 4
+    expect(recommendMinimumCutCount(15)).toBe(4);  // >9s: max(4, ceil(15/8)) = 4
   });
 
-  it("should return max(4, ceil(total/15)) for > 15 seconds", () => {
-    // 20s = max(4, ceil(20/15)) = max(4,2) = 4
+  it("should return max(4, ceil(total/8)) for > 9 seconds", () => {
+    // 20s = max(4, ceil(20/8)) = max(4,3) = 4
     expect(recommendMinimumCutCount(20)).toBe(4);
-    // 30s = max(4, ceil(30/15)) = max(4,2) = 4
+    // 30s = max(4, ceil(30/8)) = max(4,4) = 4
     expect(recommendMinimumCutCount(30)).toBe(4);
-    // 48s = ceil(48/15) = 4 sequences
-    expect(recommendMinimumCutCount(48)).toBe(4);
-    // 120s = ceil(120/15) = 8 sequences
-    expect(recommendMinimumCutCount(120)).toBe(8);
+    // 48s = max(4, ceil(48/8)) = max(4,6) = 6
+    expect(recommendMinimumCutCount(48)).toBe(6);
+    // 120s = max(4, ceil(120/8)) = max(4,15) = 15
+    expect(recommendMinimumCutCount(120)).toBe(15);
   });
 
   it("should return 1 for invalid input", () => {
