@@ -32,6 +32,236 @@ import { serverSanitizeAndValidate } from "./_prompt-sanitizer";
 
 type Env = KlingEnv;
 
+// ═══════════════════════════════════════════════════════════════════
+// Provider-Facing Prompt Cleanup Utilities
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Internal bracket tags that must NEVER reach the video provider.
+ * These are editorial/planning scaffolding — not visual descriptions.
+ */
+const INTERNAL_TAG_PATTERNS = [
+  /\[VISUAL LOCK\]\s*/gi,
+  /\[CHARACTER LOCK\]\s*/gi,
+  /\[CONTINUATION\][^.]*\./gi,
+  /\[ENDING\][^.]*\./gi,
+  /\[Establishing wide shot\]\s*/gi,
+  /\[Developing mid shot\]\s*/gi,
+  /\[Peak dramatic moment\]\s*/gi,
+  /\[Resolving close-up\]\s*/gi,
+  /\[Transition\]\s*/gi,
+  /\[Insert detail\]\s*/gi,
+  /\[Shot \d+\/\d+[^\]]*\]\s*/gi,
+];
+
+/**
+ * Extract a compact visual lock from a (potentially verbose) styleSuffix.
+ * Returns only stable look anchors: medium, material, palette, light type.
+ * Returns empty string if nothing useful can be extracted.
+ */
+function extractCompactVisualLock(rawLock: string): string {
+  if (!rawLock || rawLock.length < 5) return "";
+  // Extract only medium/material/palette/light anchors
+  const anchors: string[] = [];
+  const mediumMatch = rawLock.match(/\b(claymation|stop[\s-]?motion|watercolor|oil[\s-]?paint|pencil[\s-]?sketch|anime|cel[\s-]?shad|charcoal|photorealistic|cinematic[\s-]?realism|documentary|live[\s-]?action)\b/i);
+  if (mediumMatch) anchors.push(mediumMatch[0].toLowerCase());
+  const materialMatch = rawLock.match(/\b(fingerprint\s+texture|handcrafted|clay\s+surface|impasto|visible\s+brush|grainy\s+film|film\s+grain|halation)\b/i);
+  if (materialMatch) anchors.push(materialMatch[0].toLowerCase());
+  const paletteMatch = rawLock.match(/\b(desaturated|warm\s+palette|cool\s+palette|monochrome|sepia|muted|pastel|high[\s-]?contrast|low[\s-]?key|high[\s-]?key)\b/i);
+  if (paletteMatch) anchors.push(paletteMatch[0].toLowerCase());
+  const lightMatch = rawLock.match(/\b(practical\s+light|tungsten|candlelit|gaslight|neon|golden\s+hour|blue\s+hour|overcast|studio\s+light|natural\s+light|backlit|rim[\s-]?light)\b/i);
+  if (lightMatch) anchors.push(lightMatch[0].toLowerCase());
+  if (anchors.length === 0) {
+    // Fallback: use first clause if short enough
+    const first = rawLock.split(/[.,;]/).filter(Boolean)[0]?.trim();
+    return first && first.length < 80 ? first : "";
+  }
+  return anchors.join(", ");
+}
+
+/** Strip all internal bracket meta tags from a prompt string. */
+function stripInternalTags(text: string): string {
+  let cleaned = text;
+  for (const pattern of INTERNAL_TAG_PATTERNS) {
+    pattern.lastIndex = 0;
+    cleaned = cleaned.replace(pattern, "");
+  }
+  // Catch any remaining [ALLCAPS ...] editorial tags
+  cleaned = cleaned.replace(/\[(?:VISUAL|CHARACTER|CONTINUATION|ENDING|NARRATIVE|LOCK)[^\]]*\]\s*/gi, "");
+  return cleaned.replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim();
+}
+
+/** Clean a single multiShot entry prompt. */
+function cleanShotPrompt(prompt: string): string {
+  return stripInternalTags(prompt);
+}
+
+/**
+ * Deduplicate repeated clauses in a prompt.
+ * Split by sentence boundaries, keep first occurrence of each normalized clause.
+ */
+function deduplicatePromptClauses(text: string): string {
+  const sentences = text.split(/\.\s+/).filter(s => s.trim().length > 3);
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const s of sentences) {
+    const norm = s.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+    // Allow short functional sentences through even if similar
+    if (norm.length < 10) { unique.push(s.trim()); continue; }
+    // Check for high overlap with already-seen sentences
+    let isDupe = false;
+    for (const prev of seen) {
+      if (prev === norm) { isDupe = true; break; }
+      // Substring containment: if one fully contains the other
+      if (prev.includes(norm) || norm.includes(prev)) { isDupe = true; break; }
+    }
+    if (!isDupe) {
+      seen.add(norm);
+      unique.push(s.trim());
+    }
+  }
+  return unique.join(". ").replace(/\.\s*\./g, ".").trim();
+}
+
+/**
+ * Extract global anchors from a prompt — elements that define the persistent
+ * visual identity of the entire clip (medium, era, location, material, light family).
+ * These belong in the top-level prompt when multiShot is present.
+ */
+function extractGlobalAnchors(prompt: string): string {
+  const clauses = prompt.split(/\.\s+/).filter(s => s.trim().length > 3);
+  const globalPatterns = [
+    /\b(claymation|stop[\s-]?motion|fingerprint|handcrafted|clay\s+surface|visible\s+texture)/i,
+    /\b(1[0-9]{3}s|19th\s+century|medieval|victorian|antique|archaic|ancient)/i,
+    /\b(dental\s+room|dental\s+office|clinic|operating\s+room|laboratory|workshop)/i,
+    /\b(dim(?:ly)?\s+lit|warm\s+(?:practical|tungsten|lamp)\s+light|low[\s-]?key\s+light|candlelit|gaslight|interior\s+light)/i,
+    /\b(cinematic|photorealistic|live[\s-]?action|documentary|animation|watercolor|oil\s+paint)/i,
+    /\b(desaturated|warm\s+palette|cool\s+palette|monochrome|sepia|muted\s+color)/i,
+  ];
+  const global: string[] = [];
+  for (const clause of clauses) {
+    if (globalPatterns.some(p => p.test(clause))) {
+      global.push(clause.trim());
+    }
+  }
+  return global.length > 0 ? global.join(". ") : "";
+}
+
+// ── Server-side shot decomposition (mirrors multi-shot-planner logic) ──
+
+/** Simple keyword extraction for server-side prompt decomposition. */
+function serverExtractTerms(text: string, re: RegExp): string[] {
+  re.lastIndex = 0;
+  const matches = text.match(re);
+  return matches ? [...new Set(matches.map(m => m.toLowerCase()))] : [];
+}
+
+const SRV_SPACE_RE = /\b(room|street|office|hospital|clinic|kitchen|hall|temple|ruins|forest|city|castle|village|cave|beach|mountain|valley|garden|corridor|alley|workshop|studio|laboratory|church|palace|prison|tower|basement|attic|library|station|arena|plaza|courtyard|dock|warehouse|factory|bridge|tunnel|rooftop|balcony|tray|chair|table|shelf|cabinet|counter|desk|bed)\b/gi;
+const SRV_ACTION_RE = /\b(rides?|walks?|runs?|spins?|turns?|opens?|pushes?|pulls?|enters?|climbs?|grabs?|reaches?|approaches|comes?\s+alive|moves?|emerges?|stretches?|shifts?|vibrates?|rotates?|oscillates?)\b/gi;
+const SRV_DETAIL_RE = /\b(rust(?:y|ed)?|metal|steel|iron|glass|leather|fabric|wood|stone|ceramic|dust|smoke|steam|glow\w*|shadow\w*|texture|grain|surface|crack|patina|oxidized|worn|tarnished|polished|gleaming|drill|blade|needle|scalpel|forceps|clamp|pliers|saw|tool|instrument|device|mechanism|gauge|dial|handle|switch|lever|knob|tray|vial|bottle|jar|flask|lamp|bulb|filament|wire|cable|chain|strap|buckle|rivet|hinge|latch|gear|cog|spring|valve)\b/gi;
+const SRV_SUBJECT_RE = /\b(dentist|patient|doctor|nurse|figure|person|man|woman|child|worker|craftsman|artisan|assistant|attendant|chair|drill|tool|instrument)\b/gi;
+
+interface PromptLayers {
+  space: string;
+  action: string;
+  detail: string;
+  subject: string;
+  fullPrompt: string;
+}
+
+/** Decompose a prompt into visual layers for server-side multi-shot building. */
+function serverDecomposePrompt(prompt: string): PromptLayers {
+  const spaceWords = serverExtractTerms(prompt, SRV_SPACE_RE);
+  const actionWords = serverExtractTerms(prompt, SRV_ACTION_RE);
+  const detailWords = serverExtractTerms(prompt, SRV_DETAIL_RE);
+  const subjectWords = serverExtractTerms(prompt, SRV_SUBJECT_RE);
+
+  const clauses = prompt.split(/\.\s+/).filter(c => c.trim().length > 5);
+
+  // Classify clauses
+  const spaceClauses: string[] = [];
+  const actionClauses: string[] = [];
+  const detailClauses: string[] = [];
+  for (const clause of clauses) {
+    SRV_ACTION_RE.lastIndex = 0;
+    SRV_DETAIL_RE.lastIndex = 0;
+    SRV_SPACE_RE.lastIndex = 0;
+    if (SRV_ACTION_RE.test(clause)) actionClauses.push(clause.trim());
+    else if (SRV_DETAIL_RE.test(clause)) detailClauses.push(clause.trim());
+    else if (SRV_SPACE_RE.test(clause)) spaceClauses.push(clause.trim());
+    else spaceClauses.push(clause.trim()); // default to space
+  }
+
+  return {
+    space: spaceClauses.length > 0 ? spaceClauses.join(". ") : (spaceWords.length > 0 ? `A ${spaceWords.join(", ")} scene` : prompt.split(".")[0] || prompt),
+    action: actionClauses.length > 0 ? actionClauses.join(". ") : (actionWords.length > 0 ? `Subject ${actionWords.slice(0, 2).join(" and ")}` : "subject becomes visible"),
+    detail: detailClauses.length > 0 ? detailClauses.join(". ") : (detailWords.length > 0 ? `Close detail of ${detailWords.slice(0, 3).join(", ")}` : "textured surface detail"),
+    subject: subjectWords.length > 0 ? subjectWords.slice(0, 2).join(", ") : "",
+    fullPrompt: prompt,
+  };
+}
+
+/** Role-specific shot framing directives (no bracket tags, just visual descriptions). */
+const ROLE_SHOT_BUILDERS: Record<string, (layers: PromptLayers) => string> = {
+  establish: (l) => `Wide establishing view of ${l.space}. Slow push-in revealing the full environment.`,
+  transition: (l) => `New angle drifting past ${l.detail.split(".")[0] || l.space}. Spatial shift showing a different vantage point.`,
+  develop: (l) => `Medium shot. ${l.action}. First clear view of the subject in motion.`,
+  insert: (l) => `Extreme close-up on ${l.detail}. Scale jump emphasizing texture and material.`,
+  peak: (l) => `Close-up. ${l.action}. Most intense visual moment in the sequence.`,
+  resolve: (l) => `${l.action}. Motion continuing, scene left open and unresolved.`,
+};
+
+/** Predefined role sequences by shot count. */
+const ROLE_SEQUENCES: Record<number, string[]> = {
+  2: ["establish", "resolve"],
+  3: ["establish", "develop", "resolve"],
+  4: ["establish", "develop", "peak", "resolve"],
+  5: ["establish", "transition", "develop", "peak", "resolve"],
+  6: ["establish", "transition", "develop", "insert", "peak", "resolve"],
+};
+
+/**
+ * Build semantically different multi-shot prompts from a base prompt.
+ * Each shot describes a DIFFERENT visual job — no repeated base prompts.
+ */
+function buildServerMultiShot(
+  basePrompt: string,
+  shotCount: number,
+  totalDurationSec: number,
+): KlingMultiShot[] {
+  const layers = serverDecomposePrompt(basePrompt);
+  const roles = ROLE_SEQUENCES[shotCount] ?? ROLE_SEQUENCES[4]!;
+  const effectiveCount = Math.min(shotCount, roles.length);
+  const perShotDur = Math.max(2, Math.floor(totalDurationSec / effectiveCount));
+  const remainder = totalDurationSec - perShotDur * effectiveCount;
+
+  return Array.from({ length: effectiveCount }, (_, i) => {
+    const role = roles[i]!;
+    const builder = ROLE_SHOT_BUILDERS[role];
+    const shotPrompt = builder ? builder(layers) : layers.fullPrompt;
+    return {
+      index: i + 1,
+      prompt: shotPrompt.slice(0, 2500),
+      duration: String(i === effectiveCount - 1 ? perShotDur + remainder : perShotDur),
+    };
+  });
+}
+
+/**
+ * When multiShot is present, split the base prompt into:
+ * - global anchors (medium, material, era, location, stable lighting) → top-level prompt
+ * - strip global anchors from per-shot prompts to avoid duplication
+ *
+ * The top-level prompt becomes a concise global identity string.
+ */
+function buildGlobalPromptForMultiShot(basePrompt: string): string {
+  const global = extractGlobalAnchors(basePrompt);
+  if (global.length > 20) return deduplicatePromptClauses(global);
+  // Fallback: use first 2 sentences as global context
+  const sentences = basePrompt.split(/\.\s+/).filter(s => s.trim().length > 5);
+  return sentences.slice(0, 2).join(". ").trim();
+}
+
 /** StructuredSequenceDocument의 서버 측 미러 (클라이언트에서 전달) — v2 dense fields 포함 */
 interface StructuredSequencePayload {
   // ── Dense Sequence Fields (v2) ──
@@ -539,41 +769,45 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ── Continuity Mode: 프롬프트 앞에 연속성 정보 주입 ──────────────────
+    // No bracket tags — only plain visual descriptions for the provider.
     if (req.continuityMeta) {
       const cm = req.continuityMeta;
       const continuityParts: string[] = [];
 
-      // Character lock
+      // Character lock — plain description, no [CHARACTER LOCK] tag
       if (cm.characterLock) {
-        continuityParts.push(`[CHARACTER LOCK] ${cm.characterLock}`);
+        continuityParts.push(`Maintain character: ${cm.characterLock}`);
       }
 
-      // Visual lock
+      // Visual lock — extract compact medium/material/palette anchors only
+      // Do NOT use the full styleSuffix (it duplicates style text already in the prompt)
       if (cm.visualLock) {
-        continuityParts.push(`[VISUAL LOCK] ${cm.visualLock}`);
+        const compactLock = extractCompactVisualLock(cm.visualLock);
+        if (compactLock) {
+          continuityParts.push(`Consistent look: ${compactLock}`);
+        }
       }
 
-      // Previous segment end state continuation
+      // Previous segment end state continuation — plain prose, no [CONTINUATION] tag
       if (cm.prevEndState && cm.segmentIndex > 0) {
         const pe = cm.prevEndState;
-        const contLines = ["[CONTINUATION] This clip continues from previous segment:"];
+        const contLines = ["Continue seamlessly from previous segment:"];
         if (pe.subjectPosition) contLines.push(`Subject: ${pe.subjectPosition}`);
         if (pe.cameraState) contLines.push(`Camera: ${pe.cameraState}`);
         if (pe.motionVector) contLines.push(`Motion: ${pe.motionVector}`);
         if (pe.lightingState) contLines.push(`Lighting: ${pe.lightingState}`);
-        contLines.push("Start seamlessly from this state.");
         continuityParts.push(contLines.join(" "));
       }
 
-      // Ending rule (not last segment)
+      // Ending rule — plain instruction, no [ENDING] tag
       if (!cm.isLastSegment) {
-        continuityParts.push("[ENDING] Last 2 seconds: mid-action, camera moving, emotion unresolved. Do not close the scene.");
+        continuityParts.push("Last 2 seconds: mid-action, camera moving, emotion unresolved. Do not close the scene.");
       }
 
       if (continuityParts.length > 0) {
         const continuityPrefix = continuityParts.join(". ") + ". ";
         finalPromptForProvider = continuityPrefix + finalPromptForProvider;
-        console.log("[generate-video] continuity meta injected:", {
+        console.log("[generate-video] continuity meta injected (clean, no bracket tags):", {
           segmentIndex: cm.segmentIndex,
           totalSegments: cm.totalSegments,
           isLastSegment: cm.isLastSegment,
@@ -707,32 +941,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         );
       } else {
         // Batch Mode: auto-repair — 역할 기반 멀티샷 자동 생성
-        // 절대 규칙: 6~9초=최소3, 10~15초=최소4
+        // Each shot gets a semantically different visual description (no bracket tags, no repeated base prompt)
         const autoShotCount = normalizedDuration <= 5 ? 2
           : normalizedDuration <= 9 ? 3
           : normalizedDuration <= 12 ? Math.min(4, serverMaxShots)
           : Math.min(5, serverMaxShots);
-        const minShotDur = getCapability(modelUsed).minShotDuration;
-        const baseDur = Math.floor(normalizedDuration / autoShotCount);
-        const remainder = normalizedDuration - baseDur * autoShotCount;
-        // 역할 패턴: 시각적 진행감을 위해 샷별 다른 접두사 적용
-        const ROLE_PREFIXES: Record<number, string[]> = {
-          2: ["[Establishing wide shot] ", "[Resolving close-up] "],
-          3: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Resolving close-up] "],
-          4: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
-          5: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
-        };
-        const prefixes = ROLE_PREFIXES[autoShotCount] ?? ROLE_PREFIXES[4]!;
         const basePrompt = finalPromptForProvider || "";
-        const repairedShots: KlingMultiShot[] = Array.from({ length: autoShotCount }, (_, i) => ({
-          index: i + 1,
-          prompt: `${prefixes[i] ?? ""}${basePrompt}`.slice(0, 512),
-          duration: String(i === autoShotCount - 1 ? baseDur + remainder : baseDur),
-        }));
+        const repairedShots = buildServerMultiShot(basePrompt, autoShotCount, normalizedDuration);
         req.multiShot = repairedShots;
-        console.log("[Kling] Batch auto-repair: 멀티샷 자동 생성", {
+        console.log("[Kling] Batch auto-repair: 멀티샷 자동 생성 (decomposed)", {
           shotCount: autoShotCount,
           durations: repairedShots.map(s => s.duration),
+          promptPreviews: repairedShots.map(s => s.prompt.slice(0, 60)),
         });
       }
     }
@@ -756,19 +976,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         console.warn(`[Kling] 멀티샷 최소 강제: ${currentCount}샷 → ${targetCount}샷 (${normalizedDuration}s, min=${minRequired})`);
         const basePrompt = finalPromptForProvider || "";
         const totalDur = req.multiShot.reduce((s: number, sh: KlingMultiShot) => s + (parseFloat(sh.duration) || 0), 0) || normalizedDuration;
-        const perShotDur = Math.max(2, Math.floor(totalDur / targetCount));
-        const ROLE_PREFIXES: Record<number, string[]> = {
-          3: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Resolving close-up] "],
-          4: ["[Establishing wide shot] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
-          5: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
-          6: ["[Establishing wide shot] ", "[Transition] ", "[Developing mid shot] ", "[Insert detail] ", "[Peak dramatic moment] ", "[Resolving close-up] "],
-        };
-        const prefixes = ROLE_PREFIXES[targetCount] ?? ROLE_PREFIXES[4]!;
-        const repairedShots: KlingMultiShot[] = Array.from({ length: targetCount }, (_, i) => ({
-          index: i + 1,
-          prompt: `${prefixes[i] ?? ""}${basePrompt}`.slice(0, 512),
-          duration: String(i === targetCount - 1 ? totalDur - perShotDur * (targetCount - 1) : perShotDur),
-        }));
+        // Build semantically different shots using role-based decomposition (no bracket tags)
+        const repairedShots = buildServerMultiShot(basePrompt, targetCount, totalDur);
         req.multiShot = repairedShots;
       }
     }
@@ -780,6 +989,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // 모델이 멀티샷 미지원 → 제거
       req.multiShot = undefined;
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FINAL PROVIDER-FACING CLEANUP
+    // Strip any remaining internal tags, deduplicate clauses,
+    // and separate global vs per-shot content when multiShot is present.
+    // ═══════════════════════════════════════════════════════════════════
+    finalPromptForProvider = stripInternalTags(finalPromptForProvider);
+    finalPromptForProvider = deduplicatePromptClauses(finalPromptForProvider);
+
+    if (req.multiShot && req.multiShot.length > 0) {
+      // Clean each shot prompt of internal tags and duplicated clauses
+      for (const shot of req.multiShot) {
+        shot.prompt = cleanShotPrompt(shot.prompt);
+        shot.prompt = deduplicatePromptClauses(shot.prompt);
+      }
+      // When multiShot is present, top-level prompt should be global-only
+      // (medium, material, era, location, stable light) — not the full scene description
+      const globalOnly = buildGlobalPromptForMultiShot(finalPromptForProvider);
+      if (globalOnly.length > 20) {
+        finalPromptForProvider = globalOnly;
+      }
+    }
+
+    console.log("[generate-video] provider-facing cleanup done:", {
+      promptLen: finalPromptForProvider.length,
+      promptPreview: finalPromptForProvider.slice(0, 150),
+      multiShotCount: req.multiShot?.length ?? 0,
+      multiShotPreviews: req.multiShot?.map(s => s.prompt.slice(0, 80)) ?? [],
+    });
 
     try {
       if (videoMode === "extend" && validLast) {

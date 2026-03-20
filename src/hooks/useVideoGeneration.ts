@@ -1611,7 +1611,16 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             isLastSegment: cut.continuitySegment.isLastSegment ?? (cutNumber === cutsRef.current.length),
             prevEndState: cut.continuitySegment.startState as unknown as Record<string, unknown> | undefined,
             characterLock: cut.characterConsistency || "",
-            visualLock: cut.videoPromptJson?.styleSuffix || "",
+            // Send compact visual lock, NOT the full styleSuffix.
+            // Server will further extract medium/material/palette anchors.
+            // Only send first sentence of styleSuffix as a hint.
+            visualLock: (() => {
+              const suffix = cut.videoPromptJson?.styleSuffix || "";
+              if (!suffix) return "";
+              // Take only the first sentence — compact medium/material hint
+              const first = suffix.split(/\.\s+/)[0] || "";
+              return first.length > 120 ? first.slice(0, 120) : first;
+            })(),
           },
         } : {}),
         extraFields: {
