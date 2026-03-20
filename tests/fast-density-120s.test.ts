@@ -45,7 +45,7 @@ describe("A. editingDensity payload with duration=auto", () => {
     expect(dense.min).toBeGreaterThanOrEqual(normal.max);
   });
 
-  it("3) sparse preset + 15초 segment → 하단 범위", () => {
+  it("3) sparse preset + 15초 → 하단 범위", () => {
     const normal = recommendCutCountRange(15);
     const sparse = densityPresetToRange("sparse", 15);
     expect(sparse.max).toBeLessThanOrEqual(normal.min);
@@ -57,28 +57,30 @@ describe("A. editingDensity payload with duration=auto", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. 120초 segment-aware density", () => {
-  it("4) 120초 → 8 segments (120/15=8)", () => {
-    expect(Math.ceil(120 / VEO_SEGMENT_CAP)).toBe(8);
+  it("4) 120초 → 15 segments (120/8=15)", () => {
+    expect(Math.ceil(120 / VEO_SEGMENT_CAP)).toBe(15);
   });
 
-  it("5) recommendCutCountRange(120) = 8 × range(15) = {32, 48}", () => {
+  it("5) recommendCutCountRange(120) = 15 × range(8) = {45, 90}", () => {
     const range = recommendCutCountRange(120);
-    // 8 full segments of 15s → 8 × {4, 6} = {32, 48}
-    expect(range).toEqual({ min: 32, max: 48 });
+    // 15 full segments of 8s → 15 × {3, 6} = {45, 90}
+    expect(range).toEqual({ min: 45, max: 90 });
   });
 
-  it("6) recommendMinimumCutCount(120) = ceil(120/15) = 8 sequences", () => {
-    expect(recommendMinimumCutCount(120)).toBe(8);
+  it("6) recommendMinimumCutCount(120) = ceil(120/8) = 15 sequences", () => {
+    expect(recommendMinimumCutCount(120)).toBe(15);
   });
 
-  it("7) 60초 → 4 segments → {16, 24}", () => {
+  it("7) 60초 → 8 segments (7 full + 4s remainder) → {22, 44}", () => {
     const range = recommendCutCountRange(60);
-    expect(range).toEqual({ min: 16, max: 24 });
+    // floor(60/8)=7 full × {3,6} + remainder 4s → {1,2} = {22, 44}
+    expect(range).toEqual({ min: 22, max: 44 });
   });
 
-  it("8) 90초 → 6 segments (15×6=90) → {24, 36}", () => {
+  it("8) 90초 → 12 segments (11×8 + 2s remainder) → {34, 68}", () => {
     const range = recommendCutCountRange(90);
-    expect(range).toEqual({ min: 24, max: 36 });
+    // floor(90/8)=11 full × {3,6} + remainder 2s → {1,2} = {34, 68}
+    expect(range).toEqual({ min: 34, max: 68 });
   });
 });
 
