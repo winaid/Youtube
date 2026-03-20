@@ -29,6 +29,11 @@ import {
   renderKlingExtendPromptFromJson,
 } from "./_video-prompt-json";
 import { serverSanitizeAndValidate } from "./_prompt-sanitizer";
+import {
+  buildNormalizedKlingPayload,
+  type NormalizedKlingPayload,
+  type KlingPayloadNormalizerInput,
+} from "./_kling-payload-normalizer";
 
 type Env = KlingEnv;
 
@@ -1087,62 +1092,56 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // FINAL PROVIDER-FACING CLEANUP
-    // 1. Strip internal tags  2. Normalize contradictions
-    // 3. Deduplicate  4. Separate global vs per-shot
+    // FINAL PROVIDER-FACING CLEANUP via shared authoritative normalizer
+    // Uses buildNormalizedKlingPayload — the SAME function used by:
+    //   - UI debug preview (VideoGenerationPanel.tsx)
+    //   - Korean shot summaries (shot-summary-ko.ts)
+    // This ensures all three consumers see identical normalized data.
     // ═══════════════════════════════════════════════════════════════════
-    const cleanupLog: string[] = [];
+    const normalizerInput: KlingPayloadNormalizerInput = {
+      prompt: finalPromptForProvider,
+      negativePrompt: klingNegativePrompt,
+      model: modelUsed,
+      durationSec: normalizedDuration,
+      aspectRatio: req.aspectRatio ?? "16:9",
+      sound: soundParam,
+      multiShot: req.multiShot,
+      elementList: req.element_list,
+      hasImage: !!validFirst,
+      hasImageTail: !!validLast,
+    };
+    const normalizedPayload: NormalizedKlingPayload = buildNormalizedKlingPayload(normalizerInput);
 
-    // Step 1: Strip internal editorial tags
-    finalPromptForProvider = stripInternalTags(finalPromptForProvider);
+    // Apply normalized values back
+    finalPromptForProvider = normalizedPayload.prompt;
+    klingNegativePrompt = normalizedPayload.negative_prompt;
 
-    // Step 2: Normalize scene contradictions (indoor light vs outdoor, epic narrative vs medical)
-    const normResult = normalizeSceneContradictions(finalPromptForProvider);
-    finalPromptForProvider = normResult.text;
-    cleanupLog.push(...normResult.log);
-
-    // Step 3: Deduplicate
-    finalPromptForProvider = deduplicatePromptClauses(finalPromptForProvider);
-
-    if (req.multiShot && req.multiShot.length > 0) {
-      // Clean each shot prompt: strip tags → normalize contradictions → deduplicate
-      for (const shot of req.multiShot) {
-        shot.prompt = cleanShotPrompt(shot.prompt);
-        const shotNorm = normalizeSceneContradictions(shot.prompt);
-        shot.prompt = shotNorm.text;
-        cleanupLog.push(...shotNorm.log);
-        shot.prompt = deduplicatePromptClauses(shot.prompt);
-      }
-      // When multiShot is present, top-level prompt should be global-only
-      // (medium, material, era, location, stable light) — not the full scene description
-      const globalOnly = buildGlobalPromptForMultiShot(finalPromptForProvider);
-      if (globalOnly.length > 20) {
-        finalPromptForProvider = globalOnly;
-      }
+    // Update multiShot from normalized payload (tags stripped, indices sequential, durations strings)
+    if (normalizedPayload.model_params?.multi_prompt) {
+      req.multiShot = normalizedPayload.model_params.multi_prompt;
     }
 
-    if (cleanupLog.length > 0) {
-      console.log("[generate-video] scene normalization applied:", cleanupLog);
+    if (normalizedPayload._meta.cleanupLog.length > 0) {
+      console.log("[generate-video] scene normalization applied:", normalizedPayload._meta.cleanupLog);
     }
 
-    console.log("[generate-video] provider-facing cleanup done:", {
+    console.log("[generate-video] provider-facing cleanup done (via shared normalizer):", {
       promptLen: finalPromptForProvider.length,
       promptPreview: finalPromptForProvider.slice(0, 150),
-      multiShotCount: req.multiShot?.length ?? 0,
-      multiShotPreviews: req.multiShot?.map(s => s.prompt.slice(0, 80)) ?? [],
+      multiShotCount: normalizedPayload._meta.shotCount,
+      multiShotPreviews: normalizedPayload.model_params?.multi_prompt.map(s => s.prompt.slice(0, 80)) ?? [],
     });
 
     // ═══════════════════════════════════════════════════════════════════
     // DEBUG: Final provider payload snapshot (opt-in via env var)
     // Set KLING_DEBUG_PAYLOAD=1 in .dev.vars or wrangler.toml to enable.
-    // Logs only the cleaned prompt payload — no secrets, no base64 images.
     // ═══════════════════════════════════════════════════════════════════
     if ((context.env as Record<string, string>).KLING_DEBUG_PAYLOAD === "1") {
       console.log("[KLING_DEBUG_PAYLOAD] ═══════════════════════════════════════");
       console.log("[KLING_DEBUG_PAYLOAD] top-level prompt:", finalPromptForProvider);
       console.log("[KLING_DEBUG_PAYLOAD] negative_prompt:", klingNegativePrompt);
-      if (req.multiShot && req.multiShot.length > 0) {
-        for (const shot of req.multiShot) {
+      if (normalizedPayload.model_params?.multi_prompt) {
+        for (const shot of normalizedPayload.model_params.multi_prompt) {
           console.log(`[KLING_DEBUG_PAYLOAD] shot[${shot.index}] (${shot.duration}s):`, shot.prompt);
         }
       }
@@ -1154,11 +1153,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         console.log("[Kling] EXTEND mode (last-frame → image-to-video)", { frameLen: validLast.length });
         const result = await klingExtend(context.env, {
           lastFrameBase64: validLast,
-          prompt:          finalPromptForProvider,
-          negative_prompt: klingNegativePrompt,
-          duration,
-          aspect_ratio:    aspectRatio,
-          sound:           soundParam,
+          prompt:          normalizedPayload.prompt,
+          negative_prompt: normalizedPayload.negative_prompt,
+          duration:        normalizedPayload.duration,
+          aspect_ratio:    normalizedPayload.aspect_ratio,
+          sound:           normalizedPayload.sound,
         });
         taskId = result.taskId;
         sentDuration = result.sentDuration;
@@ -1181,16 +1180,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           model: modelUsed,
         });
         const result = await klingGenerate(context.env, {
-          model:           modelUsed,
-          prompt:          finalPromptForProvider,
-          negative_prompt: klingNegativePrompt,
-          aspect_ratio:    aspectRatio,
-          duration,
-          sound:           soundParam,
+          model:           normalizedPayload.model,
+          prompt:          normalizedPayload.prompt,
+          negative_prompt: normalizedPayload.negative_prompt,
+          aspect_ratio:    normalizedPayload.aspect_ratio,
+          duration:        normalizedPayload.duration,
+          sound:           normalizedPayload.sound,
           ...(validFirst ? { image:      validFirst } : {}),
           ...(validLast  ? { image_tail: validLast  } : {}),
-          ...(req.multiShot && req.multiShot.length > 0 ? { multiShot: req.multiShot } : {}),
-          ...(req.element_list && req.element_list.length > 0 ? { element_list: req.element_list } : {}),
+          ...(normalizedPayload.model_params ? { multiShot: normalizedPayload.model_params.multi_prompt } : {}),
+          ...(normalizedPayload.model_params?.element_list ? { element_list: normalizedPayload.model_params.element_list } : {}),
+          ...(normalizedPayload.element_list_standalone ? { element_list: normalizedPayload.element_list_standalone } : {}),
         });
         taskId = result.taskId;
         sentDuration = result.sentDuration;

@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useMemo } from "react";
 import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } from "@/types";
 import { inferShotRole } from "@/lib/multishot-validation";
-import { generateMultiShotSummariesKo } from "@/lib/shot-summary-ko";
+import { generateSummariesFromNormalizedMultiPrompt } from "@/lib/shot-summary-ko";
+import { buildNormalizedKlingPayload, buildPreviewPayload, type NormalizedKlingPayload } from "@/lib/kling-payload-normalizer";
 import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -359,15 +360,27 @@ export default function VideoGenerationPanel({
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                       {getCutSubInfo(cut, canonicalMultiShots, canonicalDurations)}
                     </p>
-                    {/* 멀티샷 서브샷 목록 + 한국어 요약 — canonical-first */}
+                    {/* 멀티샷 서브샷 목록 + 한국어 요약 — normalized payload 기반 */}
                     {(() => {
                       const effectiveShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
                       if (effectiveShots.length === 0) return null;
-                      const summaries = generateMultiShotSummariesKo(effectiveShots);
+                      // Build normalized payload to ensure summaries match what Kling will receive
+                      const effectiveDuration = canonicalDurations?.get(cut.cutNumber) ?? cut.durationSec ?? 8;
+                      const normPayload = buildNormalizedKlingPayload({
+                        prompt: cut.videoPrompt || cut.sceneDescription || "",
+                        negativePrompt: "",
+                        model: propModelId || "kling-o3-text-to-video",
+                        durationSec: effectiveDuration,
+                        multiShot: effectiveShots,
+                      });
+                      const normalizedEntries = normPayload.model_params?.multi_prompt ?? [];
+                      const summaries = generateSummariesFromNormalizedMultiPrompt(normalizedEntries);
                       return (
                       <div className="mt-1.5 space-y-0.5">
-                        {effectiveShots.map((s, idx) => {
-                          const role = s.role ?? inferShotRole(s.index - 1, effectiveShots.length);
+                        {normalizedEntries.map((s, idx) => {
+                          // Use original shot role for badge coloring (role is display-only metadata)
+                          const origShot = effectiveShots[idx];
+                          const role = origShot?.role ?? inferShotRole(s.index - 1, normalizedEntries.length);
                           const meta = SHOT_ROLE_META[role];
                           const summary = summaries[idx]?.summaryKo || "";
                           return (
@@ -704,28 +717,29 @@ export default function VideoGenerationPanel({
                             </div>
                           </details>
                         )}
-                        {/* 4급: Kling multi_prompt JSON preview */}
+                        {/* 4급: Kling multi_prompt JSON preview — via shared authoritative normalizer */}
                         {(() => {
                           const dbgShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
                           if (dbgShots.length === 0) return null;
-                          const klingPayload = {
-                            model_params: {
-                              multi_shot: true,
-                              shot_type: "customize",
-                              multi_prompt: dbgShots.map(s => ({
-                                index: s.index,
-                                prompt: s.prompt.slice(0, 120) + (s.prompt.length > 120 ? "..." : ""),
-                                duration: s.duration,
-                              })),
-                            },
-                          };
+                          const dbgDuration = canonicalDurations?.get(cut.cutNumber) ?? cut.durationSec ?? 8;
+                          // Use the SAME normalizer that the server uses
+                          const dbgPayload = buildNormalizedKlingPayload({
+                            prompt: cut.videoPrompt || cut.sceneDescription || "",
+                            negativePrompt: "",
+                            model: propModelId || "kling-o3-text-to-video",
+                            durationSec: dbgDuration,
+                            multiShot: dbgShots,
+                          });
+                          if (!dbgPayload.model_params) return null;
+                          // Build display-safe preview (truncated prompts, same structure)
+                          const previewObj = buildPreviewPayload(dbgPayload, 120);
                           return (
                             <details className="ml-1">
                               <summary className="text-[9px] cursor-pointer text-muted-foreground">
-                                Kling JSON 미리보기 (model_params.multi_prompt)
+                                Kling JSON 미리보기 (normalized payload)
                               </summary>
                               <pre className="bg-gray-50 rounded p-2 text-[8px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#555", maxHeight: 200, overflowY: "auto" }}>
-                                {JSON.stringify(klingPayload, null, 2)}
+                                {JSON.stringify(previewObj, null, 2)}
                               </pre>
                             </details>
                           );

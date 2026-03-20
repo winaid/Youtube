@@ -4,11 +4,16 @@
  * Generates short, readable Korean summaries from cleaned English shot prompts.
  * These are UI-only — the app still sends English prompts to Kling.
  *
+ * IMPORTANT: Summaries should be generated from the NORMALIZED multi_prompt
+ * (via NormalizedKlingPayload.model_params.multi_prompt), NOT from raw UI shot data.
+ * This ensures the visible Korean summary matches what will actually be sent to Kling.
+ *
  * Approach: deterministic keyword extraction + template mapping.
  * No LLM call, no external dependency, no latency.
  */
 
 import type { MultiShotPrompt } from "@/types";
+import type { NormalizedKlingPayload, NormalizedMultiPromptEntry } from "@/lib/kling-payload-normalizer";
 
 // ── Keyword → Korean mapping tables ──
 
@@ -237,7 +242,10 @@ export function generateShotSummaryKo(
  * Generate Korean summaries for an array of multi-shot prompts.
  * Returns the same-length array of summary strings.
  *
- * Uses the same cleaned prompt data that will be sent to Kling.
+ * @deprecated Prefer generateSummariesFromNormalizedPayload() which derives
+ * summaries from the authoritative NormalizedKlingPayload.model_params.multi_prompt.
+ * This legacy function is kept for backward compatibility with call sites
+ * that have not yet migrated to the normalized payload flow.
  */
 export function generateMultiShotSummariesKo(
   shots: MultiShotPrompt[],
@@ -246,5 +254,44 @@ export function generateMultiShotSummariesKo(
     index: shot.index,
     duration: shot.duration,
     summaryKo: generateShotSummaryKo(shot.prompt, shot.role),
+  }));
+}
+
+/**
+ * Generate Korean summaries from a NormalizedKlingPayload's multi_prompt.
+ *
+ * THIS is the authoritative path for Korean summaries.
+ * It guarantees that summaries derive from the exact same normalized shot data
+ * that will be sent to the Kling API.
+ *
+ * Usage:
+ *   const payload = buildNormalizedKlingPayload(input);
+ *   const summaries = generateSummariesFromNormalizedPayload(payload);
+ */
+export function generateSummariesFromNormalizedPayload(
+  payload: NormalizedKlingPayload,
+): Array<{ index: number; duration: string; summaryKo: string }> {
+  const multiPrompt = payload.model_params?.multi_prompt ?? [];
+  return multiPrompt.map((entry) => ({
+    index: entry.index,
+    duration: entry.duration,
+    summaryKo: generateShotSummaryKo(entry.prompt),
+  }));
+}
+
+/**
+ * Generate Korean summaries from normalized multi_prompt entries directly.
+ *
+ * Use this when you have the multi_prompt array but not the full payload object.
+ * The entries MUST come from NormalizedKlingPayload.model_params.multi_prompt
+ * to ensure source-of-truth consistency.
+ */
+export function generateSummariesFromNormalizedMultiPrompt(
+  entries: NormalizedMultiPromptEntry[],
+): Array<{ index: number; duration: string; summaryKo: string }> {
+  return entries.map((entry) => ({
+    index: entry.index,
+    duration: entry.duration,
+    summaryKo: generateShotSummaryKo(entry.prompt),
   }));
 }
