@@ -445,13 +445,14 @@ describe("single-shot flow", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("style anchor injection into per-shot prompts", () => {
-  it("extractStyleAnchor detects claymation tokens", () => {
+  it("extractStyleAnchor extracts full style clauses, not just tokens", () => {
     const anchor = extractStyleAnchor(
-      "claymation stop-motion, fingerprint texture, warm practical light. Dim 1900s dental room.",
+      "Claymation animation with smooth clay figures. Fingerprint texture on surfaces. Warm studio lighting on sculptural forms. Dim 1900s dental room.",
     );
-    expect(anchor).toContain("claymation");
-    expect(anchor).toContain("stop-motion");
-    expect(anchor).toContain("fingerprint texture");
+    // Should contain FULL sentences, not just "claymation"
+    expect(anchor).toContain("Claymation animation with smooth clay figures");
+    expect(anchor).toContain("Fingerprint texture on surfaces");
+    expect(anchor).toContain("sculptural forms");
   });
 
   it("extractStyleAnchor returns empty for non-stylized prompts", () => {
@@ -459,12 +460,14 @@ describe("style anchor injection into per-shot prompts", () => {
     expect(anchor).toBe("");
   });
 
-  it("claymation style is injected into every per-shot prompt", () => {
+  it("claymation style clauses are injected into every per-shot prompt", () => {
     const payload = buildNormalizedKlingPayload(DENTAL_INPUT);
     const entries = getMultiPromptFromPayload(payload);
 
     for (const entry of entries) {
-      expect(entry.prompt.toLowerCase()).toMatch(/claymation|stop-motion|fingerprint/);
+      // Full style sentences should be present, not just keywords
+      expect(entry.prompt.toLowerCase()).toContain("claymation");
+      expect(entry.prompt.toLowerCase()).toContain("fingerprint texture");
     }
   });
 
@@ -476,12 +479,12 @@ describe("style anchor injection into per-shot prompts", () => {
 
   it("does not double-inject if shot already mentions the style", () => {
     const input: KlingPayloadNormalizerInput = {
-      prompt: "claymation stop-motion, dental room. Dim 1900s workshop.",
+      prompt: "claymation stop-motion animation. Fingerprint texture on surfaces. Dim 1900s workshop.",
       negativePrompt: "",
       model: "kling-o3-text-to-video",
       durationSec: 6,
       multiShot: [
-        { index: 1, prompt: "Wide claymation dental room view.", duration: "3" },
+        { index: 1, prompt: "Wide claymation dental room view with fingerprint texture.", duration: "3" },
         { index: 2, prompt: "Close-up of drill on tray.", duration: "3" },
       ],
     };

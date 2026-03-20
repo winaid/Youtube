@@ -185,27 +185,63 @@ export function normalizeSceneContradictions(text: string): { text: string; log:
 // ── Style Anchor Extraction (for per-shot injection) ──
 
 /**
- * Visual medium patterns that MUST be reinforced in every per-shot prompt.
- * When present in the global prompt, these define the entire visual style
- * (e.g., claymation, watercolor) and must not be left to the top-level alone
- * — Kling's multi-shot mode weights per-shot prompts heavily.
+ * Patterns that identify a clause as describing the visual medium / director's style.
+ * Matches entire sentences that contain these signals — not just the tokens.
+ *
+ * The FULL clause is kept so that per-shot prompts inherit the rich style description
+ * (e.g., "Fingerprint texture on surfaces" rather than just "fingerprint texture").
  */
-const STYLE_MEDIUM_RE = /\b(claymation|stop[\s-]?motion|clay\s+figure|fingerprint\s+texture|handcrafted|paper[\s-]?collage|felt[\s-]?craft|wooden[\s-]?puppet|handmade[\s-]?miniature|watercolor|oil\s+paint(?:ing)?|pencil\s+sketch|charcoal|ink\s+wash|anime|cel[\s-]?shad(?:ed|ing)|pixel\s+art|voxel|low[\s-]?poly|retro\s+(?:8|16)[\s-]?bit)\b/gi;
+const STYLE_CLAUSE_SIGNALS = [
+  // Stop-motion / claymation family
+  /\b(claymation|stop[\s-]?motion|clay\s+figure|fingerprint\s+texture|handcrafted|handmade|sculptural|frame[\s-]?by[\s-]?frame\s+jitter|material\s+imperfection)/i,
+  // Paper / felt / puppet crafts
+  /\b(paper[\s-]?collage|felt[\s-]?craft|wooden[\s-]?puppet|handmade[\s-]?miniature|paper\s+cutout|cut\s+edge|hinged\s+joint|craft\s+aesthetic)/i,
+  // Painting styles
+  /\b(watercolor|oil\s+paint(?:ing)?|gouache|pastel\s+crayon|impasto|brushwork|brush\s*stroke|visible\s+paint|paint\s+transparency|canvas\s+grain|ink\s+wash|sumi[\s-]?e)/i,
+  // Drawing styles
+  /\b(pencil\s+sketch|charcoal|ink\s+(?:line|drawing)|cross[\s-]?hatch|pen\s+stroke|line\s+weight)/i,
+  // Anime / cartoon / digital art styles
+  /\b(anime|cel[\s-]?shad(?:ed|ing)|pixel\s+art|voxel|low[\s-]?poly|retro\s+(?:8|16)[\s-]?bit|webtoon|manhwa|toon\s+shad)/i,
+  // 3D animation styles
+  /\b(pixar[\s-]?style|dreamworks[\s-]?style|stylized\s+3d|subsurface\s+scattering)/i,
+  // Film look styles
+  /\b(VHS\s+analog|vintage\s+35mm|film\s+grain|neon\s+noir|gothic\s+horror|scan\s+line|tracking\s+artifact)/i,
+];
 
 /**
- * Extract a compact style anchor string from the global prompt.
- * Returns a short phrase like "claymation stop-motion" or "watercolor animation"
- * that can be prepended to each per-shot prompt to reinforce visual medium.
+ * Extract full style clauses from the global prompt.
+ * Returns the director's style description as complete sentences, not just keywords.
  *
- * Returns empty string if no strong visual-medium signal is detected.
+ * Example input:  "Claymation animation with smooth clay figures. Fingerprint texture
+ *                  on surfaces. Warm studio lighting on sculptural forms. Dim 1900s
+ *                  dental room with archaic rusty dental tools."
+ * Example output: "Claymation animation with smooth clay figures. Fingerprint texture
+ *                  on surfaces. Warm studio lighting on sculptural forms"
+ *
+ * Returns empty string if no style signal is detected.
  */
 export function extractStyleAnchor(prompt: string): string {
-  STYLE_MEDIUM_RE.lastIndex = 0;
-  const matches = prompt.match(STYLE_MEDIUM_RE);
-  if (!matches || matches.length === 0) return "";
-  // Deduplicate and take first 3 unique tokens
-  const unique = [...new Set(matches.map(m => m.toLowerCase().trim()))];
-  return unique.slice(0, 3).join(", ");
+  const clauses = prompt.split(/\.\s+/).filter(s => s.trim().length > 3);
+  const styleClauses: string[] = [];
+  for (const clause of clauses) {
+    if (STYLE_CLAUSE_SIGNALS.some(p => p.test(clause))) {
+      styleClauses.push(clause.trim());
+    }
+  }
+  if (styleClauses.length === 0) return "";
+  // Cap at ~200 chars to avoid bloating per-shot prompts
+  let result = styleClauses.join(". ");
+  if (result.length > 200) {
+    // Keep as many full clauses as fit within 200 chars
+    let truncated = "";
+    for (const clause of styleClauses) {
+      const next = truncated ? `${truncated}. ${clause}` : clause;
+      if (next.length > 200) break;
+      truncated = next;
+    }
+    result = truncated || styleClauses[0].slice(0, 200);
+  }
+  return result;
 }
 
 // ── Global Anchor Extraction ──
@@ -264,20 +300,23 @@ export function cleanShotPrompt(prompt: string, sceneContext?: string): { cleane
   let cleaned = stripInternalTags(prompt);
   // When scene context is provided, combine with shot text for scene-type detection
   // but only apply normalization to the shot text itself
-  const contextForDetection = sceneContext ? `${sceneContext}. ${cleaned}` : cleaned;
-  const normResult = normalizeSceneContradictions(contextForDetection);
-  // Extract only the shot portion (after the context prefix)
   if (sceneContext) {
-    const contextLen = sceneContext.length + 2; // ". " separator
-    const fullNormalized = normResult.text;
-    // The context portion was also normalized, extract just the shot part
-    cleaned = fullNormalized.slice(contextLen).trim();
-    // Clean up any leading separators
+    // Strip trailing period from context to avoid double-period at the boundary
+    // ("context.. shot" → ".." gets collapsed by normalizeSceneContradictions,
+    // shifting the slice offset)
+    const ctxClean = sceneContext.replace(/\.+\s*$/, "");
+    const separator = ". ";
+    const contextForDetection = `${ctxClean}${separator}${cleaned}`;
+    const normResult = normalizeSceneContradictions(contextForDetection);
+    const contextLen = ctxClean.length + separator.length;
+    cleaned = normResult.text.slice(contextLen).trim();
     cleaned = cleaned.replace(/^[.,\s]+/, "").trim();
+    log.push(...normResult.log);
   } else {
+    const normResult = normalizeSceneContradictions(cleaned);
     cleaned = normResult.text;
+    log.push(...normResult.log);
   }
-  log.push(...normResult.log);
   cleaned = deduplicatePromptClauses(cleaned);
   return { cleaned, log };
 }
@@ -341,17 +380,20 @@ export function buildNormalizedKlingPayload(input: KlingPayloadNormalizerInput):
     // the global prompt — to avoid the model defaulting to photorealistic.
     const styleAnchor = extractStyleAnchor(prompt);
     if (styleAnchor) {
+      let injectedCount = 0;
       normalizedMultiPrompt = normalizedMultiPrompt.map(s => {
-        // Only inject if shot doesn't already mention the style
-        const shotLower = s.prompt.toLowerCase();
-        const alreadyHasStyle = styleAnchor.split(", ").some(token => shotLower.includes(token));
+        // Only inject if shot doesn't already contain the core style signals
+        const alreadyHasStyle = STYLE_CLAUSE_SIGNALS.some(p => p.test(s.prompt));
         if (alreadyHasStyle) return s;
+        injectedCount++;
         return {
           ...s,
           prompt: `${styleAnchor}. ${s.prompt}`,
         };
       });
-      cleanupLog.push(`[style-anchor] Injected "${styleAnchor}" into ${normalizedMultiPrompt.length} per-shot prompts`);
+      if (injectedCount > 0) {
+        cleanupLog.push(`[style-anchor] Injected style into ${injectedCount}/${normalizedMultiPrompt.length} per-shot prompts`);
+      }
     }
 
     // When multiShot is present, top-level prompt should be global-only
