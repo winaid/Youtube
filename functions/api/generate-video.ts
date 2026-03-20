@@ -225,14 +225,15 @@ function serializeSequenceToPrompt(
     parts.push("Vacuum silence — no audible environment");
   }
 
-  parts.push("No text overlay, no watermark");
+  // "No text overlay, no watermark" → negatives로 이동 (positive에 "No ..."는 역효과)
 
   let prompt = parts.filter(Boolean).join(". ");
 
-  // Negatives
-  const allNeg = seq.negatives
+  // Negatives — "text overlay", "watermark"는 반드시 negatives에 포함 (positive에서 제거됨)
+  const baseNeg = seq.negatives
     ? [...seq.negatives.universal, ...(seq.negatives.style || []), ...seq.negatives.sceneSpecific, ...seq.negatives.failureMode, ...seq.negatives.user]
     : (shot.negativeDirectives || []);
+  const allNeg = [...baseNeg, "text overlay", "watermark"];
   let uniqueNeg = [...new Set(allNeg)].slice(0, 30);
 
   // ═══════════════════════════════════════════════════════════════
@@ -289,11 +290,18 @@ function serializeSequenceToPrompt(
   const negStr = uniqueNeg.join(", ");
 
   // Kling: separate negative prompt (no embedding in main prompt)
-  // Word cap: 300 for Kling
+  // Word cap: 300, Char cap: 2500 for Kling
   const maxWords = 300;
+  const maxChars = 2500;
   const words = prompt.split(/\s+/);
   if (words.length > maxWords) {
     prompt = words.slice(0, maxWords - 5).join(" ");
+  }
+  if (prompt.length > maxChars) {
+    const cutoff = prompt.lastIndexOf(". ", maxChars - 10);
+    prompt = cutoff > maxChars * 0.5
+      ? prompt.slice(0, cutoff + 1)
+      : prompt.slice(0, maxChars);
   }
 
   prompt = prompt

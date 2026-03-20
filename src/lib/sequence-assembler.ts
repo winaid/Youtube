@@ -33,6 +33,7 @@ export interface ProviderCapability {
   supportsNegativePrompt: boolean;
   supportsShotMetadata: boolean;
   maxPromptWords: number;
+  maxPromptChars: number;
   defaultAudio: boolean;
 }
 
@@ -48,6 +49,7 @@ export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
     supportsNegativePrompt: true,
     supportsShotMetadata: false,
     maxPromptWords: 300,
+    maxPromptChars: 2500,
     defaultAudio: false,
   },
 };
@@ -170,6 +172,12 @@ function parseTimingBeats(timingBeat?: string, durationSec?: number): TimingBeat
   }
 
   beats.sort((a, b) => a.startSec - b.startSec);
+
+  // Clamp beats to shot duration — Gemini이 durationSec보다 큰 beat을 생성할 수 있음
+  for (const b of beats) {
+    if (b.endSec > durationSec) b.endSec = durationSec;
+    if (b.startSec >= durationSec) b.startSec = Math.max(0, durationSec - 1);
+  }
 
   if (beats.length === 0) {
     const mid1 = Math.floor(durationSec * 0.25);
@@ -479,9 +487,15 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   // 스타일 정체성을 프롬프트에 강하게 주입
   const styleBlockParts = [styleLabel];
   if (persona?.aesthetic) {
-    // 페르소나 미학 요약을 영어로 변환하지 않고 그대로 사용 — Kling은 한영 혼합 처리 가능
-    // 단 너무 길면 잘라냄
-    styleBlockParts.push(persona.aesthetic.slice(0, 120));
+    // 한국어 문자가 포함된 경우 제거 — Kling 프롬프트는 영어 전용이어야 함
+    const aestheticEnOnly = persona.aesthetic
+      .replace(/[\uAC00-\uD7A3\u3131-\u318E\u3200-\u321E\u3260-\u327E]+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim()
+      .slice(0, 120);
+    if (aestheticEnOnly.length > 5) {
+      styleBlockParts.push(aestheticEnOnly);
+    }
   }
   if (styleRenderRules?.characterRules) {
     styleBlockParts.push(styleRenderRules.characterRules.split(".").slice(0, 2).join("."));
@@ -692,6 +706,19 @@ export function validateShotDocument(doc: SingleShotDocument): ValidationResult 
       message: "Duplicate beat descriptions detected",
       field: "timing.beats",
     });
+  }
+
+  // Rule 3b: Beat exceeds shot duration
+  for (let i = 0; i < doc.timing.beats.length; i++) {
+    const b = doc.timing.beats[i];
+    if (b.endSec > doc.global.totalDurationSec + 0.5) {
+      issues.push({
+        rule: "beat_exceeds_duration",
+        severity: "error",
+        message: `Beat ${i} ends at ${b.endSec}s but shot duration is ${doc.global.totalDurationSec}s`,
+        field: "timing.beats",
+      });
+    }
   }
 
   // Rule 4: Missing subject
@@ -1190,9 +1217,8 @@ export function serializeForProvider(
   parts.push(doc.audio.hint);
   sections.audio = doc.audio.hint;
 
-  // 12. No text guard
-  parts.push("No text overlay, no watermark");
-  sections.noText = "No text overlay, no watermark";
+  // 12. No text guard → moved to negatives (positive prompt에 "No ..." 넣으면 오히려 생성 유도)
+  // "text overlay", "watermark"는 universal negatives에서 처리
 
   // Build prompt
   let prompt = parts.filter(Boolean).join(". ");
@@ -1288,6 +1314,16 @@ export function serializeForProvider(
   const words = prompt.split(/\s+/);
   if (words.length > cap.maxPromptWords) {
     prompt = words.slice(0, cap.maxPromptWords - 5).join(" ");
+    truncated = true;
+  }
+
+  // Char cap — Kling 프롬프트가 너무 길면 품질 저하
+  if (prompt.length > cap.maxPromptChars) {
+    // 문장 단위로 자르기 (마지막 완전한 문장까지)
+    const cutoff = prompt.lastIndexOf(". ", cap.maxPromptChars - 10);
+    prompt = cutoff > cap.maxPromptChars * 0.5
+      ? prompt.slice(0, cutoff + 1)
+      : prompt.slice(0, cap.maxPromptChars);
     truncated = true;
   }
 
@@ -1677,12 +1713,15 @@ export function assembleFromJSON(input: {
 
     suggestedMultiShot = sequenceShots.map((shot, i) => {
       const role: ShotRole = roles[i] || "develop";
-      const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
-        shot.camera.framing === "MS" ? "Medium shot" :
-        shot.camera.framing === "CU" ? "Close-up" :
-        shot.camera.framing === "MCU" ? "Medium close-up" :
-        shot.camera.framing === "ECU" ? "Extreme close-up" :
-        `${shot.camera.framing} shot`;
+      const _framingMap: Record<string, string> = {
+        ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up",
+        MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot",
+        WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view",
+      };
+      const fUpper = shot.camera.framing.toUpperCase();
+      // 이미 "shot" 포함된 값이면 그대로, 약어면 매핑, 그 외만 " shot" 접미
+      const framingLabel = _framingMap[fUpper]
+        || (/shot/i.test(shot.camera.framing) ? shot.camera.framing : `${shot.camera.framing} shot`);
       const styleTag = normalizedDoc.reinforcement.styleSuffix
         ? `. ${normalizedDoc.reinforcement.styleSuffix}`
         : "";
@@ -1996,9 +2035,9 @@ export function renderSequenceForProvider(
   // Visual medium lock
   if (shot.visualMedium) parts.push(shot.visualMedium);
 
-  // Audio + no text
+  // Audio
   parts.push("Diegetic ambient sound");
-  parts.push("No text overlay, no watermark");
+  // "No text overlay, no watermark" → negatives에서 처리 (positive에 "No ..."는 역효과)
 
   let prompt = parts.filter(Boolean).join(". ");
 
