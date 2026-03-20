@@ -92,7 +92,7 @@ function _getCapabilityStylePromptOverride(styleId: string): StylePromptOverride
  * positivePrompt → globalStyleBlock (전체)
  * negativePrompt → negativeBlock
  */
-function derivePresetFromCatalog(entry: { id: string; nameKo: string; categoryId: string; positivePrompt: string; negativePrompt: string }): StylePreset {
+function derivePresetFromCatalog(entry: { id: string; nameKo: string; categoryId: string; positivePrompt: string; negativePrompt: string; realism?: "높음" | "중간" | "낮음" }): StylePreset {
   const cat = STYLE_CATALOG.find(c => c.id === entry.categoryId);
 
   // 실사 카테고리는 기본적으로 photorealistic
@@ -145,7 +145,7 @@ function derivePresetFromCatalog(entry: { id: string; nameKo: string; categoryId
     environmentStyleRule,
     reinforcement,
     negativeBlock: entry.negativePrompt,
-    isNonRealistic: !["live_action"].includes(entry.categoryId),
+    isNonRealistic: !["live_action"].includes(entry.categoryId) && entry.realism !== "높음",
   };
 }
 

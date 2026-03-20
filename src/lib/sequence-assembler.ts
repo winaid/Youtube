@@ -763,10 +763,16 @@ export function validateShotDocument(doc: SingleShotDocument): ValidationResult 
         field: "camera.motion",
       });
     }
+  }
 
-    // Rule 12: Environment — positive/negative conflict check
+  // Rule 12: Positive/negative conflict check (모든 씬 타입에 적용)
+  {
     const posText = doc.global.style.toLowerCase();
-    const allNegLower = [...doc.negatives.universal, ...doc.negatives.sceneSpecific].map(n => n.toLowerCase());
+    const allNegLower = [
+      ...doc.negatives.universal,
+      ...(doc.negatives.style || []),
+      ...doc.negatives.sceneSpecific,
+    ].map(n => n.toLowerCase());
     for (const posKw of ENVIRONMENT_POSITIVE_KEYWORDS) {
       if (allNegLower.includes(posKw) && posText.includes(posKw)) {
         issues.push({
@@ -820,7 +826,7 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
 
   // Fix 3: Remove positive/negative conflicts — 모든 4개 negative layer 전체 적용
   const positiveText = `${result.global.style} ${result.reinforcement.styleSuffix}`;
-  for (const layer of ["universal", "sceneSpecific", "failureMode", "user"] as const) {
+  for (const layer of ["universal", "style", "sceneSpecific", "failureMode", "user"] as const) {
     const layerResult = sanitizeNegativesAgainstPositive(result.negatives[layer], positiveText);
     result.negatives[layer] = layerResult.cleaned;
     for (const r of layerResult.removed) fixes.push(`Removed conflicting negative "${r}" from ${layer} (present in positive style)`);
@@ -957,9 +963,10 @@ export function resolveConflicts(doc: SingleShotDocument): {
     }
   }
 
-  // Resolution 3: Deduplicate negatives across layers
+  // Resolution 3: Deduplicate negatives across layers (style 포함)
   const allNeg = [
     ...result.negatives.universal,
+    ...(result.negatives.style || []),
     ...result.negatives.sceneSpecific,
     ...result.negatives.failureMode,
     ...result.negatives.user,
@@ -972,6 +979,7 @@ export function resolveConflicts(doc: SingleShotDocument): {
     return true;
   });
   result.negatives.universal = dedup(result.negatives.universal);
+  if (result.negatives.style) result.negatives.style = dedup(result.negatives.style);
   result.negatives.sceneSpecific = dedup(result.negatives.sceneSpecific);
   result.negatives.failureMode = dedup(result.negatives.failureMode);
   result.negatives.user = dedup(result.negatives.user);
@@ -1384,6 +1392,7 @@ export function assembleFromJSON(input: {
 
   const allNeg = [
     ...normalizedDoc.negatives.universal,
+    ...(normalizedDoc.negatives.style || []),
     ...normalizedDoc.negatives.sceneSpecific,
     ...normalizedDoc.negatives.failureMode,
     ...normalizedDoc.negatives.user,

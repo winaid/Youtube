@@ -64,8 +64,8 @@ export type ShotBeatHint = "hook" | "mechanism" | "consequence" | "payoff" | "pa
 
 /** Arrow/sequence markers that indicate multi-event progression */
 const ARROW_PATTERN = /\s*(?:→|➡|->)+\s*/;
-const TEMPORAL_PATTERN = /\b(then|followed\s+by|finally|next|after\s+that|before|subsequently|eventually|leads\s+to|transitioning?\s+to|culminat)\b/i;
-const NARRATIVE_PATTERN = /\b(establishing|establish|fills?\s+the\s+frame|becomes?\s+dominant|dominat|reveal|revealing|emerges?|appears?|disappears?|transforms?|shifts?\s+to|moves?\s+to|pan\s+to|cut\s+to)\b/i;
+const TEMPORAL_PATTERN = /\b(?:then|followed\s+by|finally|next|after\s+that|before|subsequently|eventually|leads\s+to|transitioning?\s+to|culminat)\b/i;
+const NARRATIVE_PATTERN = /\b(?:establishing|establish|fills?\s+the\s+frame|becomes?\s+dominant|dominat|reveal|revealing|emerges?|appears?|disappears?|transforms?|shifts?\s+to|moves?\s+to|pan\s+to|cut\s+to)\b/i;
 
 /**
  * action/subject 텍스트에서 multi-event progression을 감지.
