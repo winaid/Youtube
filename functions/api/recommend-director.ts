@@ -1252,9 +1252,9 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (GA 모델 + google_search) ──
+          // ── STAGE 1: Grounded 웹 검색 (Flash-Lite + google_search) ──
           stageLabel = "stage1_grounded_web";
-          model = GEMINI_MODEL_PRO;
+          model = GEMINI_MODEL_FLASH;
           prompt = buildWebPrompt();
           useGrounding = true;
           forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
@@ -1269,8 +1269,8 @@ Each director object must have:
 
           const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
 
-          stageLabel = "stage2_pro_json";
-          model = GEMINI_MODEL_PRO;
+          stageLabel = "stage2_flash_json";
+          model = GEMINI_MODEL_FLASH;
           prompt = buildWebPrompt({ retryNote });
           useGrounding = false;  // grounding 제거 → JSON 파싱 보장
           forceMimeType = true;  // responseMimeType: "application/json" 강제
@@ -1288,7 +1288,7 @@ Each director object must have:
             const dupRetryNote = `\n## DUPLICATE RECOVERY RETRY\nYour previous responses contained ONLY directors already in the user's collection.\nYou MUST find completely different, lesser-known directors this time.\nDo NOT recommend any director even remotely similar to: ${localNameExclusionPairs}\nFind directors from underrepresented regions or indie film scenes.\n`;
 
             stageLabel = "stage3_duplicate_recovery";
-            model = GEMINI_MODEL_PRO;
+            model = GEMINI_MODEL_FLASH;
             prompt = buildWebPrompt({ retryNote: dupRetryNote, strengthenExclusion: true });
             useGrounding = false;
             forceMimeType = true;
@@ -1298,7 +1298,7 @@ Each director object must have:
             const simplifiedQuery = simplifyQueryForRetry(currentStageQuery, extractedGenres, extractedMoods);
             currentStageQuery = simplifiedQuery;
             stageLabel = "stage3_simplified_json";
-            model = GEMINI_MODEL_PRO;
+            model = GEMINI_MODEL_FLASH;
             prompt = buildWebPrompt({ retryNote: "\n## Return ONLY valid JSON.\n", queryOverride: simplifiedQuery });
             useGrounding = false;
             forceMimeType = true;
