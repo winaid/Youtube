@@ -2411,17 +2411,44 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const isTimeout = msg.includes("TIMEOUT") || msg.includes("524") || msg.includes("timed out");
       console.error("[generate-cuts] step2/3 failed:", msg, "isProviderError:", isProviderError, "isTruncation:", isTruncation, "isTimeout:", isTimeout);
 
-      if (isProviderError && !isTimeout) {
-        // Provider 503/429는 전체 실패 대신 outline-only fallback으로 graceful degradation
-        const providerStatus = parseInt(msg.split(":")[1], 10) || 503;
-        const is429 = providerStatus === 429;
-        const providerReason = is429
-          ? "AI 서버 요청 한도 초과로 세부 장면 보강을 건너뛰었습니다"
-          : "AI 서버 일시 혼잡으로 세부 장면 보강을 건너뛰었습니다";
+      // ── Step 2/3 429 재시도 (최대 2회, exponential backoff) ──
+      const providerStatus = isProviderError ? (parseInt(msg.split(":")[1], 10) || 503) : 0;
+      const is429 = providerStatus === 429;
+      if (is429) {
+        let retrySuccess = false;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const backoffMs = attempt * 3000; // 3s, 6s
+          console.log(`[generate-cuts] step2/3 429 retry ${attempt}/2 — waiting ${backoffMs}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          try {
+            [details1, details2] = await Promise.all([
+              step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary),
+              batch2.length > 0
+                ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary)
+                : Promise.resolve([]),
+            ]);
+            retrySuccess = true;
+            console.log(`[generate-cuts] step2/3 429 retry ${attempt} succeeded`);
+            break;
+          } catch (retryErr) {
+            const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            console.warn(`[generate-cuts] step2/3 429 retry ${attempt} failed:`, retryMsg);
+          }
+        }
+        if (!retrySuccess) {
+          const providerReason = "AI 서버 요청 한도 초과로 세부 장면 보강을 건너뛰었습니다";
+          console.warn(`[generate-cuts] step2/3 429 retries exhausted — falling back to outline-only`);
+          step1Warnings.push(`step2/3 provider 429: ${providerReason}`);
+          step1Degraded = true;
+          step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + providerReason;
+        }
+      } else if (isProviderError && !isTimeout) {
+        // Provider 503 등 — outline-only fallback
+        const nonRetryReason = "AI 서버 일시 혼잡으로 세부 장면 보강을 건너뛰었습니다";
         console.warn(`[generate-cuts] step2/3 provider error (${providerStatus}) — falling back to outline-only`);
-        step1Warnings.push(`step2/3 provider ${providerStatus}: ${providerReason}`);
+        step1Warnings.push(`step2/3 provider ${providerStatus}: ${nonRetryReason}`);
         step1Degraded = true;
-        step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + providerReason;
+        step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + nonRetryReason;
         // details1, details2 remain empty → cuts will use outline-based fallback prompts
       } else if (isTruncation && !isTimeout) {
         return Response.json({
