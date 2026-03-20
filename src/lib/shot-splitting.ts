@@ -315,7 +315,9 @@ export function splitSingleShotSequence(input: {
   const progression = detectShotProgression(input.action, input.subjectPrimary);
 
   // No progression and not a scene type that requires splitting
-  if (!progression.hasProgression && isSingleShotException(input.sceneType, input.action, input.durationSec)) {
+  // 단, duration 기반 최소 샷 수(9초+: 4샷)가 요구되면 exception 무시
+  const durationMinForException = getMinShots(DEFAULT_MODEL_ID, input.durationSec);
+  if (!progression.hasProgression && durationMinForException < 2 && isSingleShotException(input.sceneType, input.action, input.durationSec)) {
     return {
       shots: [{
         shotId: "shot_1",
@@ -511,6 +513,12 @@ export function enforceMinimumShotCount(input: {
   // not a single shot with internal arrows.
   const progression = detectShotProgression(input.action, input.subjectPrimary);
   if (progression.hasProgression && input.durationSec > 3) {
+    return splitSingleShotSequence(input);
+  }
+
+  // ── Duration 기반 강제 분할 — scene type 무관 ──
+  // 9초 이상은 어떤 scene type이든 최소 4샷 필수
+  if (minRequired >= 4 && input.currentShotCount < minRequired) {
     return splitSingleShotSequence(input);
   }
 
