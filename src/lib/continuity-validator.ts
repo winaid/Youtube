@@ -103,7 +103,11 @@ function validateCharacterConsistency(
   from: number,
   to: number,
 ): ContinuityValidationResult {
-  const similarity = keywordSimilarity(segA.subjectPosition, segB.subjectPosition);
+  // subjectPosition(위치/자세/외형) + emotionKeyword(감정)를 합쳐서
+  // 캐릭터 정체성을 더 넓게 비교 (위치만 비교하면 외형 드리프트를 놓침)
+  const descA = [segA.subjectPosition, segA.emotionKeyword].filter(Boolean).join(", ");
+  const descB = [segB.subjectPosition, segB.emotionKeyword].filter(Boolean).join(", ");
+  const similarity = keywordSimilarity(descA, descB);
   const threshold = getValidationThreshold("CONT-01")!;
 
   let severity: ContinuityValidationSeverity = "pass";

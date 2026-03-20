@@ -238,6 +238,11 @@ export async function downloadAllClips(
   for (const clip of completedClips) {
     try {
       const response = await fetch(clip.videoUri);
+      if (!response.ok) {
+        console.warn(`[montage-export] Failed to fetch clip ${clip.cutNumber}: ${response.status}`);
+        failed++;
+        continue;
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

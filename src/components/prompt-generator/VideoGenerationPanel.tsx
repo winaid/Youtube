@@ -52,8 +52,16 @@ interface VideoGenerationPanelProps {
 }
 
 function ElapsedTime({ startedAt }: { startedAt?: number }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
   if (!startedAt) return null;
-  const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+  const elapsed = Math.floor((now - startedAt) / 1000);
   const min = Math.floor(elapsed / 60);
   const sec = elapsed % 60;
   return (

@@ -41,6 +41,8 @@ export const workToDirectorMap: Record<string, string> = {
   "펄프 픽션": "us-tarantino", "킬 빌": "us-tarantino", "장고": "us-tarantino", "바스터즈": "us-tarantino", "원스 어폰 어 타임 인 할리우드": "us-tarantino", "저수지의 개들": "us-tarantino", "헤이트풀8": "us-tarantino",
   "세븐": "us-fincher", "파이트 클럽": "us-fincher", "조디악": "us-fincher", "소셜 네트워크": "us-fincher", "나를 찾아줘": "us-fincher", "벤자민 버튼": "us-fincher", "패닉 룸": "us-fincher",
   "그랜드 부다페스트 호텔": "us-wes", "문라이즈 킹덤": "us-wes", "프렌치 디스패치": "us-wes", "아스테로이드 시티": "us-wes", "로얄 테넌바움": "us-wes", "판타스틱 Mr. 폭스": "us-wes", "이슬 오브 독스": "us-wes",
+  "씬 레드 라인": "us-malick", "트리 오브 라이프": "us-malick", "천국의 나날": "us-malick", "뉴 월드": "us-malick", "보이지 오브 타임": "us-malick",
+  "걸어도 걸어도": "jp-koreeda", "어느 가족": "jp-koreeda", "아무도 모른다": "jp-koreeda", "세 번째 살인": "jp-koreeda", "진실": "jp-koreeda", "브로커": "jp-koreeda",
 };
 
 export const directors: DirectorPersona[] = [
@@ -112,6 +114,17 @@ export const directors: DirectorPersona[] = [
       "현실과 꿈의 경계를 자유롭게 넘나드는 혁신적 편집. 심리적 깊이와 시각적 트릭으로 관객의 인식을 뒤흔든다.",
     persona:
       "나는 콘 사토시다. 지금 네가 보고 있는 게 현실이라고 확신해? 장면 하나로 꿈과 현실을 뒤섞어. 문을 열면 다른 시간, 거울을 보면 다른 사람. 편집이 곧 마술이고, 관객의 뇌를 해킹하는 게 내 일이야.",
+  },
+  {
+    id: "jp-koreeda",
+    name: "Hirokazu Koreeda Style",
+    nameKo: "고레에다 히로카즈 스타일",
+    region: "일본",
+    style: "일상의 서사, 가족 드라마, 자연광, 섬세한 감정",
+    description:
+      "가족과 일상의 사소한 순간을 통해 보편적 감정을 섬세하게 포착하는 감독. 비전문 배우와 자연광, 관찰적 카메라로 진실된 인간 드라마를 담는다.",
+    persona:
+      "나는 고레에다 히로카즈다. 밥상 위에 놓인 반찬 하나하나에 가족의 역사가 담겨 있어. 카메라는 판단하지 않고, 그저 바라봐. 아이의 작은 손짓, 할머니의 주름진 미소— 거대한 사건 없이도 인생의 모든 것을 말할 수 있어.",
   },
 
   // 중국 감독 3명
@@ -217,6 +230,17 @@ export const directors: DirectorPersona[] = [
       "완벽한 대칭과 파스텔톤의 동화 같은 세계. 미니어처적 디테일과 독특한 캐릭터로 위트 있는 서사를 펼친다.",
     persona:
       "나는 웨스 앤더슨이다. 세상은 내가 만든 인형의 집이야. 모든 것은 정중앙에, 파스텔 팔레트 위에, 딱 맞는 자리에 놓여야 해. 캐릭터들은 정면을 응시하고, 카메라는 수평으로만 팬해. 슬픔도 예쁘게, 혼란도 정돈되게.",
+  },
+  {
+    id: "us-malick",
+    name: "Terrence Malick Style",
+    nameKo: "테렌스 맬릭 스타일",
+    region: "미국",
+    style: "자연광, 명상적 내레이션, 자연 풍경, 실존적 질문",
+    description:
+      "자연광과 매직아워의 시적 영상미. 내면 독백과 자연의 이미지를 교차하며 존재의 근원적 질문을 던지는 명상적 감독.",
+    persona:
+      "나는 테렌스 맬릭이다. 해질녘 밀밭을 스치는 바람에 신의 속삭임이 있어. 카메라는 배우가 아니라 빛을 따라가. 대사보다 침묵이, 플롯보다 순간이 중요해. 인간은 자연 속의 한 점, 그 점에서 우주가 보여.",
   },
 
   // 인도 감독 2명

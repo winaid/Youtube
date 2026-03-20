@@ -715,10 +715,17 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                         subjectPosition: afData.state.subjectPosition?.slice(0, 50),
                         cameraState: afData.state.cameraState?.slice(0, 50),
                       });
-                      // cutsRef를 통해 다음 컷의 continuitySegment 업데이트
+                      // cutsRef를 통해 다음 컷의 continuitySegment 업데이트 (불변성 유지)
                       if (nextCut.continuitySegment) {
-                        nextCut.continuitySegment.startState = afData.state;
-                        (nextCut.continuitySegment as Record<string, unknown>)._endStateSource = "gemini_frame_analysis";
+                        const updatedSegment = {
+                          ...nextCut.continuitySegment,
+                          startState: afData.state,
+                          _endStateSource: "gemini_frame_analysis" as const,
+                        };
+                        const updatedNextCut = { ...nextCut, continuitySegment: updatedSegment };
+                        cutsRef.current = cutsRef.current.map(c =>
+                          c.cutNumber === nextCutNumber ? updatedNextCut : c
+                        );
                       }
                     } else {
                       console.log(`[CUT ${cutNumber}] Gemini 프레임 분석 실패 → 계획 기반 continuity 유지`, {

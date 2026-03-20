@@ -589,8 +589,9 @@ export function detectPhysicsIssues(
     ];
 
     for (const { pattern, fix } of windMotionPatterns) {
-      if (pattern.test(fixed)) {
-        fixed = fixed.replace(pattern, fix);
+      const before = fixed;
+      fixed = fixed.replace(pattern, fix);
+      if (fixed !== before) {
         issues.push({
           rule: "physics_flag_wind_conflict",
           severity: "error",
@@ -610,8 +611,9 @@ export function detectPhysicsIssues(
     ];
 
     for (const { pattern, fix } of atmoPatterns) {
-      if (pattern.test(fixed)) {
-        fixed = fixed.replace(pattern, fix);
+      const before = fixed;
+      fixed = fixed.replace(pattern, fix);
+      if (fixed !== before) {
         issues.push({
           rule: "physics_motion_environment_conflict",
           severity: "error",
@@ -630,8 +632,9 @@ export function detectPhysicsIssues(
     ];
 
     for (const { pattern, fix } of gravityPatterns) {
-      if (pattern.test(fixed)) {
-        fixed = fixed.replace(pattern, fix);
+      const before = fixed;
+      fixed = fixed.replace(pattern, fix);
+      if (fixed !== before) {
         issues.push({
           rule: "physics_motion_environment_conflict",
           severity: "warning",
@@ -646,8 +649,9 @@ export function detectPhysicsIssues(
   if (physicsRules.bannedExpressions) {
     for (const banned of physicsRules.bannedExpressions) {
       const banRe = new RegExp(`\\b${banned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
-      if (banRe.test(fixed)) {
-        fixed = fixed.replace(banRe, "");
+      const before = fixed;
+      fixed = fixed.replace(banRe, "");
+      if (fixed !== before) {
         issues.push({
           rule: "physics_motion_environment_conflict",
           severity: "error",
@@ -1044,12 +1048,10 @@ export function stripMetaLabels(text: string): MetaLabelSanitizeResult {
   // 3. 한국어 메타 구문 제거
   for (const phrase of KOREAN_META_PHRASES) {
     const pattern = new RegExp(escapeRegex(phrase), "g");
-    if (pattern.test(cleaned)) {
-      cleaned = cleaned.replace(pattern, (match) => {
-        removed.push(match);
-        return "";
-      });
-    }
+    cleaned = cleaned.replace(pattern, (match) => {
+      removed.push(match);
+      return "";
+    });
   }
 
   // 4. role label 슬래시 나열 제거 (도입 / 전개 / 삽입 / 절정 / 마무리)

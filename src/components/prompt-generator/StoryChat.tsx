@@ -152,22 +152,31 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
     setMessages(newMsgs);
     setIsLoading(true);
 
-    const response = await generateChatResponse(userMsg, personaId);
-    const finalMsgs: ChatMessage[] = [
-      ...newMsgs,
-      {
-        role: "assistant",
-        content: response.reply,
-        sources: response.sources,
-        searchQueries: response.searchQueries,
-      },
-    ];
-    setMessages(finalMsgs);
-    setIsLoading(false);
+    try {
+      const response = await generateChatResponse(userMsg, personaId);
+      const finalMsgs: ChatMessage[] = [
+        ...newMsgs,
+        {
+          role: "assistant",
+          content: response.reply,
+          sources: response.sources,
+          searchQueries: response.searchQueries,
+        },
+      ];
+      setMessages(finalMsgs);
 
-    // 자동 저장 (첫 AI 응답 후)
-    if (!currentSessionId) {
-      saveCurrentChat(finalMsgs);
+      // 자동 저장 (첫 AI 응답 후)
+      if (!currentSessionId) {
+        saveCurrentChat(finalMsgs);
+      }
+    } catch (err) {
+      console.error("[StoryChat] generateChatResponse failed:", err);
+      setMessages([
+        ...newMsgs,
+        { role: "assistant", content: "죄송합니다. 응답 생성 중 오류가 발생했습니다. 다시 시도해주세요." },
+      ]);
+    } finally {
+      setIsLoading(false);
     }
   };
 

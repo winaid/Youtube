@@ -101,7 +101,7 @@ export function checkBatchBudget(clips: BatchClipInfo[]): BatchBudgetResult {
 
     // 구체적 감축 제안
     const avgDuration = clipCount > 0 ? totalRuntimeSec / clipCount : 0;
-    const targetClips = Math.floor(BATCH_BUDGET_SECONDS / avgDuration);
+    const targetClips = avgDuration > 0 ? Math.floor(BATCH_BUDGET_SECONDS / avgDuration) : clipCount;
 
     if (clipCount > targetClips) {
       suggestions.push(

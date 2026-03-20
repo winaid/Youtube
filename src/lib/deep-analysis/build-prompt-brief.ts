@@ -189,6 +189,7 @@ function buildAvoidList(
  */
 export function serializePromptBrief(brief: PromptBrief): string {
   if (!brief.creativeBrief && !brief.continuityHint && !brief.shotDiscipline
+    && !brief.subjectLockHint && !brief.environmentLockHint
     && brief.avoidList.length === 0) {
     return "";
   }
