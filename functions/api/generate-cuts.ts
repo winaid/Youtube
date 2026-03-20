@@ -24,7 +24,6 @@ import { VEO_DEFAULT_MODEL, getCapability } from "./_veo-capability";
 // VEO 정책: 8초, 3~4샷 고정
 const getMaxShots = (_modelId: string, _durationSec: number) => 4;
 const getMinShots = (_modelId: string, _durationSec: number) => 3;
-const VEO_DEFAULT_MODEL = VEO_DEFAULT_MODEL; // backward compat alias
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
