@@ -44,7 +44,7 @@ export async function generateChatResponse(
       if (code === "QUOTA_EXCEEDED" || code === "RATE_LIMITED") {
         return { reply: `⚠️ API 할당량 초과.\n\n${help || "잠시 후 다시 시도하세요."}` };
       }
-      return { reply: `API 오류 (${res.status}): ${errorMsg || "알 수 없는 오류"}\n\n${help || "잠시 후 다시 시도해주세요."}` };
+      return { reply: `API 오류가 발생했습니다 (${res.status}). 잠시 후 다시 시도해주세요.` };
     }
 
     const data = await res.json();

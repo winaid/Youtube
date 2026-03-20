@@ -498,7 +498,7 @@ export function buildOwnerSummary(log: SessionLogEntry[]): OwnerSessionSummary {
 
   const stats = sessionLogStats(log);
   const okCount = stats["ok"];
-  const failCount = log.filter(e => !e.failureTags.includes("ok") && e.failureTags.length > 0).length;
+  const failCount = log.filter(e => e.failureTags.some(t => t !== "ok")).length;
 
   // Top failures (excluding ok)
   const failurePairs = (Object.entries(stats) as [FailureTag, number][])

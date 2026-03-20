@@ -158,13 +158,11 @@ export async function concatClips(
     throw new StitchError("no_clips", "concat할 clip이 없습니다.");
   }
 
-  // 1. clip 파일들을 ffmpeg 가상 파일시스템에 쓰기
-  const fileNames: string[] = [];
-  for (let i = 0; i < clipData.length; i++) {
-    const name = `clip_${String(i).padStart(3, "0")}.mp4`;
-    await ffmpeg.writeFile(name, clipData[i]);
-    fileNames.push(name);
-  }
+  // 1. clip 파일들을 ffmpeg 가상 파일시스템에 병렬 쓰기
+  const fileNames = clipData.map((_, i) => `clip_${String(i).padStart(3, "0")}.mp4`);
+  await Promise.all(
+    clipData.map((data, i) => ffmpeg.writeFile(fileNames[i], data)),
+  );
 
   // 2. concat demuxer 목록 파일 생성
   const concatList = fileNames.map((f) => `file '${f}'`).join("\n");

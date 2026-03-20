@@ -286,7 +286,7 @@ export async function submitVideoGeneration(
     mode: params.generationMode,
   });
   if (repairedMultiShot.length > 0) body.multiShot = repairedMultiShot;
-  else if (params.multiShot) body.multiShot = params.multiShot;
+  else if (params.multiShot && params.multiShot.length > 0) body.multiShot = params.multiShot;
 
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
   if (params.continuityMeta) body.continuityMeta = params.continuityMeta;

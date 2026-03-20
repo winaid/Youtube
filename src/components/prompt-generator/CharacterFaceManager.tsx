@@ -85,6 +85,7 @@ export default function CharacterFaceManager({
           const croppedBase64 = canvas.toDataURL("image/png").split(",")[1];
           resolve(croppedBase64);
         };
+        img.onerror = () => resolve("");
         img.src = `data:image/png;base64,${imageBase64}`;
       });
     },

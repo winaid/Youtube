@@ -212,7 +212,7 @@ export async function pollElementUntilDone(
   let pollCount = 0;
 
   while (pollCount < MAX_POLL_COUNT) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS + Math.floor(Math.random() * 1000)));
     pollCount++;
 
     try {

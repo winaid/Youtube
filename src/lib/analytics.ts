@@ -27,29 +27,32 @@ export function getProjectRecords(): ProjectRecord[] {
 }
 
 export function saveProjectRecord(record: Omit<ProjectRecord, "id" | "createdAt">): ProjectRecord {
+  if (typeof window === "undefined") return { ...record, id: "", createdAt: 0 };
   const records = getProjectRecords();
   const newRecord: ProjectRecord = {
     ...record,
-    id: `proj-${Date.now().toString(36)}`,
+    id: `proj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: Date.now(),
   };
   records.unshift(newRecord);
   if (records.length > 100) records.length = 100;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch { /* quota exceeded */ }
   return newRecord;
 }
 
 export function updateProjectMetrics(id: string, metrics: Pick<ProjectRecord, "views" | "likes" | "comments" | "shares">): void {
+  if (typeof window === "undefined") return;
   const records = getProjectRecords();
   const idx = records.findIndex((r) => r.id === id);
   if (idx === -1) return;
   Object.assign(records[idx], metrics, { updatedAt: Date.now() });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch { /* quota exceeded */ }
 }
 
 export function deleteProjectRecord(id: string): void {
+  if (typeof window === "undefined") return;
   const records = getProjectRecords().filter((r) => r.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch { /* quota exceeded */ }
 }
 
 export interface AnalyticsSummary {
@@ -67,7 +70,7 @@ export function getAnalyticsSummary(): AnalyticsSummary {
   for (const r of records) {
     const d = directorMap.get(r.directorName) || { count: 0, totalViews: 0 };
     d.count++;
-    d.totalViews += r.views || 0;
+    d.totalViews += r.views ?? 0;
     directorMap.set(r.directorName, d);
   }
   const topDirectors = [...directorMap.entries()]
@@ -87,7 +90,7 @@ export function getAnalyticsSummary(): AnalyticsSummary {
   // Best performing
   const bestPerforming = [...records]
     .filter((r) => r.views !== undefined)
-    .sort((a, b) => (b.views || 0) - (a.views || 0))
+    .sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
     .slice(0, 5);
 
   return { totalProjects: records.length, topDirectors, topRegions, bestPerforming };

@@ -170,10 +170,9 @@ function buildAvoidList(
     avoids.push("abrupt scene resets without transition cues");
   }
 
-  // realism + stylization 충돌 방지
-  if (visual.realismLevel >= 70 && visual.stylizationLevel >= 40) {
-    // 둘 다 높으면 보수적으로 realism 우선
-    avoids.push("excessive stylization that breaks photorealistic base");
+  // realism/stylization 중간 지대 (40-60) → 스타일 모호함 방지
+  if (visual.realismLevel >= 40 && visual.realismLevel <= 60) {
+    avoids.push("ambiguous realism-stylization mix — commit to either photorealistic or stylized");
   }
 
   return avoids.slice(0, 5);

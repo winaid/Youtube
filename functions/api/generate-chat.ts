@@ -2,7 +2,7 @@ import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse } from "./_gemin
 
 type Env = GeminiEnv;
 
-// 간단한 인메모리 캐시 (동일 요청 중복 방지)
+// 인메모리 캐시 — Workers stateless 특성상 warm instance에서만 효과적 (cold start 시 빈 상태)
 const responseCache = new Map<string, { reply: string; sources: { title: string; url: string }[]; searchQueries: string[]; ts: number }>();
 const CACHE_TTL = 1000 * 60 * 30; // 30분
 

@@ -13,6 +13,7 @@
  */
 
 import type { StructuredSequenceDocument, TemporalBeat, NarrationMode, StructureType, DurationClass } from "@/types";
+import { MULTI_SHOT_SCENE_TYPES_MAP as MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -63,17 +64,7 @@ export interface SequenceDensityWarning {
 
 const MIN_SHOT_DURATION_SEC = 1;
 
-/** sceneType → minimum shot count */
-const MULTI_SHOT_SCENE_TYPES: Record<string, number> = {
-  environment: 2,
-  "character-driven": 2,
-  character: 2,
-  crowd: 2,
-  battle: 3,
-  map_visualization: 2,
-  "map-graphic": 2,
-  cinematic_sequence: 2,
-};
+/** sceneType → minimum shot count (공유 multi-shot-scene-types.ts에서 import) */
 
 // ═══════════════════════════════════════════════════════════════════
 // Extraction — StructuredSequenceDocument → EditableSequence

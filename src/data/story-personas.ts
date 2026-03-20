@@ -273,7 +273,7 @@ const vsShortsCards: PromptCard[] = [
 
 /** 카드 제목/훅에서 지역을 추정 (완벽할 필요 없음 — 편향 방지가 목적) */
 function detectRegion(card: PromptCard): string {
-  const text = `${card.title} ${card.hook ?? ""}`;
+  const text = `${card.title} ${card.hook ?? ""}`.normalize("NFC");
   if (/허준|지석영|조선|백광현|한국/.test(text)) return "한국";
   if (/하나오카|오긴|스기타|메이지|일본|荻野/.test(text)) return "일본";
   if (/화타|이시진|편작|손사막|본초강목|당나라|후한|춘추|중국/.test(text)) return "중국";
