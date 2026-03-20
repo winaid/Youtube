@@ -11,7 +11,7 @@
  *
  * 기존 3-layer 모델과의 관계:
  *   Layer 1: totalSuggestedRuntime → 전체 요청 런타임
- *   Layer 2: sequences[] → 시퀀스 분할 (8–15초 Kling 생성 단위)
+ *   Layer 2: sequences[] → 시퀀스 분할 (8–15초 VEO 생성 단위)
  *   Layer 3: cuts[] → 시퀀스 내 멀티샷 프로그레션
  */
 

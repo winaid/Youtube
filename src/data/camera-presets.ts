@@ -1,4 +1,4 @@
-// Camera Motion Preset Library for Kling
+// Camera Motion Preset Library for VEO
 // 20 cinematic camera presets users can apply to any CutCard
 
 export interface CameraPreset {

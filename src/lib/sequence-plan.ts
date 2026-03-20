@@ -428,7 +428,7 @@ export interface SequenceValidationResult {
   };
 }
 
-/** 지원되는 camera motion (Kling) */
+/** 지원되는 camera motion (VEO) */
 const SUPPORTED_CAMERA_MOTIONS = [
   "static", "locked", "push-in", "pull-back", "dolly", "truck",
   "pan", "tilt", "crane", "boom", "orbit", "arc", "zoom",
@@ -656,7 +656,7 @@ export interface SerializedSequence {
 /** SequencePlan → Provider Payload 직렬화 */
 export function serializeSequencePlan(
   plan: SequencePlan,
-  provider: "kling" = "kling",
+  provider: "veo" = "veo",
 ): SerializedSequence {
   const logs: SerializationLog[] = [];
 
@@ -697,7 +697,7 @@ export function serializeSequencePlan(
     log.includedFields.push("camera.framing", "camera.angle");
 
     if (shot.camera.motion && shot.camera.motion !== "static") {
-      const motion = provider === "kling"
+      const motion = provider === "veo"
         ? shot.camera.motion.replace(/\s*\([^)]*\)\s*/g, "").trim()
         : shot.camera.motion;
       parts.push(motion);
@@ -1292,12 +1292,12 @@ export function runSequencePipeline(
     medium?: string;
     aspectRatio?: "16:9" | "9:16";
     directorId?: string;
-    provider?: "kling";
+    provider?: "veo";
     globalStyle?: string;
   } = {},
 ): SequencePipelineResult {
   const debugLog: string[] = [];
-  const provider = opts.provider || "kling";
+  const provider = opts.provider || "veo";
 
   // Step 1: Build plan
   debugLog.push(`[PIPELINE] Building plan from ${cuts.length} cuts`);

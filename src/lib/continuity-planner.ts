@@ -55,7 +55,7 @@ export interface ContinuityPlannerInput {
   primaryCharacterBodyType?: string;
   /** 인물 구별 특징 */
   primaryCharacterFeatures?: string[];
-  /** Kling element_id (있으면) */
+  /** VEO element_id (있으면) */
   faceRef?: string;
   /** 스타일 ID (style-catalog) */
   styleId?: string;

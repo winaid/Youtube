@@ -13,11 +13,17 @@
 
 import { describe, it, expect } from "vitest";
 import { estimateProjectDuration } from "@/lib/story-duration-estimator";
-import {
-  getMaxShots as getMax,
-  normalizeMultiShots,
-  KLING_DEFAULT_TEXT_MODEL as O3_MODEL,
-} from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
+
+// VEO policy stubs (kling-capability removed)
+const VEO_MAX_SHOTS = 4;
+function getMax(_model: string, duration: number): number {
+  return duration >= 8 ? VEO_MAX_SHOTS : 0;
+}
+function normalizeMultiShots(_model: string, shots: Array<{index: number; prompt: string; duration: string; role?: string}>, _duration: number) {
+  return shots.slice(0, VEO_MAX_SHOTS).map((s, i) => ({ ...s, index: i + 1 }));
+}
+const O3_MODEL = VEO_DEFAULT_MODEL;
 import {
   resolveSegmentPlan,
   resolveCutCount,
@@ -185,34 +191,31 @@ describe("테스트 4: multiShot clamp — 짧은 컷에서 억제 (O3 capabilit
     expect(getMax(O3, 3)).toBe(0);
   });
 
-  it("4~5초 → O3 최대 6개", () => {
-    expect(getMax(O3, 4)).toBe(6);
-    expect(getMax(O3, 5)).toBe(6);
+  it("4~7초 → VEO 멀티샷 불가 (8초 미만)", () => {
+    expect(getMax(O3, 4)).toBe(0);
+    expect(getMax(O3, 5)).toBe(0);
+    expect(getMax(O3, 6)).toBe(0);
+    expect(getMax(O3, 7)).toBe(0);
   });
 
-  it("6~7초 → O3 최대 6개", () => {
-    expect(getMax(O3, 6)).toBe(6);
-    expect(getMax(O3, 7)).toBe(6);
+  it("8~10초 → VEO 최대 4개", () => {
+    expect(getMax(O3, 8)).toBe(4);
   });
 
-  it("8~10초 → O3 최대 6개", () => {
-    expect(getMax(O3, 8)).toBe(6);
-  });
-
-  it("12~15초 → O3 최대 6개", () => {
-    expect(getMax(O3, 12)).toBe(6);
-    expect(getMax(O3, 15)).toBe(6);
+  it("12~15초 → VEO 최대 4개", () => {
+    expect(getMax(O3, 12)).toBe(4);
+    expect(getMax(O3, 15)).toBe(4);
   });
 
   it("normalizeMultiShots 빈 배열 → 빈 배열", () => {
     expect(normalizeMultiShots(O3, [], 10)).toHaveLength(0);
   });
 
-  it("normalizeMultiShots 6개 → 6개 clamp (8초)", () => {
+  it("normalizeMultiShots 6개 → 4개 clamp (8초, VEO 최대 4)", () => {
     const result = normalizeMultiShots(O3, sampleMultiShot, 8);
-    expect(result).toHaveLength(6);
+    expect(result).toHaveLength(4);
     // index 재정렬 확인
-    expect(result.map((s: { index: number }) => s.index)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(result.map((s: { index: number }) => s.index)).toEqual([1, 2, 3, 4]);
   });
 });
 

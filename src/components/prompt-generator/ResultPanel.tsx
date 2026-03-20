@@ -1,8 +1,16 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, KlingElementAsset, DEFAULT_VIDEO_CONFIG, type YouTubeSEO } from "@/types";
-import { resolveModelForWorkflow } from "@/lib/kling-capability";
+import { PromptOutput, Cut, GeneratorStatus, CharacterFaceRef, DEFAULT_VIDEO_CONFIG, type YouTubeSEO } from "@/types";
+
+// Stub type for element assets (Custom Elements deferred to v2)
+interface ElementAssetStub {
+  characterId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  elementId?: string;
+  error?: string;
+}
+import { resolveModelForWorkflow } from "@/lib/veo-capability";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { checkBatchBudget, BATCH_BUDGET_SECONDS } from "@/lib/batch-runtime-budget";
 import type { BatchClipInfo } from "@/lib/batch-runtime-budget";
@@ -144,8 +152,8 @@ export default function ResultPanel({
   const [finalVideoSizeBytes, setFinalVideoSizeBytes] = useState<number>(0);
   // 캐릭터 얼굴 레퍼런스
   const [faceRefs, setFaceRefs] = useState<CharacterFaceRef[]>([]);
-  // Kling Custom Element assets
-  const [elementAssets, setElementAssets] = useState<KlingElementAsset[]>([]);
+  // VEO Custom Element assets
+  const [elementAssets, setElementAssets] = useState<ElementAssetStub[]>([]);
   // 인라인 감독 변경 재생성
   const [altDirector, setAltDirector] = useState("");
   const [altGenerating, setAltGenerating] = useState(false);
@@ -180,7 +188,7 @@ export default function ResultPanel({
     const dur = result.cuts[0].durationSec;
     if (dur && dur > 0 && videoGen.config.durationSeconds !== dur) {
       const clampedDur = Math.min(15, Math.max(3, dur));
-      const engine = clampedDur >= 10 ? "kling" : videoGen.config.engine;
+      const engine = videoGen.config.engine;
       videoGen.updateConfig({ durationSeconds: clampedDur, engine });
       // ⚠ 부모 슬라이더 역동기화 제거 — auto 상태 보존
       // onSecondsPerSceneChange?.(clampedDur);  // REMOVED: breaks auto mode
@@ -599,7 +607,7 @@ export default function ResultPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `kling-project-${Date.now()}.json`;
+    a.download = `veo-project-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -621,7 +629,7 @@ export default function ResultPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `kling-project-${Date.now()}.csv`;
+    a.download = `veo-project-${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

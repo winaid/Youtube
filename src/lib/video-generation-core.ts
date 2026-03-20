@@ -24,7 +24,7 @@ export interface VideoSubmitParams {
   durationSeconds?: number;
   aspectRatio?: string;
   negativePrompt?: string;
-  engine?: "kling" | "auto";
+  engine?: "veo" | "auto";
   videoMode?: "generate" | "extend";
   /** 워크플로우 타입 — 서버에서 모델 자동 선택에 사용 */
   workflowType?: import("@/types").VideoWorkflowType;
@@ -41,8 +41,8 @@ export interface VideoSubmitParams {
   sourceVideo?: string;
   /** reference images for reference-to-video workflow */
   referenceImages?: string[];
-  /** Kling Custom Element — charactersInScene 기반 element_id 목록 */
-  element_list?: Array<{ element_id: string }>;
+  /** VEO reference images */
+  referenceImageBase64s?: string[];
   /** hook-specific 추가 필드 (mode, resolution, seed 등) — body에 그대로 spread */
   extraFields?: Record<string, unknown>;
   /** 생성 모드 — 멀티샷 auto-repair 정책에 영향 */
@@ -66,7 +66,7 @@ export interface VideoSubmitParams {
 export interface VideoSubmitResult {
   taskId: string;
   operationName: string;
-  engine: "kling";
+  engine: "veo";
   modeUsed: "generate" | "extend";
   modelUsed: string;
   status: string;
@@ -116,7 +116,7 @@ export interface NormalizedVideoResult {
   canonicalVideoUri?: string | null;
   seed?: string;
   variants?: Array<{ videoUri: string; rawVideoUri?: string }>;
-  engine: "kling";
+  engine: "veo";
   needsUpload: boolean;
   error?: string;
   /** 서버가 재시도 무의미 판정 시 true. 현재 서버 미반환 → undefined (= retry 허용). 미래 확장 슬롯. */
@@ -163,7 +163,7 @@ export interface PollOptions {
 
 /** provider/model 메타 */
 export interface ProviderMeta {
-  engine: "kling";
+  engine: "veo";
   modeUsed: "generate" | "extend";
   modelUsed: string;
 }
@@ -255,7 +255,7 @@ export async function submitVideoGeneration(
   params: VideoSubmitParams,
 ): Promise<VideoSubmitResult> {
   const body: Record<string, unknown> = {
-    engine: params.engine || "kling",
+    engine: params.engine || "veo",
   };
 
   // prompt — structuredSequence 우선, prompt는 fallback
@@ -292,7 +292,6 @@ export async function submitVideoGeneration(
   if (params.continuityMeta) body.continuityMeta = params.continuityMeta;
   if (params.workflowType) body.workflowType = params.workflowType;
   if (params.referenceImages && params.referenceImages.length > 0) body.referenceImages = params.referenceImages;
-  if (params.element_list && params.element_list.length > 0) body.element_list = params.element_list;
 
   // hook-specific 추가 필드 passthrough
   if (params.extraFields) {
@@ -325,7 +324,7 @@ export async function submitVideoGeneration(
   return {
     taskId: (data.taskId as string) || (data.operationName as string) || "",
     operationName: (data.operationName as string) || (data.taskId as string) || "",
-    engine: "kling",
+    engine: "veo",
     modeUsed: (data.modeUsed as "generate" | "extend") || "generate",
     modelUsed: (data.modelUsed as string) || "",
     status: (data.status as string) || "RUNNING",
@@ -395,7 +394,7 @@ export async function pollVideoTask(
       res = await fetch("/api/check-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId, engine: "kling", ...options.extraPollBody }),
+        body: JSON.stringify({ operationName: taskId, engine: "veo", ...options.extraPollBody }),
       });
     } catch {
       consecutiveErrors++;
@@ -471,7 +470,7 @@ export async function pollVideoTask(
         canonicalVideoUri: data.canonicalVideoUri,
         seed: data.seed,
         variants: data.variants,
-        engine: "kling",
+        engine: "veo",
         needsUpload: data.needsUpload ?? false,
         completedAt: Date.now(),
         pollMeta: { totalAttempts: attempt + 1, totalDurationMs: Date.now() - startTime },
@@ -554,7 +553,7 @@ export function classifyVideoError(
   }
 
   // API-level error (from server response)
-  if (message.includes("API") || message.includes("Kling")) {
+  if (message.includes("API") || message.includes("VEO") || message.includes("Veo")) {
     return { type: "api_error", message, retryable: false };
   }
 
@@ -619,7 +618,7 @@ export function sleep(ms: number): Promise<void> {
 function makeFailedResult(attempt: number, startTime: number, error: string): NormalizedVideoResult {
   return {
     status: "failed",
-    engine: "kling",
+    engine: "veo",
     needsUpload: false,
     error,
     completedAt: Date.now(),
@@ -631,7 +630,7 @@ function makeTimeoutResult(attempts: number, startTime: number, error?: string):
   const elapsedMin = Math.round((Date.now() - startTime) / 60000);
   return {
     status: "timeout",
-    engine: "kling",
+    engine: "veo",
     needsUpload: false,
     error: error || `영상 생성 타임아웃 (${elapsedMin}분 초과)`,
     completedAt: Date.now(),
@@ -643,7 +642,7 @@ function makeTimeoutRecoverableResult(attempts: number, startTime: number): Norm
   const elapsedMin = Math.round((Date.now() - startTime) / 60000);
   return {
     status: "timeout_recoverable",
-    engine: "kling",
+    engine: "veo",
     needsUpload: false,
     error: `${elapsedMin}분 동안 확인했지만 아직 완료되지 않았어요. 서버에서 계속 처리 중일 수 있어요.`,
     completedAt: Date.now(),

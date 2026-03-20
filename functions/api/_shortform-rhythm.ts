@@ -120,7 +120,7 @@ export function reconcileShortformPlan(opts: {
   const bandPolicy = resolveShortformBandPolicy(totalDurationSec);
 
   // multi-segment 콘텐츠 (> 15s) → shortform band 규칙 비적용.
-  // 15초 초과는 여러 Kling 세그먼트로 구성된 장편 콘텐츠이므로
+  // 8초 초과는 여러 VEO 세그먼트로 구성된 장편 콘텐츠이므로
   // shortform rhythm을 적용하지 않고, density/persona 기반으로 진행.
   if (bandPolicy.band === "over-limit") {
     const effectiveCuts = exactCutCount && exactCutCount > 0

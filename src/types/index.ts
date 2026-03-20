@@ -5,11 +5,9 @@ export type AnimationMode = string;
 export type StyleFamily = "all" | "live_action" | "animation_2d" | "animation_3d" | "painting" | "stop_motion" | "retro_game" | "experimental";
 export type Duration = 10 | 12 | 13 | 15 | 30 | 60 | 90 | 120 | 180 | 240 | 300 | "auto";
 export type AspectRatio = "9:16" | "16:9";
-/** 영상 해상도 (Kling 기준) */
+/** 영상 해상도 (VEO 기준) */
 export type VideoResolution = "720p" | "1080p" | "4k";
-// 0 = 자동 (UI 전용, API에는 null/undefined로 변환)
-// 1~15 = 명시값 (초 단위)
-// 3~15초 — Kling API 지원 범위
+// VEO 정책: 8초 고정 (멀티샷 필수)
 export type ClipDuration = number;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
@@ -41,7 +39,7 @@ export interface PromptInput {
   duration: Duration;
   aspectRatio: AspectRatio;
   cutCount?: number; // 사용자 지정 장면 수 (없으면 자동 계산)
-  cutDuration?: number; // 장면당 초 (3~15초 — Kling API 지원 범위)
+  cutDuration?: number; // 장면당 초 (VEO 정책: 8초 고정)
   /** 선호 컷 수 범위 — exact cutCount보다 낮은 우선순위. density minimum이 hard floor. */
   preferredCutCountRange?: CutCountRange;
   customDirector?: DirectorPersona; // 웹 검색으로 추가된 커스텀 감독
@@ -341,7 +339,7 @@ export interface Cut {
   transitionHint: string;
   characterConsistency: string;
   charactersInScene: string[];
-  multiShot?: MultiShotPrompt[]; // Kling o3 멀티샷: 1장면 안 여러 카메라 구도 (duration 기반 — getMaxShots 정책 참조)
+  multiShot?: MultiShotPrompt[]; // VEO 멀티샷: 8초 타임스탬프 형식 (4샷 기본 — establish/develop/peak/resolve)
   /** 의도적 원테이크 — true이면 강제 멀티샷 정책을 명시적으로 무시 */
   intentionalOneTake?: boolean;
   // 씬 타입 분류
@@ -459,19 +457,18 @@ export interface StoryAIPersona {
 }
 
 // ===== 영상 생성 엔진 & 모드 =====
-/** Video generation engine. Kling = primary generation engine. */
-export type VideoEngine = "kling" | "auto";
+/** Video generation engine. VEO = sole generation engine. */
+export type VideoEngine = "veo" | "auto";
 export type VideoMode   = "generate" | "extend";
 
 /**
- * WorkflowType — Kling O3 모델 패밀리 기반 생성 워크플로우 분류.
- * kling-capability.ts의 WorkflowType과 동일한 값 집합.
+ * WorkflowType — VEO 모델 패밀리 기반 생성 워크플로우 분류.
+ * veo-capability.ts의 WorkflowType과 동일한 값 집합.
  */
 export type VideoWorkflowType =
   | "text-to-video"
   | "image-to-video"
-  | "reference-to-video"
-  | "custom-element";
+  | "extend";
 
 // ===== JSON-first 구조화된 시퀀스 문서 =====
 
@@ -655,9 +652,9 @@ export type AssetStatus =
   | "SCENE_EXTENSION_READY"
   | "VISIBLE_IN_LIBRARY";
 
-// ===== Kling 영상 생성 설정 =====
+// ===== VEO 영상 생성 설정 =====
 export interface VideoGenerationConfig {
-  engine: VideoEngine; // 사용할 엔진 (kling | auto)
+  engine: VideoEngine; // 사용할 엔진 (veo | auto)
   videoMode: VideoMode;        // generate: 독립 생성 | extend: 이전 영상 이어서
   /** 워크플로우 타입 — 모델 자동 선택의 근거. 미지정 시 컨텍스트에서 자동 판단. */
   workflowType?: VideoWorkflowType;
@@ -713,10 +710,10 @@ export const EMPTY_CINEMATOGRAPHY: CinematographySelection = {
 };
 
 export const DEFAULT_VIDEO_CONFIG: VideoGenerationConfig = {
-  engine: "kling",            // ← Kling = primary generation engine
+  engine: "veo",              // ← VEO = sole generation engine
   videoMode: "extend",
   mode: "fast",
-  durationSeconds: 6,
+  durationSeconds: 8,         // VEO 정책: 8초 고정
   resolution: "720p",
   aspectRatio: "16:9",
   generateAudio: true,
@@ -750,9 +747,9 @@ export const DEFAULT_VEO_CONFIG = DEFAULT_VIDEO_CONFIG;
 export interface DurationMeta {
   /** UI에서 사용자가 요청한 값 (slider 값, 0=auto) */
   requestedSecondsPerScene?: number;
-  /** safeDuration 등으로 정규화된 값 (3-15) */
+  /** 정규화된 값 (VEO 정책: 8초 고정) */
   normalizedSecondsPerScene: number;
-  /** Kling API에 실제 전송된 값 (toKlingDuration 후) */
+  /** VEO API에 실제 전송된 값 */
   sentSecondsPerScene?: number;
   /** 어디서 결정됐는지 */
   source: "slider" | "auto" | "api-response" | "fallback";
@@ -882,7 +879,7 @@ export interface ShotVariant {
   createdAt: number;
   /** 생성된 영상 URL */
   videoUrl?: string;
-  /** Kling task ID (폴링용) */
+  /** VEO operation name (폴링용) */
   operationName?: string;
   /** 품질 점수 (QA 결과) */
   qualityScore?: number;
@@ -973,7 +970,7 @@ export interface VideoClip {
     isMapScene: boolean;
   };
   // 멀티 프로바이더
-  engineUsed?: "kling";      // 실제 사용된 엔진 (kling = primary)
+  engineUsed?: "veo";        // 실제 사용된 엔진 (veo = sole engine)
   modeUsed?: VideoMode;              // 실제 사용된 모드
   sourceVideo?: string;              // extend 모드의 소스 영상 URI / task_id
   // ── 업로드 상태 추적 ──
@@ -1062,7 +1059,7 @@ export interface CutProvenance {
   quality?: "ok" | "degraded";
   reason?: string;
   warnings?: string[];
-  /** 실제 사용된 Kling 모델 */
+  /** 실제 사용된 VEO 모델 */
   modelUsed?: string;
   /** generate-video 응답 modeUsed */
   modeUsed?: string;
@@ -1104,42 +1101,8 @@ export interface CharacterFaceRef {
   boundingBox?: { x: number; y: number; width: number; height: number };
 }
 
-// ===== Kling Custom Element (캐릭터 일관성) =====
-/**
- * KlingElementAsset — Kling Custom Element API로 생성된 reusable subject asset.
- *
- * CharacterFaceRef(얼굴 crop 이미지)와 완전 분리된 타입.
- * CharacterFaceRef = 소스 이미지 데이터
- * KlingElementAsset = Kling 서버에 등록된 reusable element (element_id 보유)
- *
- * 라이프사이클: pending → processing → completed → (사용 가능) | failed
- */
-export type KlingElementStatus = "pending" | "processing" | "completed" | "failed";
-
-export type KlingElementSourceType = "image_refer" | "video_refer";
-
-export interface KlingElementAsset {
-  /** CharacterSeed.id와 매칭 */
-  characterId: string;
-  /** Kling create element task ID */
-  taskId: string;
-  /** 완료 후 할당되는 element ID — video generation 시 element_list에 전달 */
-  elementId: string | null;
-  /** element 이름 (캐릭터 label 기반) */
-  elementName: string;
-  /** element 설명 (캐릭터 appearance 기반) */
-  elementDescription: string;
-  /** 생성 상태 */
-  status: KlingElementStatus;
-  /** 소스 타입 */
-  sourceType: KlingElementSourceType;
-  /** 에러 메시지 (실패 시) */
-  error?: string;
-  /** 생성 시작 시각 (ms) */
-  createdAt: number;
-  /** 완료 시각 (ms) */
-  completedAt?: number;
-}
+// ===== Custom Element (v2 예정 — VEO Reference Images) =====
+// VEO Custom Element 제거됨. VEO Reference Images는 v2에서 구현 예정.
 
 // ===== 효과음 (SFX) =====
 export interface SfxMatch {

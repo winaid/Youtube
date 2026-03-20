@@ -7,7 +7,7 @@ interface ProxyEnv {
  * SSRF 방지: 허용된 도메인/스킴만 프록시합니다.
  * - gs:// URIs (GCS로 변환됨)
  * - storage.googleapis.com (GCS)
- * - cdn.klingai.com / cdn.kling.com (Kling 영상 CDN)
+ * - generativelanguage.googleapis.com (VEO 생성 결과)
  * - VIDEO_BUCKET_DOMAIN (R2 커스텀 도메인, 설정된 경우)
  */
 function isAllowedUri(uri: string, videoBucketDomain?: string): boolean {
@@ -25,8 +25,7 @@ function isAllowedUri(uri: string, videoBucketDomain?: string): boolean {
   const host = parsed.hostname.toLowerCase();
   const allowedHosts = [
     "storage.googleapis.com",
-    "cdn.klingai.com",
-    "cdn.kling.com",
+    "generativelanguage.googleapis.com",
   ];
 
   if (videoBucketDomain) {
@@ -97,7 +96,7 @@ export const onRequestGet: PagesFunction<ProxyEnv> = async (context) => {
       console.log(`[proxy-video] gs:// 변환: ${videoUri.slice(0, 60)}… → GCS API URL`);
     }
 
-    // GCS/Kling CDN은 인증 불필요 — fetchWithAuth 사용 금지 (API 키 유출 방지)
+    // GCS/VEO 결과는 인증 불필요 — fetchWithAuth 사용 금지 (API 키 유출 방지)
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 25_000);
     let res: Response;

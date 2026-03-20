@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
-import { getMaxShots } from "@/lib/kling-capability";
+/** Fixed max shots (VEO supports up to 4 internal shots) */
+const getMaxShots = (_modelId: string, _duration: number) => 4;
 import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
 import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles, planRecommendedShotCount } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
@@ -40,7 +41,7 @@ interface CutCardProps {
   onGenerateEndImage?: () => void;
   sceneTtsUrl?: string;
   userVideoMode?: "fast";
-  /** Kling 모델 ID — MultiShotEditor에서 capability 조회에 사용 */
+  /** VEO 모델 ID — MultiShotEditor에서 capability 조회에 사용 */
   modelId?: string;
   sceneTtsLoading?: boolean;
   onGenerateSceneTts?: () => void;

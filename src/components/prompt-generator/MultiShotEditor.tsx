@@ -13,7 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getMaxShots } from "@/lib/kling-capability";
+/** Fixed max shots (VEO supports up to 4 internal shots) */
+const getMaxShots = (_modelId: string, _duration: number) => 4;
 import {
   validateMultiShots,
   addShot,

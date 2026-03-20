@@ -6,7 +6,7 @@
  *
  * 규칙:
  *   - secondsPerScene=0 → "자동" (서버에서 계산)
- *   - secondsPerScene 1~15 → 명시값
+ *   - secondsPerScene 8 → 명시값 (VEO 고정 8초 정책)
  *   - 충돌 시 secondsPerScene을 우선하고 sceneCount를 재계산
  *   - API payload에서 0은 null/undefined로 변환
  */
@@ -16,7 +16,7 @@ export interface DurationReconcileInput {
   totalDurationSeconds: number;
   /** 장면 수. 0이면 auto. */
   sceneCount: number;
-  /** 장면당 초. 0이면 auto, 1~15이면 명시값. */
+  /** 장면당 초. 0이면 auto, 8이면 명시값 (VEO 고정 8초). */
   secondsPerScene: number;
 }
 
@@ -33,11 +33,11 @@ export interface DurationReconcileResult {
   basis: "secondsPerScene" | "sceneCount" | "auto";
 }
 
-/** Kling 지원 범위: 3~15초. UI 0~15, 실제 전송은 3~15 클램핑. */
-export const DURATION_MIN = 3;
-export const DURATION_MAX = 15;
+/** VEO 지원 범위: 고정 8초 정책. UI 0~8, 실제 전송은 8초 고정. */
+export const DURATION_MIN = 8;
+export const DURATION_MAX = 8;
 export const DURATION_SLIDER_MIN = 0;
-export const DURATION_SLIDER_MAX = 15;
+export const DURATION_SLIDER_MAX = 8;
 
 /**
  * 중앙 fallback 기본값. 개별 파일에서 리터럴 8을 쓰지 말 것.
@@ -46,7 +46,7 @@ export const DURATION_SLIDER_MAX = 15;
 export const DURATION_FALLBACK = 8;
 
 /** 프리셋 빠른 버튼 */
-export const DURATION_PRESETS = [4, 6, 8, 10, 15] as const;
+export const DURATION_PRESETS = [8] as const;
 
 /**
  * duration 값을 안전하게 해석. 0/undefined/null/NaN → DURATION_FALLBACK.
@@ -161,7 +161,7 @@ export function computeAutoDuration(input: AutoDurationInput): AutoDurationResul
 
 /**
  * secondsPerScene을 API payload용 값으로 변환.
- * 0 → undefined (서버 자동), 1~2 → 3 (최소값), 3~15 → 그대로.
+ * 0 → undefined (서버 자동), 그 외 → VEO 고정 8초 클램핑.
  */
 export function toApiSecondsPerScene(sliderValue: number): number | undefined {
   if (sliderValue === 0) return undefined;

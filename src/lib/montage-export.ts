@@ -3,7 +3,7 @@
  *
  * 설계 원칙:
  *   - structuredSequence cutNumber 순서 = stitch 순서의 source of truth
- *   - Kling 1회 요청 = 1개 독립 컷 clip
+ *   - VEO 1회 요청 = 1개 독립 컷 clip
  *   - stitch = 완료된 독립 clip들을 cutNumber 순서로 concat하는 후처리 단계
  *   - stitch 구현 상태를 동적 감지하여 UI에 정확히 반영
  *

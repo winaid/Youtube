@@ -4,7 +4,7 @@
  * 핵심 목적:
  *   1. 생성 요청 즉시 job record 저장 → 페이지 새로고침 후 복구 가능
  *   2. polling 상태를 실시간 추적 → 장시간 생성에도 작업 유실 방지
- *   3. provider 무관 설계 → Kling 외 다른 생성 모델에도 재사용 가능
+ *   3. provider 무관 설계 → VEO 외 다른 생성 모델에도 재사용 가능
  *
  * 상태 머신:
  *   queued → submitted → processing → completed
@@ -41,7 +41,7 @@ export type JobErrorType =
 export interface VideoJobRecord {
   /** 클라이언트 생성 UUID */
   jobId: string;
-  /** 생성 엔진 (kling 등) — 멀티 프로바이더 확장용 */
+  /** 생성 엔진 (veo 등) — 멀티 프로바이더 확장용 */
   engine: string;
   /** 생성 요청의 taskId (API 응답 후 채워짐) */
   taskId: string | null;
@@ -59,7 +59,7 @@ export interface VideoJobRecord {
   lastPolledAt: number;
   /** polling 시도 횟수 */
   pollAttempts: number;
-  /** Kling 원본 상태값 */
+  /** VEO 원본 상태값 */
   lastProviderStatus: string | null;
   /** 완료 시 영상 URL */
   resultUrl: string | null;
@@ -168,7 +168,7 @@ export function createJob(params: {
 }): VideoJobRecord {
   const job: VideoJobRecord = {
     jobId: generateJobId(),
-    engine: params.engine || "kling",
+    engine: params.engine || "veo",
     taskId: null,
     cutNumber: params.cutNumber,
     status: "queued",

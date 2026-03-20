@@ -3,7 +3,7 @@
  *
  * 설계 원칙:
  *   - structuredSequence cutNumber 순서 = stitch 순서의 source of truth
- *   - Kling 1회 요청 = 1개 독립 컷 clip (multiShot ≠ stitch 대체물)
+ *   - VEO 1회 요청 = 1개 독립 컷 clip (multiShot ≠ stitch 대체물)
  *   - stitch = 완료된 독립 clip들을 cutNumber 순서로 concat하는 후처리 단계
  *   - stitch 불가능 상태를 절대 숨기지 않음
  *
@@ -143,7 +143,7 @@ export async function fetchClipBlobs(
  * FFmpeg.wasm concat demuxer로 clip들을 단일 mp4로 결합.
  *
  * 방식: concat demuxer (재인코딩 없이 stream copy)
- *   - 모든 clip이 같은 코덱/해상도/프레임레이트여야 함 (Kling 출력 기준 동일)
+ *   - 모든 clip이 같은 코덱/해상도/프레임레이트여야 함 (VEO 출력 기준 동일)
  *   - 코덱 불일치 시 재인코딩 fallback
  *
  * @param ffmpeg — loadFFmpeg()에서 받은 인스턴스

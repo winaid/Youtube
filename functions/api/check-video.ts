@@ -1,34 +1,28 @@
 /**
- * check-video.ts — 2-API 아키텍처: Kling 전용 상태 폴링
+ * check-video.ts — VEO 전용 상태 폴링
  *
- * Kling(EvoLink) 폴링만 유지.
+ * VEO(Google) operation 폴링만 유지.
  */
-import { klingCheckStatus, type KlingEnv } from "./_kling-api";
+import { veoCheckStatus, type VeoEnv } from "./_veo-api";
 
-type Env = KlingEnv;
+type Env = VeoEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const tCheckStart = Date.now();
   try {
     // ── 1. Request body 파싱
     let bodyText = "";
-    let engine: "kling" = "kling";
-    let taskId = "";
+    let operationName = "";
     let isExtend = false;
     let cutNumber: number | null = null;
-    let operationName = "";
     try {
       bodyText = await context.request.text();
       const parsed = JSON.parse(bodyText) as {
         operationName?: string;
-        engine?: "kling";
-        taskId?: string;
         isExtend?: boolean;
         cutNumber?: number;
       };
       operationName = parsed.operationName || "";
-      engine    = parsed.engine    ?? "kling";
-      taskId    = parsed.taskId    || operationName;
       isExtend  = parsed.isExtend  ?? false;
       cutNumber = typeof parsed.cutNumber === "number" ? parsed.cutNumber : null;
     } catch (parseErr) {
@@ -37,63 +31,70 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     console.log("[check-video] ENTRY", {
-      engine: "kling",
+      engine: "veo",
       cutNumber,
-      taskId: taskId ? taskId.slice(0, 80) : "(empty)",
+      operationName: operationName ? operationName.slice(0, 80) : "(empty)",
       isExtend,
     });
 
-    // ── Kling 체크 ────────────────────────────────────────────────
-    if (!taskId) {
-      return Response.json({ error: "taskId is required for Kling engine" }, { status: 400 });
+    // ── VEO 체크 ────────────────────────────────────────────────
+    if (!operationName) {
+      return Response.json({ error: "operationName is required for VEO engine" }, { status: 400 });
     }
 
     let result;
     try {
-      result = await klingCheckStatus(context.env, taskId, isExtend);
+      result = await veoCheckStatus(context.env, operationName);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[check-video] Kling check error:", msg);
-      return Response.json({ status: "FAILED", error: `Kling API 오류: ${msg}` }, { status: 502 });
+      console.error("[check-video] VEO check error:", msg);
+      return Response.json({ status: "FAILED", error: `VEO API 오류: ${msg}` }, { status: 502 });
     }
 
-    console.log("[check-video] Kling result", {
-      rawStatus: result.status,
-      progress: result.progress,
-      videoUrl: result.videoUrl ? result.videoUrl.slice(0, 80) : null,
-      videoId: result.videoId,
+    console.log("[check-video] VEO result", {
+      operationName: result.operationName,
+      done: result.done,
+      status: result.status,
+      videoUri: result.videoUri ? result.videoUri.slice(0, 80) : null,
       error: result.error,
     });
 
-    if (result.status === "pending" || result.status === "processing") {
-      return Response.json({ status: "RUNNING", progress: result.progress });
-    }
-
-    if (result.status === "failed") {
-      return Response.json({ status: "FAILED", error: result.error ?? "Kling generation failed" }, { status: 422 });
-    }
-
-    // completed
-    if (!result.videoUrl) {
-      console.warn("[check-video] Kling completed but videoUrl missing — treating as processing");
+    // done=false → RUNNING
+    if (!result.done) {
       return Response.json({ status: "RUNNING" });
     }
 
-    const checkTotalMs = Date.now() - tCheckStart;
-    console.log("[check-video] ⏱ timing", { checkTotalMs, cutNumber });
+    // done=true, failed
+    if (result.status === "failed") {
+      return Response.json({ status: "FAILED", error: result.error ?? "VEO generation failed" }, { status: 422 });
+    }
 
-    return Response.json({
-      status: "COMPLETED",
-      videoUri: result.videoUrl,
-      rawVideoUri: result.videoUrl,
-      canonicalVideoUri: result.videoUrl.startsWith("https://") ? result.videoUrl : null,
-      seed: undefined,
-      variants: [{ videoUri: result.videoUrl, rawVideoUri: result.videoUrl }],
-      sampleCount: 1,
-      engine: "kling",
-      // Kling 영상은 HTTPS URL로 반환되므로 업로드 불필요
-      needsUpload: false,
-    });
+    // done=true, completed
+    if (result.status === "completed") {
+      if (!result.videoUri) {
+        console.warn("[check-video] VEO completed but videoUri missing — treating as running");
+        return Response.json({ status: "RUNNING" });
+      }
+
+      const checkTotalMs = Date.now() - tCheckStart;
+      console.log("[check-video] ⏱ timing", { checkTotalMs, cutNumber });
+
+      return Response.json({
+        status: "COMPLETED",
+        videoUri: result.videoUri,
+        rawVideoUri: result.videoUri,
+        canonicalVideoUri: result.videoUri.startsWith("https://") ? result.videoUri : null,
+        seed: undefined,
+        variants: [{ videoUri: result.videoUri, rawVideoUri: result.videoUri }],
+        sampleCount: 1,
+        engine: "veo",
+        // VEO는 Google URI를 반환하므로 R2 업로드 필요
+        needsUpload: true,
+      });
+    }
+
+    // done=true but status is pending/processing (unexpected) — treat as running
+    return Response.json({ status: "RUNNING" });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error(`[check-video] UNHANDLED: ${errMsg}`);

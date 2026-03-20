@@ -41,7 +41,8 @@ import { DEFAULT_EDITORIAL_PERSONA } from "@/types";
 import { assembleFromJSON, type SingleShotDocument } from "@/lib/sequence-assembler";
 import { buildFinalProviderPayload, type FinalProviderPayload } from "@/lib/final-payload-builder";
 import { safeDuration } from "@/lib/duration-reconciliation";
-import { getMinShots } from "@/lib/kling-capability";
+// VEO 고정 4샷 정책 — kling-capability 대체
+const VEO_MIN_SHOTS = 4;
 import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
 
@@ -117,7 +118,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
   // 서버 repair가 적용되었더라도 클라이언트 suggestedMultiShot이 덮어쓸 수 있으므로
   // 여기서 한 번 더 확인. (9~15초: 최소 4샷, 4~8초: 최소 3샷)
   const dur = result.structuredSequence.durationSec;
-  const minRequired = getMinShots("kling-o3-text-to-video", dur);
+  const minRequired = VEO_MIN_SHOTS;
   if (minRequired > 0 && multiShot.length < minRequired) {
     // 서버에서 보낸 cut.multiShot이 정책을 충족하면 그것을 사용
     if (input.cut.multiShot && input.cut.multiShot.length >= minRequired) {
@@ -195,7 +196,7 @@ export function fromCanonicalToPayload(
 ): FinalProviderPayload {
   return buildFinalProviderPayload({
     document: internalDoc,
-    provider: "kling",
+    provider: "veo",
   });
 }
 
@@ -310,7 +311,7 @@ export function resolveStyleEffects(styleId: string): StyleEffect {
     ? styleEntry.negativePrompt.split(",").map(s => s.trim()).filter(Boolean)
     : [];
 
-  // Kling is string-only — style is always encoded in prompt text, never as a native API parameter
+  // VEO is string-only — style is always encoded in prompt text, never as a native API parameter
   const providerNativeSupport = false;
 
   // Style rendering rules (camera defaults, motion defaults, etc.)

@@ -42,7 +42,7 @@ export interface ValidatePayloadInput {
   /** 씬 타입 */
   shotCategory?: string;
   /** Provider */
-  provider: "kling";
+  provider: "veo";
   /** characterRef (있으면 검증) */
   characterRef?: string;
   /** action 텍스트 (있으면 overload/consistency 검증) */
@@ -51,7 +51,7 @@ export interface ValidatePayloadInput {
   durationSec?: number;
   /** multi-shot 배열 (export layer 검증) */
   multiShots?: Array<{ index: number; prompt: string; duration: string; role?: string }>;
-  /** Kling 모델 ID (multiShot 검증 시 필요) */
+  /** VEO 모델 ID (multiShot 검증 시 필요) */
   modelId?: string;
   /** 생성 모드 — Studio(엄격) vs Batch(느슨) */
   mode?: GenerationMode;
@@ -189,7 +189,7 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
   // ── Rule 6: Word count check ───────────────────────────────────
   const wordCount = input.prompt.split(/\s+/).length;
   const minWords = sceneType === "environment" ? 60 : sceneType === "map_visualization" ? 40 : 50;
-  const maxWords = 300; // Kling word cap
+  const maxWords = 300; // VEO word cap
 
   if (wordCount < minWords) {
     issues.push({

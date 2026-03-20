@@ -12,7 +12,7 @@
  */
 
 import { rewritePromptConflicts, assemblePromptV2, collectFailureModeNegatives, buildSceneLock, buildNegativePrompt } from "../src/lib/prompt-architecture";
-import { renderKlingPromptFromJson, VideoPromptJson } from "../src/lib/video-prompt-json";
+import { renderPromptFromJson, type VideoPromptJson } from "../src/lib/video-prompt-json";
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ const mapJson: VideoPromptJson = {
 };
 
 // Kling renderer: 3D topographic map → physical relief map surface
-const klingPrompt = renderKlingPromptFromJson(mapJson);
+const klingPrompt = renderPromptFromJson(mapJson);
 assert(!klingPrompt.includes("3D topographic map"), "Kling: 3D topographic map 제거됨");
 assert(klingPrompt.includes("physical"), "Kling: physical 표현 포함");
 assert(klingPrompt.includes("not a real landscape and not a CGI render"), "Kling: medium lock 문장 삽입됨");
@@ -149,7 +149,7 @@ const charJson: VideoPromptJson = {
   situationCue: "late night",
   emotionalAnchor: "slumps alone",
 };
-const charKling = renderKlingPromptFromJson(charJson);
+const charKling = renderPromptFromJson(charJson);
 assert(!charKling.includes("not a real landscape and not a CGI render"), "캐릭터 씬: medium lock 미적용");
 
 console.log(`  ✓ ${passed - prevPassed3} renderer enforcement assertions passed`);

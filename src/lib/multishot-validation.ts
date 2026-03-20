@@ -19,7 +19,11 @@
  */
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
-import { getMaxShots, getCapability } from "@/lib/kling-capability";
+// VEO capability constants imported via local constants above
+
+/** VEO 고정 4샷 정책 */
+const VEO_MAX_SHOTS = 4;
+const VEO_MIN_SHOT_DURATION = 2;
 import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
 import type { GenerationMode } from "@/lib/multi-shot-planner";
 
@@ -145,7 +149,7 @@ export function inferShotRole(index: number, total: number): ShotRole {
 /**
  * Editor Layer 실시간 검증.
  *
- * @param modelId - Kling 모델 ID
+ * @param modelId - VEO 모델 ID
  * @param shots - 현재 멀티샷 배열
  * @param totalDurationSec - 컷 전체 duration (초)
  * @returns 검증 결과 (valid + 개별/집계 이슈)
@@ -158,8 +162,7 @@ export function validateMultiShots(
   const shotIssues: ShotIssue[] = [];
   const aggregateIssues: AggregateIssue[] = [];
 
-  const cap = getCapability(modelId);
-  const maxShots = getMaxShots(modelId, totalDurationSec);
+  const maxShots = VEO_MAX_SHOTS;
 
   // ── 샷 개수 검증 ──
   if (shots.length === 0) {
@@ -204,12 +207,12 @@ export function validateMultiShots(
 
     // duration 최소값
     const dur = parseFloat(shot.duration) || 0;
-    if (dur < cap.minShotDuration) {
+    if (dur < VEO_MIN_SHOT_DURATION) {
       shotIssues.push({
         shotIndex: shot.index,
         field: "duration",
         severity: "error",
-        message: `시간 ${dur}초 — 최소 ${cap.minShotDuration}초 필요`,
+        message: `시간 ${dur}초 — 최소 ${VEO_MIN_SHOT_DURATION}초 필요`,
       });
     }
   }
@@ -339,11 +342,10 @@ export function addShot(
   shots: MultiShotPrompt[],
   totalDurationSec: number,
 ): MultiShotPrompt[] | null {
-  const maxShots = getMaxShots(modelId, totalDurationSec);
+  const maxShots = VEO_MAX_SHOTS;
   if (shots.length >= maxShots) return null;
 
-  const cap = getCapability(modelId);
-  const minDur = cap.minShotDuration;
+  const minDur = VEO_MIN_SHOT_DURATION;
 
   if (shots.length === 0) {
     // 첫 샷 추가
@@ -441,8 +443,7 @@ export function resizeShot(
   shotIndex: number,
   newDuration: number,
 ): MultiShotPrompt[] | null {
-  const cap = getCapability(modelId);
-  const minDur = cap.minShotDuration;
+  const minDur = VEO_MIN_SHOT_DURATION;
 
   const idx = shotIndex - 1; // 0-based
   if (idx < 0 || idx >= shots.length) return null;
@@ -495,7 +496,7 @@ export function resizeShot(
  * Studio Mode용 엄격한 검증.
  * 멀티샷 누락 시 blocking error로 처리.
  *
- * @param modelId - Kling 모델 ID
+ * @param modelId - VEO 모델 ID
  * @param shots - 현재 멀티샷 배열 (없을 수 있음)
  * @param totalDurationSec - 클립 전체 duration
  * @param sceneType - 씬 분류 (force-multishot 판정용)
@@ -832,8 +833,7 @@ export function distributeEvenly(
   totalDurationSec: number,
   existingShots?: MultiShotPrompt[],
 ): MultiShotPrompt[] {
-  const cap = getCapability(modelId);
-  const minDur = cap.minShotDuration;
+  const minDur = VEO_MIN_SHOT_DURATION;
   const baseDur = Math.max(minDur, Math.floor(totalDurationSec / shotCount));
   const remainder = totalDurationSec - baseDur * shotCount;
 

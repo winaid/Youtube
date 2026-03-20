@@ -1,9 +1,9 @@
 /**
- * sequence-density.ts — 15초 상한 제품용 시퀀스 밀도 보정 유틸
+ * sequence-density.ts — 8초 상한 제품용 시퀀스 밀도 보정 유틸
  *
  * 3-Layer 모델:
  *   Layer 1: 총 요청 런타임 (e.g. 48s) — 배치/컨테이너 예산
- *   Layer 2: 시퀀스 (8–15s) — Kling 1회 생성 단위
+ *   Layer 2: 시퀀스 (8s) — VEO 1회 생성 단위
  *   Layer 3: 시퀀스 내 멀티샷 (최대 6) — multi-shot-planner가 관리
  *
  * 이 파일은 Layer 1 → Layer 2 분할만 담당한다.
@@ -27,7 +27,7 @@ export const SEQUENCE_MIN_DURATION = 8;
 /**
  * 시퀀스 밀도 정책 — 총 런타임 대비 최소 시퀀스 수.
  *
- * 각 시퀀스는 Kling 1회 생성 단위(8–15s).
+ * 각 시퀀스는 VEO 1회 생성 단위(8s).
  * 시퀀스 내부의 샷 수는 multi-shot-planner가 관리.
  *
  * 확정 규칙 (2026-03):
@@ -47,9 +47,12 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Kling segment 상한. 한 번에 최대 15초만 생성 가능.
+ * VEO segment 상한. 한 번에 최대 8초만 생성 가능.
  */
-export const KLING_SEGMENT_CAP = 15;
+export const VEO_SEGMENT_CAP = 8;
+
+/** @deprecated backward compat alias — use VEO_SEGMENT_CAP */
+export const KLING_SEGMENT_CAP = VEO_SEGMENT_CAP;
 
 /**
  * 최대 허용 컷 수.
@@ -93,13 +96,13 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
  */
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
   if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
-  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+  if (totalDurationSec <= VEO_SEGMENT_CAP) {
     return singleSegmentRange(totalDurationSec);
   }
-  // segment-aware: 15초 단위로 분할
-  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
-  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
-  const fullRange = singleSegmentRange(KLING_SEGMENT_CAP);
+  // segment-aware: 8초 단위로 분할
+  const fullSegments = Math.floor(totalDurationSec / VEO_SEGMENT_CAP);
+  const remainder = totalDurationSec - fullSegments * VEO_SEGMENT_CAP;
+  const fullRange = singleSegmentRange(VEO_SEGMENT_CAP);
   let totalMin = fullRange.min * fullSegments;
   let totalMax = fullRange.max * fullSegments;
   if (remainder > 0) {
@@ -269,7 +272,7 @@ export interface SequenceOrchestrationPlan {
 }
 
 /**
- * resolveSegmentPlan — 전체 시퀀스를 Kling 15초 segment 단위로 분해한 orchestration plan.
+ * resolveSegmentPlan — 전체 시퀀스를 VEO 8초 segment 단위로 분해한 orchestration plan.
  *
  * 이 함수가 반환하는 plan이 generate-cuts의 targetCuts와 응답 메타의 source of truth.
  * 단일 generate-cuts 호출은 plan.currentSegmentTargetCuts만 사용.
@@ -290,7 +293,7 @@ export function resolveSegmentPlan(opts: {
     currentSegmentIndex = 0,
   } = opts;
 
-  const cap = KLING_SEGMENT_CAP;
+  const cap = VEO_SEGMENT_CAP;
   const notes: string[] = [];
 
   // ── segment 분해 ──
@@ -311,7 +314,7 @@ export function resolveSegmentPlan(opts: {
 
   // ── 전체 시퀀스 기준 범위 ──
   const totalCutRange = recommendCutCountRange(effectiveTotal);
-  const perSegRange = singleSegmentRange(cap); // 15초 기준 = {3, 5}
+  const perSegRange = singleSegmentRange(cap); // 8초 기준
 
   // ── exact cutCount 처리 ──
   if (exactCutCount && exactCutCount > 0) {
@@ -418,11 +421,11 @@ export function resolveSegmentPlan(opts: {
  * 총 런타임(초) → 최소 시퀀스 수 반환.
  *
  * 3-Layer 모델: 이 함수는 Layer 2 시퀀스 수를 결정.
- * 15초 초과 시 segment 단위로 분할: ceil(total / 15).
+ * 8초 초과 시 segment 단위로 분할: ceil(total / 8).
  * 각 시퀀스 내부의 샷 수(Layer 3)는 multi-shot-planner가 결정.
  *
- * 48초 → ceil(48/15) = 4 시퀀스 (각 12초)
- * 120초 → ceil(120/15) = 8 시퀀스 (각 15초)
+ * 48초 → ceil(48/8) = 6 시퀀스 (각 8초)
+ * 120초 → ceil(120/8) = 15 시퀀스 (각 8초)
  */
 /**
  * 확정 규칙 (2026-03):
@@ -435,9 +438,9 @@ export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
   if (totalDurationSec <= 5) return 1;
   if (totalDurationSec <= 9) return 3;
-  if (totalDurationSec <= KLING_SEGMENT_CAP) return 4;
-  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 4
-  return Math.max(4, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
+  if (totalDurationSec <= VEO_SEGMENT_CAP) return 4;
+  // segment-aware: 총 런타임을 8초 segment로 분할, 최소 4
+  return Math.max(4, Math.ceil(totalDurationSec / VEO_SEGMENT_CAP));
 }
 
 /**
@@ -519,11 +522,11 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
     needed--;
   }
 
-  // ── Kling 15초 상한 클램핑: 개별 컷이 KLING_SEGMENT_CAP 초과 시 분할 ──
+  // ── VEO 8초 상한 클램핑: 개별 컷이 VEO_SEGMENT_CAP 초과 시 분할 ──
   const clamped: typeof working = [];
   for (const c of working) {
-    if (c.durationSec > KLING_SEGMENT_CAP) {
-      const splitCount = Math.ceil(c.durationSec / KLING_SEGMENT_CAP);
+    if (c.durationSec > VEO_SEGMENT_CAP) {
+      const splitCount = Math.ceil(c.durationSec / VEO_SEGMENT_CAP);
       const baseDur = Math.floor(c.durationSec / splitCount);
       const remainder = c.durationSec - baseDur * splitCount;
       for (let s = 0; s < splitCount; s++) {

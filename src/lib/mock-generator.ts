@@ -2,7 +2,7 @@ import { PromptInput, PromptOutput, Cut, DirectorPersona, CharacterSeed } from "
 import { directors } from "@/data/directors";
 import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
-import { densifyCuts, KLING_SEGMENT_CAP } from "@/lib/sequence-density";
+import { densifyCuts, VEO_SEGMENT_CAP } from "@/lib/sequence-density";
 import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import { distributeRhythm } from "@/lib/rhythm-distribution";

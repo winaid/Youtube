@@ -20,10 +20,10 @@ import {
   PROMPT_MAX_LENGTH,
   PROMPT_WARN_LENGTH,
 } from "@/lib/multishot-validation";
-import { KLING_DEFAULT_TEXT_MODEL } from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 import type { MultiShotPrompt } from "@/types";
 
-const MODEL = KLING_DEFAULT_TEXT_MODEL; // kling-o3-text-to-video
+const MODEL = VEO_DEFAULT_MODEL;
 
 // ═══════════════════════════════════════════════════════════════════
 // Helper

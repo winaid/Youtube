@@ -7,14 +7,14 @@
  *  - auto-fix / rewrite / normalization
  *
  * Gemini는 video generation provider가 아니라 QA/normalization provider다.
- * 생성은 Kling이 담당한다.
+ * 생성은 VEO가 담당한다.
  *
  * 파이프라인 위치:
  *   build raw structuredSequence
  *   → gemini QA 검사 (이 모듈)
  *   → auto-fix / normalize
  *   → normalized structuredSequence 확정
- *   → Kling generate
+ *   → VEO generate
  */
 
 import type { StructuredSequenceDocument, PhysicsRules } from "@/types";
@@ -61,7 +61,7 @@ export interface QualityCheckResult {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * structuredSequence가 Kling 생성 전에 충분한 품질인지 검사.
+ * structuredSequence가 VEO 생성 전에 충분한 품질인지 검사.
  * Gemini API 호출 없이 규칙 기반으로 동작 (로컬 fast-path).
  *
  * Gemini API 기반 심층 검사는 preflightWithGemini()로 분리.
@@ -459,8 +459,8 @@ export function applyQualityFixes(
 
 /** 2-API 아키텍처 역할 정의 */
 export const PROVIDER_ROLES = {
-  /** Kling = 실제 영상 생성 전용 */
-  kling: {
+  /** VEO = 실제 영상 생성 전용 */
+  veo: {
     role: "generation" as const,
     capabilities: ["text-to-video", "image-to-video", "task-polling"] as const,
     description: "Primary video generation engine",

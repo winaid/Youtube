@@ -126,9 +126,9 @@ export default function VideoSettingsPanel({
   const pricePerSec = 0.15;
   const estimatedCost = pricePerSec * (config.durationSeconds ?? 6) * config.sampleCount;
 
-  const engineLabels: Record<VideoEngine, string> = { kling: "Kling", auto: "Auto" };
+  const engineLabels: Record<VideoEngine, string> = { veo: "VEO", auto: "Auto" };
   const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };
-  const engineColors: Record<VideoEngine, string> = { kling: "#e85d04", auto: "#22c55e" };
+  const engineColors: Record<VideoEngine, string> = { veo: "#4285f4", auto: "#22c55e" };
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#c4b80040" }}>
@@ -144,9 +144,9 @@ export default function VideoSettingsPanel({
           <div className="flex items-center gap-2">
             <Badge
               className="text-[10px] text-white"
-              style={{ background: engineColors[config.engine ?? "kling"] }}
+              style={{ background: engineColors[config.engine ?? "veo"] }}
             >
-              {engineLabels[config.engine ?? "kling"]}
+              {engineLabels[config.engine ?? "veo"]}
             </Badge>
             <Badge
               variant="outline"
@@ -173,7 +173,7 @@ export default function VideoSettingsPanel({
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold">엔진</Label>
             <div className="flex gap-2">
-              {(["kling", "auto"] as VideoEngine[]).map((eng) => (
+              {(["veo", "auto"] as VideoEngine[]).map((eng) => (
                 <Button
                   key={eng}
                   size="sm"
@@ -189,7 +189,7 @@ export default function VideoSettingsPanel({
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground">
-              Auto: Google 자격증명 없으면 Kling 사용. Kling 사용 시 KLING_API_KEY 필요.
+              VEO: Google Vertex AI 영상 생성. Auto: 가용 엔진 자동 선택.
             </p>
           </div>
 
@@ -235,7 +235,7 @@ export default function VideoSettingsPanel({
               value={config.durationSeconds ?? 6}
               onChange={(e) => {
                 const d = Number(e.target.value);
-                update({ durationSeconds: d as ClipDuration, ...(d >= 10 ? { engine: "kling" as const } : {}) });
+                update({ durationSeconds: d as ClipDuration });
               }}
               className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
               style={{ accentColor: "#787fff" }}
@@ -247,7 +247,6 @@ export default function VideoSettingsPanel({
             {/* 프리셋 빠른 버튼 */}
             <div className="flex gap-1">
               {([4, 6, 8, 10, 15] as const).map((d) => {
-                const isKlingOnly = d >= 10;
                 const isSelected = config.durationSeconds === d;
                 return (
                   <Button
@@ -258,30 +257,15 @@ export default function VideoSettingsPanel({
                     style={
                       isSelected
                         ? { background: "#787fff", color: "white" }
-                        : isKlingOnly
-                          ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
-                          : {}
+                        : {}
                     }
                     onClick={() => update({ durationSeconds: d as ClipDuration })}
                   >
                     {d}
-                    {isKlingOnly && !isSelected && (
-                      <span
-                        className="absolute -top-0.5 -right-0.5 text-[6px] px-0.5 rounded leading-tight"
-                        style={{ background: "#f97316", color: "white" }}
-                      >
-                        K
-                      </span>
-                    )}
                   </Button>
                 );
               })}
             </div>
-            {(config.durationSeconds ?? 6) >= 10 && (
-              <p className="text-[10px]" style={{ color: "#f97316" }}>
-                ⚠ {config.durationSeconds}초는 Kling 전용
-              </p>
-            )}
           </div>
 
           {/* 해상도 */}

@@ -11,7 +11,7 @@ export const DURATION_FALLBACK = 8;
 /** 최소 허용 시퀀스당 초 (3s는 특수 케이스: 의도적 원테이크 또는 짧은 인서트) */
 export const DURATION_MIN = 3;
 
-/** 최대 허용 시퀀스당 초 (Kling segment 상한) */
+/** 최대 허용 시퀀스당 초 (VEO segment 상한) */
 export const DURATION_MAX = 15;
 
 /**

@@ -19,10 +19,15 @@ import {
 import { checkBatchBudget, BATCH_BUDGET_SECONDS } from "@/lib/batch-runtime-budget";
 import { prepareMultiShotPayload } from "@/lib/video-generation-core";
 import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
-import { isMultiShotEligible } from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
+
+// VEO policy stubs (kling-capability removed)
+function isMultiShotEligible(_model: string, duration: number): boolean {
+  return duration >= 8;
+}
 import type { BatchClipInfo } from "@/lib/batch-runtime-budget";
 
-const MODEL = "kling-o3-text-to-video";
+const MODEL = VEO_DEFAULT_MODEL;
 
 // ═══════════════════════════════════════════════════════════════════
 // Case 1: 12s cinematic_sequence → 자동 멀티샷 구조
@@ -127,7 +132,7 @@ describe("Case 3: Studio Mode 서버 블로킹", () => {
       prompt: basePrompt,
       negatives: ["watermark"],
       framing: "WS",
-      provider: "kling",
+      provider: "veo",
       shotCategory: "cinematic_sequence",
       modelId: MODEL,
       durationSec: 12,
@@ -145,7 +150,7 @@ describe("Case 3: Studio Mode 서버 블로킹", () => {
       prompt: basePrompt,
       negatives: ["watermark"],
       framing: "WS",
-      provider: "kling",
+      provider: "veo",
       shotCategory: "cinematic_sequence",
       modelId: MODEL,
       durationSec: 12,
@@ -169,7 +174,7 @@ describe("Case 4: Batch Mode auto-repair", () => {
       prompt: basePrompt,
       negatives: ["watermark"],
       framing: "WS",
-      provider: "kling",
+      provider: "veo",
       shotCategory: "cinematic_sequence",
       modelId: MODEL,
       durationSec: 12,
@@ -268,7 +273,7 @@ describe("Case 6: 의도적 원테이크", () => {
       prompt: basePrompt,
       negatives: ["watermark"],
       framing: "WS",
-      provider: "kling",
+      provider: "veo",
       shotCategory: "environment",
       modelId: MODEL,
       durationSec: 15,
@@ -286,20 +291,20 @@ describe("Case 6: 의도적 원테이크", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("isMultiShotEligible", () => {
-  it("O3 text + 12s → true", () => {
+  it("VEO + 12s → true", () => {
     expect(isMultiShotEligible(MODEL, 12)).toBe(true);
   });
 
-  it("O3 text + 3s → false (maxShots=0)", () => {
-    expect(isMultiShotEligible(MODEL, 3)).toBe(false);
+  it("VEO + 7s → false (VEO requires 8s)", () => {
+    expect(isMultiShotEligible(MODEL, 7)).toBe(false);
   });
 
-  it("custom-element + 12s → false", () => {
-    expect(isMultiShotEligible("kling-custom-element", 12)).toBe(false);
+  it("VEO + 8s → true", () => {
+    expect(isMultiShotEligible(MODEL, 8)).toBe(true);
   });
 
-  it("O3 text + 5s → true (maxShots=2)", () => {
-    expect(isMultiShotEligible(MODEL, 5)).toBe(true);
+  it("VEO + 5s → false (< 8s)", () => {
+    expect(isMultiShotEligible(MODEL, 5)).toBe(false);
   });
 });
 

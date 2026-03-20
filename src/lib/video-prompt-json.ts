@@ -3,7 +3,7 @@
  *
  * 내부 source-of-truth = VideoPromptJson (구조화된 JSON)
  * Provider 어댑터가 최종 단계에서 JSON → string 렌더링:
- *   - renderKlingPromptFromJson() → Kling 호환 프롬프트 문자열
+ *   - renderKlingPromptFromJson() → VEO 호환 프롬프트 문자열
  */
 
 // ─── VideoPromptJson 타입 — canonical definition은 @/types/index.ts ──────────
@@ -716,10 +716,10 @@ export function sanitizeRenderedPrompt(prompt: string): string {
   return s;
 }
 
-// ─── Kling 렌더러 (레거시 별칭 포함) ──────────────────────────────────────────
+// ─── VEO 렌더러 (레거시 별칭 포함) ──────────────────────────────────────────
 
 /**
- * VideoPromptJson → Kling 호환 프롬프트 문자열
+ * VideoPromptJson → VEO 호환 프롬프트 문자열
  *
  * 설계 원칙 (즉시 인식 가능성 우선):
  * 1. establishing → evidence → anchor 순서로 구성
@@ -760,20 +760,20 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
   }
 }
 
-// ─── Kling 렌더러 ─────────────────────────────────────────────────────────────
+// ─── VEO 렌더러 ─────────────────────────────────────────────────────────────
 
 /**
- * VideoPromptJson → Kling/EvoLink 호환 프롬프트 문자열
- * Kling은 더 간결한 프롬프트를 선호 — 핵심만 추출
+ * VideoPromptJson → VEO 호환 프롬프트 문자열
+ * VEO는 더 간결한 프롬프트를 선호 — 핵심만 추출
  */
 export function renderKlingPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
 
-  // Shot description (Kling은 태그 형식보다 자연어)
+  // Shot description (VEO는 태그 형식보다 자연어)
   parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
 
   if (json.cameraMovement && json.cameraMovement !== "static") {
-    // 동기 부분 제거 — Kling은 간결함 선호
+    // 동기 부분 제거 — VEO는 간결함 선호
     const movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
     parts.push(movement);
   }
@@ -816,7 +816,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
     parts.push(json.timingBeat);
   }
 
-  // Style (Kling은 no text/watermark 등 필수)
+  // Style (VEO는 no text/watermark 등 필수)
   // styleSuffix에서 레거시 부분 제거
   const cleanSuffix = (json.styleSuffix || "")
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
@@ -830,7 +830,7 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
 }
 
 /**
- * ExtendPromptJson → Kling extend 프롬프트 (간결 버전)
+ * ExtendPromptJson → VEO extend 프롬프트 (간결 버전)
  */
 export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
@@ -859,6 +859,11 @@ export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string 
 
   return parts.filter(Boolean).join(". ");
 }
+
+/** @canonical alias — use this name in new code */
+export const renderPromptFromJson = renderKlingPromptFromJson;
+/** @canonical alias — use this name in new code */
+export const renderExtendPromptFromJson = renderKlingExtendPromptFromJson;
 
 // ─── 레거시 string → JSON 파서 (기존 프롬프트 호환) ──────────────────────────
 

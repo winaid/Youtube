@@ -21,9 +21,9 @@ import type {
 
 /** 단일 세그먼트의 duration 제약 */
 export interface SegmentDurationPolicy {
-  /** 최소 세그먼트 길이 (초) — Kling API 최소 생성 단위 */
+  /** 최소 세그먼트 길이 (초) — VEO API 최소 생성 단위 */
   minSegmentSec: number;
-  /** 최대 세그먼트 길이 (초) — Kling API 최대 생성 단위 */
+  /** 최대 세그먼트 길이 (초) — VEO API 최대 생성 단위 */
   maxSegmentSec: number;
   /** 기본 세그먼트 길이 (초) — 분할 시 기본값 */
   defaultSegmentSec: number;

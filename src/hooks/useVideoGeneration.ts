@@ -51,7 +51,7 @@ import {
   type ShotVariantState,
 } from "@/lib/shot-variants";
 import { extractEditable } from "@/lib/shot-editing";
-import { resolveElementListForCut } from "@/lib/kling-element-store";
+// Custom Element 제거됨 (v2 예정). element_list 관련 로직 비활성화.
 import {
   submitVideoGeneration,
   pollVideoTask,
@@ -70,10 +70,10 @@ import {
   type VideoJobRecord,
 } from "@/lib/video-job-store";
 import {
-  getMaxShots,
-  KLING_DEFAULT_TEXT_MODEL,
+  VEO_DEFAULT_MODEL,
   resolveModelForWorkflow,
-} from "@/lib/kling-capability";
+  VEO_MANDATORY_DURATION,
+} from "@/lib/veo-capability";
 
 interface UseVideoGenerationOptions {
   cuts: Cut[];
@@ -82,8 +82,7 @@ interface UseVideoGenerationOptions {
   storyboardImages?: Record<number, string>;
   storyboardEndImages?: Record<number, string>;
   faceRefs?: CharacterFaceRef[];
-  /** Kling Custom Element assets — characterId 기반 element_list 자동 주입 */
-  elementAssets?: import("@/types").KlingElementAsset[];
+  // Custom Element 제거됨 (v2 예정)
   onSeedDetected?: (cutNumber: number, seed: string) => void;
 }
 
@@ -188,7 +187,7 @@ function strengthenNegativePrompt(original: string, retryCount: number): string 
 // sanitizeTextContent, ensureTemporalBeats, naturalizeMetaFields는
 // style-system.ts의 assemblePrompt() 내부에서 처리됨
 
-export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, storyboardImages, storyboardEndImages, faceRefs, elementAssets, onSeedDetected }: UseVideoGenerationOptions) {
+export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, storyboardImages, storyboardEndImages, faceRefs, onSeedDetected }: UseVideoGenerationOptions) {
   const [state, setState] = useState<VideoGenerationState>({
     clips: [],
     isAutoMode: false,
@@ -416,7 +415,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   const startPolling = useCallback(async (
     cutNumber: number,
     operationName: string,
-    engine: "kling" = "kling",
+    engine: "veo" = "veo",
     taskId?: string,
     isExtend?: boolean,
     variantsToPreserve?: VideoVariant[],
@@ -948,7 +947,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       startPolling(
         job.cutNumber,
         job.operationName || job.taskId,
-        (job.engine as "kling") || "kling",
+        (job.engine as "veo") || "veo",
         job.taskId,
         false,
         undefined,
@@ -1506,12 +1505,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         promptMode: cutNumber === 1 ? "videoPrompt" : (cut.extendPrompt?.trim() ? "extendPrompt" : "videoPrompt(fallback)"),
         legacyPromptLen: legacyPrompt.length,
         legacyPromptPrefix: legacyPrompt.slice(0, 120),
-        model: KLING_DEFAULT_TEXT_MODEL,
+        model: VEO_DEFAULT_MODEL,
       });
 
       // ── 엔진 & 모드 결정 ─────────────────────────────────────────────────
-      // 2-API 아키텍처: Kling = 유일한 생성 엔진
-      const engine = "kling" as const;
+      // VEO = 유일한 생성 엔진
+      const engine = "veo" as const;
 
       // ── 워크플로우 기반 effective model 결정 (clamp 정책에 사용) ──────────
       const effectiveModel = resolveModelForWorkflow({
@@ -1530,7 +1529,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         engine,
       });
 
-      // Kling extend: sourceVideo = 이전 클립의 rawVideoUri (Kling video_id)
+      // VEO extend: sourceVideo = 이전 클립의 videoUri (VEO video URI)
       // Priority B: sourceVideo 누락 시 명시적 경고 + 메타데이터 기록
       const sourceVideo = (videoMode === "extend" && cutNumber > 1)
         ? (prevClip?.rawVideoUri ?? "")
@@ -1567,24 +1566,17 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         durationSeconds: cfg.durationSeconds,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,
-        // multiShot: canonical-first, capability 기반 clamp + auto-repair
-        // Source: canonical assembled.suggestedMultiShot → cut.multiShot (legacy fallback)
+        // VEO 멀티샷: 서버에서 8초 4샷 타임스탬프 자동 생성
+        // 클라이언트 multiShot이 있으면 전달, 없으면 서버 auto-generate
         ...((() => {
-          const dur = cfg.durationSeconds ?? cut.durationSec ?? 5;
-          if (engine !== "kling") return {};
-
-          // Canonical multiShot: prefer assembled suggested > cut.multiShot
           const canonicalMultiShot = assembled.suggestedMultiShot ?? cut.multiShot;
           if (canonicalMultiShot && canonicalMultiShot.length > 0) {
-            const maxShotCount = getMaxShots(effectiveModel, dur);
-            if (maxShotCount <= 0) return {};
-            const clamped = canonicalMultiShot.slice(0, maxShotCount).map((s, i) => ({
+            const clamped = canonicalMultiShot.slice(0, 4).map((s, i) => ({
               ...s,
               index: i + 1,
             }));
             return { multiShot: clamped };
           }
-          // 멀티샷 없는 경우 — 서버에서 auto-repair하므로 클라이언트에서는 pass
           return {};
         })()),
         // 생성 모드 + 의도적 원테이크 전달 (서버 정책 시행용)
@@ -1594,15 +1586,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         // VideoPromptJson: canonical-derived preferred over legacy Cut field
         ...(canonicalVideoPromptJson ? { videoPromptJson: canonicalVideoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
-        // Custom Element: charactersInScene 기반 element_list 자동 주입
-        ...((() => {
-          if (!elementAssets || elementAssets.length === 0) return {};
-          const charsInScene = cut.charactersInScene || [];
-          if (charsInScene.length === 0) return {}; // 인물 없는 cut → element_list 미전달
-          const elementList = resolveElementListForCut(elementAssets, charsInScene);
-          if (elementList.length === 0) return {};
-          return { element_list: elementList };
-        })()),
+        // Custom Element 제거됨 (v2에서 VEO Reference Images로 구현 예정)
         // ── Continuity metadata (continuitySegment가 있으면 전달) ──
         ...(cut.continuitySegment ? {
           continuityMeta: {
@@ -1857,7 +1841,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           urlHasProject: d.urlHasProject,
           videoMode: d.videoMode,
           sceneExtensionAttempted: d.sceneExtensionAttempted,
-          videoUrlExpected: "✓ Kling returns HTTPS URL directly",
+          videoUrlExpected: "✓ VEO returns Google URI (needs R2 upload)",
         });
       }
 
@@ -2735,7 +2719,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       status: "generating",
       createdAt: Date.now(),
       generationMeta: {
-        engine: "kling",
+        engine: "veo",
         mode: "generate",
         durationSec: shotDuration,
         hasNeighborContext: !!(payload.previousShot || payload.nextShot),
@@ -2755,7 +2739,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const body: Record<string, unknown> = {
         structuredSequence: shotSequence,
         cutNumber,
-        engine: "kling",
+        engine: "veo",
         videoMode: "generate", // shot-level always generates fresh
         mode: cfg.mode,
         durationSeconds: Math.min(safeDuration(cfg.durationSeconds), Math.max(4, Math.ceil(shotDuration))),
@@ -2781,7 +2765,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const shotSubmitResult = await submitVideoGeneration({
         structuredSequence: body.structuredSequence,
         cutNumber,
-        engine: "kling",
+        engine: "veo",
         videoMode: "generate",
         durationSeconds: body.durationSeconds as number,
         aspectRatio: body.aspectRatio as string,

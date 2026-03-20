@@ -25,13 +25,13 @@ import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
 export interface BuildFinalPayloadInput {
   /** Normalized SingleShotDocument (assembleFromJSON 산출물) */
   document: SingleShotDocument;
-  provider: "kling";
+  provider: "veo";
 }
 
 export interface FinalProviderPayload {
   /** Provider에 전송할 최종 prompt 문자열 */
   prompt: string;
-  /** Kling 전용: 별도 negative prompt */
+  /** VEO 전용: 별도 negative prompt */
   negativePrompt: string;
   /** word count */
   wordCount: number;
@@ -109,7 +109,7 @@ export function buildFinalProviderPayload(input: BuildFinalPayloadInput): FinalP
   // 본문에서 negative에 있는 critical word를 "no X" 가드 없이 사용하고 있으면 제거
   const allNeg = negativePrompt ? negativePrompt.split(", ") : [];
   // 영상 모델은 negative가 Avoid: 에 embed 되므로 serialized의 debug에서 꺼냄
-  const negWords = provider === "kling" ? allNeg : extractAvoidWords(avoidSection);
+  const negWords = provider === "veo" ? allNeg : extractAvoidWords(avoidSection);
   let cleanedBody = promptBody;
 
   for (const word of ZERO_TOLERANCE_WORDS) {

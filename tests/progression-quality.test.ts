@@ -20,10 +20,10 @@ import {
   buildDefaultMultiShot,
   ROLE_PROGRESSION_DIRECTIVE,
 } from "@/lib/multi-shot-planner";
-import { KLING_DEFAULT_TEXT_MODEL } from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 import type { MultiShotPrompt, ShotRole } from "@/types";
 
-const MODEL = KLING_DEFAULT_TEXT_MODEL;
+const MODEL = VEO_DEFAULT_MODEL;
 
 // ═══════════════════════════════════════════════════════════════════
 // Helper

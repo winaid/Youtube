@@ -377,7 +377,7 @@ export default function TimelineEditor({
   };
 
   const handleExportEdl = () => {
-    let edl = "TITLE: Kling Project\nFCM: NON-DROP FRAME\n\n";
+    let edl = "TITLE: VEO Project\nFCM: NON-DROP FRAME\n\n";
     let timecodeSec = 0;
     completedClips.forEach((clip, i) => {
       const start = clip.trimStart ?? 0;
@@ -391,7 +391,7 @@ export default function TimelineEditor({
     const url  = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `kling-project-${Date.now()}.edl`;
+    a.download = `veo-project-${Date.now()}.edl`;
     a.click();
     URL.revokeObjectURL(url);
   };

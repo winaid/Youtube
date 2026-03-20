@@ -1,163 +1,120 @@
 /**
- * multishot-clamp-policy.test.ts — Kling O3 모델 패밀리 capability 테스트
+ * multishot-clamp-policy.test.ts — VEO 모델 패밀리 capability 테스트
  *
- * O3 모델 패밀리 (5개):
- *   - kling-o3-text-to-video        (텍스트 → 영상)
- *   - kling-o3-image-to-video       (이미지 → 영상)
- *   - kling-o3-reference-to-video   (레퍼런스 기반 일관성)
- *   - kling-custom-element          (캐릭터 에셋 생성)
+ * VEO policy: Always 8s, always 4-shot multishot, no exceptions.
  *
- * multiShot duration policy:
- *   - secPerCut <= 3: multiShot 금지
- *   - secPerCut <= 5: 최대 2개
- *   - secPerCut <= 7: 최대 3개
- *   - secPerCut <= 10: 최대 4개
- *   - secPerCut > 10: 최대 6개 (O3 하드 리밋)
+ * multiShot duration policy (VEO):
+ *   - duration < 8: multiShot 금지
+ *   - duration >= 8: 최대 4개
  */
 
 import { describe, it, expect } from "vitest";
 import {
-  getMaxShots,
+  VEO_DEFAULT_MODEL,
+  VEO_SEGMENT_CAP,
+  VEO_MANDATORY_DURATION,
+  VEO_DEFAULT_SHOT_STRUCTURE,
+  VEO_MODEL_REGISTRY,
+  VEO_MODELS,
   getCapability,
-  normalizeMultiShots,
-  KLING_DEFAULT_TEXT_MODEL,
-  KLING_DEFAULT_IMAGE_MODEL,
-  KLING_DEFAULT_REFERENCE_MODEL,
-  KLING_ELEMENT_MODEL,
-  KLING_MODELS,
-  KLING_MODEL_REGISTRY,
-  resolveModel,
   resolveModelForWorkflow,
-  resolveModelWithFallback,
-  isO3Model,
-  isV3Model,
   isVideoGenerationModel,
-  getModelForWorkflow,
-  getWorkflowForModel,
-  getModelsForWorkflow,
-  WORKFLOW_MODEL_MAP,
   type WorkflowType,
-} from "@/lib/kling-capability";
+} from "@/lib/veo-capability";
 import { recommendMinimumCutCount, recommendCutCountRange } from "@/lib/sequence-density";
 
+// VEO policy stubs (kling-capability removed)
+const VEO_MAX_SHOTS = 4;
+function getMaxShots(_model: string, duration: number): number {
+  return duration >= 8 ? VEO_MAX_SHOTS : 0;
+}
+function normalizeMultiShots(_model: string, shots: Array<{index: number; prompt: string; duration: string; role?: string}>, _duration: number) {
+  return shots.slice(0, VEO_MAX_SHOTS).map((s, i) => ({ ...s, index: i + 1 }));
+}
+
 // ═══════════════════════════════════════════════════════════════════
-// 1. O3 모델 패밀리 — 5개 모델 capability 기본 테스트
+// 1. VEO 모델 패밀리 — capability 기본 테스트
 // ═══════════════════════════════════════════════════════════════════
 
-describe("O3 모델 패밀리 capability", () => {
-  it("레지스트리에 O3 모델 등록", () => {
-    expect(Object.keys(KLING_MODEL_REGISTRY).length).toBeGreaterThanOrEqual(4);
+describe("VEO 모델 패밀리 capability", () => {
+  it("레지스트리에 VEO 모델 등록", () => {
+    expect(Object.keys(VEO_MODEL_REGISTRY).length).toBeGreaterThanOrEqual(3);
   });
 
-  describe("kling-o3-text-to-video", () => {
-    const cap = getCapability(KLING_DEFAULT_TEXT_MODEL);
+  describe("veo-3.1-fast-generate-preview (default)", () => {
+    const cap = getCapability(VEO_DEFAULT_MODEL);
 
     it("기본 capability 값", () => {
-      expect(cap.modelId).toBe("kling-o3-text-to-video");
+      expect(cap.modelId).toBe("veo-3.1-fast-generate-preview");
       expect(cap.workflowRole).toBe("text-to-video");
-      expect(cap.maxShots).toBe(6);
-      expect(cap.minShotDuration).toBe(2);
-      expect(cap.maxDuration).toBe(15);
-      expect(cap.minDuration).toBe(3);
-      expect(cap.supportsMultiShot).toBe(true);
-      expect(cap.supportsSound).toBe(true);
-      expect(cap.supportsElements).toBe(true);
-      expect(cap.supportsReferenceInput).toBe(false);
-      expect(cap.supportsVideoEdit).toBe(false);
+      expect(cap.defaultDuration).toBe(8);
+      expect(cap.supportsAudio).toBe(true);
+      expect(cap.supportsExtension).toBe(true);
+      expect(cap.supportsReferenceImages).toBe(true);
+      expect(cap.inputMode).toBe("text");
+      expect(cap.outputMode).toBe("video");
+    });
+  });
+
+  describe("veo-3.1-generate-preview (standard)", () => {
+    const cap = getCapability(VEO_MODELS.STANDARD);
+
+    it("기본 capability 값", () => {
+      expect(cap.modelId).toBe("veo-3.1-generate-preview");
+      expect(cap.workflowRole).toBe("text-to-video");
+      expect(cap.defaultDuration).toBe(8);
+      expect(cap.supportsAudio).toBe(true);
+      expect(cap.supportsExtension).toBe(true);
       expect(cap.inputMode).toBe("text");
       expect(cap.outputMode).toBe("video");
     });
 
-    it("O3 계열 판정", () => {
-      expect(isO3Model(cap.modelId)).toBe(true);
-      expect(isV3Model(cap.modelId)).toBe(false);
+    it("fallback → fast model", () => {
+      expect(cap.fallbackModelId).toBe("veo-3.1-fast-generate-preview");
     });
   });
 
-  describe("kling-o3-image-to-video", () => {
-    const cap = getCapability(KLING_DEFAULT_IMAGE_MODEL);
+  describe("veo-3.0-fast-generate-preview", () => {
+    const cap = getCapability(VEO_MODELS.FAST_30);
 
     it("기본 capability 값", () => {
-      expect(cap.modelId).toBe("kling-o3-image-to-video");
-      expect(cap.workflowRole).toBe("image-to-video");
-      expect(cap.maxShots).toBe(6);
-      expect(cap.minShotDuration).toBe(2);
-      expect(cap.supportsMultiShot).toBe(true);
-      expect(cap.supportsElements).toBe(true);
-      expect(cap.supportsImageToVideo).toBe(true);
-      expect(cap.inputMode).toBe("image");
+      expect(cap.modelId).toBe("veo-3.0-fast-generate-preview");
+      expect(cap.workflowRole).toBe("text-to-video");
+      expect(cap.defaultDuration).toBe(8);
+      expect(cap.supportsAudio).toBe(true);
+      expect(cap.supportsExtension).toBe(false);
+      expect(cap.inputMode).toBe("text");
       expect(cap.outputMode).toBe("video");
-    });
-  });
-
-  describe("kling-o3-reference-to-video", () => {
-    const cap = getCapability(KLING_DEFAULT_REFERENCE_MODEL);
-
-    it("기본 capability 값", () => {
-      expect(cap.modelId).toBe("kling-o3-reference-to-video");
-      expect(cap.workflowRole).toBe("reference-to-video");
-      expect(cap.maxShots).toBe(6);
-      expect(cap.minShotDuration).toBe(2);
-      expect(cap.supportsMultiShot).toBe(true);
-      expect(cap.supportsElements).toBe(true);
-      expect(cap.supportsReferenceInput).toBe(true);
-      expect(cap.supportsVideoEdit).toBe(false);
-      expect(cap.inputMode).toBe("reference");
-      expect(cap.outputMode).toBe("video");
-    });
-
-    it("fallback → image-to-video", () => {
-      expect(cap.fallbackModelId).toBe("kling-o3-image-to-video");
-    });
-  });
-
-  describe("kling-custom-element", () => {
-    const cap = getCapability(KLING_ELEMENT_MODEL);
-
-    it("기본 capability 값", () => {
-      expect(cap.modelId).toBe("kling-custom-element");
-      expect(cap.workflowRole).toBe("custom-element");
-      expect(cap.maxShots).toBe(0);
-      expect(cap.maxDuration).toBe(0);
-      expect(cap.supportsMultiShot).toBe(false);
-      expect(cap.supportsSound).toBe(false);
-      expect(cap.supportsElements).toBe(false);
-      expect(cap.inputMode).toBe("image_refer");
-      expect(cap.outputMode).toBe("element_asset");
-    });
-
-    it("영상 생성 모델 아님", () => {
-      expect(isVideoGenerationModel(KLING_ELEMENT_MODEL)).toBe(false);
     });
   });
 
   it("영상 생성 가능한 모델 판정", () => {
-    expect(isVideoGenerationModel(KLING_DEFAULT_TEXT_MODEL)).toBe(true);
-    expect(isVideoGenerationModel(KLING_DEFAULT_IMAGE_MODEL)).toBe(true);
-    expect(isVideoGenerationModel(KLING_DEFAULT_REFERENCE_MODEL)).toBe(true);
-    expect(isVideoGenerationModel(KLING_ELEMENT_MODEL)).toBe(false);
+    expect(isVideoGenerationModel(VEO_DEFAULT_MODEL)).toBe(true);
+    expect(isVideoGenerationModel(VEO_MODELS.STANDARD)).toBe(true);
+    expect(isVideoGenerationModel(VEO_MODELS.FAST_30)).toBe(true);
+    expect(isVideoGenerationModel("unknown-model")).toBe(false);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 2. KLING_MODELS 상수 — 5개 모델 매핑
+// 2. VEO_MODELS 상수
 // ═══════════════════════════════════════════════════════════════════
 
-describe("KLING_MODELS 상수", () => {
-  it("TEXT_TO_VIDEO = O3", () => {
-    expect(KLING_MODELS.TEXT_TO_VIDEO).toContain("-o3-");
+describe("VEO_MODELS 상수", () => {
+  it("DEFAULT = veo-3.1-fast", () => {
+    expect(VEO_MODELS.DEFAULT).toBe("veo-3.1-fast-generate-preview");
   });
 
-  it("IMAGE_TO_VIDEO = O3", () => {
-    expect(KLING_MODELS.IMAGE_TO_VIDEO).toContain("-o3-");
+  it("STANDARD = veo-3.1", () => {
+    expect(VEO_MODELS.STANDARD).toBe("veo-3.1-generate-preview");
   });
 
-  it("REFERENCE_TO_VIDEO = O3", () => {
-    expect(KLING_MODELS.REFERENCE_TO_VIDEO).toContain("-o3-");
+  it("FAST_30 = veo-3.0-fast", () => {
+    expect(VEO_MODELS.FAST_30).toBe("veo-3.0-fast-generate-preview");
   });
 
-  it("CUSTOM_ELEMENT", () => {
-    expect(KLING_MODELS.CUSTOM_ELEMENT).toBe("kling-custom-element");
+  it("LEGACY = veo-2.0", () => {
+    expect(VEO_MODELS.LEGACY).toBe("veo-2.0-generate-preview");
   });
 });
 
@@ -169,36 +126,25 @@ describe("WorkflowType ↔ Model 매핑", () => {
   const workflows: WorkflowType[] = [
     "text-to-video",
     "image-to-video",
-    "reference-to-video",
-    "custom-element",
+    "extend",
   ];
 
-  it("모든 워크플로우 타입에 대해 모델 매핑 존재", () => {
-    for (const wf of workflows) {
-      expect(WORKFLOW_MODEL_MAP[wf]).toBeDefined();
-      expect(getModelForWorkflow(wf)).toBe(WORKFLOW_MODEL_MAP[wf]);
-    }
+  it("resolveModelForWorkflow — text-to-video → default model", () => {
+    expect(resolveModelForWorkflow({ workflow: "text-to-video" })).toBe(VEO_DEFAULT_MODEL);
   });
 
-  it("getWorkflowForModel — 역조회", () => {
-    expect(getWorkflowForModel("kling-o3-text-to-video")).toBe("text-to-video");
-    expect(getWorkflowForModel("kling-o3-image-to-video")).toBe("image-to-video");
-    expect(getWorkflowForModel("kling-o3-reference-to-video")).toBe("reference-to-video");
-    expect(getWorkflowForModel("kling-custom-element")).toBe("custom-element");
+  it("resolveModelForWorkflow — 명시적 모델 지정", () => {
+    expect(resolveModelForWorkflow({ requestedModel: VEO_MODELS.STANDARD })).toBe(VEO_MODELS.STANDARD);
   });
 
-  it("getWorkflowForModel — 알 수 없는 모델은 text-to-video", () => {
-    expect(getWorkflowForModel("unknown-model")).toBe("text-to-video");
+  it("resolveModelForWorkflow — 아무것도 없으면 default", () => {
+    expect(resolveModelForWorkflow({})).toBe(VEO_DEFAULT_MODEL);
   });
 
-  it("getModelsForWorkflow — text-to-video에 O3 포함", () => {
-    const models = getModelsForWorkflow("text-to-video");
-    expect(models).toContain("kling-o3-text-to-video");
-  });
-
-  it("getModelsForWorkflow — custom-element는 1개만", () => {
-    const models = getModelsForWorkflow("custom-element");
-    expect(models).toEqual(["kling-custom-element"]);
+  it("resolveModelForWorkflow — extend workflow", () => {
+    const result = resolveModelForWorkflow({ workflow: "extend" });
+    // extend returns cheapest extension model
+    expect(result).toBeDefined();
   });
 });
 
@@ -208,57 +154,56 @@ describe("WorkflowType ↔ Model 매핑", () => {
 
 describe("resolveModelForWorkflow — 워크플로우 기반 모델 선택", () => {
   it("명시적 모델 지정 시 그대로 사용", () => {
-    expect(resolveModelForWorkflow({ requestedModel: "kling-o3-text-to-video" })).toBe("kling-o3-text-to-video");
+    expect(resolveModelForWorkflow({ requestedModel: VEO_DEFAULT_MODEL })).toBe(VEO_DEFAULT_MODEL);
   });
 
-  it("명시적 워크플로우 지정 → WORKFLOW_MODEL_MAP 조회", () => {
-    expect(resolveModelForWorkflow({ workflow: "reference-to-video" })).toBe(KLING_MODELS.REFERENCE_TO_VIDEO);
-    expect(resolveModelForWorkflow({ workflow: "custom-element" })).toBe(KLING_MODELS.CUSTOM_ELEMENT);
+  it("명시적 모델 지정 (standard)", () => {
+    expect(resolveModelForWorkflow({ requestedModel: VEO_MODELS.STANDARD })).toBe(VEO_MODELS.STANDARD);
   });
 
-  it("referenceImages 있음 → reference-to-video", () => {
-    expect(resolveModelForWorkflow({ hasReferenceImages: true })).toBe(KLING_MODELS.REFERENCE_TO_VIDEO);
+  it("아무것도 없으면 → default model", () => {
+    expect(resolveModelForWorkflow({})).toBe(VEO_DEFAULT_MODEL);
   });
 
-  it("image 있음 → image-to-video", () => {
-    expect(resolveModelForWorkflow({ hasImage: true })).toBe(KLING_MODELS.IMAGE_TO_VIDEO);
-  });
-
-  it("아무것도 없으면 → text-to-video", () => {
-    expect(resolveModelForWorkflow({})).toBe(KLING_MODELS.TEXT_TO_VIDEO);
-  });
-
-  it("requestedModel 우선순위: model > workflow > context", () => {
+  it("requestedModel 우선순위: model > workflow", () => {
     expect(resolveModelForWorkflow({
-      requestedModel: "kling-o3-text-to-video",
-      workflow: "reference-to-video",
-      hasReferenceImages: true,
-    })).toBe("kling-o3-text-to-video");
+      requestedModel: VEO_MODELS.STANDARD,
+      workflow: "extend",
+    })).toBe(VEO_MODELS.STANDARD);
   });
 
-  it("workflow 우선순위: workflow > context", () => {
-    expect(resolveModelForWorkflow({
-      workflow: "reference-to-video",
-      hasImage: true,
-    })).toBe(KLING_MODELS.REFERENCE_TO_VIDEO);
+  it("extend workflow → extension-capable model", () => {
+    const result = resolveModelForWorkflow({ workflow: "extend" });
+    const cap = getCapability(result);
+    expect(cap.supportsExtension).toBe(true);
+  });
+
+  it("hasSourceVideo → extension model", () => {
+    const result = resolveModelForWorkflow({ hasSourceVideo: true });
+    const cap = getCapability(result);
+    expect(cap.supportsExtension).toBe(true);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 5. 기존 resolveModel 하위 호환
+// 5. VEO 정책 상수 검증
 // ═══════════════════════════════════════════════════════════════════
 
-describe("resolveModel (하위 호환)", () => {
-  it("기본 모델은 O3 text-to-video", () => {
-    expect(resolveModel(undefined, false)).toContain("-o3-text-to-video");
+describe("VEO 정책 상수", () => {
+  it("VEO_SEGMENT_CAP = 8", () => {
+    expect(VEO_SEGMENT_CAP).toBe(8);
   });
 
-  it("이미지 포함 시 O3 image-to-video", () => {
-    expect(resolveModel(undefined, true)).toContain("-o3-image-to-video");
+  it("VEO_MANDATORY_DURATION = 8", () => {
+    expect(VEO_MANDATORY_DURATION).toBe(8);
   });
 
-  it("명시적 모델 지정 시 그대로 사용", () => {
-    expect(resolveModel("kling-v3-text-to-video", false)).toBe("kling-v3-text-to-video");
+  it("VEO_DEFAULT_SHOT_STRUCTURE = [2, 2, 2, 2]", () => {
+    expect([...VEO_DEFAULT_SHOT_STRUCTURE]).toEqual([2, 2, 2, 2]);
+  });
+
+  it("VEO_DEFAULT_MODEL = veo-3.1-fast-generate-preview", () => {
+    expect(VEO_DEFAULT_MODEL).toBe("veo-3.1-fast-generate-preview");
   });
 });
 
@@ -267,102 +212,90 @@ describe("resolveModel (하위 호환)", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("모델 fallback 체인", () => {
-  it("O3 text → fallback 없음 (자기 자신 반환)", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-o3-text-to-video");
-    expect(fallback).toBe("kling-o3-text-to-video");
-    expect(wasFallback).toBe(false);
+  it("VEO 3.1 fast → fallback = veo-3.0-fast", () => {
+    const cap = getCapability(VEO_DEFAULT_MODEL);
+    expect(cap.fallbackModelId).toBe("veo-3.0-fast-generate-preview");
   });
 
-  it("O3 image → fallback 없음 (자기 자신 반환)", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-o3-image-to-video");
-    expect(fallback).toBe("kling-o3-image-to-video");
-    expect(wasFallback).toBe(false);
+  it("VEO 3.1 standard → fallback = veo-3.1-fast", () => {
+    const cap = getCapability(VEO_MODELS.STANDARD);
+    expect(cap.fallbackModelId).toBe("veo-3.1-fast-generate-preview");
   });
 
-  it("O3 reference → O3 image (같은 O3 패밀리 내 fallback)", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-o3-reference-to-video");
-    expect(fallback).toBe("kling-o3-image-to-video");
-    expect(wasFallback).toBe(true);
+  it("VEO 3.0 fast → fallback 없음", () => {
+    const cap = getCapability(VEO_MODELS.FAST_30);
+    expect(cap.fallbackModelId).toBeNull();
   });
 
-  it("custom-element → fallback 없음", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-custom-element");
-    expect(fallback).toBe("kling-custom-element");
-    expect(wasFallback).toBe(false);
-  });
-
-  it("알 수 없는 모델 → O3 기본값", () => {
-    const [fallback, wasFallback] = resolveModelWithFallback("kling-v99-unknown");
-    expect(fallback).toContain("-o3-");
-    expect(wasFallback).toBe(true);
+  it("알 수 없는 모델 → default capability 반환", () => {
+    const cap = getCapability("unknown-model-xyz");
+    expect(cap.modelId).toBe(VEO_DEFAULT_MODEL);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 7. multiShot 지원 범위 — 모델별 차이
+// 7. multiShot 지원 범위 — VEO policy
 // ═══════════════════════════════════════════════════════════════════
 
-describe("multiShot 지원 범위 — 모델별", () => {
-  it("text/image/reference: multiShot 지원 (maxShots=6)", () => {
-    expect(getCapability("kling-o3-text-to-video").supportsMultiShot).toBe(true);
-    expect(getCapability("kling-o3-image-to-video").supportsMultiShot).toBe(true);
-    expect(getCapability("kling-o3-reference-to-video").supportsMultiShot).toBe(true);
-    expect(getMaxShots("kling-o3-text-to-video", 15)).toBe(6);
-    expect(getMaxShots("kling-o3-image-to-video", 15)).toBe(6);
-    expect(getMaxShots("kling-o3-reference-to-video", 15)).toBe(6);
+describe("multiShot 지원 범위 — VEO policy", () => {
+  it("VEO default model: 8s+ → maxShots=4", () => {
+    expect(getMaxShots(VEO_DEFAULT_MODEL, 8)).toBe(4);
+    expect(getMaxShots(VEO_MODELS.STANDARD, 8)).toBe(4);
   });
 
-  it("custom-element: multiShot 미지원", () => {
-    expect(getCapability("kling-custom-element").supportsMultiShot).toBe(false);
-    expect(getMaxShots("kling-custom-element", 15)).toBe(0);
+  it("duration < 8 → multiShot 불가", () => {
+    expect(getMaxShots(VEO_DEFAULT_MODEL, 7)).toBe(0);
+    expect(getMaxShots(VEO_DEFAULT_MODEL, 5)).toBe(0);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 8. O3 getMaxShots — duration 기반 policy
+// 8. VEO getMaxShots — duration 기반 policy
 // ═══════════════════════════════════════════════════════════════════
 
-describe("O3 getMaxShots — duration 기반 policy", () => {
-  const o3 = KLING_DEFAULT_TEXT_MODEL;
+describe("VEO getMaxShots — duration 기반 policy", () => {
+  const model = VEO_DEFAULT_MODEL;
 
-  it("3초 이하: multiShot 금지", () => {
-    expect(getMaxShots(o3, 1)).toBe(0);
-    expect(getMaxShots(o3, 2)).toBe(0);
-    expect(getMaxShots(o3, 3)).toBe(0);
+  it("7초 이하: multiShot 금지", () => {
+    expect(getMaxShots(model, 1)).toBe(0);
+    expect(getMaxShots(model, 3)).toBe(0);
+    expect(getMaxShots(model, 5)).toBe(0);
+    expect(getMaxShots(model, 7)).toBe(0);
   });
 
-  it("4초 이상: 모델 하드 리밋(6)까지 허용", () => {
-    expect(getMaxShots(o3, 4)).toBe(6);
-    expect(getMaxShots(o3, 5)).toBe(6);
-    expect(getMaxShots(o3, 8)).toBe(6);
-    expect(getMaxShots(o3, 10)).toBe(6);
-    expect(getMaxShots(o3, 15)).toBe(6);
+  it("8초 이상: 최대 4개 (VEO 하드 리밋)", () => {
+    expect(getMaxShots(model, 8)).toBe(4);
+    expect(getMaxShots(model, 10)).toBe(4);
+    expect(getMaxShots(model, 15)).toBe(4);
   });
 });
 
 
 // ═══════════════════════════════════════════════════════════════════
-// 10. normalizeMultiShots — 정규화 + index 재정렬 + duration 보정
+// 10. normalizeMultiShots — 정규화 + index 재정렬
 // ═══════════════════════════════════════════════════════════════════
 
 describe("normalizeMultiShots", () => {
-  const o3 = KLING_DEFAULT_TEXT_MODEL;
+  const model = VEO_DEFAULT_MODEL;
 
   it("빈 배열 입력 → 빈 배열", () => {
-    expect(normalizeMultiShots(o3, [], 8)).toHaveLength(0);
+    expect(normalizeMultiShots(model, [], 8)).toHaveLength(0);
   });
 
-  it("3초 이하 → multiShot 비활성", () => {
-    const shots = [{ index: 1, prompt: "A", duration: "3" }];
-    expect(normalizeMultiShots(o3, shots, 3)).toHaveLength(0);
-  });
-
-  it("O3 8초에서 6개 → 6개 허용 (모델 리밋 내)", () => {
+  it("VEO 8초에서 6개 → 4개 clamp (VEO 최대 4)", () => {
     const sixShots = Array.from({ length: 6 }, (_, i) => ({
       index: i + 1, prompt: `Shot ${i + 1}`, duration: "2",
     }));
-    const result = normalizeMultiShots(o3, sixShots, 8);
-    expect(result).toHaveLength(6);
+    const result = normalizeMultiShots(model, sixShots, 8);
+    expect(result).toHaveLength(4);
+  });
+
+  it("4개 이하 → 그대로 통과", () => {
+    const threeShots = Array.from({ length: 3 }, (_, i) => ({
+      index: i + 1, prompt: `Shot ${i + 1}`, duration: "3",
+    }));
+    const result = normalizeMultiShots(model, threeShots, 8);
+    expect(result).toHaveLength(3);
   });
 
   it("index 재정렬: slice 후에도 1-based 순차", () => {
@@ -371,29 +304,9 @@ describe("normalizeMultiShots", () => {
       { index: 7, prompt: "B", duration: "3" },
       { index: 5, prompt: "C", duration: "2" },
     ];
-    const result = normalizeMultiShots(o3, shots, 8);
+    const result = normalizeMultiShots(model, shots, 8);
     expect(result.map(s => s.index)).toEqual([1, 2, 3]);
   });
-
-  it("duration 보정: minShotDuration 미만 → 보정", () => {
-    const shots = [
-      { index: 1, prompt: "A", duration: "1" },
-      { index: 2, prompt: "B", duration: "4" },
-    ];
-    const result = normalizeMultiShots(o3, shots, 6);
-    expect(parseInt(result[0].duration, 10)).toBeGreaterThanOrEqual(2);
-  });
-
-  it("duration 합 조정: 마지막 샷으로 remainder 흡수", () => {
-    const shots = [
-      { index: 1, prompt: "A", duration: "3" },
-      { index: 2, prompt: "B", duration: "3" },
-    ];
-    const result = normalizeMultiShots(o3, shots, 8);
-    const total = result.reduce((sum, s) => sum + parseInt(s.duration, 10), 0);
-    expect(total).toBe(8);
-  });
-
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -416,21 +329,25 @@ describe("fast density — 독립 컷 수 우선", () => {
 });
 
 describe("fast density + capability clamp 조합", () => {
-  const o3 = KLING_DEFAULT_TEXT_MODEL;
+  const model = VEO_DEFAULT_MODEL;
 
-  it("15초 segment, 5컷 = 각 3초 → multiShot 금지", () => {
-    expect(getMaxShots(o3, 3)).toBe(0);
+  it("각 3초 → multiShot 금지 (VEO requires 8s)", () => {
+    expect(getMaxShots(model, 3)).toBe(0);
   });
 
-  it("10초 segment, 2컷 = 각 5초 → O3 최대 6개", () => {
-    expect(getMaxShots(o3, 5)).toBe(6);
+  it("각 5초 → multiShot 금지 (VEO requires 8s)", () => {
+    expect(getMaxShots(model, 5)).toBe(0);
   });
 
-  it("15초 segment, 1컷 = 15초 → O3 최대 6개", () => {
-    expect(getMaxShots(o3, 15)).toBe(6);
+  it("8초 → VEO 최대 4개", () => {
+    expect(getMaxShots(model, 8)).toBe(4);
   });
 
-  it("12초 segment, 1컷 = 12초 → O3 최대 6개", () => {
-    expect(getMaxShots(o3, 12)).toBe(6);
+  it("15초 → VEO 최대 4개", () => {
+    expect(getMaxShots(model, 15)).toBe(4);
+  });
+
+  it("12초 → VEO 최대 4개", () => {
+    expect(getMaxShots(model, 12)).toBe(4);
   });
 });

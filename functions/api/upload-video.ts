@@ -1,8 +1,8 @@
 /**
  * upload-video.ts — base64 영상을 R2에 업로드하여 canonical URI 발급.
  *
- * Kling은 HTTPS URL을 직반환하므로 대부분 업로드 불필요 (needsUpload=false).
- * base64 fallback이 필요한 경우에만 R2 업로드.
+ * VEO는 Google Storage URI를 반환하므로 R2 업로드 필요.
+ * R2에 업로드하여 공개 HTTPS URL 발급.
  *
  * R2 전용 업로드 (GCS 경로 없음).
  */
@@ -144,7 +144,7 @@ export const onRequestPost: PagesFunction<UploadEnv> = async (context) => {
       error: "영상 업로드 스토리지가 설정되지 않았습니다",
       guide: {
         option1: "Cloudflare R2: VIDEO_BUCKET 바인딩 + VIDEO_BUCKET_DOMAIN 환경변수 설정",
-        note: "Kling은 HTTPS URL을 직반환하므로 대부분 업로드 불필요",
+        note: "VEO는 Google Storage URI를 반환하므로 R2 업로드 필요",
       },
       diag,
     }, { status: 501 });

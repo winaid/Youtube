@@ -262,19 +262,19 @@ const shortformDurations: { value: Duration; label: string; band: string }[] = [
   { value: 30, label: "30초", band: "medium" },
 ];
 
-const CUSTOM_DIRECTORS_KEY = "kling-custom-directors";
+const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
 
 function loadCustomDirectors(): DirectorPersona[] {
   if (typeof window === "undefined") return [];
   try {
-    // Migration: read old key, write to new key, delete old
+    // Migration: read new key, or migrate from old kling key
     let raw = localStorage.getItem(CUSTOM_DIRECTORS_KEY);
     if (!raw) {
-      const oldRaw = localStorage.getItem("veo-custom-directors");
+      const oldRaw = localStorage.getItem("kling-custom-directors");
       if (oldRaw) {
         raw = oldRaw;
         localStorage.setItem(CUSTOM_DIRECTORS_KEY, raw);
-        localStorage.removeItem("veo-custom-directors");
+        localStorage.removeItem("kling-custom-directors");
       }
     }
     return raw ? JSON.parse(raw) : [];
@@ -2323,7 +2323,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             {/* 프리셋 빠른 버튼 */}
             <div className="flex gap-1">
               {([0, 4, 6, 8, 10, 15] as const).map((sec) => {
-                const isKlingOnly = sec >= 10;
+                const isVeoOnly = sec >= 10;
                 const isSelected = cutDuration === sec;
                 return (
                   <button
@@ -2332,14 +2332,14 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                     style={
                       isSelected
                         ? { background: "#787fff", color: "white" }
-                        : isKlingOnly
+                        : isVeoOnly
                           ? { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }
                           : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
                     }
                     onClick={() => setCutDuration(sec)}
                   >
                     {sec === 0 ? "자동" : `${sec}`}
-                    {isKlingOnly && !isSelected && (
+                    {isVeoOnly && !isSelected && (
                       <span
                         className="absolute -top-0.5 -right-0.5 text-[6px] px-0.5 rounded leading-tight"
                         style={{ background: "#f97316", color: "white" }}
@@ -2359,7 +2359,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   : cutDuration > DURATION_MAX
                     ? `⚠ 입력: ${cutDuration}초 → 적용: ${DURATION_MAX}초 (최대 허용 길이로 보정)`
                     : cutDuration >= 10
-                      ? `⚠ ${cutDuration}초는 Kling 전용 — 각 시퀀스를 ${cutDuration}초 기준으로 생성`
+                      ? `⚠ ${cutDuration}초는 VEO 전용 — 각 시퀀스를 ${cutDuration}초 기준으로 생성`
                       : `각 시퀀스를 ${cutDuration}초 기준으로 생성`}
             </p>
             {/* reconciliation 미리보기 */}

@@ -104,7 +104,7 @@ export default function MyVideosPanel() {
             <div className="flex items-center gap-2 flex-wrap">
               <Badge
                 className="text-[9px] text-white"
-                style={{ background: rec.engine === "kling" ? "#f97316" : "#787fff" }}
+                style={{ background: rec.engine === "veo" ? "#4285f4" : "#787fff" }}
               >
                 {rec.engine.toUpperCase()}
               </Badge>

@@ -15,9 +15,15 @@ import {
   SEQUENCE_MIN_DURATION,
 } from "@/lib/sequence-density";
 import { buildDefaultMultiShot, shouldForceMultiShot } from "@/lib/multi-shot-planner";
-import { getMaxShots } from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
-const MODEL = "kling-o3-text-to-video";
+// VEO policy stubs (kling-capability removed)
+const VEO_MAX_SHOTS = 4;
+function getMaxShots(_model: string, duration: number): number {
+  return duration >= 8 ? VEO_MAX_SHOTS : 0;
+}
+
+const MODEL = VEO_DEFAULT_MODEL;
 
 // ═══════════════════════════════════════════════════════════════════
 // Layer 1 → Layer 2: 총 런타임 → 시퀀스 분할

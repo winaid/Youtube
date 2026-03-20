@@ -885,7 +885,7 @@ export function assemblePromptV2(
     finalPrompt += ". No text overlay, no watermark";
   }
 
-  // 워드 캡: 250단어 (Kling은 긴 프롬프트를 잘 처리)
+  // 워드 캡: 250단어 (VEO는 긴 프롬프트를 잘 처리)
   const words = finalPrompt.split(/\s+/);
   if (words.length > 250) {
     finalPrompt = words.slice(0, 240).join(" ");

@@ -20,7 +20,11 @@ import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
-import { getMaxShots, getMinShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-capability";
+import { VEO_DEFAULT_MODEL, getCapability } from "./_veo-capability";
+// VEO 정책: 8초 4샷 고정
+const getMaxShots = (_modelId: string, _durationSec: number) => 4;
+const getMinShots = (_modelId: string, _durationSec: number) => 2;
+const VEO_DEFAULT_MODEL = VEO_DEFAULT_MODEL; // backward compat alias
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
@@ -250,7 +254,7 @@ function buildCharacterPersonaBlock(cps: Array<{
 // ─── 장면 용어 정밀화 규칙 ───────────────────────────────────────────────────
 /**
  * imagePrompt / videoPrompt 생성 시 모호한 일상어를 시각 정밀 용어로 치환하도록 강제.
- * 목적: 영상 모델(Kling)이 "치과 의자" → 일반 의자, "기계" → 추상 오브젝트로 잘못 해석하는 것을 방지.
+ * 목적: 영상 모델(VEO)이 "치과 의자" → 일반 의자, "기계" → 추상 오브젝트로 잘못 해석하는 것을 방지.
  * 원칙: form(형태) + function(기능) + material(재질) + era(시대)가 드러나는 용어 사용.
  */
 const SCENE_TERM_PRECISION_BLOCK = `
@@ -489,13 +493,13 @@ const ROLE_PATTERNS_REPAIR: Record<number, ShotRoleServer[]> = {
 function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: number; videoPrompt?: string; sceneDescription?: string; multiShot?: MultiShotItem[] }>): void {
   for (const fc of cuts) {
     const dur = fc.durationSec;
-    const minRequired = getMinShots(KLING_DEFAULT_TEXT_MODEL, dur);
+    const minRequired = getMinShots(VEO_DEFAULT_MODEL, dur);
     const existingShots: MultiShotItem[] = Array.isArray(fc.multiShot) ? fc.multiShot : [];
 
     if (minRequired >= 2 && existingShots.length < minRequired) {
       console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} (${dur}s): multiShot ${existingShots.length}개 < 최소 ${minRequired}개 → auto-repair`);
 
-      const targetCount = Math.min(minRequired, getMaxShots(KLING_DEFAULT_TEXT_MODEL, dur));
+      const targetCount = Math.min(minRequired, getMaxShots(VEO_DEFAULT_MODEL, dur));
       const roles = ROLE_PATTERNS_REPAIR[targetCount] ?? ROLE_PATTERNS_REPAIR[4]!;
 
       const baseDur = Math.floor(dur / targetCount);
@@ -644,7 +648,7 @@ async function step1Outlines(
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 ${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
-조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 Kling 1회 생성 단위(8–15초). 시퀀스 내부 멀티샷은 별도 처리.
+조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
 ## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
 장면 설계 순서: 의미 분석 → 장면 기능 결정 → 시각화
@@ -725,7 +729,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 
 ## ⚠️ 시퀀스 밀도 규칙
 - 총 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 시퀀스(outlines)를 작성하라
-- 각 시퀀스는 ${secPerCut}초짜리 Kling 1회 생성 단위
+- 각 시퀀스는 ${secPerCut}초짜리 VEO 1회 생성 단위
 - 시퀀스 내부의 멀티샷(2~6개)은 별도 처리 — 여기서는 시퀀스 단위 아웃라인만 작성
 - 같은 장면을 길게 이어쓰지 말고, 시퀀스마다 다른 location/situation/emotion 조합을 구성
 - ❌ 나쁜 예: 48초를 3~4개로 뭉개서 12초+ 시퀀스 생성
@@ -1184,7 +1188,7 @@ ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade
 
 ## MULTI-SHOT 릴 프로그레션 규칙 (secPerCut 기반 — 인스타그램 릴처럼 빠른 시각 진행)
 ${(() => {
-    const maxShots = getMaxShots(KLING_DEFAULT_TEXT_MODEL, secPerCut);
+    const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
     if (maxShots <= 0) {
       return `### multiShot 비활성 (secPerCut=${secPerCut}초 ≤ 3초)
 - ${secPerCut}초는 하나의 독립 컷이다. multiShot 배열을 생성하지 마라.
@@ -1211,7 +1215,7 @@ ${(() => {
       { role: "resolve",   desc: "PAYOFF — 시각적 해소. 에너지 릴리즈. WS로 빠지거나 CU로 마지막 감정 비트." },
     ];
     const roles = progressionRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
-    const minShots = Math.max(2, getMinShots(KLING_DEFAULT_TEXT_MODEL, secPerCut)); // duration 기반 최소 (10s+ → 4개)
+    const minShots = Math.max(2, getMinShots(VEO_DEFAULT_MODEL, secPerCut)); // duration 기반 최소 (10s+ → 4개)
     return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 ${minShots}개 이상 ~ 최대 ${maxShots}개)
 
 🚨 MANDATORY: 각 컷의 multiShot 배열은 반드시 ${minShots}개 이상 서브샷을 포함해야 한다. ${minShots}개 미만은 규칙 위반이며 절대 허용하지 않는다.
@@ -1243,7 +1247,7 @@ ${roles}
 
 JSON 배열로만 출력 (마크다운 없이):
 ${(() => {
-    const maxShots = getMaxShots(KLING_DEFAULT_TEXT_MODEL, secPerCut);
+    const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
     const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."`;
     if (maxShots <= 0) return `[${base}}]`;
     // 예시 multiShot: 균등 분배
@@ -1696,15 +1700,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       continuityIsLastSegment,
     } = await context.request.json() as Record<string, string | number | object>;
 
-    // cutDuration=0/undefined/null → auto. 1~15 → 명시값. Kling: 3~15 클램핑.
+    // cutDuration=0/undefined/null → auto. 1~15 → 명시값. VEO: 8초 고정.
     const rawSecPerCut = Number(cutDuration) || 0;
     const rawCutCount = Number(cutCount) || 0;
     const totalDurationSec = Number(rawTotalDuration) || 0;
 
-    // ── Kling 15초 segment planning ──
-    const KLING_SEGMENT_CAP = 15;
+    // ── VEO 8초 segment planning ──
+    const VEO_SEGMENT_CAP = 8;
     const estimatedSegmentCount = totalDurationSec > 0
-      ? Math.ceil(totalDurationSec / KLING_SEGMENT_CAP)
+      ? Math.ceil(totalDurationSec / VEO_SEGMENT_CAP)
       : 0;
 
     // ── preferredCutCountRange 파싱 ──
@@ -1740,7 +1744,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? totalDurationSec
       : (rawCutCount > 0
         ? rawCutCount * secPerCut
-        : KLING_SEGMENT_CAP); // 최소 단일 segment 기준
+        : VEO_SEGMENT_CAP); // 최소 단일 segment 기준
     const pBias = personaCutCountBias(editorial);
 
     // ── resolveSegmentPlan: 전체 시퀀스 → segment 단위 orchestration ──
@@ -1753,7 +1757,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     });
 
     // generate-cuts 1회 호출 = 전체 프로젝트의 모든 시퀀스를 한 번에 생성.
-    // 각 시퀀스(cut)는 8–15초 Kling 1회 생성 단위. 내부 멀티샷은 multi-shot-planner가 관리.
+    // 각 시퀀스(cut)는 8초 VEO 1회 생성 단위. 내부 멀티샷은 multi-shot-planner가 관리.
     // 3-Layer: 총 런타임 → 시퀀스(여기서 cutCount) → 시퀀스 내 멀티샷(CutCard 레벨)
     const cutDecision = resolveCutCount({
       exactCutCount: rawCutCount > 0 ? rawCutCount : undefined,
@@ -1769,16 +1773,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // LLM이 "24초 기준 3컷" 프롬프트를 받고 15초 스토리에 2컷만 생성하는 원인이 됨.
     // 숏폼 리듬 > 감독 스타일: secPerCut을 totalDuration/targetCuts 이하로 제한.
     if (effectiveTotalForDensity > 0 && targetCuts > 1) {
-      const naturalPerCut = Math.max(DURATION_MIN, Math.min(KLING_SEGMENT_CAP, Math.round(effectiveTotalForDensity / targetCuts)));
+      const naturalPerCut = Math.max(DURATION_MIN, Math.min(VEO_SEGMENT_CAP, Math.round(effectiveTotalForDensity / targetCuts)));
       if (secPerCut > naturalPerCut) {
-        console.log(`[generate-cuts] secPerCut reconciliation: ${secPerCut}→${naturalPerCut} (${effectiveTotalForDensity}s / ${targetCuts}cuts, cap=${KLING_SEGMENT_CAP}s, persona wanted ${secPerCut}s)`);
+        console.log(`[generate-cuts] secPerCut reconciliation: ${secPerCut}→${naturalPerCut} (${effectiveTotalForDensity}s / ${targetCuts}cuts, cap=${VEO_SEGMENT_CAP}s, persona wanted ${secPerCut}s)`);
         secPerCut = naturalPerCut;
       }
     }
-    // ── 절대 상한: Kling 최대 15초 강제 ──
-    if (secPerCut > KLING_SEGMENT_CAP) {
-      console.warn(`[generate-cuts] secPerCut ${secPerCut}s exceeds Kling cap → clamping to ${KLING_SEGMENT_CAP}s`);
-      secPerCut = KLING_SEGMENT_CAP;
+    // ── 절대 상한: VEO 최대 8초 강제 ──
+    if (secPerCut > VEO_SEGMENT_CAP) {
+      console.warn(`[generate-cuts] secPerCut ${secPerCut}s exceeds VEO cap → clamping to ${VEO_SEGMENT_CAP}s`);
+      secPerCut = VEO_SEGMENT_CAP;
     }
 
     // ── shortform reconciliation (full structured plan) ──
@@ -2262,7 +2266,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           }];
 
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
-          for (const fc of finalizedCuts) { if (fc.durationSec > KLING_SEGMENT_CAP) fc.durationSec = KLING_SEGMENT_CAP; }
+          for (const fc of finalizedCuts) { if (fc.durationSec > VEO_SEGMENT_CAP) fc.durationSec = VEO_SEGMENT_CAP; }
           repairMultiShotMinimums(finalizedCuts);
           const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
@@ -2309,7 +2313,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }];
 
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
-        for (const fc of finalizedCuts) { if (fc.durationSec > KLING_SEGMENT_CAP) fc.durationSec = KLING_SEGMENT_CAP; }
+        for (const fc of finalizedCuts) { if (fc.durationSec > VEO_SEGMENT_CAP) fc.durationSec = VEO_SEGMENT_CAP; }
         repairMultiShotMinimums(finalizedCuts);
         const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
@@ -2675,7 +2679,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // JSON 기반 프롬프트 (provider별 렌더링용)
         videoPromptJson,
         ...(extendPromptJson ? { extendPromptJson } : {}),
-        // 멀티샷: Kling(10s+)은 model_params로 전달 + role 자동 추론
+        // 멀티샷: VEO는 타임스탬프 프롬프트로 전달 + role 자동 추론
         ...(d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0
           ? { multiShot: d.multiShot.map((sh: MultiShotItem, si: number) => ({
               ...sh,
@@ -2747,13 +2751,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ═══ density 보정 + classify → finalizedCuts ═══════════════════
     const finalizedCuts = classifyCuts(densifyCuts(rhythmCuts));
 
-    // ═══ Kling 15초 상한 강제 클램핑 ═══════════════════════════════
-    // 리듬 분배/density 보정 후에도 durationSec이 15초를 초과할 수 있음.
-    // Kling API 최대값은 15초이므로 여기서 강제 클램핑.
+    // ═══ VEO 8초 상한 강제 클램핑 ═══════════════════════════════
+    // 리듬 분배/density 보정 후에도 durationSec이 8초를 초과할 수 있음.
+    // VEO API 최대값은 8초이므로 여기서 강제 클램핑.
     for (const fc of finalizedCuts) {
-      if (fc.durationSec > KLING_SEGMENT_CAP) {
-        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} duration ${fc.durationSec}s exceeds ${KLING_SEGMENT_CAP}s cap → clamping`);
-        fc.durationSec = KLING_SEGMENT_CAP;
+      if (fc.durationSec > VEO_SEGMENT_CAP) {
+        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} duration ${fc.durationSec}s exceeds ${VEO_SEGMENT_CAP}s cap → clamping`);
+        fc.durationSec = VEO_SEGMENT_CAP;
       }
     }
 
@@ -2884,7 +2888,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // ── segment orchestration plan 메타 ──
       segmentPlanning: {
         totalDurationSeconds: totalDurationSec || undefined,
-        segmentDurationCap: KLING_SEGMENT_CAP,
+        segmentDurationCap: VEO_SEGMENT_CAP,
         estimatedSegmentCount: estimatedSegmentCount || undefined,
         currentPlanningScope: segmentPlan.currentPlanningScope,
         totalTargetCutsAcrossSequence: segmentPlan.totalTargetCuts,

@@ -3,7 +3,7 @@
  *
  * 3-Layer 모델:
  *   Layer 1: 총 요청 런타임 (e.g. 48s) — 배치/컨테이너 예산
- *   Layer 2: 시퀀스 (8–15s) — Kling 1회 생성 단위
+ *   Layer 2: 시퀀스 (8s) — VEO 1회 생성 단위
  *   Layer 3: 시퀀스 내 멀티샷 (최대 6) — multi-shot-planner가 관리
  *
  * 클라이언트는 @/lib/sequence-density.ts 사용.
@@ -12,13 +12,16 @@
  */
 
 /**
- * Kling segment 상한. 한 번에 최대 15초만 생성 가능.
+ * VEO segment 상한. 한 번에 최대 8초만 생성 가능.
  */
-export const KLING_SEGMENT_CAP = 15;
+export const VEO_SEGMENT_CAP = 8;
+
+/** @deprecated backward compat alias — use VEO_SEGMENT_CAP */
+export const KLING_SEGMENT_CAP = VEO_SEGMENT_CAP;
 
 /**
  * 시퀀스 밀도 정책 — 총 런타임 대비 최소 시퀀스 수.
- * 각 시퀀스는 Kling 1회 생성 단위(8–15s).
+ * 각 시퀀스는 VEO 1회 생성 단위(8s).
  * 시퀀스 내부 샷 수는 multi-shot-planner가 관리.
  * 로직은 src/lib/sequence-density.ts와 동일 유지 필수.
  */
@@ -70,12 +73,12 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
 
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
   if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
-  if (totalDurationSec <= KLING_SEGMENT_CAP) {
+  if (totalDurationSec <= VEO_SEGMENT_CAP) {
     return singleSegmentRange(totalDurationSec);
   }
-  const fullSegments = Math.floor(totalDurationSec / KLING_SEGMENT_CAP);
-  const remainder = totalDurationSec - fullSegments * KLING_SEGMENT_CAP;
-  const fullRange = singleSegmentRange(KLING_SEGMENT_CAP);
+  const fullSegments = Math.floor(totalDurationSec / VEO_SEGMENT_CAP);
+  const remainder = totalDurationSec - fullSegments * VEO_SEGMENT_CAP;
+  const fullRange = singleSegmentRange(VEO_SEGMENT_CAP);
   let totalMin = fullRange.min * fullSegments;
   let totalMax = fullRange.max * fullSegments;
   if (remainder > 0) {
@@ -229,7 +232,7 @@ export function resolveSegmentPlan(opts: {
     currentSegmentIndex = 0,
   } = opts;
 
-  const cap = KLING_SEGMENT_CAP;
+  const cap = VEO_SEGMENT_CAP;
   const notes: string[] = [];
 
   const effectiveTotal = totalDurationSec > 0 ? totalDurationSec : cap;
@@ -358,9 +361,9 @@ export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
   if (totalDurationSec <= 5) return 1;
   if (totalDurationSec <= 9) return 3;
-  if (totalDurationSec <= KLING_SEGMENT_CAP) return 4;
-  // segment-aware: 총 런타임을 15초 segment로 분할, 최소 4
-  return Math.max(4, Math.ceil(totalDurationSec / KLING_SEGMENT_CAP));
+  if (totalDurationSec <= VEO_SEGMENT_CAP) return 4;
+  // segment-aware: 총 런타임을 8초 segment로 분할, 최소 4
+  return Math.max(4, Math.ceil(totalDurationSec / VEO_SEGMENT_CAP));
 }
 
 export function needsDensityBoost(

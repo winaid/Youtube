@@ -15,7 +15,16 @@ import {
   shouldForceMultiShot,
   planRecommendedShotCount,
 } from "@/lib/multi-shot-planner";
-import { isMultiShotEligible, getMaxShots } from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
+
+// VEO policy stubs (kling-capability removed)
+const VEO_MAX_SHOTS = 4;
+function isMultiShotEligible(_model: string, duration: number): boolean {
+  return duration >= 8;
+}
+function getMaxShots(_model: string, duration: number): number {
+  return duration >= 8 ? VEO_MAX_SHOTS : 0;
+}
 import { checkBatchBudget } from "@/lib/batch-runtime-budget";
 import { prepareMultiShotPayload } from "@/lib/video-generation-core";
 import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
@@ -23,7 +32,7 @@ import { validateStudioMode, validateBatchMode } from "@/lib/multishot-validatio
 import type { BatchClipInfo } from "@/lib/batch-runtime-budget";
 import type { JobRequestSummary } from "@/lib/video-job-store";
 
-const MODEL = "kling-o3-text-to-video";
+const MODEL = VEO_DEFAULT_MODEL;
 
 // ═══════════════════════════════════════════════════════════════════
 // Case A: 12s cinematic_sequence — 전체 흐름 일관성
@@ -191,7 +200,7 @@ describe("Case C: 8s 의도적 원테이크", () => {
       prompt: basePrompt,
       negatives: ["watermark"],
       framing: "WS",
-      provider: "kling",
+      provider: "veo",
       shotCategory: "cinematic_sequence",
       modelId: MODEL,
       durationSec: 8,
@@ -257,16 +266,16 @@ describe("Case D: 30 × 12s 배치 예산 초과", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("Case E: 미지원 모델", () => {
-  it("custom-element 모델 → multi-shot ineligible", () => {
-    expect(isMultiShotEligible("kling-custom-element", 12)).toBe(false);
+  it("non-VEO 모델 → multi-shot ineligible (duration < 8)", () => {
+    expect(isMultiShotEligible("some-non-veo-model", 5)).toBe(false);
   });
 
-  it("custom-element 모델 → maxShots = 0", () => {
-    expect(getMaxShots("kling-custom-element", 12)).toBe(0);
+  it("non-VEO 모델 → maxShots = 0 (duration < 8)", () => {
+    expect(getMaxShots("some-non-veo-model", 5)).toBe(0);
   });
 
-  it("3s duration → multi-shot ineligible", () => {
-    expect(isMultiShotEligible(MODEL, 3)).toBe(false);
+  it("7s duration → multi-shot ineligible (VEO requires 8s)", () => {
+    expect(isMultiShotEligible(MODEL, 7)).toBe(false);
   });
 
   it("prepareMultiShotPayload — modelId 없음 → 빈 배열", () => {

@@ -1,26 +1,30 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import type { CharacterSeed, CharacterFaceRef, KlingElementAsset } from "@/types";
+import type { CharacterSeed, CharacterFaceRef } from "@/types";
+
+// Stub type for element assets (Custom Elements deferred to v2)
+interface ElementAssetStub {
+  characterId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  elementId?: string;
+  error?: string;
+}
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  createKlingElement,
-  createElementAsset,
-  upsertElementAsset,
-  pollElementUntilDone,
-  canCreateElement,
-  getElementUnavailableReason,
-} from "@/lib/kling-element-store";
+// Kling Element store removed in v1 (VEO migration)
+// Element creation is disabled; face refs are still used for reference images.
+const canCreateElement = (_base64?: string) => false;
+const getElementUnavailableReason = (_base64?: string) => "Custom Element creation is not available with VEO";
 
 interface CharacterFaceManagerProps {
   characterSeeds: CharacterSeed[];
   storyboardImages: Record<number, string>;
   faceRefs: CharacterFaceRef[];
   onFaceRefsChange: (refs: CharacterFaceRef[]) => void;
-  elementAssets: KlingElementAsset[];
-  onElementAssetsChange: React.Dispatch<React.SetStateAction<KlingElementAsset[]>>;
+  elementAssets: ElementAssetStub[];
+  onElementAssetsChange: React.Dispatch<React.SetStateAction<ElementAssetStub[]>>;
 }
 
 export default function CharacterFaceManager({
@@ -204,58 +208,12 @@ export default function CharacterFaceManager({
     [faceRefs, onFaceRefsChange]
   );
 
-  // Kling Element 생성
+  // Element creation disabled (VEO migration — Custom Elements removed)
   const handleCreateElement = useCallback(
-    async (characterId: string) => {
-      const faceRef = faceRefs.find((r) => r.characterId === characterId);
-      if (!faceRef || !canCreateElement(faceRef.faceBase64)) return;
-
-      const seed = characterSeeds.find((s) => s.id === characterId);
-      setCreatingElement(characterId);
-
-      try {
-        const { taskId } = await createKlingElement({
-          characterId,
-          elementName: seed?.label || characterId,
-          elementDescription: seed?.appearance,
-          frontalImage: faceRef.faceBase64,
-          referenceType: "image_refer",
-        });
-
-        // 즉시 pending asset 추가
-        const newAsset = createElementAsset({
-          characterId,
-          taskId,
-          elementName: seed?.label || characterId,
-          elementDescription: seed?.appearance || "",
-          sourceType: "image_refer",
-        });
-        onElementAssetsChange(upsertElementAsset(elementAssets, newAsset));
-
-        // 백그라운드 폴링 시작
-        pollElementUntilDone(taskId, (update) => {
-          onElementAssetsChange((prev) => {
-            const existing = prev.find((a) => a.taskId === taskId);
-            if (!existing) return prev;
-            const updated: KlingElementAsset = {
-              ...existing,
-              status: update.status,
-              elementId: update.elementId,
-              error: update.error ?? undefined,
-              ...(update.status === "completed" ? { completedAt: Date.now() } : {}),
-            };
-            return upsertElementAsset(prev, updated);
-          });
-        }).catch((err) => {
-          console.error("[CharacterFaceManager] element poll error:", err);
-        });
-      } catch (err) {
-        console.error("[CharacterFaceManager] element create error:", err);
-      } finally {
-        setCreatingElement(null);
-      }
+    async (_characterId: string) => {
+      console.warn("[CharacterFaceManager] Element creation is not available with VEO");
     },
-    [faceRefs, characterSeeds, elementAssets, onElementAssetsChange]
+    []
   );
 
   const hasStoryboards = Object.keys(storyboardImages).length > 0;
@@ -300,7 +258,7 @@ export default function CharacterFaceManager({
               캐릭터 얼굴 고정
             </CardTitle>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              스토리보드에서 얼굴을 추출하고 Kling Element를 생성하여 캐릭터 일관성을 유지합니다
+              스토리보드에서 얼굴을 추출하여 캐릭터 일관성을 유지합니다
             </p>
           </div>
           {hasStoryboards && (
@@ -332,7 +290,7 @@ export default function CharacterFaceManager({
               className="text-[10px] font-medium"
               style={{ color: "#d63031" }}
             >
-              추출된 얼굴 ({faceRefs.length}명) — Kling Element 생성 후 영상에 자동 주입됩니다
+              추출된 얼굴 ({faceRefs.length}명) — 영상 생성 시 참조 이미지로 사용됩니다
             </p>
             <div className="flex gap-3 flex-wrap">
               {faceRefs.map((ref) => {
@@ -444,7 +402,7 @@ export default function CharacterFaceManager({
                 </div>
 
                 <div className="flex gap-1.5 shrink-0">
-                  {/* Kling Element 생성 */}
+                  {/* Element 생성 (disabled) */}
                   {hasRef && !asset?.elementId && (
                     <button
                       className="text-[10px] px-2 py-1 rounded-md"
@@ -455,7 +413,7 @@ export default function CharacterFaceManager({
                       }}
                       disabled={!!unavailableReason || isCreating || isElementInProgress}
                       onClick={() => handleCreateElement(seed.id)}
-                      title={unavailableReason || "Kling Custom Element 생성"}
+                      title={unavailableReason || "Custom Element 생성"}
                     >
                       {isCreating || isElementInProgress ? (
                         <span className="flex items-center gap-1">

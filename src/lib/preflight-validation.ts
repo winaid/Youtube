@@ -8,7 +8,7 @@
  *   - multiShot: canonical-first (effectiveMultiShot)
  *   - duration: canonical-first (effectiveDurationSec)
  *   - style tier: style-capability-matrix
- *   - model limits: kling-capability
+ *   - model limits: veo-capability
  *   - budget: batch-runtime-budget
  *   - sequence structure: shortform band policy
  *
@@ -17,7 +17,9 @@
  */
 
 import type { Cut, MultiShotPrompt } from "@/types";
-import { getMaxShots, getCapability } from "@/lib/kling-capability";
+import { getCapability } from "@/lib/veo-capability";
+// VEO 정책: 8초 4샷 고정
+const getMaxShots = (_modelId: string, _durationSec: number) => 4;
 import {
   getStyleCapability, getStyleUiState, resolveGenerationStyle,
   getTierDescriptionKo,
@@ -246,7 +248,7 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
 
   // ── multi-segment 콘텐츠 (총 런타임 > 15초) ──
   // band 규칙은 개별 컷 단위. 총 런타임이 15초를 넘으면
-  // 여러 개의 Kling 세그먼트로 구성된 콘텐츠이므로 band 규칙 적용 안 함.
+  // 여러 개의 VEO 세그먼트로 구성된 콘텐츠이므로 band 규칙 적용 안 함.
   // 개별 컷의 duration 상한(15초)은 checkCut의 cut_duration_too_long이 처리.
   if (totalDuration > SEQUENCE_MAX_TOTAL_DURATION) {
     return;

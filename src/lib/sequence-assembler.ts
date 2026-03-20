@@ -27,7 +27,7 @@ import type { MultiShotPrompt, ShotRole } from "@/types";
 // ═══════════════════════════════════════════════════════════════════
 
 export interface ProviderCapability {
-  id: "kling";
+  id: "veo";
   acceptsStructuredPayload: boolean;
   supportsStructuredSequence: boolean;
   supportsNegativePrompt: boolean;
@@ -38,12 +38,12 @@ export interface ProviderCapability {
 }
 
 /**
- * 2-API 아키텍처: Kling = 유일한 생성 provider.
- * Kling만 지원. Gemini는 QA provider (여기서 관리하지 않음).
+ * 2-API 아키텍처: VEO = 유일한 생성 provider.
+ * VEO만 지원. Gemini는 QA provider (여기서 관리하지 않음).
  */
 export const PROVIDER_CAPABILITIES: Record<string, ProviderCapability> = {
-  kling: {
-    id: "kling",
+  veo: {
+    id: "veo",
     acceptsStructuredPayload: false, // string-only → 전송 직전 serialize
     supportsStructuredSequence: false, // string-only → serializeSequenceForProvider() 호출
     supportsNegativePrompt: true,
@@ -487,7 +487,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
   // 스타일 정체성을 프롬프트에 강하게 주입
   const styleBlockParts = [styleLabel];
   if (persona?.aesthetic) {
-    // 한국어 문자가 포함된 경우 제거 — Kling 프롬프트는 영어 전용이어야 함
+    // 한국어 문자가 포함된 경우 제거 — VEO 프롬프트는 영어 전용이어야 함
     const aestheticEnOnly = persona.aesthetic
       .replace(/[\uAC00-\uD7A3\u3131-\u318E\u3200-\u321E\u3260-\u327E]+/g, " ")
       .replace(/\s{2,}/g, " ")
@@ -1098,11 +1098,11 @@ function buildCameraLine(doc: SingleShotDocument): string {
  * 4. Character ref  5. Action  6. Mood/Lighting
  * 7. Timing beats  8. Continuity  9. Style suffix
  * 10. Medium lock  11. Audio  12. No text guard
- * 13. Negatives (Kling = separate negative_prompt)
+ * 13. Negatives (VEO = separate negative_prompt)
  */
 export function serializeForProvider(
   doc: SingleShotDocument,
-  provider: "kling" = "kling",
+  provider: "veo" = "veo",
 ): SerializedShot {
   const cap = PROVIDER_CAPABILITIES[provider];
   const sections: Record<string, string> = {};
@@ -1317,7 +1317,7 @@ export function serializeForProvider(
     truncated = true;
   }
 
-  // Char cap — Kling 프롬프트가 너무 길면 품질 저하
+  // Char cap — VEO 프롬프트가 너무 길면 품질 저하
   if (prompt.length > cap.maxPromptChars) {
     // 문장 단위로 자르기 (마지막 완전한 문장까지)
     const cutoff = prompt.lastIndexOf(". ", cap.maxPromptChars - 10);
@@ -1417,7 +1417,7 @@ export function assembleFromJSON(input: {
   config: VideoGenerationConfig;
   prevCut?: Cut;
 }): AssembleFromJSONResult {
-  const provider = "kling" as const;
+  const provider = "veo" as const;
 
   // Step 1: Build JSON document
   const rawDoc = buildShotDocument(input);
@@ -1973,7 +1973,7 @@ export function assembleFromJSON(input: {
  */
 export function renderSequenceForProvider(
   sequence: StructuredSequenceDocument,
-  provider: "kling" = "kling",
+  provider: "veo" = "veo",
 ): { prompt: string; negativePrompt: string } {
   // shotPlan → SingleShotDocument를 재구성하지 않고
   // ShotPlan의 필드를 직접 사용하여 deterministic 직렬화

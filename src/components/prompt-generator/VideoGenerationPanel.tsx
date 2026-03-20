@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } from "@/types";
 import { inferShotRole } from "@/lib/multishot-validation";
 import { generateSummariesFromNormalizedMultiPrompt } from "@/lib/shot-summary-ko";
-import { buildNormalizedKlingPayload, buildPreviewPayload, type NormalizedKlingPayload } from "@/lib/kling-payload-normalizer";
+
 import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +47,7 @@ interface VideoGenerationPanelProps {
   canonicalDurations?: Map<number, number>;
   /** 선택된 영상 스타일 ID */
   styleId?: string;
-  /** 사용 중인 Kling 모델 ID */
+  /** 사용 중인 VEO 모델 ID */
   modelId?: string;
   /** stitch 완료 시 부모에 알림 — 업로드 준비 상태 반영용 */
   onStitchComplete?: (result: { outputUrl: string; sizeBytes: number } | null) => void;
@@ -332,9 +332,9 @@ export default function VideoGenerationPanel({
                       {clip.engineUsed ? (
                         <Badge
                           className="text-[10px] text-white"
-                          style={{ background: clip.engineUsed === "kling" ? "#e85d04" : "#787fff" }}
+                          style={{ background: clip.engineUsed === "veo" ? "#4285f4" : "#787fff" }}
                         >
-                          {clip.engineUsed === "kling" ? "Kling" : clip.engineUsed || "Kling"}
+                          {clip.engineUsed === "veo" ? "VEO" : clip.engineUsed || "VEO"}
                         </Badge>
                       ) : (
                         <Badge className="text-[10px] text-white" style={{ background: "#aaa" }}>
@@ -364,16 +364,13 @@ export default function VideoGenerationPanel({
                     {(() => {
                       const effectiveShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
                       if (effectiveShots.length === 0) return null;
-                      // Build normalized payload to ensure summaries match what Kling will receive
+                      // Build normalized entries for summary display
                       const effectiveDuration = canonicalDurations?.get(cut.cutNumber) ?? cut.durationSec ?? 8;
-                      const normPayload = buildNormalizedKlingPayload({
-                        prompt: cut.videoPrompt || cut.sceneDescription || "",
-                        negativePrompt: "",
-                        model: propModelId || "kling-o3-text-to-video",
-                        durationSec: effectiveDuration,
-                        multiShot: effectiveShots,
-                      });
-                      const normalizedEntries = normPayload.model_params?.multi_prompt ?? [];
+                      const normalizedEntries = effectiveShots.map((s, idx) => ({
+                        index: s.index ?? idx + 1,
+                        prompt: s.prompt || "",
+                        duration: parseFloat(s.duration) || Math.round(effectiveDuration / effectiveShots.length),
+                      }));
                       const summaries = generateSummariesFromNormalizedMultiPrompt(normalizedEntries);
                       return (
                       <div className="mt-1.5 space-y-0.5">
@@ -717,26 +714,25 @@ export default function VideoGenerationPanel({
                             </div>
                           </details>
                         )}
-                        {/* 4급: Kling multi_prompt JSON preview — via shared authoritative normalizer */}
+                        {/* 4급: VEO multi_prompt JSON preview */}
                         {(() => {
                           const dbgShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
                           if (dbgShots.length === 0) return null;
                           const dbgDuration = canonicalDurations?.get(cut.cutNumber) ?? cut.durationSec ?? 8;
-                          // Use the SAME normalizer that the server uses
-                          const dbgPayload = buildNormalizedKlingPayload({
+                          const previewObj = {
                             prompt: cut.videoPrompt || cut.sceneDescription || "",
-                            negativePrompt: "",
-                            model: propModelId || "kling-o3-text-to-video",
                             durationSec: dbgDuration,
-                            multiShot: dbgShots,
-                          });
-                          if (!dbgPayload.model_params) return null;
-                          // Build display-safe preview (truncated prompts, same structure)
-                          const previewObj = buildPreviewPayload(dbgPayload, 120);
+                            shots: dbgShots.map(s => ({
+                              index: s.index,
+                              duration: s.duration,
+                              prompt: (s.prompt || "").slice(0, 120) + ((s.prompt || "").length > 120 ? "..." : ""),
+                              role: s.role,
+                            })),
+                          };
                           return (
                             <details className="ml-1">
                               <summary className="text-[9px] cursor-pointer text-muted-foreground">
-                                Kling JSON 미리보기 (normalized payload)
+                                VEO JSON 미리보기
                               </summary>
                               <pre className="bg-gray-50 rounded p-2 text-[8px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#555", maxHeight: 200, overflowY: "auto" }}>
                                 {JSON.stringify(previewObj, null, 2)}

@@ -212,7 +212,7 @@ describe("structuredSequence shot duration 동기화", () => {
   } as Cut);
 
   const makeConfig = (dur: number): VideoGenerationConfig => ({
-    engine: "kling" as const,
+    engine: "veo" as const,
     durationSeconds: dur,
     aspectRatio: "16:9",
     animationMode: "live-action",
@@ -345,8 +345,8 @@ describe("duration 충돌 경고", () => {
 // ── generate-video duration meta 응답 ────────────────────────────────────────
 
 describe("generate-video duration meta", () => {
-  it("[요구#3] requested=5, Kling sent=5 → meta 일치", () => {
-    // toKlingDuration(5) = Math.min(15, Math.max(3, 5)) = 5
+  it("[요구#3] requested=5, VEO sent=5 → meta 일치", () => {
+    // toVeoDuration(5) = Math.min(15, Math.max(3, 5)) = 5
     const requested = 5;
     const normalized = requested;
     const sent = Math.min(15, Math.max(3, Math.round(normalized)));
@@ -356,13 +356,13 @@ describe("generate-video duration meta", () => {
     expect(warnings).toHaveLength(0);
   });
 
-  it("[요구#3] requested=2, Kling sent=3 → meta에 경고 포함", () => {
+  it("[요구#3] requested=2, VEO sent=3 → meta에 경고 포함", () => {
     const requested = 2;
     const normalized = safeDuration(requested); // → 3
     const sent = Math.min(15, Math.max(3, Math.round(normalized)));
     expect(sent).toBe(3);
     const warnings: string[] = [];
-    if (requested !== sent) warnings.push(`요청 ${requested}초 → Kling 전송 ${sent}초`);
+    if (requested !== sent) warnings.push(`요청 ${requested}초 → VEO 전송 ${sent}초`);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("요청 2초");
   });
@@ -372,7 +372,7 @@ describe("generate-video duration meta", () => {
     const response = {
       operationName: "task_123",
       taskId: "task_123",
-      engine: "kling",
+      engine: "veo",
       modeUsed: "generate",
       status: "RUNNING",
       durationMeta: {

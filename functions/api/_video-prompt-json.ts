@@ -7,7 +7,7 @@
  * 렌더링 원칙:
  * - 비시각 메타태그(REVEALED/WITHHELD/END_HOOK 등) = 내부 planning 전용, 최종 프롬프트 제외
  * - characterRef 비어있으면 캐릭터 관련 필드 일체 생략
- * - 모든 출력은 Kling이 실제 렌더링할 수 있는 시각 정보만
+ * - 모든 출력은 VEO가 실제 렌더링할 수 있는 시각 정보만
  */
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -83,9 +83,12 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
   }
 }
 
-// ─── Kling 렌더러 ─────────────────────────────────────────────────────────────
+// ─── Provider 렌더러 ──────────────────────────────────────────────────────────
 
-export function renderKlingPromptFromJson(json: VideoPromptJson): string {
+/** @deprecated Use renderPromptFromJson. Kept for backward compat. */
+export const renderKlingPromptFromJson = renderPromptFromJson;
+
+export function renderPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
   if (json.cameraMovement && json.cameraMovement !== "static") {
@@ -113,7 +116,10 @@ export function renderKlingPromptFromJson(json: VideoPromptJson): string {
   return parts.filter(Boolean).join(". ");
 }
 
-export function renderKlingExtendPromptFromJson(json: ExtendPromptJson): string {
+/** @deprecated Use renderExtendPromptFromJson. Kept for backward compat. */
+export const renderKlingExtendPromptFromJson = renderExtendPromptFromJson;
+
+export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
   parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);

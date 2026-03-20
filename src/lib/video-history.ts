@@ -16,7 +16,7 @@ export type VideoAssetStatus =
 export interface VideoRecord {
   id: string;
   operationName: string;
-  engine: "kling";
+  engine: "veo";
   gcsUri: string;            // rawVideoUri (gs:// 또는 https://)
   proxyUri: string;          // 재생 가능한 프록시 URI
   canonicalVideoUri?: string; // 안정적 URI (Scene Extension용)

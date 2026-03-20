@@ -3,7 +3,7 @@
  *
  * 단일 shot summary를 진짜 sequence(2~6 shots)로 분리.
  * "A → B → C → D → E → F" progression을 감지하고 자동으로 shot 분할.
- * O3 모델 기준 최대 6샷.
+ * VEO 모델 기준 최대 6샷.
  *
  * grep: detectShotProgression, splitSingleShotSequence,
  *       enforceMinimumShotCount, isSingleShotException,
@@ -12,13 +12,16 @@
  */
 
 import type { TemporalBeat } from "@/types";
-import { getMinShots } from "@/lib/kling-capability";
+import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 
-/** 기본 모델 ID — shot-splitting 정책에서 최소 샷 수 조회용 */
-const DEFAULT_MODEL_ID = "kling-o3-text-to-video";
+/** VEO 정책: 고정 4샷, 최소 2샷 */
+const getMinShots = (_modelId: string, _durationSec: number) => 2;
 
-/** shot splitting이 생성할 수 있는 최대 샷 수 (O3 capability 기준) */
+/** 기본 모델 ID — shot-splitting 정책에서 최소 샷 수 조회용 */
+const DEFAULT_MODEL_ID = VEO_DEFAULT_MODEL;
+
+/** shot splitting이 생성할 수 있는 최대 샷 수 (VEO capability 기준) */
 export const MAX_SPLIT_SHOTS = 6;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -295,7 +298,7 @@ function reorderSegmentsForBeatType(
 /**
  * 단일 shot을 2~6 shots로 분리.
  * progression segments + scene template 기반.
- * O3 모델 기준 최대 6샷, 실제 분할 수는 progression과 template에 따라 결정.
+ * VEO 모델 기준 최대 6샷, 실제 분할 수는 progression과 template에 따라 결정.
  *
  * beatHint가 "hook"이면 macro 프레임이 첫 shot에 우선 배치.
  * 이는 hook sequence의 첫 shot이 core premise를 즉시 전달하도록 보장.

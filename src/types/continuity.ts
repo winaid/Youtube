@@ -56,7 +56,7 @@ export interface CharacterAnchor {
   primarySubjectDescription: string;
   /** 의상 고정 문자열 (예: "black turtleneck, dark jeans, white sneakers") */
   clothingLock: string;
-  /** Kling element_id (있으면) */
+  /** VEO element_id (있으면) */
   faceRef?: string;
   /** 체형 (예: "slim, 175cm") */
   bodyType: string;

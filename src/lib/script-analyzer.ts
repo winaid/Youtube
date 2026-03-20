@@ -1321,7 +1321,7 @@ export function convertToCuts(analysis: ScriptAnalysisResult): Cut[] {
     }
 
     // Expand each AnalyzedCut into its own Cut object.
-    // Each Cut = one video generation (Kling API call).
+    // Each Cut = one video generation (VEO API call).
     const perCutDur = Math.max(5, Math.round(seqDur / seqCuts.length));
 
     for (let i = 0; i < seqCuts.length; i++) {

@@ -1,5 +1,5 @@
 /**
- * multi-shot-planner.ts — Kling 멀티샷 릴 프로그레션 엔진
+ * multi-shot-planner.ts — VEO 멀티샷 릴 프로그레션 엔진
  *
  * 핵심 원칙: 모든 샷은 존재 이유가 있어야 한다.
  *   - 각 샷은 이전 샷과 반드시 다른 visual element를 도입
@@ -25,7 +25,12 @@
  */
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
-import { getMaxShots, getMinShots, getCapability } from "@/lib/kling-capability";
+// VEO capability constants defined locally (VEO_MAX_SHOTS, VEO_MIN_SHOTS, VEO_MIN_SHOT_DURATION)
+
+/** VEO 고정 4샷 정책 (8s / 4 = 2s each) */
+const VEO_MAX_SHOTS = 4;
+const VEO_MIN_SHOTS = 4;
+const VEO_MIN_SHOT_DURATION = 2;
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -197,7 +202,7 @@ const ABSOLUTE_FORCE_DURATION = 9;
 /**
  * 추천 샷 수 계산.
  *
- * @param modelId - Kling 모델 ID
+ * @param modelId - VEO 모델 ID
  * @param durationSec - 클립 전체 duration (초)
  * @param sceneType - 씬 분류
  * @returns 추천 샷 수 (모델 capability 범위 내)
@@ -207,7 +212,7 @@ export function planRecommendedShotCount(
   durationSec: number,
   sceneType: PlannerSceneType = "default",
 ): number {
-  const maxShots = getMaxShots(modelId, durationSec);
+  const maxShots = VEO_MAX_SHOTS;
   if (maxShots <= 0) return 1; // multiShot 비활성 모델/duration
 
   // 기본 범위 결정
@@ -396,7 +401,6 @@ export function buildDefaultMultiShot(opts: {
   styleSuffix?: string;
 }): MultiShotPrompt[] {
   const { durationSec, sceneType = "default", basePrompt = "", modelId, styleSuffix } = opts;
-  const cap = getCapability(modelId);
 
   const shotCount = planRecommendedShotCount(modelId, durationSec, sceneType);
   if (shotCount <= 1 && !shouldForceMultiShot(sceneType, durationSec, modelId)) {
@@ -404,10 +408,10 @@ export function buildDefaultMultiShot(opts: {
     return [];
   }
 
-  const policyMin = getMinShots(modelId, durationSec);
+  const policyMin = VEO_MIN_SHOTS;
   const effectiveCount = Math.max(policyMin || 2, shotCount);
   const roles = planShotRoles(effectiveCount, sceneType);
-  const durations = distributeDurations(roles, durationSec, cap.minShotDuration);
+  const durations = distributeDurations(roles, durationSec, VEO_MIN_SHOT_DURATION);
 
   return roles.map((role, i) => {
     const baseShot = buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType);
@@ -721,10 +725,8 @@ export function shouldForceMultiShot(
   durationSec: number,
   modelId: string,
 ): boolean {
-  const cap = getCapability(modelId);
-  if (!cap.supportsMultiShot) return false;
-
-  const maxShots = getMaxShots(modelId, durationSec);
+  // VEO: 멀티샷 항상 지원 (단일샷 금지 정책)
+  const maxShots = VEO_MAX_SHOTS;
   if (maxShots <= 1) return false;
 
   // 절대 기준: 9초 이상이면 어떤 씬이든 강제
@@ -811,8 +813,8 @@ export function repairMissingMultiShot(opts: {
   // Studio 모드에서는 강제하지 않아도 추천 (하지만 repair하지는 않음)
   // Batch 모드에서는 auto-repair 적극적
   if (mode === "batch" && durationSec >= 5) {
-    const cap = getCapability(modelId);
-    if (cap.supportsMultiShot && getMaxShots(modelId, durationSec) >= 2) {
+    // VEO: 멀티샷 항상 지원 (단일샷 금지 정책)
+    if (VEO_MAX_SHOTS >= 2) {
       return buildDefaultMultiShot({
         durationSec,
         sceneType: sceneType as PlannerSceneType,
@@ -864,11 +866,10 @@ export function buildMultiShotPlan(opts: {
   }
 
   const shotCount = planRecommendedShotCount(modelId, durationSec, sceneType);
-  const policyMin = getMinShots(modelId, durationSec);
+  const policyMin = VEO_MIN_SHOTS;
   const effectiveCount = forced ? Math.max(policyMin || 2, shotCount) : shotCount;
   const roles = planShotRoles(effectiveCount, sceneType);
-  const cap = getCapability(modelId);
-  const durations = distributeDurations(roles, durationSec, cap.minShotDuration);
+  const durations = distributeDurations(roles, durationSec, VEO_MIN_SHOT_DURATION);
 
   return {
     shotCount: effectiveCount,
