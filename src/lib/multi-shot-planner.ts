@@ -27,9 +27,9 @@
 import type { MultiShotPrompt, ShotRole } from "@/types";
 // VEO capability constants defined locally (VEO_MAX_SHOTS, VEO_MIN_SHOTS, VEO_MIN_SHOT_DURATION)
 
-/** VEO 고정 4샷 정책 (8s / 4 = 2s each) */
+/** VEO 멀티샷 정책: 3~4샷 (8s 기준) */
 const VEO_MAX_SHOTS = 4;
-const VEO_MIN_SHOTS = 4;
+const VEO_MIN_SHOTS = 3;
 const VEO_MIN_SHOT_DURATION = 2;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -162,9 +162,9 @@ export const RETENTION_ROLE_PATTERNS: Record<number, ShotRole[]> = {
  * 이 모듈이 default planning engine이므로 기존 heuristic은 validation용으로 유지.
  */
 const SHOT_COUNT_RANGES: { maxSec: number; min: number; max: number }[] = [
-  { maxSec: 3,  min: 1, max: 1 },
-  { maxSec: 8,  min: 3, max: 6 },
-  { maxSec: 15, min: 4, max: 6 },
+  { maxSec: 3,  min: 3, max: 4 },
+  { maxSec: 8,  min: 3, max: 4 },
+  { maxSec: 15, min: 3, max: 4 },
 ];
 
 /** scene type별 shot count 보정 */
@@ -436,6 +436,16 @@ export function buildDefaultMultiShot(opts: {
  *
  * fallback/auto-repair 시에도 각 샷이 구조적으로 다른 프레임을 묘사.
  */
+/**
+ * 프로그레션 기반 샷 프롬프트 생성.
+ *
+ * 필수 3요소 규칙:
+ *   - 등장인물 있음: [샷 사이즈] + [인물의 구체적 행동] + [장소]
+ *   - 등장인물 없음: [샷 사이즈] + [카메라가 비추는 구체적 대상] + [장소]
+ *
+ * "따뜻한 사무실 전경이 보임" 같은 추상적 묘사 금지.
+ * 반드시 카메라가 무엇을 어떻게 보여주는지 구체적으로 서술.
+ */
 function buildProgressionPrompt(
   basePrompt: string,
   role: ShotRole,
@@ -453,27 +463,64 @@ function buildProgressionPrompt(
   // Decompose basePrompt into visual layers (scene-type aware)
   const layers = decomposePromptLayers(basePrompt.trim(), sceneType);
 
+  // 인물/주체 탐지
+  const subjectWords = extractTerms(basePrompt, SUBJECT_RE);
+  const actionWords = extractTerms(basePrompt, ACTION_RE);
+  const spaceWords = extractTerms(basePrompt, SPACE_RE);
+  const hasCharacter = subjectWords.length > 0;
+
+  // 장소 문자열 생성 (없으면 layers.space에서 추출)
+  const locationStr = spaceWords.length > 0
+    ? spaceWords.slice(0, 2).join(" ")
+    : layers.space.split(/[,.;]/).map(s => s.trim()).filter(s => s.length > 3)[0] ?? "the scene";
+
+  // 주체+행동 문자열 생성
+  const subjectStr = hasCharacter
+    ? `${capitalize(subjectWords[0])} ${actionWords.length > 0 ? toGerund(actionWords[0]) : "standing still"}`
+    : "";
+
   switch (role) {
     case "establish":
-      return `${directive.shotSize} shot. ${layers.space}. Atmosphere only — the action hasn't started.`;
+      if (hasCharacter) {
+        return `${directive.shotSize} shot, ${locationStr}. ${subjectStr} is visible in the distance. Camera reveals the full environment before any action begins.`;
+      }
+      return `${directive.shotSize} shot, ${locationStr}. Camera slowly reveals ${layers.space.split(/[,.;]/)[0]?.trim() || "the environment"}. No movement yet — pure atmosphere.`;
 
     case "transition":
-      return `${directive.shotSize} shot. ${layers.transition}. A new vantage point before the action begins.`;
+      if (hasCharacter) {
+        return `${directive.shotSize} shot, ${locationStr}. Camera shifts angle to show ${subjectWords[0]} from a new perspective. ${layers.transition}.`;
+      }
+      return `${directive.shotSize} shot, ${locationStr}. Camera repositions to show ${layers.transition}. A different vantage point of the same space.`;
 
     case "develop":
-      return `${directive.shotSize} shot. ${layers.action}. First clear view of the subject in motion.`;
+      if (hasCharacter) {
+        const actionDesc = actionWords.length > 0
+          ? `${capitalize(subjectWords[0])} ${actionWords.map(a => toGerund(a)).slice(0, 2).join(" and ")}`
+          : `${capitalize(subjectWords[0])} moving deliberately`;
+        return `${directive.shotSize} shot, ${locationStr}. ${actionDesc}. First clear view of the subject in motion.`;
+      }
+      return `${directive.shotSize} shot, ${locationStr}. Camera focuses on ${layers.action}. New visual information revealed.`;
 
     case "insert":
-      return `Extreme close-up. ${layers.detail}. Scale jump — invisible at any wider framing.`;
+      if (hasCharacter) {
+        return `Extreme close-up, ${locationStr}. ${capitalize(subjectWords[0])}'s hands/face in tight detail — ${layers.detail}. Scale jump from wider framing.`;
+      }
+      return `Extreme close-up, ${locationStr}. Camera isolates ${layers.detail}. Detail invisible at any wider framing.`;
 
     case "peak":
-      return `${directive.shotSize}. ${layers.emotion}. The single most intense frame in the sequence.`;
+      if (hasCharacter) {
+        return `${directive.shotSize}, ${locationStr}. ${capitalize(subjectWords[0])} at the most intense moment — ${layers.emotion}. Maximum emotional impact.`;
+      }
+      return `${directive.shotSize}, ${locationStr}. ${layers.emotion}. The single most dramatic frame in the sequence.`;
 
     case "resolve":
-      return `${directive.shotSize}. ${layers.result}. The tension breaks — visual closure.`;
+      if (hasCharacter) {
+        return `${directive.shotSize}, ${locationStr}. ${capitalize(subjectWords[0])} ${layers.result}. Tension releases — visual closure.`;
+      }
+      return `${directive.shotSize}, ${locationStr}. ${layers.result}. The scene settles — visual closure.`;
 
     default:
-      return `${directive.shotSize} shot. ${basePrompt.trim()}`;
+      return `${directive.shotSize} shot, ${locationStr}. ${basePrompt.trim()}`;
   }
 }
 

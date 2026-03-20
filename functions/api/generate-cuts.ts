@@ -21,9 +21,9 @@ import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recomme
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
 import { VEO_DEFAULT_MODEL, getCapability } from "./_veo-capability";
-// VEO 정책: 8초 4샷 고정
+// VEO 정책: 8초, 3~4샷 고정
 const getMaxShots = (_modelId: string, _durationSec: number) => 4;
-const getMinShots = (_modelId: string, _durationSec: number) => 2;
+const getMinShots = (_modelId: string, _durationSec: number) => 3;
 const VEO_DEFAULT_MODEL = VEO_DEFAULT_MODEL; // backward compat alias
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
@@ -508,12 +508,12 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
 
       const basePrompt = fc.videoPrompt || fc.sceneDescription || "";
       const roleDirective: Record<ShotRoleServer, string> = {
-        establish: "Wide establishing shot showing the full environment and spatial context",
-        transition: "Camera shifts to a new angle, revealing hidden depth in the scene",
-        develop: "Medium shot revealing new action or information not visible before",
-        insert: "Extreme close-up on a critical detail, dramatic scale shift",
-        peak: "The most emotionally intense moment, maximum visual impact",
-        resolve: "Visual closure, tension releases, the scene settles into resolution",
+        establish: "WS establishing shot. Full environment visible — show the specific location and key objects that identify WHERE this is",
+        transition: "MS, camera shifts angle. New perspective revealing depth — different framing from previous shot",
+        develop: "MS/MCU, subject in action. Show specific movement or behavior — what the character DOES (verb required)",
+        insert: "ECU, extreme close-up on critical detail. Dramatic scale jump — texture, hands, object surface",
+        peak: "CU, most intense moment. Character's physical reaction at emotional peak — body language, not emotion labels",
+        resolve: "WS/CU, visual closure. Tension releases — the aftermath, result, or changed state of the scene",
       };
 
       const repairedShots: MultiShotItem[] = roles.map((role, i) => {
@@ -1242,7 +1242,14 @@ ${roles}
 - duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
 - 서브샷마다 구체적으로 다른 화면을 묘사 (≤80 words each)
 - 프롬프트에 shot size 명시 필수 (예: "ECU on trembling hands", "WS of empty hallway")
-- 각 서브샷의 주 피사체(subject)를 이전 샷과 다르게 설정 (예: 공간→인물→소품→표정)`;
+- 각 서브샷의 주 피사체(subject)를 이전 샷과 다르게 설정 (예: 공간→인물→소품→표정)
+
+🚨 서브샷 프롬프트 필수 3요소 — 하나라도 빠지면 규칙 위반:
+- 등장인물이 있는 장면: [1. 샷 사이즈 (WS/MS/CU/ECU)] + [2. 인물의 구체적 행동 (동사 필수)] + [3. 장소/공간 (어디인지)]
+- 등장인물이 없는 장면: [1. 샷 사이즈 (WS/MS/CU/ECU)] + [2. 카메라가 비추는 구체적 대상] + [3. 장소/공간 (어디인지)]
+❌ 나쁜 예: "따뜻한 사무실 전경이 보임" (샷 사이즈 없음, 구체적 행동 없음, 추상적)
+✅ 좋은 예: "WS, dental clinic waiting room. Three empty chairs under buzzing fluorescent light."
+✅ 좋은 예: "MS, office kitchen. Chef reaches for the knife rack, wiping flour from apron."`;
   })()}
 
 JSON 배열로만 출력 (마크다운 없이):

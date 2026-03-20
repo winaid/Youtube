@@ -41,8 +41,8 @@ import { DEFAULT_EDITORIAL_PERSONA } from "@/types";
 import { assembleFromJSON, type SingleShotDocument } from "@/lib/sequence-assembler";
 import { buildFinalProviderPayload, type FinalProviderPayload } from "@/lib/final-payload-builder";
 import { safeDuration } from "@/lib/duration-reconciliation";
-// VEO 고정 4샷 정책
-const VEO_MIN_SHOTS = 4;
+// VEO 멀티샷 정책: 3~4샷
+const VEO_MIN_SHOTS = 3;
 import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
 
