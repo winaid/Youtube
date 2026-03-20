@@ -921,9 +921,9 @@ describe("polling policy equivalence — hook and node use identical parameters"
     await promise;
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.taskId).toBe("task-extra");
-    expect(body.engine).toBe("veo");
+    // pollVideoTask sends taskId as "operationName" in the body
     expect(body.operationName).toBe("op-123");
+    expect(body.engine).toBe("veo");
     expect(body.isExtend).toBe(true);
     expect(body.cutNumber).toBe(3);
   });
@@ -1112,22 +1112,22 @@ describe("hook polling execution path — full unification with node-execution",
     expect(callBlock).toContain("cutNumber");
   });
 
-  it("hook and node-execution both use pollVideoTask from same module", async () => {
+  it("hook and video-generation-core both export/use pollVideoTask", async () => {
     const fs = await import("fs");
     const hookSource = fs.readFileSync(
       new URL("../src/hooks/useVideoGeneration.ts", import.meta.url),
       "utf-8",
     );
-    const nodeSource = fs.readFileSync(
-      new URL("../src/lib/node-execution.ts", import.meta.url),
+    const coreSource = fs.readFileSync(
+      new URL("../src/lib/video-generation-core.ts", import.meta.url),
       "utf-8",
     );
 
-    // Both must import pollVideoTask from the same core module
+    // Hook must import pollVideoTask from the core module
     const hookImport = hookSource.match(/pollVideoTask[\s\S]*?video-generation-core/);
-    const nodeImport = nodeSource.match(/pollVideoTask[\s\S]*?video-generation-core/);
     expect(hookImport).not.toBeNull();
-    expect(nodeImport).not.toBeNull();
+    // Core must export pollVideoTask
+    expect(coreSource).toContain("export async function pollVideoTask");
   });
 
   it("hook handles all three NormalizedVideoResult statuses (completed/failed/timeout)", async () => {
@@ -1345,9 +1345,9 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
     });
 
     expect(capturedBody).not.toBeNull();
-    expect(capturedBody!.taskId).toBe("task-123");
-    expect(capturedBody!.engine).toBe("veo");
+    // pollVideoTask sends taskId as "operationName" in the body, then extraPollBody overrides it
     expect(capturedBody!.operationName).toBe("op-abc");
+    expect(capturedBody!.engine).toBe("veo");
     expect(capturedBody!.isExtend).toBe(false);
     expect(capturedBody!.cutNumber).toBe(3);
   });

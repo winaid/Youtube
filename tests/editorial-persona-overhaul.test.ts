@@ -157,22 +157,24 @@ describe("auto duration — lowered scene defaults", () => {
 });
 
 describe("auto duration — editorial pace integration", () => {
-  it("editorialPace [2,4] + sceneType=environment → blended 3s", () => {
+  it("editorialPace [2,4] + sceneType=environment → blended then clamped to 8", () => {
     const r = computeAutoDuration({ sceneType: "environment", editorialPace: [2, 4] });
-    // environment=4, paceMid=3, blended = round((4+3)/2) = 4
-    expect(r.duration).toBeLessThanOrEqual(4);
+    // environment=4, paceMid=3, blended = round((4+3)/2) = 4 → clamped to DURATION_MIN(8)
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("editorialPace alone (no sceneType) → scene_default from pace", () => {
+  it("editorialPace alone (no sceneType) → clamped to 8", () => {
     const r = computeAutoDuration({ editorialPace: [3, 5] });
-    expect(r.duration).toBe(4); // midpoint of [3,5]
+    // midpoint of [3,5] = 4 → clamped to DURATION_MIN(8)
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("explicit cutDuration overrides editorial pace", () => {
+  it("explicit cutDuration overrides editorial pace (clamped to 8)", () => {
     const r = computeAutoDuration({ cutDuration: 10, editorialPace: [2, 4] });
-    expect(r.duration).toBe(10);
+    // explicit 10 → clamped to DURATION_MAX(8)
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("explicit");
   });
 

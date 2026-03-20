@@ -231,13 +231,14 @@ describe("densifyCuts — splitting prefers longest cuts (multi-segment)", () =>
     expect(total).toBe(10);
   });
 
-  it("should split 32s total with 2 cuts into 4 (min=max(4,ceil(32/15))=4) — splits scene-like first", () => {
+  it("should split 32s total with 2 cuts into 6 (min=max(4,ceil(32/8))=4 + VEO 8s clamping) — splits scene-like first", () => {
     const cuts = [
       { cutNumber: 1, durationSec: 12, durationClass: "cut-like" as const },
       { cutNumber: 2, durationSec: 20, durationClass: "scene-like" as const },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(4); // min = max(4, ceil(32/15)) = 4
+    // min=4 splits + VEO 8s clamping splits 10s remainders → 6 cuts
+    expect(result.length).toBe(6);
     const total = result.reduce((s, c) => s + c.durationSec, 0);
     expect(total).toBe(32);
   });

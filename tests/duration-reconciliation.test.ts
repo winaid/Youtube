@@ -346,22 +346,21 @@ describe("duration 충돌 경고", () => {
 // ── generate-video duration meta 응답 ────────────────────────────────────────
 
 describe("generate-video duration meta", () => {
-  it("[요구#3] requested=5, VEO sent=5 → meta 일치", () => {
-    // toVeoDuration(5) = Math.min(15, Math.max(3, 5)) = 5
+  it("[요구#3] requested=5, VEO sent=8 → meta에 클램핑 경고", () => {
     const requested = 5;
-    const normalized = requested;
-    const sent = Math.min(15, Math.max(3, Math.round(normalized)));
-    expect(sent).toBe(5);
+    const normalized = safeDuration(requested); // → 8 (고정 8초 정책)
+    const sent = Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(normalized)));
+    expect(sent).toBe(8);
     const warnings: string[] = [];
     if (requested !== sent) warnings.push("클램핑 적용");
-    expect(warnings).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
   });
 
-  it("[요구#3] requested=2, VEO sent=3 → meta에 경고 포함", () => {
+  it("[요구#3] requested=2, VEO sent=8 → meta에 경고 포함", () => {
     const requested = 2;
-    const normalized = safeDuration(requested); // → 3
-    const sent = Math.min(15, Math.max(3, Math.round(normalized)));
-    expect(sent).toBe(3);
+    const normalized = safeDuration(requested); // → 8
+    const sent = Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(normalized)));
+    expect(sent).toBe(8);
     const warnings: string[] = [];
     if (requested !== sent) warnings.push(`요청 ${requested}초 → VEO 전송 ${sent}초`);
     expect(warnings).toHaveLength(1);
@@ -369,7 +368,7 @@ describe("generate-video duration meta", () => {
   });
 
   it("[요구#5] generate-video 응답 구조에 durationMeta 포함 가능", () => {
-    // 서버 응답 시뮬레이션
+    // 서버 응답 시뮬레이션 (고정 8초 정책)
     const response = {
       operationName: "task_123",
       taskId: "task_123",
@@ -377,14 +376,14 @@ describe("generate-video duration meta", () => {
       modeUsed: "generate",
       status: "RUNNING",
       durationMeta: {
-        requestedSecondsPerScene: 5,
-        normalizedSecondsPerScene: 5,
-        sentSecondsPerScene: 5,
+        requestedSecondsPerScene: 8,
+        normalizedSecondsPerScene: 8,
+        sentSecondsPerScene: 8,
         warnings: [],
       },
     };
     expect(response.durationMeta).toBeDefined();
-    expect(response.durationMeta.sentSecondsPerScene).toBe(5);
+    expect(response.durationMeta.sentSecondsPerScene).toBe(8);
     expect(response.durationMeta.warnings).toHaveLength(0);
   });
 });
@@ -392,57 +391,57 @@ describe("generate-video duration meta", () => {
 // ── computeAutoDuration ──────────────────────────────────────────────────────
 
 describe("computeAutoDuration", () => {
-  it("explicit cutDuration → basis=explicit, 그 값 사용", () => {
+  it("explicit cutDuration → basis=explicit, 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 6 });
-    expect(r.duration).toBe(6);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("explicit");
   });
 
-  it("explicit cutDuration 클램핑 적용 (1 → 3)", () => {
+  it("explicit cutDuration 클램핑 적용 (1 → 8)", () => {
     const r = computeAutoDuration({ cutDuration: 1 });
     expect(r.duration).toBe(DURATION_MIN);
     expect(r.basis).toBe("explicit");
   });
 
-  it("explicit cutDuration 클램핑 적용 (20 → 15)", () => {
+  it("explicit cutDuration 클램핑 적용 (20 → 8)", () => {
     const r = computeAutoDuration({ cutDuration: 20 });
     expect(r.duration).toBe(DURATION_MAX);
     expect(r.basis).toBe("explicit");
   });
 
-  it("auto + recommendedDuration → basis=recommended", () => {
+  it("auto + recommendedDuration → basis=recommended, 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 0, recommendedDuration: 5 });
-    expect(r.duration).toBe(5);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("recommended");
   });
 
-  it("auto + recommendedDuration → explicit이 우선", () => {
+  it("auto + recommendedDuration → explicit이 우선, 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 10, recommendedDuration: 5 });
-    expect(r.duration).toBe(10);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("explicit");
   });
 
-  it("auto + totalDuration/cutCount 기반 계산", () => {
+  it("auto + totalDuration/cutCount 기반 계산, 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 0, totalDurationSeconds: 60, cutCount: 10 });
-    expect(r.duration).toBe(6);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("computed");
   });
 
-  it("auto + sceneType=environment → 4초 (lowered from 5)", () => {
+  it("auto + sceneType=environment → 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "environment" });
-    expect(r.duration).toBe(4);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("auto + sceneType=character-driven → 5초 (lowered from 6)", () => {
+  it("auto + sceneType=character-driven → 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "character-driven" });
-    expect(r.duration).toBe(5);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("scene_default");
   });
 
-  it("auto + sceneType=transition-atmosphere → 3초 (lowered from 4)", () => {
+  it("auto + sceneType=transition-atmosphere → 고정 8초", () => {
     const r = computeAutoDuration({ cutDuration: 0, sceneType: "transition-atmosphere" });
-    expect(r.duration).toBe(3);
+    expect(r.duration).toBe(8);
     expect(r.basis).toBe("scene_default");
   });
 

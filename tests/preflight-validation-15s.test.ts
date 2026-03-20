@@ -242,7 +242,7 @@ describe("16초+: 개별 컷 duration 초과", () => {
     expect(result.canGenerate).toBe(false);
     const tooLong = getIssuesByCode(result.issues, "cut_duration_too_long");
     expect(tooLong.length).toBe(1);
-    expect(tooLong[0].messageKo).toContain("15초");
+    expect(tooLong[0].messageKo).toContain("8초");
   });
 
   it("총 런타임 > 15초라도 개별 컷이 15초 이내면 band 에러 없음 (multi-segment)", () => {
@@ -253,13 +253,15 @@ describe("16초+: 개별 컷 duration 초과", () => {
     expect(bandIssues.length).toBe(0);
   });
 
-  it("multi-segment에서 일부 컷만 16초 → 해당 컷만 cut_duration_too_long", () => {
+  it("multi-segment에서 일부 컷만 8초 초과 → 해당 컷만 cut_duration_too_long", () => {
+    // VEO max is 8s, so 16s, 15s, and 14s all exceed the limit
+    // Only test with one exceeding and others within limit
     const cuts = [
       makeCut({ cutNumber: 1, durationSec: 16 }),
-      makeCut({ cutNumber: 2, durationSec: 15 }),
-      makeCut({ cutNumber: 3, durationSec: 14 }),
+      makeCut({ cutNumber: 2, durationSec: 8 }),
+      makeCut({ cutNumber: 3, durationSec: 6 }),
     ];
-    const durations = new Map([[1, 16], [2, 15], [3, 14]]);
+    const durations = new Map([[1, 16], [2, 8], [3, 6]]);
     const result = runPreflightValidation(makeInput(cuts, durations));
     const tooLong = getIssuesByCode(result.issues, "cut_duration_too_long");
     expect(tooLong.length).toBe(1);
@@ -422,7 +424,7 @@ describe("에러 메시지 품질", () => {
     const durations = new Map([[1, 16]]);
     const result = runPreflightValidation(makeInput(cuts, durations));
     const issue = getIssuesByCode(result.issues, "cut_duration_too_long")[0];
-    expect(issue.messageKo).toContain("15초");
+    expect(issue.messageKo).toContain("8초");
     expect(issue.messageKo).toContain("초과");
   });
 
