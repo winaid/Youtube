@@ -34,8 +34,8 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
     expect(SEQUENCE_MIN_DURATION).toBe(8);
   });
 
-  it("VEO_SEGMENT_CAP = 15", () => {
-    expect(VEO_SEGMENT_CAP).toBe(15);
+  it("VEO_SEGMENT_CAP = 8", () => {
+    expect(VEO_SEGMENT_CAP).toBe(8);
   });
 
   it("15초 이하 → 숏폼 리듬 정책 반영", () => {
@@ -45,45 +45,47 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
     expect(recommendMinimumCutCount(15)).toBe(4);  // 10-15초: min 4
   });
 
-  it("48초 → 4 시퀀스 (ceil(48/15))", () => {
-    expect(recommendMinimumCutCount(48)).toBe(4);
+  it("48초 → 6 시퀀스 (ceil(48/8))", () => {
+    expect(recommendMinimumCutCount(48)).toBe(6);
   });
 
-  it("120초 → 8 시퀀스 (ceil(120/15))", () => {
-    expect(recommendMinimumCutCount(120)).toBe(8);
+  it("120초 → 15 시퀀스 (ceil(120/8))", () => {
+    expect(recommendMinimumCutCount(120)).toBe(15);
   });
 
-  it("60초 → 4 시퀀스", () => {
-    expect(recommendMinimumCutCount(60)).toBe(4);
+  it("60초 → 8 시퀀스 (ceil(60/8))", () => {
+    expect(recommendMinimumCutCount(60)).toBe(8);
   });
 
-  it("30초 → 최소 4 (segment-aware: max(4, ceil(30/15)))", () => {
+  it("30초 → 최소 4 (segment-aware: max(4, ceil(30/8)))", () => {
     expect(recommendMinimumCutCount(30)).toBe(4);
   });
 
-  it("300초 → 20 시퀀스 (5분 = 배치 예산 한도)", () => {
-    expect(recommendMinimumCutCount(300)).toBe(20);
+  it("300초 → 38 시퀀스 (5분 = 배치 예산 한도)", () => {
+    expect(recommendMinimumCutCount(300)).toBe(38);
   });
 });
 
 describe("Layer 1→2: recommendCutCountRange", () => {
-  it("15초 → {4, 6} 시퀀스 내부 밀도 범위 (숏폼 리듬)", () => {
+  it("15초 → {6, 12} (1 full 8s segment + 7s remainder)", () => {
     const range = recommendCutCountRange(15);
-    expect(range.min).toBe(4);
-    expect(range.max).toBe(6);
+    // floor(15/8)=1 full (8s → {3,6}) + remainder 7s → {3,6} = {6, 12}
+    expect(range.min).toBe(6);
+    expect(range.max).toBe(12);
   });
 
-  it("48초 → 3 full segments × {4,6} + 1 remainder (3s, {1,2})", () => {
+  it("48초 → 6 full segments × {3,6}", () => {
     const range = recommendCutCountRange(48);
-    // 3 full segments (15s each, range {4,6}) + 1 remainder (3s, range {1,2})
-    expect(range.min).toBe(3 * 4 + 1); // 13
-    expect(range.max).toBe(3 * 6 + 2); // 20
+    // 6 full segments (8s each, range {3,6}), no remainder
+    expect(range.min).toBe(6 * 3); // 18
+    expect(range.max).toBe(6 * 6); // 36
   });
 
-  it("120초 → 8 segments × {4,6}", () => {
+  it("120초 → 15 segments × {3,6}", () => {
     const range = recommendCutCountRange(120);
-    expect(range.min).toBe(8 * 4); // 32
-    expect(range.max).toBe(8 * 6); // 48
+    // 15 full segments (8s each, range {3,6}), no remainder
+    expect(range.min).toBe(15 * 3); // 45
+    expect(range.max).toBe(15 * 6); // 90
   });
 });
 
@@ -126,14 +128,15 @@ describe("densifyCuts: 숏폼 리듬 분할", () => {
     expect(result.length).toBe(4);
   });
 
-  it("3 × 15s = 45s → 분할 필요 (3 < max(4, ceil(45/15))=4)", () => {
+  it("3 × 15s = 45s → 분할 필요 (3 < max(4, ceil(45/8))=6)", () => {
     const cuts = [
       { durationSec: 15 },
       { durationSec: 15 },
       { durationSec: 15 },
     ];
     const result = densifyCuts(cuts);
-    expect(result.length).toBe(4);
+    // min=6, needed=3 splits + VEO 8s clamping
+    expect(result.length).toBe(6);
   });
 
   it("2 × 15s = 30s, 필요 최소=4 → 2컷 추가 분할", () => {

@@ -32,9 +32,10 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("A. recommendCutCountRange", () => {
-  it("1) 15s → { min: 4, max: 6 }", () => {
+  it("1) 15s → segment-aware with VEO_SEGMENT_CAP=8 (1 full + 7s remainder)", () => {
+    // fullSegments=1 (8s→{3,6}), remainder=7 (→{3,6}), total={6,12}
     const r = recommendCutCountRange(15);
-    expect(r).toEqual({ min: 4, max: 6 });
+    expect(r).toEqual({ min: 6, max: 12 });
   });
 
   it("2) 5s → { min: 1, max: 2 }", () => {
@@ -45,13 +46,14 @@ describe("A. recommendCutCountRange", () => {
     expect(recommendCutCountRange(8)).toEqual({ min: 3, max: 6 });
   });
 
-  it("4) 12s → { min: 4, max: 6 }", () => {
-    expect(recommendCutCountRange(12)).toEqual({ min: 4, max: 6 });
+  it("4) 12s → segment-aware (1 full 8s + 4s remainder)", () => {
+    // fullSegments=1 (8s→{3,6}), remainder=4 (→{1,2}), total={4,8}
+    expect(recommendCutCountRange(12)).toEqual({ min: 4, max: 8 });
   });
 
-  it("5) 20s → segment-aware (15s segment + 5s remainder)", () => {
-    // 15s → {4,6}, 5s → {1,2} → total = {5,8}
-    expect(recommendCutCountRange(20)).toEqual({ min: 5, max: 8 });
+  it("5) 20s → segment-aware (2 full 8s + 4s remainder)", () => {
+    // 2×8s→{3,6}×2={6,12}, 4s→{1,2}, total={7,14}
+    expect(recommendCutCountRange(20)).toEqual({ min: 7, max: 14 });
   });
 
   it("6) 0 or negative → { min: 1, max: 2 }", () => {

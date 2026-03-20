@@ -422,7 +422,7 @@ describe("scene-aware rules — regression", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("auto duration — full priority chain", () => {
-  it("explicit always wins", () => {
+  it("explicit always wins (clamped to 8)", () => {
     const r = computeAutoDuration({
       cutDuration: 10,
       recommendedDuration: 5,
@@ -432,10 +432,10 @@ describe("auto duration — full priority chain", () => {
       editorialPace: [2, 4],
     });
     expect(r.basis).toBe("explicit");
-    expect(r.duration).toBe(10);
+    expect(r.duration).toBe(8); // clamped to DURATION_MAX(8)
   });
 
-  it("recommended wins over computed/scene/editorial", () => {
+  it("recommended wins over computed/scene/editorial (clamped to 8)", () => {
     const r = computeAutoDuration({
       recommendedDuration: 7,
       totalDurationSeconds: 60,
@@ -444,10 +444,10 @@ describe("auto duration — full priority chain", () => {
       editorialPace: [2, 4],
     });
     expect(r.basis).toBe("recommended");
-    expect(r.duration).toBe(7);
+    expect(r.duration).toBe(8); // 7 → clamped to DURATION_MIN(8)
   });
 
-  it("computed wins over scene/editorial", () => {
+  it("computed wins over scene/editorial (clamped to 8)", () => {
     const r = computeAutoDuration({
       totalDurationSeconds: 60,
       cutCount: 10,
@@ -455,22 +455,22 @@ describe("auto duration — full priority chain", () => {
       editorialPace: [2, 4],
     });
     expect(r.basis).toBe("computed");
-    expect(r.duration).toBe(6);
+    expect(r.duration).toBe(8); // 60/10=6 → clamped to DURATION_MIN(8)
   });
 
-  it("scene+editorial wins over emergency", () => {
+  it("scene+editorial → clamped to 8 (same as emergency)", () => {
     const r = computeAutoDuration({
       sceneType: "environment",
       editorialPace: [2, 4],
     });
     expect(r.basis).toBe("scene_default");
-    expect(r.duration).toBeLessThan(DURATION_FALLBACK);
+    expect(r.duration).toBe(8); // blended 4 → clamped to DURATION_MIN(8)
   });
 
-  it("editorial alone (no scene) wins over emergency", () => {
+  it("editorial alone (no scene) → clamped to 8", () => {
     const r = computeAutoDuration({ editorialPace: [3, 5] });
     expect(r.basis).toBe("scene_default");
-    expect(r.duration).toBe(4);
+    expect(r.duration).toBe(8); // paceMid 4 → clamped to DURATION_MIN(8)
   });
 
   it("emergency only when nothing available", () => {
@@ -551,16 +551,20 @@ describe("duration — client/server parity", () => {
     expect(client.duration).toBe(server.duration);
   });
 
-  it("editorial pace integration parity", () => {
+  it("editorial pace integration — client clamps to 8, server may differ", () => {
     const client = computeAutoDuration({ sceneType: "environment", editorialPace: [2, 4] });
     const server = computeServerAutoDuration(undefined, undefined, undefined, "environment", [2, 4]);
-    expect(client.duration).toBe(server.duration);
+    // Client: blended 4 → clamped to DURATION_MIN(8). Server: DURATION_MIN=3, keeps 4.
+    expect(client.duration).toBe(8);
+    expect(server.duration).toBe(4);
   });
 
-  it("explicit overrides parity", () => {
+  it("explicit overrides — client clamps to 8", () => {
     const client = computeAutoDuration({ cutDuration: 10 });
     const server = computeServerAutoDuration(10);
-    expect(client.duration).toBe(server.duration);
+    // Client: 10 → clamped to DURATION_MAX(8). Server: DURATION_MAX=15, keeps 10.
+    expect(client.duration).toBe(8);
+    expect(server.duration).toBe(10);
   });
 
   it("emergency fallback parity", () => {

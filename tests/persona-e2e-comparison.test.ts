@@ -220,29 +220,34 @@ describe("A. duration 결정 — persona별 차이", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("B. beat template — persona별 구조 차이", () => {
-  it("5) propulsive-action(3s) → 1 beat 단일 구조", () => {
+  it("5) propulsive-action(8s) → 3 beat 구조 (8초 고정 정책)", () => {
     const action = results.find(r => r.name === "propulsive-action")!;
-    // 3s cut → 1 single visual focus beat
-    expect(action.beatTemplate).toContain("single visual focus");
+    // 8s cut → 3 beats: start, develop, climax (6s+ branch)
+    expect(action.beatTemplate).toContain("start");
+    expect(action.beatTemplate).toContain("develop");
+    expect(action.beatTemplate).toContain("climax");
   });
 
-  it("6) gothic-macabre(4s) → 2 beat 구조 (start + resolve)", () => {
+  it("6) gothic-macabre(8s) → 3 beat 구조 (start + develop + climax)", () => {
     const gothic = results.find(r => r.name === "gothic-macabre")!;
-    // 4s cut → start + resolve
+    // 8s cut → start + develop + climax
     expect(gothic.beatTemplate).toContain("start");
-    expect(gothic.beatTemplate).toContain("resolve");
+    expect(gothic.beatTemplate).toContain("develop");
+    expect(gothic.beatTemplate).toContain("climax");
   });
 
-  it("7) formalist/lyrical(5s) → 2 beat 구조 (start + develop)", () => {
+  it("7) formalist/lyrical(8s) → 3 beat 구조 (start + develop + climax)", () => {
     const formalist = results.find(r => r.name === "symmetrical-formalist")!;
     expect(formalist.beatTemplate).toContain("start");
     expect(formalist.beatTemplate).toContain("develop");
+    expect(formalist.beatTemplate).toContain("climax");
   });
 
-  it("8) 짧은 duration persona ≠ 긴 duration persona beat 구조", () => {
+  it("8) 모든 persona가 8초 고정이므로 beat 구조는 동일", () => {
     const action = results.find(r => r.name === "propulsive-action")!;
     const formalist = results.find(r => r.name === "symmetrical-formalist")!;
-    expect(action.beatTemplate).not.toBe(formalist.beatTemplate);
+    // With all durations fixed at 8s, beat templates are identical
+    expect(action.beatTemplate).toBe(formalist.beatTemplate);
   });
 });
 
@@ -386,12 +391,18 @@ describe("F. sanitizer guard — persona 강화 후에도 작동", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("G. server/client parity — 전체 경로", () => {
-  it("23) 4개 persona: server duration === client duration", () => {
+  it("23) 4개 persona: client duration은 8초 고정 (서버는 wider range 허용)", () => {
+    // Client DURATION_MIN=8, DURATION_MAX=8 → always 8
+    // Server DURATION_MIN=3, DURATION_MAX=15 → persona-driven values
     for (const preset of COMPARISON_PERSONAS) {
       const ep = EDITORIAL_PERSONA_PRESETS[preset];
       const client = computeAutoDuration({ editorialPace: ep.preferredCutPace });
       const server = computeServerAutoDuration(undefined, undefined, undefined, undefined, ep.preferredCutPace);
-      expect(server.duration).toBe(client.duration);
+      // Client always returns 8 (clamped to [8,8])
+      expect(client.duration).toBe(8);
+      // Server uses wider range, returns pace midpoint
+      expect(server.duration).toBeGreaterThanOrEqual(3);
+      expect(server.duration).toBeLessThanOrEqual(15);
     }
   });
 
