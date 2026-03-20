@@ -3,7 +3,7 @@
  *
  * 제품 행동 검증:
  *   Case 1: 12s cinematic_sequence → 즉시 3-4샷 구조 표시
- *   Case 2: 멀티샷 export에 실제 Kling JSON 구조 반영
+ *   Case 2: 멀티샷 export에 실제 VEO JSON 구조 반영
  *   Case 3: Studio 12s 단일샷 → 서버 블로킹
  *   Case 4: Batch 12s 단일샷 → 서버 auto-repair
  *   Case 5: 30 clips × 12s → 런타임 예산 초과 경고
@@ -21,7 +21,7 @@ import { prepareMultiShotPayload } from "@/lib/video-generation-core";
 import { validateFinalProviderPayload } from "@/lib/final-payload-validator";
 import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
-// VEO policy stubs (kling-capability removed)
+// VEO policy stubs
 function isMultiShotEligible(_model: string, duration: number): boolean {
   return duration >= 8;
 }

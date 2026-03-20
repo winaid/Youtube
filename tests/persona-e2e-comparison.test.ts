@@ -161,7 +161,7 @@ function simulateFullPipeline(presetName: string): PersonaSimResult {
     emotionalAnchor: "approaching footsteps",
   };
 
-  // 7. Kling 렌더링
+  // 7. VEO 렌더링
   const rendered = renderPromptFromJson(videoPromptJson);
 
   return {
@@ -302,10 +302,10 @@ describe("D. compact editorial summary — persona별 차이", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// E. Kling Payload Preview 차이 (실제 provider에 가는 최종 프롬프트)
+// E. VEO Payload Preview 차이 (실제 provider에 가는 최종 프롬프트)
 // ═══════════════════════════════════════════════════════════════════
 
-describe("E. Kling payload preview — persona별 체감 차이", () => {
+describe("E. VEO payload preview — persona별 체감 차이", () => {
   it("16) 4개 persona 모두 서로 다른 rendered prompt", () => {
     const renderedSet = new Set(results.map(r => r.rendered));
     expect(renderedSet.size).toBe(4);

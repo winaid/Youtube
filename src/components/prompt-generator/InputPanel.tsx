@@ -267,7 +267,7 @@ const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
 function loadCustomDirectors(): DirectorPersona[] {
   if (typeof window === "undefined") return [];
   try {
-    // Migration: read new key, or migrate from old kling key
+    // Migration: read new key, or migrate from old localStorage key
     let raw = localStorage.getItem(CUSTOM_DIRECTORS_KEY);
     if (!raw) {
       const oldRaw = localStorage.getItem("kling-custom-directors");

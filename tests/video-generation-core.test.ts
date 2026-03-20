@@ -53,11 +53,11 @@ describe("normalized response shape — consistent between node and hook paths",
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        taskId: "kling-12345",
-        operationName: "kling-12345",
-        engine: "kling",
+        taskId: "veo-op-12345",
+        operationName: "veo-op-12345",
+        engine: "veo",
         modeUsed: "generate",
-        modelUsed: "kling-v1-5",
+        modelUsed: "veo-3.1-fast-generate-preview",
         status: "RUNNING",
         durationMeta: {
           requestedSecondsPerScene: 6,
@@ -75,11 +75,11 @@ describe("normalized response shape — consistent between node and hook paths",
     });
 
     // Same shape as useVideoGeneration gets from /api/generate-video
-    expect(result.taskId).toBe("kling-12345");
-    expect(result.operationName).toBe("kling-12345");
-    expect(result.engine).toBe("kling");
+    expect(result.taskId).toBe("veo-op-12345");
+    expect(result.operationName).toBe("veo-op-12345");
+    expect(result.engine).toBe("veo");
     expect(result.modeUsed).toBe("generate");
-    expect(result.modelUsed).toBe("kling-v1-5");
+    expect(result.modelUsed).toBe("veo-3.1-fast-generate-preview");
     expect(result.status).toBe("RUNNING");
     expect(result.durationMeta).toBeDefined();
     expect(result.durationMeta!.normalizedSecondsPerScene).toBe(6);
@@ -89,14 +89,14 @@ describe("normalized response shape — consistent between node and hook paths",
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        videoUrl: "https://cdn.kling.com/cached.mp4",
-        engine: "kling",
+        videoUrl: "https://storage.googleapis.com/veo-results/cached.mp4",
+        engine: "veo",
       }),
     });
 
     const result = await submitVideoGeneration({ prompt: "cached test" });
 
-    expect(result.videoUrl).toBe("https://cdn.kling.com/cached.mp4");
+    expect(result.videoUrl).toBe("https://storage.googleapis.com/veo-results/cached.mp4");
   });
 
   it("submitVideoGeneration should throw on HTTP error with statusCode", async () => {
@@ -130,13 +130,13 @@ describe("normalized response shape — consistent between node and hook paths",
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/result.mp4",
-        rawVideoUri: "https://cdn.kling.com/raw.mp4",
-        canonicalVideoUri: "https://cdn.kling.com/result.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/result.mp4",
+        rawVideoUri: "https://storage.googleapis.com/veo-results/raw.mp4",
+        canonicalVideoUri: "https://storage.googleapis.com/veo-results/result.mp4",
         seed: "12345",
-        engine: "kling",
+        engine: "veo",
         needsUpload: false,
-        variants: [{ videoUri: "https://cdn.kling.com/result.mp4" }],
+        variants: [{ videoUri: "https://storage.googleapis.com/veo-results/result.mp4" }],
       }),
     });
 
@@ -147,11 +147,11 @@ describe("normalized response shape — consistent between node and hook paths",
 
     // Same shape that useVideoGeneration processes after polling
     expect(result.status).toBe("completed");
-    expect(result.videoUri).toBe("https://cdn.kling.com/result.mp4");
-    expect(result.rawVideoUri).toBe("https://cdn.kling.com/raw.mp4");
-    expect(result.canonicalVideoUri).toBe("https://cdn.kling.com/result.mp4");
+    expect(result.videoUri).toBe("https://storage.googleapis.com/veo-results/result.mp4");
+    expect(result.rawVideoUri).toBe("https://storage.googleapis.com/veo-results/raw.mp4");
+    expect(result.canonicalVideoUri).toBe("https://storage.googleapis.com/veo-results/result.mp4");
     expect(result.seed).toBe("12345");
-    expect(result.engine).toBe("kling");
+    expect(result.engine).toBe("veo");
     expect(result.needsUpload).toBe(false);
     expect(result.variants).toHaveLength(1);
     expect(result.pollMeta.totalAttempts).toBeGreaterThan(0);
@@ -257,7 +257,7 @@ describe("polling logic — matches useVideoGeneration behavior", () => {
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/recovered.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/recovered.mp4",
         needsUpload: false,
       }),
     });
@@ -267,7 +267,7 @@ describe("polling logic — matches useVideoGeneration behavior", () => {
     const result = await promise;
 
     expect(result.status).toBe("completed");
-    expect(result.videoUri).toBe("https://cdn.kling.com/recovered.mp4");
+    expect(result.videoUri).toBe("https://storage.googleapis.com/veo-results/recovered.mp4");
   });
 
   it("should call onProgress during polling", async () => {
@@ -310,7 +310,7 @@ describe("degraded response meta — consistent shape", () => {
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/video.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/video.mp4",
         needsUpload: false,
         _diag: {
           sceneExtensionReady: false,
@@ -334,7 +334,7 @@ describe("degraded response meta — consistent shape", () => {
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/video.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/video.mp4",
         canonicalVideoUri: null, // degraded — no Scene Extension URI
         needsUpload: false,
       }),
@@ -376,7 +376,7 @@ describe("durationMeta shape — matches DurationMeta interface", () => {
       requestedSecondsPerScene: 8,
       normalizedSecondsPerScene: 8,
       sentSecondsPerScene: 5,
-      warnings: ["Kling duration clamped to 5s"],
+      warnings: ["VEO duration clamped to 5s"],
     };
 
     const meta = buildDurationMeta(8, rawMeta);
@@ -386,7 +386,7 @@ describe("durationMeta shape — matches DurationMeta interface", () => {
     expect(meta.normalizedSecondsPerScene).toBe(8);
     expect(meta.sentSecondsPerScene).toBe(5);
     expect(meta.source).toBe("api-response");
-    expect(meta.warnings).toEqual(["Kling duration clamped to 5s"]);
+    expect(meta.warnings).toEqual(["VEO duration clamped to 5s"]);
   });
 
   it("should set source='slider' when no API meta available", () => {
@@ -442,46 +442,46 @@ describe("provider/modelUsed meta — matches useVideoGeneration shape", () => {
     const submitResult: VideoSubmitResult = {
       taskId: "t1",
       operationName: "t1",
-      engine: "kling",
+      engine: "veo",
       modeUsed: "generate",
-      modelUsed: "kling-v1-5",
+      modelUsed: "veo-3.1-fast-generate-preview",
       status: "RUNNING",
     };
 
     const meta = extractProviderMeta(submitResult);
 
-    expect(meta.engine).toBe("kling");
+    expect(meta.engine).toBe("veo");
     expect(meta.modeUsed).toBe("generate");
-    expect(meta.modelUsed).toBe("kling-v1-5");
+    expect(meta.modelUsed).toBe("veo-3.1-fast-generate-preview");
   });
 
   it("should handle extend mode correctly", () => {
     const submitResult: VideoSubmitResult = {
       taskId: "t2",
       operationName: "t2",
-      engine: "kling",
+      engine: "veo",
       modeUsed: "extend",
-      modelUsed: "kling-v1-5-extend",
+      modelUsed: "veo-3.1-fast-generate-preview",
       status: "RUNNING",
     };
 
     const meta = extractProviderMeta(submitResult);
 
     expect(meta.modeUsed).toBe("extend");
-    expect(meta.modelUsed).toBe("kling-v1-5-extend");
+    expect(meta.modelUsed).toBe("veo-3.1-fast-generate-preview");
   });
 
   it("ProviderMeta should match VideoClip.engineUsed/modeUsed fields", () => {
     // This test verifies that ProviderMeta fields correspond to
     // VideoClip.engineUsed, VideoClip.modeUsed for consistency
     const meta: ProviderMeta = {
-      engine: "kling",
+      engine: "veo",
       modeUsed: "generate",
-      modelUsed: "kling-v1-5",
+      modelUsed: "veo-3.1-fast-generate-preview",
     };
 
     // engine = VideoClip.engineUsed
-    expect(meta.engine).toBe("kling");
+    expect(meta.engine).toBe("veo");
     // modeUsed = VideoClip.modeUsed
     expect(meta.modeUsed).toBe("generate");
     // modelUsed = CutProvenance.modelUsed
@@ -533,7 +533,7 @@ describe("error classification — matches useVideoGeneration error handling", (
   });
 
   it("should classify API-level errors as non-retryable", () => {
-    const result = classifyVideoError(new Error("Kling API quota exceeded"));
+    const result = classifyVideoError(new Error("VEO API quota exceeded"));
 
     expect(result.type).toBe("api_error");
     expect(result.retryable).toBe(false);
@@ -586,7 +586,7 @@ describe("submit request shape — consistent with /api/generate-video", () => {
       durationSeconds: 10,
       aspectRatio: "16:9",
       negativePrompt: "blurry",
-      engine: "kling",
+      engine: "veo",
       videoMode: "generate",
       cutNumber: 1,
       generateAudio: true,
@@ -598,7 +598,7 @@ describe("submit request shape — consistent with /api/generate-video", () => {
     expect(body.durationSeconds).toBe(10);
     expect(body.aspectRatio).toBe("16:9");
     expect(body.negativePrompt).toBe("blurry");
-    expect(body.engine).toBe("kling");
+    expect(body.engine).toBe("veo");
     expect(body.videoMode).toBe("generate");
     expect(body.cutNumber).toBe(1);
     expect(body.generateAudio).toBe(true);
@@ -615,7 +615,7 @@ describe("submit request shape — consistent with /api/generate-video", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.prompt).toBe("minimal");
-    expect(body.engine).toBe("kling");
+    expect(body.engine).toBe("veo");
     // Optional fields should not be present
     expect(body.firstFrameBase64).toBeUndefined();
     expect(body.negativePrompt).toBeUndefined();
@@ -651,7 +651,7 @@ describe("path unification — hook and node produce identical meta shapes", () 
       requestedSecondsPerScene: 10,
       normalizedSecondsPerScene: 10,
       sentSecondsPerScene: 5,
-      warnings: ["Kling capped at 5s"],
+      warnings: ["VEO capped at 5s"],
     };
 
     // Both paths call buildDurationMeta with the same inputs → identical output
@@ -665,7 +665,7 @@ describe("path unification — hook and node produce identical meta shapes", () 
       normalizedSecondsPerScene: 10,
       sentSecondsPerScene: 5,
       source: "api-response",
-      warnings: ["Kling capped at 5s"],
+      warnings: ["VEO capped at 5s"],
     });
   });
 
@@ -689,11 +689,11 @@ describe("path unification — hook and node produce identical meta shapes", () 
 
   it("extractProviderMeta produces identical ProviderMeta for both paths", () => {
     const submitResult: VideoSubmitResult = {
-      taskId: "kling-42",
-      operationName: "kling-42",
-      engine: "kling",
+      taskId: "veo-op-42",
+      operationName: "veo-op-42",
+      engine: "veo",
       modeUsed: "extend",
-      modelUsed: "kling-v2",
+      modelUsed: "veo-3.1-fast-generate-preview",
       status: "RUNNING",
     };
 
@@ -702,9 +702,9 @@ describe("path unification — hook and node produce identical meta shapes", () 
 
     expect(hookMeta).toEqual(nodeMeta);
     expect(hookMeta).toEqual({
-      engine: "kling",
+      engine: "veo",
       modeUsed: "extend",
-      modelUsed: "kling-v2",
+      modelUsed: "veo-3.1-fast-generate-preview",
     });
   });
 
@@ -713,12 +713,12 @@ describe("path unification — hook and node produce identical meta shapes", () 
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/unified.mp4",
-        rawVideoUri: "https://cdn.kling.com/raw.mp4",
-        canonicalVideoUri: "https://cdn.kling.com/unified.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/unified.mp4",
+        rawVideoUri: "https://storage.googleapis.com/veo-results/raw.mp4",
+        canonicalVideoUri: "https://storage.googleapis.com/veo-results/unified.mp4",
         seed: "999",
         needsUpload: true,
-        variants: [{ videoUri: "https://cdn.kling.com/unified.mp4" }],
+        variants: [{ videoUri: "https://storage.googleapis.com/veo-results/unified.mp4" }],
         _diag: { primaryUriType: "HTTPS" },
       }),
     });
@@ -733,7 +733,7 @@ describe("path unification — hook and node produce identical meta shapes", () 
     expect(result.rawVideoUri).toBeDefined();
     expect(result.canonicalVideoUri).toBeDefined();
     expect(result.seed).toBe("999");
-    expect(result.engine).toBe("kling");
+    expect(result.engine).toBe("veo");
     expect(result.needsUpload).toBe(true);
     expect(result.variants).toHaveLength(1);
     expect(result.completedAt).toBeGreaterThan(0);
@@ -858,7 +858,7 @@ describe("polling policy equivalence — hook and node use identical parameters"
 
     await submitVideoGeneration({
       structuredSequence: { shotPlan: {} },
-      engine: "kling",
+      engine: "veo",
       cutNumber: 1,
       extraFields: {
         mode: "standard",
@@ -874,7 +874,7 @@ describe("polling policy equivalence — hook and node use identical parameters"
     expect(body.seed).toBe("42");
     expect(body.personGeneration).toBe("allow_adult");
     // Core fields still present
-    expect(body.engine).toBe("kling");
+    expect(body.engine).toBe("veo");
     expect(body.cutNumber).toBe(1);
     expect(body.structuredSequence).toEqual({ shotPlan: {} });
   });
@@ -902,7 +902,7 @@ describe("polling policy equivalence — hook and node use identical parameters"
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/extra.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/extra.mp4",
         needsUpload: false,
       }),
     });
@@ -922,7 +922,7 @@ describe("polling policy equivalence — hook and node use identical parameters"
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.taskId).toBe("task-extra");
-    expect(body.engine).toBe("kling");
+    expect(body.engine).toBe("veo");
     expect(body.operationName).toBe("op-123");
     expect(body.isExtend).toBe(true);
     expect(body.cutNumber).toBe(3);
@@ -1015,12 +1015,12 @@ describe("hook post-processing extraction — polling loop simplified", () => {
       ok: true,
       json: async () => ({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.com/compat.mp4",
-        rawVideoUri: "https://cdn.kling.com/raw.mp4",
-        canonicalVideoUri: "https://cdn.kling.com/compat.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/compat.mp4",
+        rawVideoUri: "https://storage.googleapis.com/veo-results/raw.mp4",
+        canonicalVideoUri: "https://storage.googleapis.com/veo-results/compat.mp4",
         needsUpload: false,
         seed: "42",
-        variants: [{ videoUri: "https://cdn.kling.com/compat.mp4" }],
+        variants: [{ videoUri: "https://storage.googleapis.com/veo-results/compat.mp4" }],
         _diag: { test: true },
       }),
     });
@@ -1180,8 +1180,8 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
       }
       return new Response(JSON.stringify({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.ai/variant-123.mp4",
-        rawVideoUri: "https://raw.kling.ai/variant-123.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/variant-123.mp4",
+        rawVideoUri: "https://storage.googleapis.com/veo-results/raw/variant-123.mp4",
         seed: "42",
       }), { status: 200 });
     }) as typeof fetch;
@@ -1192,7 +1192,7 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
     });
 
     expect(result.status).toBe("completed");
-    expect(result.videoUri).toBe("https://cdn.kling.ai/variant-123.mp4");
+    expect(result.videoUri).toBe("https://storage.googleapis.com/veo-results/variant-123.mp4");
     expect(result.seed).toBe("42");
     expect(result.pollMeta.totalAttempts).toBe(3);
   });
@@ -1240,14 +1240,14 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
   it("providerMeta is preserved through variant polling path", () => {
     const meta = extractProviderMeta({
       taskId: "variant-task-1",
-      engine: "kling",
+      engine: "veo",
       modeUsed: "generate",
-      modelUsed: "kling-v1-6",
+      modelUsed: "veo-3.1-fast-generate-preview",
     } as VideoSubmitResult);
 
-    expect(meta.engine).toBe("kling");
+    expect(meta.engine).toBe("veo");
     expect(meta.modeUsed).toBe("generate");
-    expect(meta.modelUsed).toBe("kling-v1-6");
+    expect(meta.modelUsed).toBe("veo-3.1-fast-generate-preview");
   });
 
   it("durationMeta is normalized for variant results", () => {
@@ -1273,7 +1273,7 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
       }
       return new Response(JSON.stringify({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.ai/v.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/v.mp4",
       }), { status: 200 });
     }) as typeof fetch;
 
@@ -1292,8 +1292,8 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response(JSON.stringify({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.ai/v.mp4",
-        rawVideoUri: "https://cdn.kling.ai/v.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/v.mp4",
+        rawVideoUri: "https://storage.googleapis.com/veo-results/v.mp4",
       }), { status: 200 });
     }) as typeof fetch;
 
@@ -1335,7 +1335,7 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
       }
       return new Response(JSON.stringify({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.ai/v.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/v.mp4",
       }), { status: 200 });
     }) as typeof fetch;
 
@@ -1346,7 +1346,7 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
 
     expect(capturedBody).not.toBeNull();
     expect(capturedBody!.taskId).toBe("task-123");
-    expect(capturedBody!.engine).toBe("kling");
+    expect(capturedBody!.engine).toBe("veo");
     expect(capturedBody!.operationName).toBe("op-abc");
     expect(capturedBody!.isExtend).toBe(false);
     expect(capturedBody!.cutNumber).toBe(3);
@@ -1356,11 +1356,11 @@ describe("shot variant polling — core pollVideoTask 재사용", () => {
     vi.useRealTimers();
     const serverResponse = {
       status: "COMPLETED",
-      videoUri: "https://cdn.kling.ai/test.mp4",
-      rawVideoUri: "https://cdn.kling.ai/test.mp4",
-      canonicalVideoUri: "https://cdn.kling.ai/test.mp4",
+      videoUri: "https://storage.googleapis.com/veo-results/test.mp4",
+      rawVideoUri: "https://storage.googleapis.com/veo-results/test.mp4",
+      canonicalVideoUri: "https://storage.googleapis.com/veo-results/test.mp4",
       seed: "99",
-      variants: [{ videoUri: "https://cdn.kling.ai/test.mp4" }],
+      variants: [{ videoUri: "https://storage.googleapis.com/veo-results/test.mp4" }],
       needsUpload: false,
     };
     globalThis.fetch = vi.fn(async () => {
@@ -1455,7 +1455,7 @@ describe("noRetry 계약", () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response(JSON.stringify({
         status: "COMPLETED",
-        videoUri: "https://cdn.kling.ai/v.mp4",
+        videoUri: "https://storage.googleapis.com/veo-results/v.mp4",
       }), { status: 200 });
     }) as typeof fetch;
 

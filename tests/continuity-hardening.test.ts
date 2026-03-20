@@ -120,7 +120,7 @@ describe("Priority B: sourceVideo 누락 감지", () => {
   });
 
   it("extend 모드 + sourceVideo 있음 → 정상", () => {
-    expect(detectSourceVideoDegradation("extend", 2, "kling-task-123")).toBeUndefined();
+    expect(detectSourceVideoDegradation("extend", 2, "veo-task-123")).toBeUndefined();
   });
 
   it("generate 모드 → degradation 없음", () => {

@@ -49,7 +49,7 @@ function buildStep1Prompt(storyText: string, cutCount: number, secPerCut: number
   return `당신은 봉준호 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만.
 감독 핵심: 사회 구조적 모순을 개인의 일상에서 포착. 유머와 공포가 공존하는 톤.
-조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 Kling 1회 생성 단위(8–15초). 시퀀스 내부 멀티샷은 별도 처리.
+조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
 ## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
 장면 설계 순서: 의미 분석 → 장면 기능 결정 → 시각화

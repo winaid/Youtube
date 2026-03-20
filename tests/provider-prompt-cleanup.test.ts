@@ -1,7 +1,7 @@
 /**
  * provider-prompt-cleanup.test.ts — Provider-facing prompt cleanup tests
  *
- * Tests that internal editorial scaffolding is stripped before Kling submission,
+ * Tests that internal editorial scaffolding is stripped before VEO submission,
  * continuity visualLock is compact, multi-shot auto-repair produces different prompts,
  * and domain-specific scene anchors are preserved.
  */

@@ -197,7 +197,7 @@ describe("Style End-to-End (Operational)", () => {
     expect(effect.editorialPersona.preferredCutPace).toBeDefined();
     expect(effect.editorialPersona.motionBias).toBeDefined();
 
-    // 4. providerNativeSupport is false (Kling is string-only)
+    // 4. providerNativeSupport is false (VEO is string-only)
     expect(effect.providerNativeSupport).toBe(false);
   });
 
@@ -252,7 +252,7 @@ describe("Style End-to-End (Operational)", () => {
   test("when provider does not support style natively, style is encoded in prompt", () => {
     const effect = resolveStyleEffects("cinematic-realism");
 
-    // Provider native support is false for Kling
+    // Provider native support is false for VEO
     expect(effect.providerNativeSupport).toBe(false);
 
     // Style is encoded in prompt text (via positivePrompt → styleSuffix)

@@ -2,7 +2,7 @@
  * upload-video.test.ts — R2 스토리지 업로드 + Scene Extension 자격 테스트
  *
  * 아키텍처: R2 전용 (GCS/SA 제거됨).
- * Kling(EvoLink)은 HTTPS URL을 직반환하므로 대부분 업로드 불필요.
+ * VEO은 HTTPS URL을 직반환하므로 대부분 업로드 불필요.
  * 실행: npx tsx tests/upload-video.test.ts
  */
 
@@ -72,11 +72,11 @@ interface UploadState {
   uploadError?: string;
 }
 
-// 2a. Kling(EvoLink)이 HTTPS URL 직반환 → skipped
+// 2a. VEO이 HTTPS URL 직반환 → skipped
 function simulateServerProvided(): UploadState {
   return {
     uploadStatus: "skipped",
-    canonicalVideoUri: "https://cdn.klingai.com/video/abc123.mp4",
+    canonicalVideoUri: "https://storage.googleapis.com/veo-results/abc123.mp4",
     sceneExtensionEligible: true,
   };
 }
@@ -109,7 +109,7 @@ assert(s3.uploadStatus === "failed", "업로드 실패 → uploadStatus=failed")
 assert(s3.sceneExtensionEligible === false, "업로드 실패 → sceneExtensionEligible=false");
 assert(!!s3.uploadError, "업로드 실패 → uploadError 포함");
 
-// 2d. 업로드 불필요 (Kling(EvoLink) HTTPS URL 직반환)
+// 2d. 업로드 불필요 (VEO HTTPS URL 직반환)
 function simulateNoUploadNeeded(): UploadState {
   return {
     uploadStatus: "none",
@@ -141,7 +141,7 @@ function isSceneExtensionEligible(uri: string | undefined): boolean {
   return false; // data: URIs, proxy URIs 등은 불가
 }
 
-assert(isSceneExtensionEligible("https://cdn.klingai.com/video/abc.mp4") === true, "Kling HTTPS URI → eligible");
+assert(isSceneExtensionEligible("https://storage.googleapis.com/veo-results/abc.mp4") === true, "VEO HTTPS URI → eligible");
 assert(isSceneExtensionEligible("https://videos.example.com/key.mp4") === true, "R2 custom domain URI → eligible");
 assert(isSceneExtensionEligible(undefined) === false, "undefined → not eligible");
 assert(isSceneExtensionEligible("") === false, "empty string → not eligible");
@@ -169,9 +169,9 @@ console.log("\n═══ 4. Upload Response Handling ═══");
 
 // 4c. 스토리지 미설정 (501)
 {
-  const res = { error: "영상 업로드 스토리지가 설정되지 않았습니다", guide: { option1: "Cloudflare R2: VIDEO_BUCKET 바인딩 + VIDEO_BUCKET_DOMAIN 환경변수 설정", note: "Kling(EvoLink)은 HTTPS URL을 직반환하므로 대부분 업로드 불필요" } };
+  const res = { error: "영상 업로드 스토리지가 설정되지 않았습니다", guide: { option1: "Cloudflare R2: VIDEO_BUCKET 바인딩 + VIDEO_BUCKET_DOMAIN 환경변수 설정", note: "VEO은 HTTPS URL을 직반환하므로 대부분 업로드 불필요" } };
   assert(!!res.guide, "스토리지 미설정 → 가이드 포함");
-  assert(res.guide.note.includes("Kling"), "가이드에 Kling 직반환 안내 포함");
+  assert(res.guide.note.includes("VEO"), "가이드에 VEO 직반환 안내 포함");
 }
 
 // ─── 5. Diagnostic Object ────────────────────────────────────
@@ -239,8 +239,8 @@ function determineFallback(clip: {
 }
 
 assert(
-  determineFallback({ canonicalVideoUri: "https://cdn.klingai.com/video/abc.mp4" }) === "SCENE_EXTENSION",
-  "Kling HTTPS → SCENE_EXTENSION",
+  determineFallback({ canonicalVideoUri: "https://storage.googleapis.com/veo-results/abc.mp4" }) === "SCENE_EXTENSION",
+  "VEO HTTPS → SCENE_EXTENSION",
 );
 assert(
   determineFallback({ rawVideoUri: "https://videos.example.com/key.mp4" }) === "SCENE_EXTENSION",

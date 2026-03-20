@@ -184,7 +184,7 @@ describe("executeGenerateVideo", () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        taskId: "kling-task-123",
+        taskId: "veo-task-123",
         engine: "veo",
         status: "RUNNING",
       }),
@@ -194,7 +194,7 @@ describe("executeGenerateVideo", () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ taskId: "kling-task-123", engine: "veo", status: "RUNNING" }),
+      json: async () => ({ taskId: "veo-task-123", engine: "veo", status: "RUNNING" }),
     });
     // Second call (polling) returns COMPLETED
     fetchMock.mockResolvedValueOnce({
@@ -248,7 +248,7 @@ describe("video polling uses POST /api/check-video", () => {
     // Third call: check-video returns COMPLETED
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ status: "COMPLETED", videoUri: "https://cdn.kling.com/video.mp4" }),
+      json: async () => ({ status: "COMPLETED", videoUri: "https://storage.googleapis.com/veo-results/video.mp4" }),
     });
 
     const callbacks = makeCallbacksWithState(state);
@@ -270,11 +270,11 @@ describe("video polling uses POST /api/check-video", () => {
     const latest = callbacks.getLatest();
     const node = latest.nodes.find(n => n.id === vidNode.id)!;
     expect(node.status).toBe("success");
-    expect(node.outputAsset).toBe("https://cdn.kling.com/video.mp4");
+    expect(node.outputAsset).toBe("https://storage.googleapis.com/veo-results/video.mp4");
 
     // Verify onVideoOutputReady was called
     expect(callbacks.videoOutputs.length).toBe(1);
-    expect(callbacks.videoOutputs[0].videoUrl).toBe("https://cdn.kling.com/video.mp4");
+    expect(callbacks.videoOutputs[0].videoUrl).toBe("https://storage.googleapis.com/veo-results/video.mp4");
   });
 
   it("should handle FAILED status from check-video", async () => {

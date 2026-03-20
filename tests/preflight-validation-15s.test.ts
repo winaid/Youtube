@@ -235,7 +235,7 @@ describe("10~15초 band: 4~6컷 필수", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("16초+: 개별 컷 duration 초과", () => {
-  it("개별 컷 16초 → cut_duration_too_long (Kling 15초 상한)", () => {
+  it("개별 컷 16초 → cut_duration_too_long (VEO 8초 상한)", () => {
     const cuts = [makeCut({ cutNumber: 1, durationSec: 16 })];
     const durations = new Map([[1, 16]]);
     const result = runPreflightValidation(makeInput(cuts, durations));

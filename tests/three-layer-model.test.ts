@@ -2,7 +2,7 @@
  * three-layer-model.test.ts — 3-Layer 런타임 모델 검증
  *
  * Layer 1: 총 요청 런타임 (e.g. 48s) — 배치/컨테이너 예산
- * Layer 2: 시퀀스 (8–15s) — Kling 1회 생성 단위
+ * Layer 2: 시퀀스 (8s) — VEO 1회 생성 단위
  * Layer 3: 시퀀스 내 멀티샷 (최대 6) — multi-shot-planner가 관리
  */
 
@@ -11,13 +11,13 @@ import {
   recommendMinimumCutCount,
   recommendCutCountRange,
   densifyCuts,
-  KLING_SEGMENT_CAP,
+  VEO_SEGMENT_CAP,
   SEQUENCE_MIN_DURATION,
 } from "@/lib/sequence-density";
 import { buildDefaultMultiShot, shouldForceMultiShot } from "@/lib/multi-shot-planner";
 import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
-// VEO policy stubs (kling-capability removed)
+// VEO policy stubs
 const VEO_MAX_SHOTS = 4;
 function getMaxShots(_model: string, duration: number): number {
   return duration >= 8 ? VEO_MAX_SHOTS : 0;
@@ -34,8 +34,8 @@ describe("Layer 1→2: 총 런타임 → 시퀀스 수", () => {
     expect(SEQUENCE_MIN_DURATION).toBe(8);
   });
 
-  it("KLING_SEGMENT_CAP = 15", () => {
-    expect(KLING_SEGMENT_CAP).toBe(15);
+  it("VEO_SEGMENT_CAP = 15", () => {
+    expect(VEO_SEGMENT_CAP).toBe(15);
   });
 
   it("15초 이하 → 숏폼 리듬 정책 반영", () => {

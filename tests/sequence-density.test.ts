@@ -3,7 +3,7 @@
  *
  * 3-Layer Model:
  *   Layer 1: 총 런타임 → Layer 2 시퀀스로 분할
- *   Layer 2: 시퀀스 (8–15s) — Kling 1회 생성 단위
+ *   Layer 2: 시퀀스 (8–15s) — VEO 1회 생성 단위
  *   Layer 3: 시퀀스 내부 멀티샷 — multi-shot-planner가 관리
  *
  * recommendMinimumCutCount:

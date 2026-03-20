@@ -1,5 +1,5 @@
 /**
- * video-prompt-serializer.test.ts — Kling 렌더러 + structuredSequence 의미 보존 테스트
+ * video-prompt-serializer.test.ts — VEO 렌더러 + structuredSequence 의미 보존 테스트
  *
  * 테스트 대상:
  * 1. renderPromptFromJson: locationCue/situationCue/emotionalAnchor/timingBeat 반영
@@ -41,29 +41,29 @@ function makeBaseJson(overrides: Partial<VideoPromptJson> = {}): VideoPromptJson
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 1. Kling renderer — structuredSequence field preservation
+// 1. VEO renderer — structuredSequence field preservation
 // ═══════════════════════════════════════════════════════════════════
 
 describe("renderPromptFromJson — structuredSequence field preservation", () => {
-  it("should include locationCue in Kling prompt", () => {
+  it("should include locationCue in VEO prompt", () => {
     const json = makeBaseJson({ locationCue: "lunar crater with scattered boulders" });
     const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("lunar crater with scattered boulders");
   });
 
-  it("should include situationCue in Kling prompt", () => {
+  it("should include situationCue in VEO prompt", () => {
     const json = makeBaseJson({ situationCue: "fresh bootprints leading to a flag pole" });
     const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("fresh bootprints leading to a flag pole");
   });
 
-  it("should include emotionalAnchor in Kling prompt", () => {
+  it("should include emotionalAnchor in VEO prompt", () => {
     const json = makeBaseJson({ emotionalAnchor: "solitary flag stands against infinite darkness" });
     const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("solitary flag stands against infinite darkness");
   });
 
-  it("should include timingBeat in Kling prompt", () => {
+  it("should include timingBeat in VEO prompt", () => {
     const json = makeBaseJson({ timingBeat: "0s-3s: wide establishing. 3s-6s: slow push reveals craters" });
     const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("0s-3s: wide establishing");
@@ -82,13 +82,13 @@ describe("renderPromptFromJson — structuredSequence field preservation", () =>
     expect(prompt).toContain("doctor slumps alone at reception desk");
   });
 
-  it("should include moodLighting in Kling prompt", () => {
+  it("should include moodLighting in VEO prompt", () => {
     const json = makeBaseJson({ moodLighting: "warm golden hour light from the west, long shadows" });
     const prompt = renderPromptFromJson(json);
     expect(prompt).toContain("warm golden hour light from the west");
   });
 
-  it("should strip audio suffix from Kling styleSuffix", () => {
+  it("should strip audio suffix from VEO styleSuffix", () => {
     const json = makeBaseJson({
       styleSuffix: "cinematic realism, no text overlay, no watermark, with natural diegetic sound and ambient audio",
     });
@@ -112,10 +112,10 @@ describe("renderPromptFromJson — structuredSequence field preservation", () =>
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 2. Kling renderer parity — fields rendered correctly
+// 2. VEO renderer parity — fields rendered correctly
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Kling parity — same fields rendered", () => {
+describe("VEO parity — same fields rendered", () => {
   it("renderer should include locationCue", () => {
     const json = makeBaseJson({ locationCue: "rustic farmhouse kitchen" });
     const rendered = renderPromptFromJson(json);
@@ -167,7 +167,7 @@ describe("existing behavior regression", () => {
 // 4. Lunar surface rendering — end-to-end
 // ═══════════════════════════════════════════════════════════════════
 
-describe("lunar surface — Kling prompt quality", () => {
+describe("lunar surface — VEO prompt quality", () => {
   it("should produce a rich lunar scene prompt with all structure fields", () => {
     const json = makeBaseJson({
       shotSize: "WS",

@@ -4,7 +4,7 @@
  * 핵심 검증: 긴 서사/설명형 콘텐츠가 불필요하게 ~3초 평균 컷으로
  * 분쇄되지 않고, 효율적인 생성 구조를 유지하는지 검증.
  *
- * Kling VIDEO 3.0은 최대 15초 네이티브 생성을 지원.
+ * VEO은 최대 8초 네이티브 생성을 지원.
  * 서사형 콘텐츠는 7~10초 평균 컷 길이가 자연스럽다.
  */
 import { describe, it, expect } from "vitest";
@@ -139,7 +139,7 @@ describe("D. recommendCutCountRange 서사 친화적 범위", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// E. 생성 효율성 — 실제 Kling 생성 횟수
+// E. 생성 효율성 — 실제 VEO 생성 횟수
 // ═══════════════════════════════════════════════════════════════════
 
 describe("E. 생성 효율성", () => {
@@ -157,7 +157,7 @@ describe("E. 생성 효율성", () => {
     expect(densified.length).toBeGreaterThanOrEqual(minCuts);
   });
 
-  it("개별 컷 duration이 Kling 최대(15초) 이내", () => {
+  it("개별 컷 duration이 VEO 최대(8초) 이내", () => {
     const plan = estimateAutoEditPlan(HISTORICAL_EXPLAINER);
     const rawCuts = Array.from({ length: plan.cutCount }, (_, i) => ({
       cutNumber: i + 1,

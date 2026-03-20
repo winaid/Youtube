@@ -34,7 +34,7 @@ const SESSION_KEY = "veo-current-session-id";
 
 function loadHistory(): VideoHistoryEntry[] {
   try {
-    // Migration: read new key, or migrate from old kling key
+    // Migration: read new key, or migrate from old localStorage key
     let raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       const oldRaw = localStorage.getItem("kling-video-history");

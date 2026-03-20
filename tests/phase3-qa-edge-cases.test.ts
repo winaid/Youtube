@@ -17,7 +17,7 @@ import {
 } from "@/lib/multi-shot-planner";
 import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
-// VEO policy stubs (kling-capability removed)
+// VEO policy stubs
 const VEO_MAX_SHOTS = 4;
 function isMultiShotEligible(_model: string, duration: number): boolean {
   return duration >= 8;

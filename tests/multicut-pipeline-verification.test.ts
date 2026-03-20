@@ -15,7 +15,7 @@ import { describe, it, expect } from "vitest";
 import { estimateProjectDuration } from "@/lib/story-duration-estimator";
 import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 
-// VEO policy stubs (kling-capability removed)
+// VEO policy stubs
 const VEO_MAX_SHOTS = 4;
 function getMax(_model: string, duration: number): number {
   return duration >= 8 ? VEO_MAX_SHOTS : 0;
@@ -331,7 +331,7 @@ describe("테스트 6: stitch capability 감지", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("테스트 7: custom element 경로 검증", () => {
-  // _kling-api.ts의 buildCreateElementPayload 로직을 단위 재현
+  // Custom Element 생성 payload (legacy)
   function buildCreateElementPayload(params: {
     element_name: string;
     element_description?: string;
@@ -405,7 +405,7 @@ describe("테스트 7: custom element 경로 검증", () => {
   });
 
   it("element_list는 { element_id } 배열 구조", () => {
-    // klingGenerate에서 element_list가 model_params에 주입되는 구조 검증
+    // generate에서 element_list가 model_params에 주입되는 구조 검증
     const elementList = [
       { element_id: "el-abc-123" },
       { element_id: "el-def-456" },

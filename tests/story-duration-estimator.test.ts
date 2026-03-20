@@ -142,7 +142,7 @@ describe("metrics 검증", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("estimateAutoEditPlan — auto duration은 8초에 캡핑되지 않아야 함", () => {
-  it("cutDuration 범위는 3~15초 (Kling VIDEO 3.0 지원 범위)", () => {
+  it("cutDuration 범위는 4~8초 (VEO 지원 범위)", () => {
     // 다양한 길이의 스토리로 검증
     const stories = [
       "짧은 이야기.",

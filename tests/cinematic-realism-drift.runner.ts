@@ -97,9 +97,9 @@ assert(ncr.rewritten.includes("3D topographic map"), "non-cinematic-realism: 3D 
 
 console.log(`  ✓ ${passed - prevPassed2} 3D/CGI substitution assertions passed`);
 
-// ─── 3. Kling Renderer — medium enforcement ─────────────────────
+// ─── 3. VEO Renderer — medium enforcement ─────────────────────
 
-section("3. Kling Renderer medium enforcement");
+section("3. VEO Renderer medium enforcement");
 
 const prevPassed3 = passed;
 
@@ -123,11 +123,11 @@ const mapJson: VideoPromptJson = {
   emotionalAnchor: "",
 };
 
-// Kling renderer: 3D topographic map → physical relief map surface
-const klingPrompt = renderPromptFromJson(mapJson);
-assert(!klingPrompt.includes("3D topographic map"), "Kling: 3D topographic map 제거됨");
-assert(klingPrompt.includes("physical"), "Kling: physical 표현 포함");
-assert(klingPrompt.includes("not a real landscape and not a CGI render"), "Kling: medium lock 문장 삽입됨");
+// VEO renderer: 3D topographic map → physical relief map surface
+const veoPrompt = renderPromptFromJson(mapJson);
+assert(!veoPrompt.includes("3D topographic map"), "VEO: 3D topographic map 제거됨");
+assert(veoPrompt.includes("physical"), "VEO: physical 표현 포함");
+assert(veoPrompt.includes("not a real landscape and not a CGI render"), "VEO: medium lock 문장 삽입됨");
 
 // 캐릭터 씬 — medium enforcement 미적용
 const charJson: VideoPromptJson = {
@@ -149,8 +149,8 @@ const charJson: VideoPromptJson = {
   situationCue: "late night",
   emotionalAnchor: "slumps alone",
 };
-const charKling = renderPromptFromJson(charJson);
-assert(!charKling.includes("not a real landscape and not a CGI render"), "캐릭터 씬: medium lock 미적용");
+const charVeo = renderPromptFromJson(charJson);
+assert(!charVeo.includes("not a real landscape and not a CGI render"), "캐릭터 씬: medium lock 미적용");
 
 console.log(`  ✓ ${passed - prevPassed3} renderer enforcement assertions passed`);
 

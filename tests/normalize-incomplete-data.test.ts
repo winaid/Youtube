@@ -425,7 +425,7 @@ describe("validateMultiShots with undefined prompts", () => {
       { index: 1, prompt: undefined as unknown as string, duration: "3", role: "establish" },
       { index: 2, prompt: "Valid", duration: "5", role: "develop" },
     ];
-    expect(() => validateMultiShots("kling-o3-text-to-video", shots, 8)).not.toThrow();
+    expect(() => validateMultiShots("veo-3.1-fast-generate-preview", shots, 8)).not.toThrow();
   });
 
   it("does not crash when all prompts are undefined", () => {
@@ -433,7 +433,7 @@ describe("validateMultiShots with undefined prompts", () => {
       { index: 1, prompt: undefined as unknown as string, duration: "4", role: "establish" },
       { index: 2, prompt: undefined as unknown as string, duration: "4", role: "resolve" },
     ];
-    expect(() => validateMultiShots("kling-o3-text-to-video", shots, 8)).not.toThrow();
+    expect(() => validateMultiShots("veo-3.1-fast-generate-preview", shots, 8)).not.toThrow();
   });
 });
 

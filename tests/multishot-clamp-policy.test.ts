@@ -23,7 +23,7 @@ import {
 } from "@/lib/veo-capability";
 import { recommendMinimumCutCount, recommendCutCountRange } from "@/lib/sequence-density";
 
-// VEO policy stubs (kling-capability removed)
+// VEO policy stubs
 const VEO_MAX_SHOTS = 4;
 function getMaxShots(_model: string, duration: number): number {
   return duration >= 8 ? VEO_MAX_SHOTS : 0;
