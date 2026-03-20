@@ -51,8 +51,6 @@ const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
  */
 export const VEO_SEGMENT_CAP = 8;
 
-/** @deprecated backward compat alias — use VEO_SEGMENT_CAP */
-export const KLING_SEGMENT_CAP = VEO_SEGMENT_CAP;
 
 /**
  * 최대 허용 컷 수.

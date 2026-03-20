@@ -34,16 +34,7 @@ const SESSION_KEY = "veo-current-session-id";
 
 function loadHistory(): VideoHistoryEntry[] {
   try {
-    // Migration: read new key, or migrate from old localStorage key
-    let raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const oldRaw = localStorage.getItem("kling-video-history");
-      if (oldRaw) {
-        raw = oldRaw;
-        localStorage.setItem(STORAGE_KEY, raw);
-        localStorage.removeItem("kling-video-history");
-      }
-    }
+    const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -69,15 +60,8 @@ function getSessionId(): string {
   if (!currentSessionId) {
     currentSessionId = sessionStorage.getItem(SESSION_KEY);
     if (!currentSessionId) {
-      // Migration: check old session key
-      currentSessionId = sessionStorage.getItem("kling-current-session-id");
-      if (currentSessionId) {
-        sessionStorage.setItem(SESSION_KEY, currentSessionId);
-        sessionStorage.removeItem("kling-current-session-id");
-      } else {
-        currentSessionId = `vh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        sessionStorage.setItem(SESSION_KEY, currentSessionId);
-      }
+      currentSessionId = `vh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      sessionStorage.setItem(SESSION_KEY, currentSessionId);
     }
   }
   return currentSessionId;

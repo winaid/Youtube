@@ -13,8 +13,6 @@ interface ElementAssetStub {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-// Kling Element store removed in v1 (VEO migration)
-// Element creation is disabled; face refs are still used for reference images.
 const canCreateElement = (_base64?: string) => false;
 const getElementUnavailableReason = (_base64?: string) => "Custom Element creation is not available with VEO";
 

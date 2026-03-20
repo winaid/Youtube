@@ -860,10 +860,6 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   return parts.filter(Boolean).join(". ");
 }
 
-/** @deprecated backward compat alias */
-export const renderKlingPromptFromJson = renderPromptFromJson;
-/** @deprecated backward compat alias */
-export const renderKlingExtendPromptFromJson = renderExtendPromptFromJson;
 
 // ─── 레거시 string → JSON 파서 (기존 프롬프트 호환) ──────────────────────────
 

@@ -7,7 +7,6 @@ import {
   ClipDuration,
   AspectRatio,
   PersonGeneration,
-  VideoEngine,
   VideoMode,
 } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -126,9 +125,7 @@ export default function VideoSettingsPanel({
   const pricePerSec = 0.15;
   const estimatedCost = pricePerSec * (config.durationSeconds ?? 6) * config.sampleCount;
 
-  const engineLabels: Record<VideoEngine, string> = { veo: "VEO", auto: "Auto" };
   const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };
-  const engineColors: Record<VideoEngine, string> = { veo: "#4285f4", auto: "#22c55e" };
 
   return (
     <Card className="overflow-hidden border-2" style={{ borderColor: "#c4b80040" }}>
@@ -144,9 +141,9 @@ export default function VideoSettingsPanel({
           <div className="flex items-center gap-2">
             <Badge
               className="text-[10px] text-white"
-              style={{ background: engineColors[config.engine ?? "veo"] }}
+              style={{ background: "#4285f4" }}
             >
-              {engineLabels[config.engine ?? "veo"]}
+              VEO
             </Badge>
             <Badge
               variant="outline"
@@ -168,30 +165,6 @@ export default function VideoSettingsPanel({
 
       {expanded && (
         <CardContent className="space-y-4 pt-4">
-
-          {/* ── 엔진 선택 ── */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">엔진</Label>
-            <div className="flex gap-2">
-              {(["veo", "auto"] as VideoEngine[]).map((eng) => (
-                <Button
-                  key={eng}
-                  size="sm"
-                  variant={config.engine === eng ? "default" : "outline"}
-                  className="h-7 text-xs flex-1"
-                  style={config.engine === eng
-                    ? { background: engineColors[eng], color: "#fff", border: "none" }
-                    : { borderColor: engineColors[eng], color: engineColors[eng] }}
-                  onClick={() => update({ engine: eng })}
-                >
-                  {engineLabels[eng]}
-                </Button>
-              ))}
-            </div>
-            <p className="text-[10px] text-muted-foreground">
-              VEO: Google Vertex AI 영상 생성. Auto: 가용 엔진 자동 선택.
-            </p>
-          </div>
 
           {/* ── 생성 모드 ── */}
           <div className="space-y-1.5">

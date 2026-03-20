@@ -13,7 +13,7 @@
  */
 
 import type { MultiShotPrompt } from "@/types";
-// VEO payload types (인라인 — kling-payload-normalizer 제거됨)
+// VEO payload types (인라인)
 interface NormalizedMultiPromptEntry { index: number; prompt: string; duration: string }
 interface NormalizedVeoPayload { prompt: string; negative_prompt: string; model: string; duration: string; aspect_ratio: string; sound: string; model_params?: { multi_prompt: NormalizedMultiPromptEntry[] }; _meta: { cleanupLog: string[]; shotCount: number } }
 
