@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -139,19 +139,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     console.info(`[suggest-prompts] persona=${personaId} promptLen=${prompt.length}`);
 
-    const { response: res } = await fetchWithModelFallback(context.env, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: {
-          temperature: 1.0,
-          maxOutputTokens: 2048,
-          responseMimeType: "text/plain",
-        },
-      }),
-    });
+    // grounded 웹 검색은 Pro 모델로 직접 호출 — fetchWithModelFallback 사용 시
+    // Flash-Lite 폴백에서 google_search 도구가 무시될 수 있음
+    const res = await fetchWithAuth(
+      context.env,
+      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: {
+            temperature: 1.0,
+            maxOutputTokens: 2048,
+            responseMimeType: "text/plain",
+          },
+        }),
+      },
+      { timeoutMs: 45_000 },
+    );
 
     if (!res.ok) {
       const errText = await res.text();

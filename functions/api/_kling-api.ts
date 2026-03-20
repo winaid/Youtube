@@ -205,6 +205,19 @@ export async function klingGenerate(
     });
   }
 
+  // ── 디버그: Kling 요청 바디 로깅 ──
+  const bodyForLog = { ...body };
+  if (bodyForLog.image) bodyForLog.image = `[base64:${(bodyForLog.image as string).length}chars]`;
+  if (bodyForLog.image_tail) bodyForLog.image_tail = `[base64:${(bodyForLog.image_tail as string).length}chars]`;
+  const mp = (bodyForLog.model_params as Record<string, unknown> | undefined)?.multi_prompt as Array<Record<string, unknown>> | undefined;
+  if (mp) {
+    (bodyForLog.model_params as Record<string, unknown>).multi_prompt = mp.map(s => ({
+      ...s,
+      prompt: (s.prompt as string).slice(0, 80) + "...",
+    }));
+  }
+  console.log("[_kling-api] klingGenerate REQUEST BODY:", JSON.stringify(bodyForLog));
+
   const res = await fetch(`${klingBase(env)}/v1/videos/generations`, {
     method: "POST",
     headers,

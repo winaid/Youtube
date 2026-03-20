@@ -1147,10 +1147,13 @@ Each director object must have:
 
         let res: Response;
         try {
+          // grounding 호출은 웹 검색 추가 지연 감안하여 타임아웃 연장 (45s)
+          const timeoutMs = opts.useGrounding ? 45_000 : undefined;
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
             { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+            timeoutMs ? { timeoutMs } : undefined,
           );
         } catch (err) {
           const duration = Date.now() - start;
@@ -1192,9 +1195,19 @@ Each director object must have:
         };
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
         const snippet = text.slice(0, 200);
-        const grChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        // grounding metadata 추출 — 여러 가능한 위치 탐색
+        const candidate = data?.candidates?.[0];
+        const grMeta = candidate?.groundingMetadata;
+        const grChunks = grMeta?.groundingChunks;
         const sources = extractGroundingSources(grChunks);
         const isGrounded = opts.useGrounding && sources.length > 0;
+
+        // grounding 요청했는데 metadata가 비었으면 경고 로그
+        if (opts.useGrounding && sources.length === 0) {
+          const metaKeys = grMeta ? Object.keys(grMeta) : [];
+          const candidateKeys = candidate ? Object.keys(candidate) : [];
+          console.warn(`[recommend-director] ⚠ grounding 요청했으나 groundingChunks 비어있음 (${opts.label}). model=${opts.model}, groundingMetadata keys=${metaKeys.join(",") || "없음"}, candidate keys=${candidateKeys.join(",")}`);
+        }
 
         const result = processWebResponse(text, sources, opts.label);
         return {
@@ -1226,7 +1239,7 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Pro + google_search) ──
+          // ── STAGE 1: Grounded 웹 검색 (GA 모델 + google_search) ──
           stageLabel = "stage1_grounded_web";
           model = GEMINI_MODEL_PRO;
           prompt = buildWebPrompt();

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import {
   generateSlugId,
   extractGroundingSources,
@@ -100,13 +100,20 @@ If no match, return { "directors": [] }`;
       },
     };
 
-    console.log(`[search-director] 웹 검색 시작: query="${query}"`);
+    console.log(`[search-director] 웹 검색 시작: query="${query}", model=${GEMINI_MODEL_PRO}`);
 
-    const { response: webRes } = await fetchWithModelFallback(context.env, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(webBody),
-    });
+    // grounded 웹 검색은 Pro 모델로 직접 호출 — fetchWithModelFallback 사용 시
+    // Flash-Lite 폴백에서 groundingMetadata가 누락되는 문제 방지
+    const webRes = await fetchWithAuth(
+      context.env,
+      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(webBody),
+      },
+      { timeoutMs: 45_000 }, // grounding은 웹 검색 지연 감안하여 타임아웃 연장
+    );
 
     let directors: DirectorSearchResult[] = [];
     let mode: "web" | "model" | "hybrid" = "model";
@@ -138,8 +145,19 @@ If no match, return { "directors": [] }`;
         console.log(`[search-director] 웹 grounding 확인: ${groundingSources.length}개 소스`);
       } else {
         mode = "model";
+        // grounding 실패 원인 진단 로그
+        const candidate = webData?.candidates?.[0];
+        const gmKeys = grounding ? Object.keys(grounding) : [];
+        const candidateKeys = candidate ? Object.keys(candidate) : [];
+        console.warn("[search-director] ⚠ grounding 소스 없음 — 모델 지식 기반 결과", {
+          groundingMetadataExists: !!grounding,
+          groundingMetadataKeys: gmKeys,
+          candidateKeys,
+          hasSearchEntryPoint: !!grounding?.searchEntryPoint,
+          hasGroundingChunks: !!grounding?.groundingChunks,
+          groundingChunksLength: grounding?.groundingChunks?.length ?? 0,
+        });
         warnings.push("웹 검색이 요청되었지만 grounding 소스가 반환되지 않았습니다. 모델 내부 지식 기반 결과입니다.");
-        console.log("[search-director] grounding 소스 없음 — 모델 지식 기반 결과");
       }
 
       let parsed: Record<string, unknown>;
