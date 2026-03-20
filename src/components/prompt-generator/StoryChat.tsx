@@ -58,10 +58,12 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
         bgGradient: "linear-gradient(135deg, #fff78720, #787fff10)",
       };
 
-  // 히스토리 로드
+  // 히스토리 로드 + 마운트 시 웹검색으로 카드 자동 갱신
   useEffect(() => {
     setHistory(getScenarioHistory());
-  }, []);
+    // 마운트 시 API로 새로운 카드 가져오기 (웹검색 기반)
+    fetchSuggestedPrompts(personaId);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // API로 샘플 프롬프트 동적 생성
   const fetchSuggestedPrompts = useCallback(async (targetPersonaId?: string) => {
