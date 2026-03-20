@@ -58,24 +58,31 @@ const INTERNAL_TAG_PATTERNS = [
  * Extract a compact visual lock from a (potentially verbose) styleSuffix.
  * Returns only stable look anchors: medium, material, palette, light type.
  * Returns empty string if nothing useful can be extracted.
+ *
+ * Allowed: medium/rendering, material/texture, palette, stable lighting family
+ * Disallowed: aspect ratio, "no text/watermark", emotional tone, duration/ending
  */
 function extractCompactVisualLock(rawLock: string): string {
   if (!rawLock || rawLock.length < 5) return "";
-  // Extract only medium/material/palette/light anchors
+
+  // Strip disallowed concepts before extraction
+  const stripped = rawLock
+    .replace(/\b(no\s+text\s+overlay|no\s+watermark|no\s+caption)\b/gi, "")
+    .replace(/\b\d+:\d+\b/g, "")  // aspect ratios like 16:9
+    .replace(/\b(cinematic\s+framing|widescreen|letterbox)\b/gi, "")
+    .trim();
+
   const anchors: string[] = [];
-  const mediumMatch = rawLock.match(/\b(claymation|stop[\s-]?motion|watercolor|oil[\s-]?paint|pencil[\s-]?sketch|anime|cel[\s-]?shad|charcoal|photorealistic|cinematic[\s-]?realism|documentary|live[\s-]?action)\b/i);
+  const mediumMatch = stripped.match(/\b(claymation|stop[\s-]?motion|watercolor|oil[\s-]?paint|pencil[\s-]?sketch|anime|cel[\s-]?shad|charcoal|photorealistic|cinematic[\s-]?realism|documentary|live[\s-]?action)\b/i);
   if (mediumMatch) anchors.push(mediumMatch[0].toLowerCase());
-  const materialMatch = rawLock.match(/\b(fingerprint\s+texture|handcrafted|clay\s+surface|impasto|visible\s+brush|grainy\s+film|film\s+grain|halation)\b/i);
+  const materialMatch = stripped.match(/\b(fingerprint\s+texture|handcrafted|clay\s+surface|impasto|visible\s+brush|grainy\s+film|film\s+grain|halation)\b/i);
   if (materialMatch) anchors.push(materialMatch[0].toLowerCase());
-  const paletteMatch = rawLock.match(/\b(desaturated|warm\s+palette|cool\s+palette|monochrome|sepia|muted|pastel|high[\s-]?contrast|low[\s-]?key|high[\s-]?key)\b/i);
+  const paletteMatch = stripped.match(/\b(desaturated|warm\s+palette|cool\s+palette|monochrome|sepia|muted|pastel|high[\s-]?contrast|low[\s-]?key|high[\s-]?key)\b/i);
   if (paletteMatch) anchors.push(paletteMatch[0].toLowerCase());
-  const lightMatch = rawLock.match(/\b(practical\s+light|tungsten|candlelit|gaslight|neon|golden\s+hour|blue\s+hour|overcast|studio\s+light|natural\s+light|backlit|rim[\s-]?light)\b/i);
+  // Only stable interior-safe light families — no golden hour / overcast / blue hour (outdoor)
+  const lightMatch = stripped.match(/\b(practical\s+light|tungsten|candlelit|gaslight|neon|studio\s+light|backlit|rim[\s-]?light|warm\s+lamp\s+light)\b/i);
   if (lightMatch) anchors.push(lightMatch[0].toLowerCase());
-  if (anchors.length === 0) {
-    // Fallback: use first clause if short enough
-    const first = rawLock.split(/[.,;]/).filter(Boolean)[0]?.trim();
-    return first && first.length < 80 ? first : "";
-  }
+  if (anchors.length === 0) return "";
   return anchors.join(", ");
 }
 
@@ -121,6 +128,67 @@ function deduplicatePromptClauses(text: string): string {
     }
   }
   return unique.join(". ").replace(/\.\s*\./g, ".").trim();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scene-Type Contradiction Normalization
+// ═══════════════════════════════════════════════════════════════════
+
+/** Indoor location signals. */
+const INDOOR_SIGNALS = /\b(room|office|clinic|hospital|kitchen|hall|basement|attic|corridor|workshop|studio|laboratory|church|palace|prison|tower|library|interior|indoor|inside|ceiling|wall|cabinet|shelf|tray)\b/i;
+
+/** Outdoor location signals. */
+const OUTDOOR_SIGNALS = /\b(hilltop|mountain|valley|canyon|cliff|desert|beach|ocean|forest|field|sky|horizon|landscape|rooftop|garden|plaza|street|highway|meadow|tundra|glacier|volcano|jungle|swamp)\b/i;
+
+/** Outdoor lighting language that contradicts indoor scenes. */
+const OUTDOOR_LIGHT_RE = /\b(golden\s+hour|late\s+afternoon\s+sun|blue\s+hour|overcast\s+sky|sunset|sunrise|moonlight|starlight|clear\s+sky\s+light|dappled\s+sunlight|morning\s+mist|fog[\s-]?bank|open[\s-]?air\s+light)\b/gi;
+
+/** Battle/epic narrative language that contradicts object/room scenes. */
+const EPIC_NARRATIVE_RE = /\b(warrior|giant|battle|hero|villain|army|sword\s+fight|David\s+and\s+Goliath|epic\s+clash|siege|conquest|rampage|titan|colossus|rampart|cavalry|infantry|crusade)\b/gi;
+
+/**
+ * Normalize contradictory lighting and narrative language based on scene type inference.
+ *
+ * If the prompt describes an indoor scene (room, clinic, workshop, etc.),
+ * suppress outdoor lighting language and replace with interior equivalents.
+ *
+ * If the prompt describes a medical/tool/room scene,
+ * suppress epic battle/narrative language.
+ */
+function normalizeSceneContradictions(text: string): { text: string; log: string[] } {
+  const log: string[] = [];
+  let result = text;
+
+  const isIndoor = INDOOR_SIGNALS.test(text);
+  const isOutdoor = OUTDOOR_SIGNALS.test(text);
+
+  // Only normalize if scene is clearly indoor and NOT also outdoor
+  if (isIndoor && !isOutdoor) {
+    OUTDOOR_LIGHT_RE.lastIndex = 0;
+    const outdoorLightMatches = text.match(OUTDOOR_LIGHT_RE);
+    if (outdoorLightMatches) {
+      for (const match of outdoorLightMatches) {
+        result = result.replace(match, "warm interior light");
+        log.push(`[scene-norm] Replaced outdoor light "${match}" → "warm interior light" (indoor scene)`);
+      }
+    }
+  }
+
+  // Suppress epic narrative language in medical/tool/room scenes
+  const isMedicalOrTool = /\b(dental|medical|clinic|surgical|operating|tool|instrument|drill|scalpel)\b/i.test(text);
+  if (isMedicalOrTool) {
+    EPIC_NARRATIVE_RE.lastIndex = 0;
+    const epicMatches = text.match(EPIC_NARRATIVE_RE);
+    if (epicMatches) {
+      for (const match of epicMatches) {
+        result = result.replace(new RegExp(`\\b${match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), "");
+        log.push(`[scene-norm] Removed contradictory narrative term "${match}" (medical/tool scene)`);
+      }
+    }
+  }
+
+  result = result.replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").replace(/\.\s*\./g, ".").trim();
+  return { text: result, log };
 }
 
 /**
@@ -201,15 +269,41 @@ function serverDecomposePrompt(prompt: string): PromptLayers {
   };
 }
 
-/** Role-specific shot framing directives (no bracket tags, just visual descriptions). */
-const ROLE_SHOT_BUILDERS: Record<string, (layers: PromptLayers) => string> = {
-  establish: (l) => `Wide establishing view of ${l.space}. Slow push-in revealing the full environment.`,
-  transition: (l) => `New angle drifting past ${l.detail.split(".")[0] || l.space}. Spatial shift showing a different vantage point.`,
-  develop: (l) => `Medium shot. ${l.action}. First clear view of the subject in motion.`,
-  insert: (l) => `Extreme close-up on ${l.detail}. Scale jump emphasizing texture and material.`,
-  peak: (l) => `Close-up. ${l.action}. Most intense visual moment in the sequence.`,
-  resolve: (l) => `${l.action}. Motion continuing, scene left open and unresolved.`,
-};
+/**
+ * Extract concrete noun anchors from a prompt for distribution across shots.
+ * Returns unique noun phrases like "dental room", "rusty tray", "drill bit".
+ */
+const CONCRETE_NOUN_RE = /\b((?:dental|medical|rusty|antique|archaic|worn|old|ancient|spinning|sharp|metal|wooden|glass|iron|steel|ceramic)\s+(?:room|office|chair|table|tray|tool[s]?|drill|instrument[s]?|cabinet|lamp|device|mirror|cart|shelf|counter|jar|vial|flask|bottle|needle|scalpel|forceps|clamp|blade|handle|lever|gauge|dial|mechanism|equipment|rack|stand|stool|basin|sink|counter))|(?:drill\s+bit|enamel|gaslight|clinic\s+interior|tool\s+tray)\b/gi;
+
+function extractConcreteAnchors(prompt: string): string[] {
+  CONCRETE_NOUN_RE.lastIndex = 0;
+  const matches = prompt.match(CONCRETE_NOUN_RE);
+  if (!matches) return [];
+  return [...new Set(matches.map(m => m.toLowerCase().trim()))];
+}
+
+/**
+ * Role-specific shot framing — CONCRETE, not abstract.
+ *
+ * Every shot embeds at least one concrete noun anchor from the source scene.
+ * Shots must unmistakably belong to the same scene, not be generic cinematic filler.
+ */
+function buildConcreteRoleShotBuilders(layers: PromptLayers, concreteAnchors: string[]): Record<string, string> {
+  // Distribute anchors across roles (round-robin with fallback)
+  const a = concreteAnchors;
+  const spaceFirst = layers.space.split(".")[0]?.trim() || layers.space;
+  const detailFirst = layers.detail.split(".")[0]?.trim() || layers.detail;
+  const actionFirst = layers.action.split(".")[0]?.trim() || layers.action;
+
+  return {
+    establish: `Wide establishing view of ${spaceFirst}${a[0] ? `, ${a[0]} visible` : ""}. Slow push-in revealing the full environment.`,
+    transition: `New angle drifting past ${a[1] || a[0] || detailFirst}${a[2] ? ` and ${a[2]}` : ""}. A different vantage point within the same space.`,
+    develop: `Medium shot revealing ${actionFirst}${a[Math.min(2, a.length - 1)] ? `, ${a[Math.min(2, a.length - 1)]} becoming clear` : ""}. First clear view of the subject in motion.`,
+    insert: `Extreme close-up on ${a[3] || a[1] || detailFirst}. Texture and material emphasized at tight framing.`,
+    peak: `Close tense shot, ${actionFirst}${a[0] ? `, ${a[0]} in frame` : ""}. Motion increasing, highest visual intensity.`,
+    resolve: `Tight moving close-up on ${a[a.length - 1] || detailFirst}. Harsh detail, scene left open and unresolved.`,
+  };
+}
 
 /** Predefined role sequences by shot count. */
 const ROLE_SEQUENCES: Record<number, string[]> = {
@@ -223,6 +317,7 @@ const ROLE_SEQUENCES: Record<number, string[]> = {
 /**
  * Build semantically different multi-shot prompts from a base prompt.
  * Each shot describes a DIFFERENT visual job — no repeated base prompts.
+ * Every shot retains at least one concrete noun anchor from the source scene.
  */
 function buildServerMultiShot(
   basePrompt: string,
@@ -230,6 +325,8 @@ function buildServerMultiShot(
   totalDurationSec: number,
 ): KlingMultiShot[] {
   const layers = serverDecomposePrompt(basePrompt);
+  const concreteAnchors = extractConcreteAnchors(basePrompt);
+  const roleBuilders = buildConcreteRoleShotBuilders(layers, concreteAnchors);
   const roles = ROLE_SEQUENCES[shotCount] ?? ROLE_SEQUENCES[4]!;
   const effectiveCount = Math.min(shotCount, roles.length);
   const perShotDur = Math.max(2, Math.floor(totalDurationSec / effectiveCount));
@@ -237,8 +334,7 @@ function buildServerMultiShot(
 
   return Array.from({ length: effectiveCount }, (_, i) => {
     const role = roles[i]!;
-    const builder = ROLE_SHOT_BUILDERS[role];
-    const shotPrompt = builder ? builder(layers) : layers.fullPrompt;
+    const shotPrompt = roleBuilders[role] || layers.fullPrompt;
     return {
       index: i + 1,
       prompt: shotPrompt.slice(0, 2500),
@@ -992,16 +1088,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ═══════════════════════════════════════════════════════════════════
     // FINAL PROVIDER-FACING CLEANUP
-    // Strip any remaining internal tags, deduplicate clauses,
-    // and separate global vs per-shot content when multiShot is present.
+    // 1. Strip internal tags  2. Normalize contradictions
+    // 3. Deduplicate  4. Separate global vs per-shot
     // ═══════════════════════════════════════════════════════════════════
+    const cleanupLog: string[] = [];
+
+    // Step 1: Strip internal editorial tags
     finalPromptForProvider = stripInternalTags(finalPromptForProvider);
+
+    // Step 2: Normalize scene contradictions (indoor light vs outdoor, epic narrative vs medical)
+    const normResult = normalizeSceneContradictions(finalPromptForProvider);
+    finalPromptForProvider = normResult.text;
+    cleanupLog.push(...normResult.log);
+
+    // Step 3: Deduplicate
     finalPromptForProvider = deduplicatePromptClauses(finalPromptForProvider);
 
     if (req.multiShot && req.multiShot.length > 0) {
-      // Clean each shot prompt of internal tags and duplicated clauses
+      // Clean each shot prompt: strip tags → normalize contradictions → deduplicate
       for (const shot of req.multiShot) {
         shot.prompt = cleanShotPrompt(shot.prompt);
+        const shotNorm = normalizeSceneContradictions(shot.prompt);
+        shot.prompt = shotNorm.text;
+        cleanupLog.push(...shotNorm.log);
         shot.prompt = deduplicatePromptClauses(shot.prompt);
       }
       // When multiShot is present, top-level prompt should be global-only
@@ -1012,12 +1121,33 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
+    if (cleanupLog.length > 0) {
+      console.log("[generate-video] scene normalization applied:", cleanupLog);
+    }
+
     console.log("[generate-video] provider-facing cleanup done:", {
       promptLen: finalPromptForProvider.length,
       promptPreview: finalPromptForProvider.slice(0, 150),
       multiShotCount: req.multiShot?.length ?? 0,
       multiShotPreviews: req.multiShot?.map(s => s.prompt.slice(0, 80)) ?? [],
     });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DEBUG: Final provider payload snapshot (opt-in via env var)
+    // Set KLING_DEBUG_PAYLOAD=1 in .dev.vars or wrangler.toml to enable.
+    // Logs only the cleaned prompt payload — no secrets, no base64 images.
+    // ═══════════════════════════════════════════════════════════════════
+    if ((context.env as Record<string, string>).KLING_DEBUG_PAYLOAD === "1") {
+      console.log("[KLING_DEBUG_PAYLOAD] ═══════════════════════════════════════");
+      console.log("[KLING_DEBUG_PAYLOAD] top-level prompt:", finalPromptForProvider);
+      console.log("[KLING_DEBUG_PAYLOAD] negative_prompt:", klingNegativePrompt);
+      if (req.multiShot && req.multiShot.length > 0) {
+        for (const shot of req.multiShot) {
+          console.log(`[KLING_DEBUG_PAYLOAD] shot[${shot.index}] (${shot.duration}s):`, shot.prompt);
+        }
+      }
+      console.log("[KLING_DEBUG_PAYLOAD] ═══════════════════════════════════════");
+    }
 
     try {
       if (videoMode === "extend" && validLast) {

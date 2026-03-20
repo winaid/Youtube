@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useMemo } from "react";
 import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } from "@/types";
 import { inferShotRole } from "@/lib/multishot-validation";
+import { generateMultiShotSummariesKo } from "@/lib/shot-summary-ko";
 import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -358,21 +359,25 @@ export default function VideoGenerationPanel({
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                       {getCutSubInfo(cut, canonicalMultiShots, canonicalDurations)}
                     </p>
-                    {/* 멀티샷 서브샷 목록 — canonical-first */}
+                    {/* 멀티샷 서브샷 목록 + 한국어 요약 — canonical-first */}
                     {(() => {
                       const effectiveShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
                       if (effectiveShots.length === 0) return null;
+                      const summaries = generateMultiShotSummariesKo(effectiveShots);
                       return (
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {effectiveShots.map((s) => {
+                      <div className="mt-1.5 space-y-0.5">
+                        {effectiveShots.map((s, idx) => {
                           const role = s.role ?? inferShotRole(s.index - 1, effectiveShots.length);
                           const meta = SHOT_ROLE_META[role];
+                          const summary = summaries[idx]?.summaryKo || "";
                           return (
-                            <span key={s.index} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25` }}>
-                              <span className="font-semibold">샷{s.index}</span>
-                              <span>{meta.label}</span>
-                              <span>{s.duration}s</span>
-                            </span>
+                            <div key={s.index} className="flex items-center gap-1.5">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 flex-shrink-0" style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25` }}>
+                                <span className="font-semibold">{s.index}샷</span>
+                                <span>({s.duration}초)</span>
+                              </span>
+                              <span className="text-[10px] text-muted-foreground truncate">{summary}</span>
+                            </div>
                           );
                         })}
                       </div>
@@ -699,6 +704,32 @@ export default function VideoGenerationPanel({
                             </div>
                           </details>
                         )}
+                        {/* 4급: Kling multi_prompt JSON preview */}
+                        {(() => {
+                          const dbgShots = canonicalMultiShots?.get(cut.cutNumber) ?? cut.multiShot ?? [];
+                          if (dbgShots.length === 0) return null;
+                          const klingPayload = {
+                            model_params: {
+                              multi_shot: true,
+                              shot_type: "customize",
+                              multi_prompt: dbgShots.map(s => ({
+                                index: s.index,
+                                prompt: s.prompt.slice(0, 120) + (s.prompt.length > 120 ? "..." : ""),
+                                duration: s.duration,
+                              })),
+                            },
+                          };
+                          return (
+                            <details className="ml-1">
+                              <summary className="text-[9px] cursor-pointer text-muted-foreground">
+                                Kling JSON 미리보기 (model_params.multi_prompt)
+                              </summary>
+                              <pre className="bg-gray-50 rounded p-2 text-[8px] font-mono whitespace-pre-wrap break-all leading-relaxed mt-1" style={{ color: "#555", maxHeight: 200, overflowY: "auto" }}>
+                                {JSON.stringify(klingPayload, null, 2)}
+                              </pre>
+                            </details>
+                          );
+                        })()}
                       </div>
                     </details>
                   </div>

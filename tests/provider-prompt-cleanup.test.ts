@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { generateShotSummaryKo, generateMultiShotSummariesKo } from "@/lib/shot-summary-ko";
 
 // ═══════════════════════════════════════════════════════════════════
 // Import the functions under test from generate-video.ts
@@ -62,19 +63,23 @@ function deduplicatePromptClauses(text: string): string {
 
 function extractCompactVisualLock(rawLock: string): string {
   if (!rawLock || rawLock.length < 5) return "";
+  // Strip disallowed concepts before extraction
+  const stripped = rawLock
+    .replace(/\b(no\s+text\s+overlay|no\s+watermark|no\s+caption)\b/gi, "")
+    .replace(/\b\d+:\d+\b/g, "")
+    .replace(/\b(cinematic\s+framing|widescreen|letterbox)\b/gi, "")
+    .trim();
   const anchors: string[] = [];
-  const mediumMatch = rawLock.match(/\b(claymation|stop[\s-]?motion|watercolor|oil[\s-]?paint|pencil[\s-]?sketch|anime|cel[\s-]?shad|charcoal|photorealistic|cinematic[\s-]?realism|documentary|live[\s-]?action)\b/i);
+  const mediumMatch = stripped.match(/\b(claymation|stop[\s-]?motion|watercolor|oil[\s-]?paint|pencil[\s-]?sketch|anime|cel[\s-]?shad|charcoal|photorealistic|cinematic[\s-]?realism|documentary|live[\s-]?action)\b/i);
   if (mediumMatch) anchors.push(mediumMatch[0].toLowerCase());
-  const materialMatch = rawLock.match(/\b(fingerprint\s+texture|handcrafted|clay\s+surface|impasto|visible\s+brush|grainy\s+film|film\s+grain|halation)\b/i);
+  const materialMatch = stripped.match(/\b(fingerprint\s+texture|handcrafted|clay\s+surface|impasto|visible\s+brush|grainy\s+film|film\s+grain|halation)\b/i);
   if (materialMatch) anchors.push(materialMatch[0].toLowerCase());
-  const paletteMatch = rawLock.match(/\b(desaturated|warm\s+palette|cool\s+palette|monochrome|sepia|muted|pastel|high[\s-]?contrast|low[\s-]?key|high[\s-]?key)\b/i);
+  const paletteMatch = stripped.match(/\b(desaturated|warm\s+palette|cool\s+palette|monochrome|sepia|muted|pastel|high[\s-]?contrast|low[\s-]?key|high[\s-]?key)\b/i);
   if (paletteMatch) anchors.push(paletteMatch[0].toLowerCase());
-  const lightMatch = rawLock.match(/\b(practical\s+light|tungsten|candlelit|gaslight|neon|golden\s+hour|blue\s+hour|overcast|studio\s+light|natural\s+light|backlit|rim[\s-]?light)\b/i);
+  // Only stable interior-safe light families — no golden hour / overcast / blue hour (outdoor)
+  const lightMatch = stripped.match(/\b(practical\s+light|tungsten|candlelit|gaslight|neon|studio\s+light|backlit|rim[\s-]?light|warm\s+lamp\s+light)\b/i);
   if (lightMatch) anchors.push(lightMatch[0].toLowerCase());
-  if (anchors.length === 0) {
-    const first = rawLock.split(/[.,;]/).filter(Boolean)[0]?.trim();
-    return first && first.length < 80 ? first : "";
-  }
+  if (anchors.length === 0) return "";
   return anchors.join(", ");
 }
 
@@ -197,10 +202,36 @@ describe("extractCompactVisualLock", () => {
     expect(compact).not.toContain("16:9");
   });
 
-  it("returns first clause as fallback when no anchors match", () => {
+  it("returns empty string when no anchors match (no fallback)", () => {
     const minimal = "An unusual artistic rendering";
     const compact = extractCompactVisualLock(minimal);
-    expect(compact).toBe("An unusual artistic rendering");
+    expect(compact).toBe("");
+  });
+
+  it("strips 'no text overlay', aspect ratios, and 'cinematic framing' before extraction", () => {
+    const input = "Claymation. No text overlay, no watermark. 16:9 cinematic framing. Desaturated palette.";
+    const compact = extractCompactVisualLock(input);
+    expect(compact).toContain("claymation");
+    expect(compact).toContain("desaturated");
+    expect(compact).not.toContain("text overlay");
+    expect(compact).not.toContain("16:9");
+    expect(compact).not.toContain("cinematic framing");
+  });
+
+  it("excludes outdoor light families (golden hour, overcast, blue hour)", () => {
+    const input = "Claymation stop-motion. Golden hour light, overcast sky. Desaturated palette.";
+    const compact = extractCompactVisualLock(input);
+    expect(compact).toContain("claymation");
+    expect(compact).toContain("desaturated");
+    expect(compact).not.toContain("golden hour");
+    expect(compact).not.toContain("overcast");
+  });
+
+  it("includes interior-safe light families (practical light, tungsten, candlelit)", () => {
+    const input = "Warm practical light, tungsten glow. Claymation.";
+    const compact = extractCompactVisualLock(input);
+    expect(compact).toContain("practical light");
+    expect(compact).toContain("claymation");
   });
 
   it("returns empty string for empty input", () => {
@@ -365,5 +396,228 @@ describe("full pipeline: dental scene → provider payload", () => {
     expect(global.length).toBeGreaterThan(20);
     expect(global).toContain("claymation");
     expect(global).toContain("1900s dental room");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. Scene contradiction normalization
+// ═══════════════════════════════════════════════════════════════════
+
+// Mirrored from generate-video.ts
+const INDOOR_SIGNALS = /\b(room|office|clinic|hospital|kitchen|hall|basement|attic|corridor|workshop|studio|laboratory|church|palace|prison|tower|library|interior|indoor|inside|ceiling|wall|cabinet|shelf|tray)\b/i;
+const OUTDOOR_SIGNALS = /\b(hilltop|mountain|valley|canyon|cliff|desert|beach|ocean|forest|field|sky|horizon|landscape|rooftop|garden|plaza|street|highway|meadow|tundra|glacier|volcano|jungle|swamp)\b/i;
+const OUTDOOR_LIGHT_RE = /\b(golden\s+hour|late\s+afternoon\s+sun|blue\s+hour|overcast\s+sky|sunset|sunrise|moonlight|starlight|clear\s+sky\s+light|dappled\s+sunlight|morning\s+mist|fog[\s-]?bank|open[\s-]?air\s+light)\b/gi;
+const EPIC_NARRATIVE_RE = /\b(warrior|giant|battle|hero|villain|army|sword\s+fight|David\s+and\s+Goliath|epic\s+clash|siege|conquest|rampage|titan|colossus|rampart|cavalry|infantry|crusade)\b/gi;
+
+function normalizeSceneContradictions(text: string): { text: string; log: string[] } {
+  const log: string[] = [];
+  let result = text;
+  const isIndoor = INDOOR_SIGNALS.test(text);
+  const isOutdoor = OUTDOOR_SIGNALS.test(text);
+  if (isIndoor && !isOutdoor) {
+    OUTDOOR_LIGHT_RE.lastIndex = 0;
+    const outdoorLightMatches = text.match(OUTDOOR_LIGHT_RE);
+    if (outdoorLightMatches) {
+      for (const match of outdoorLightMatches) {
+        result = result.replace(match, "warm interior light");
+        log.push(`[scene-norm] Replaced outdoor light "${match}" → "warm interior light" (indoor scene)`);
+      }
+    }
+  }
+  const isMedicalOrTool = /\b(dental|medical|clinic|surgical|operating|tool|instrument|drill|scalpel)\b/i.test(text);
+  if (isMedicalOrTool) {
+    EPIC_NARRATIVE_RE.lastIndex = 0;
+    const epicMatches = text.match(EPIC_NARRATIVE_RE);
+    if (epicMatches) {
+      for (const match of epicMatches) {
+        result = result.replace(new RegExp(`\\b${match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), "");
+        log.push(`[scene-norm] Removed contradictory narrative term "${match}" (medical/tool scene)`);
+      }
+    }
+  }
+  result = result.replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").replace(/\.\s*\./g, ".").trim();
+  return { text: result, log };
+}
+
+describe("normalizeSceneContradictions", () => {
+  it("replaces outdoor light with 'warm interior light' in indoor scenes", () => {
+    const input = "Dim dental room with antique tools. Golden hour light streaming in. Desaturated palette.";
+    const { text, log } = normalizeSceneContradictions(input);
+    expect(text).not.toContain("golden hour");
+    expect(text).toContain("warm interior light");
+    expect(log.length).toBeGreaterThan(0);
+    expect(log[0]!.toLowerCase()).toContain("golden hour");
+  });
+
+  it("does NOT replace outdoor light if scene is also outdoor", () => {
+    const input = "A garden street with mountain view. Golden hour light. Warm palette.";
+    const { text } = normalizeSceneContradictions(input);
+    expect(text).toContain("Golden hour light");
+  });
+
+  it("removes epic narrative terms from dental/medical scenes", () => {
+    const input = "Dental room with rusty tools. A giant warrior approaches the drill. Sharp tense mood.";
+    const { text, log } = normalizeSceneContradictions(input);
+    expect(text).not.toContain("giant");
+    expect(text).not.toContain("warrior");
+    expect(text).toContain("Dental room");
+    expect(text).toContain("drill");
+    expect(log.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("passes through clean prompts unchanged", () => {
+    const input = "Dim dental room with antique tools. Warm practical light. Desaturated palette.";
+    const { text, log } = normalizeSceneContradictions(input);
+    expect(text).toBe(input);
+    expect(log).toHaveLength(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. Concrete noun anchor extraction
+// ═══════════════════════════════════════════════════════════════════
+
+const CONCRETE_NOUN_RE = /\b((?:dental|medical|rusty|antique|archaic|worn|old|ancient|spinning|sharp|metal|wooden|glass|iron|steel|ceramic)\s+(?:room|office|chair|table|tray|tool[s]?|drill|instrument[s]?|cabinet|lamp|device|mirror|cart|shelf|counter|jar|vial|flask|bottle|needle|scalpel|forceps|clamp|blade|handle|lever|gauge|dial|mechanism|equipment|rack|stand|stool|basin|sink|counter))|(?:drill\s+bit|enamel|gaslight|clinic\s+interior|tool\s+tray)\b/gi;
+
+function extractConcreteAnchors(prompt: string): string[] {
+  CONCRETE_NOUN_RE.lastIndex = 0;
+  const matches = prompt.match(CONCRETE_NOUN_RE);
+  if (!matches) return [];
+  return [...new Set(matches.map(m => m.toLowerCase().trim()))];
+}
+
+describe("extractConcreteAnchors", () => {
+  it("extracts dental-specific concrete nouns", () => {
+    const prompt = "Dim 1900s dental room with archaic rusty dental tools. Sharp spinning drill bit on a rusty tray. Antique chair visible.";
+    const anchors = extractConcreteAnchors(prompt);
+    expect(anchors).toContain("dental room");
+    expect(anchors).toContain("rusty tray");
+    // "spinning drill" is captured (spinning is a known adjective + drill is a known noun)
+    expect(anchors.some(a => a.includes("drill"))).toBe(true);
+    expect(anchors.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("returns empty array for abstract prompts", () => {
+    const prompt = "A person walks slowly. The mood is tense. Something happens.";
+    const anchors = extractConcreteAnchors(prompt);
+    expect(anchors).toHaveLength(0);
+  });
+
+  it("deduplicates repeated noun phrases", () => {
+    const prompt = "Rusty tray with tools. Another rusty tray nearby.";
+    const anchors = extractConcreteAnchors(prompt);
+    const trayCount = anchors.filter(a => a === "rusty tray").length;
+    expect(trayCount).toBe(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. Korean shot summary generation
+// ═══════════════════════════════════════════════════════════════════
+
+describe("generateShotSummaryKo", () => {
+  it("generates Korean summary from dental prompt", () => {
+    const prompt = "Wide establishing view of Dim 1900s dental room with archaic rusty dental tools, dental room visible. Slow push-in revealing the full environment.";
+    const summary = generateShotSummaryKo(prompt, "establish");
+    expect(summary.length).toBeGreaterThan(0);
+    // Should contain Korean text
+    expect(summary).toMatch(/[\uAC00-\uD7A3]/);
+  });
+
+  it("returns role-based fallback for empty prompt", () => {
+    const summary = generateShotSummaryKo("", "establish");
+    expect(summary).toBe("장면 도입 — 전체 공간이 보임");
+  });
+
+  it("returns role-based fallback for unrecognized prompt", () => {
+    const summary = generateShotSummaryKo("Completely unrecognizable abstract concept", "peak");
+    expect(summary).toBe("절정 — 가장 강렬한 순간");
+  });
+
+  it("does NOT contain bracket tags in output", () => {
+    const prompt = "[VISUAL LOCK] claymation. Wide view of dental room.";
+    // Summary is generated from cleaned prompt, but even if brackets leak:
+    const summary = generateShotSummaryKo(prompt);
+    // Our function works on the raw text — bracket tags should not map to Korean
+    expect(summary).not.toMatch(/\[.*?\]/);
+  });
+
+  it("detects framing + object combinations", () => {
+    const prompt = "Close-up of spinning drill on a metal tray.";
+    const summary = generateShotSummaryKo(prompt);
+    expect(summary).toMatch(/[\uAC00-\uD7A3]/);
+    expect(summary.length).toBeGreaterThan(2);
+  });
+});
+
+describe("generateMultiShotSummariesKo", () => {
+  it("generates summaries array matching shot count", () => {
+    const shots = [
+      { index: 1, prompt: "Wide dental room with tools.", duration: "5", role: "establish" as const },
+      { index: 2, prompt: "Close-up of spinning drill.", duration: "5", role: "peak" as const },
+    ];
+    const summaries = generateMultiShotSummariesKo(shots);
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]!.index).toBe(1);
+    expect(summaries[1]!.index).toBe(2);
+    expect(summaries[0]!.summaryKo.length).toBeGreaterThan(0);
+    expect(summaries[1]!.summaryKo.length).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. Dental scene end-to-end — full cleanup pipeline snapshot
+// ═══════════════════════════════════════════════════════════════════
+
+describe("dental scene: full cleanup pipeline snapshot", () => {
+  const rawPrompt = "[VISUAL LOCK] claymation stop-motion, fingerprint texture, warm practical light. [CHARACTER LOCK] A worn dental figure. [Establishing wide shot] Dim 1900s dental room with archaic rusty dental tools and antique chair. Sharp spinning drill bit comes alive on the rusty tray. Golden hour light, David and Goliath narrative. Warm practical interior light, desaturated palette. [ENDING] Last 2 seconds: mid-action, camera moving, emotion unresolved.";
+
+  it("step 1: tags stripped, content preserved", () => {
+    const cleaned = stripInternalTags(rawPrompt);
+    expect(cleaned).not.toMatch(/\[.*?\]/);
+    expect(cleaned).toContain("dental room");
+    expect(cleaned).toContain("drill bit");
+    expect(cleaned).toContain("claymation");
+  });
+
+  it("step 2: contradictions normalized", () => {
+    const cleaned = stripInternalTags(rawPrompt);
+    const { text, log } = normalizeSceneContradictions(cleaned);
+    // Indoor dental scene → outdoor light replaced
+    expect(text).not.toContain("Golden hour");
+    expect(text).toContain("warm interior light");
+    // Medical scene → epic narrative removed
+    expect(text).not.toContain("David and Goliath");
+    expect(log.length).toBeGreaterThan(0);
+  });
+
+  it("step 3: deduplication + global anchors", () => {
+    let cleaned = stripInternalTags(rawPrompt);
+    const { text } = normalizeSceneContradictions(cleaned);
+    const deduped = deduplicatePromptClauses(text);
+    const global = extractGlobalAnchors(deduped);
+
+    expect(global).toContain("claymation");
+    expect(global).toContain("1900s dental room");
+    expect(deduped).toContain("drill bit");
+  });
+
+  it("step 4: concrete anchors extracted for multi-shot distribution", () => {
+    let cleaned = stripInternalTags(rawPrompt);
+    const { text } = normalizeSceneContradictions(cleaned);
+    const anchors = extractConcreteAnchors(text);
+    expect(anchors.length).toBeGreaterThanOrEqual(2);
+    expect(anchors.some(a => a.includes("dental"))).toBe(true);
+  });
+
+  it("step 5: visualLock is compact (no outdoor lights, no fallback)", () => {
+    const styleSuffix = "Claymation stop-motion with visible fingerprint texture. Warm practical light, desaturated palette. No text overlay, no watermark. 16:9 cinematic framing.";
+    const lock = extractCompactVisualLock(styleSuffix);
+    expect(lock).toContain("claymation");
+    expect(lock).toContain("fingerprint texture");
+    expect(lock).toContain("practical light");
+    expect(lock).toContain("desaturated");
+    expect(lock).not.toContain("text overlay");
+    expect(lock).not.toContain("16:9");
   });
 });
