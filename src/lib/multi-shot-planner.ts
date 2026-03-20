@@ -25,7 +25,7 @@
  */
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
-import { getMaxShots, getCapability } from "@/lib/kling-capability";
+import { getMaxShots, getMinShots, getCapability } from "@/lib/kling-capability";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -404,7 +404,8 @@ export function buildDefaultMultiShot(opts: {
     return [];
   }
 
-  const effectiveCount = Math.max(2, shotCount);
+  const policyMin = getMinShots(modelId, durationSec);
+  const effectiveCount = Math.max(policyMin || 2, shotCount);
   const roles = planShotRoles(effectiveCount, sceneType);
   const durations = distributeDurations(roles, durationSec, cap.minShotDuration);
 
@@ -863,7 +864,8 @@ export function buildMultiShotPlan(opts: {
   }
 
   const shotCount = planRecommendedShotCount(modelId, durationSec, sceneType);
-  const effectiveCount = forced ? Math.max(2, shotCount) : shotCount;
+  const policyMin = getMinShots(modelId, durationSec);
+  const effectiveCount = forced ? Math.max(policyMin || 2, shotCount) : shotCount;
   const roles = planShotRoles(effectiveCount, sceneType);
   const cap = getCapability(modelId);
   const durations = distributeDurations(roles, durationSec, cap.minShotDuration);

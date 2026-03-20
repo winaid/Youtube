@@ -341,7 +341,7 @@ export function splitSingleShotSequence(input: {
   const durationMinShots = getMinShots(DEFAULT_MODEL_ID, input.durationSec);
   const shotCount = progression.hasProgression
     ? Math.max(Math.min(progression.suggestedShotCount, template.shots.length), durationMinShots)
-    : Math.max(durationMinShots, Math.min(2, template.shots.length));
+    : Math.max(durationMinShots, Math.min(durationMinShots || 1, template.shots.length));
 
   // Reorder segments based on beat type priority
   const beatHint = input.beatHint || "default";
