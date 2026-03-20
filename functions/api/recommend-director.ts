@@ -886,6 +886,8 @@ ${localList}
     let finalProvider = "";
     let finalGrounded = false;
     let fallbackUsed = false;
+    let groundingAttempted = false; // grounding을 시도했는지
+    let groundingFailed = false;    // grounding을 시도했지만 소스가 없었는지
     let pipelineTimeoutOccurred = false;
 
     // ── Stage-based retry pipeline — reason code가 다음 action을 결정 ──
@@ -1252,31 +1254,46 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Flash-Lite + google_search) ──
+          // ── STAGE 1: Grounded 웹 검색 (Pro + google_search) ──
+          // Pro 모델이 Flash-Lite보다 google_search 도구 호출 성공률이 높음
           stageLabel = "stage1_grounded_web";
-          model = GEMINI_MODEL_FLASH;
+          model = GEMINI_MODEL_PRO;
           prompt = buildWebPrompt();
           useGrounding = true;
           forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
           triggerReason = "initial";
         } else if (stageNum === 2) {
-          // ── STAGE 2: Pro + JSON (grounding 없이) ──
-          // Stage 1에서 grounding 응답이 파싱 실패했을 가능성 → JSON 강제로 Pro 재시도
+          // ── STAGE 2: grounding 실패 시 Flash + grounding 재시도 OR JSON 폴백 ──
           const prevReasons = allEmptyReasons;
           const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
-
           if (shouldSkipToStage4) { continue; }
 
-          const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
+          // Stage 1에서 grounding source가 없었으면 → Flash로 grounding 재시도
+          // Stage 1에서 파싱 실패였으면 → JSON 강제 (grounding 없이)
+          const stage1GroundingEmpty = prevReasons.includes("no_results") || prevReasons.includes("parse_failed") || prevReasons.length === 0;
+          const stage1Log = retryStagesLog.find(s => s.stage === 1);
+          const stage1HadNoSources = stage1Log && !stage1Log.grounded;
 
-          stageLabel = "stage2_flash_json";
-          model = GEMINI_MODEL_FLASH;
-          prompt = buildWebPrompt({ retryNote });
-          useGrounding = false;  // grounding 제거 → JSON 파싱 보장
-          forceMimeType = true;  // responseMimeType: "application/json" 강제
-          triggerReason = `stage1 failed: ${prevReasons.join(",")}`;
+          if (stage1HadNoSources && !prevReasons.includes("parse_failed")) {
+            // Pro가 grounding 소스를 안 줬으면 → Flash로 grounding 재시도 (모델마다 검색 행동이 다름)
+            stageLabel = "stage2_flash_grounded_retry";
+            model = GEMINI_MODEL_FLASH;
+            prompt = buildWebPrompt();
+            useGrounding = true;
+            forceMimeType = false;
+            triggerReason = `stage1 grounding empty: ${prevReasons.join(",")}`;
+          } else {
+            // 파싱 실패 등 → JSON 강제로 재시도
+            const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
+            stageLabel = "stage2_flash_json";
+            model = GEMINI_MODEL_FLASH;
+            prompt = buildWebPrompt({ retryNote });
+            useGrounding = false;
+            forceMimeType = true;
+            triggerReason = `stage1 failed: ${prevReasons.join(",")}`;
+          }
         } else if (stageNum === 3) {
-          // ── STAGE 3: Duplicate 전용 복구 OR grounding 재시도 (쿼리 단순화) ──
+          // ── STAGE 3: Duplicate 복구 OR 쿼리 단순화 JSON 재시도 ──
           const prevReasons = allEmptyReasons;
           const hasDuplicate = prevReasons.includes("duplicate_filtered_all");
           const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
@@ -1349,6 +1366,13 @@ Each director object must have:
           durationMs: stageResult.durationMs,
         };
         retryStagesLog.push(stageLog);
+
+        // ── grounding 추적 ──
+        if (useGrounding) {
+          groundingAttempted = true;
+          if (!stageResult.grounded) groundingFailed = true;
+          else groundingFailed = false; // 이후 stage에서 grounding 성공하면 복구
+        }
 
         // ── 결과 수집 ──
         if (stageResult.timeoutOccurred) pipelineTimeoutOccurred = true;
@@ -1599,6 +1623,8 @@ Each director object must have:
         recoveredAtStage: retryStagesLog.find(s => s.acceptedCount > 0)?.stage ?? null,
         fallbackUsed,
         finalGrounded,
+        groundingAttempted: groundingAttempted || undefined,
+        groundingFailed: groundingAttempted ? groundingFailed : undefined,
         timeoutOccurred: pipelineTimeoutOccurred || undefined,
       },
       _debug: debug,

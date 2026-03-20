@@ -750,10 +750,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         const mode = meta.resultMode ?? "unknown";
         const grounded = meta.finalGrounded ?? false;
         const fallback = meta.fallbackUsed ?? false;
-        if (mode === "fallback" || (fallback && !grounded)) {
-          console.warn("[recommend-director] ⚠ 웹 검색 grounding 실패 → 모델 지식 폴백 사용됨", {
+        const groundingFailed = meta.groundingFailed ?? false;
+        if (mode === "fallback" || groundingFailed) {
+          console.warn("[recommend-director] ⚠ 웹 검색 grounding 실패 → 모델 지식 기반 결과", {
             resultMode: mode,
             finalGrounded: grounded,
+            groundingFailed,
             fallbackUsed: fallback,
             finalModel: meta.finalModel,
             retryCount: meta.retryCount,
