@@ -342,10 +342,51 @@ function buildServerMultiShot(
     const shotPrompt = roleBuilders[role] || layers.fullPrompt;
     return {
       index: i + 1,
-      prompt: shotPrompt.slice(0, 2500),
+      prompt: shotPrompt.slice(0, 500),
       duration: String(i === effectiveCount - 1 ? perShotDur + remainder : perShotDur),
     };
   });
+}
+
+/**
+ * Build multi-shot entries directly from temporalBeats + shotPlan context.
+ * Each beat becomes a multi_prompt entry with its own duration and focused prompt.
+ *
+ * This preserves the LLM's intentional temporal planning instead of discarding it
+ * and re-deriving generic role-based shots from the flattened prompt text.
+ */
+function buildMultiShotFromBeats(
+  seq: StructuredSequencePayload,
+  basePrompt: string,
+  maxShots: number,
+): KlingMultiShot[] {
+  const beats = seq.temporalBeats!;
+  const shots = seq.shots;
+
+  // If we have per-shot descriptors that align with beats, prefer them (richer data)
+  if (shots && shots.length >= beats.length) {
+    return shots.slice(0, maxShots).map((shot, i) => ({
+      index: i + 1,
+      prompt: [
+        shot.focus,
+        shot.subject,
+        shot.action !== shot.subject ? shot.action : "",
+        shot.environment,
+        shot.moodLighting,
+      ].filter(Boolean).join(". ").slice(0, 500),
+      duration: String(Math.round(shot.endSec - shot.startSec)),
+    }));
+  }
+
+  // Fallback: use temporalBeats focus + base prompt context
+  const concreteAnchors = extractConcreteAnchors(basePrompt);
+  const anchorStr = concreteAnchors.slice(0, 3).join(", ");
+
+  return beats.slice(0, maxShots).map((beat, i) => ({
+    index: i + 1,
+    prompt: (anchorStr ? `${anchorStr}. ${beat.focus}` : beat.focus).slice(0, 500),
+    duration: String(Math.round(beat.endSec - beat.startSec)),
+  }));
 }
 
 /**
@@ -1041,20 +1082,34 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           { status: 400 },
         );
       } else {
-        // Batch Mode: auto-repair — 역할 기반 멀티샷 자동 생성
-        // Each shot gets a semantically different visual description (no bracket tags, no repeated base prompt)
-        const autoShotCount = normalizedDuration <= 5 ? 2
-          : normalizedDuration <= 9 ? 3
-          : normalizedDuration <= 12 ? Math.min(4, serverMaxShots)
-          : Math.min(5, serverMaxShots);
         const basePrompt = finalPromptForProvider || "";
-        const repairedShots = buildServerMultiShot(basePrompt, autoShotCount, normalizedDuration);
-        req.multiShot = repairedShots;
-        console.log("[Kling] Batch auto-repair: 멀티샷 자동 생성 (decomposed)", {
-          shotCount: autoShotCount,
-          durations: repairedShots.map(s => s.duration),
-          promptPreviews: repairedShots.map(s => s.prompt.slice(0, 60)),
-        });
+
+        // 1순위: structuredSequence에 temporalBeats가 있으면 → 그대로 multi_prompt로 매핑
+        // LLM이 의도적으로 계획한 시간 구조를 보존한다.
+        const hasBeats = req.structuredSequence?.temporalBeats && req.structuredSequence.temporalBeats.length >= 2;
+        if (hasBeats) {
+          const beatsShots = buildMultiShotFromBeats(req.structuredSequence!, basePrompt, serverMaxShots);
+          req.multiShot = beatsShots;
+          console.log("[Kling] Batch: temporalBeats → multi_prompt (계획된 시간 구조 보존)", {
+            beatCount: req.structuredSequence!.temporalBeats!.length,
+            shotCount: beatsShots.length,
+            durations: beatsShots.map(s => s.duration),
+            promptPreviews: beatsShots.map(s => s.prompt.slice(0, 80)),
+          });
+        } else {
+          // 2순위: temporalBeats 없으면 기존 역할 기반 자동 생성
+          const autoShotCount = normalizedDuration <= 5 ? 2
+            : normalizedDuration <= 9 ? 3
+            : normalizedDuration <= 12 ? Math.min(4, serverMaxShots)
+            : Math.min(5, serverMaxShots);
+          const repairedShots = buildServerMultiShot(basePrompt, autoShotCount, normalizedDuration);
+          req.multiShot = repairedShots;
+          console.log("[Kling] Batch auto-repair: 멀티샷 자동 생성 (role-based decomposed)", {
+            shotCount: autoShotCount,
+            durations: repairedShots.map(s => s.duration),
+            promptPreviews: repairedShots.map(s => s.prompt.slice(0, 60)),
+          });
+        }
       }
     }
 
@@ -1074,12 +1129,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ));
 
       if (currentCount < targetCount) {
-        console.warn(`[Kling] 멀티샷 최소 강제: ${currentCount}샷 → ${targetCount}샷 (${normalizedDuration}s, min=${minRequired})`);
-        const basePrompt = finalPromptForProvider || "";
-        const totalDur = req.multiShot.reduce((s: number, sh: KlingMultiShot) => s + (parseFloat(sh.duration) || 0), 0) || normalizedDuration;
-        // Build semantically different shots using role-based decomposition (no bracket tags)
-        const repairedShots = buildServerMultiShot(basePrompt, targetCount, totalDur);
-        req.multiShot = repairedShots;
+        // temporalBeats에서 이미 생성된 경우, beats가 의도적 구조이므로 무조건 확장하지 않음
+        const fromBeats = req.structuredSequence?.temporalBeats && req.structuredSequence.temporalBeats.length >= currentCount;
+        if (fromBeats && currentCount >= minRequired) {
+          console.log(`[Kling] 멀티샷: temporalBeats 기반 ${currentCount}샷 유지 (최소 ${minRequired} 충족, target ${targetCount} 무시)`);
+        } else {
+          console.warn(`[Kling] 멀티샷 최소 강제: ${currentCount}샷 → ${targetCount}샷 (${normalizedDuration}s, min=${minRequired})`);
+          const basePrompt = finalPromptForProvider || "";
+          const totalDur = req.multiShot.reduce((s: number, sh: KlingMultiShot) => s + (parseFloat(sh.duration) || 0), 0) || normalizedDuration;
+          // Build semantically different shots using role-based decomposition (no bracket tags)
+          const repairedShots = buildServerMultiShot(basePrompt, targetCount, totalDur);
+          req.multiShot = repairedShots;
+        }
       }
     }
 

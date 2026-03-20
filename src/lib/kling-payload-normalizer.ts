@@ -396,6 +396,12 @@ export function buildNormalizedKlingPayload(input: KlingPayloadNormalizerInput):
       }
     }
 
+    // Kling API: per-shot prompt max 512 chars
+    normalizedMultiPrompt = normalizedMultiPrompt.map(s => ({
+      ...s,
+      prompt: s.prompt.slice(0, 512),
+    }));
+
     // When multiShot is present, top-level prompt should be global-only
     const globalOnly = extractGlobalAnchors(prompt);
     if (globalOnly.length > 20) {
