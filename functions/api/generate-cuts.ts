@@ -24,6 +24,27 @@ import { getMaxShots, getMinShots, KLING_DEFAULT_TEXT_MODEL } from "./_kling-cap
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
+// ─── 스타일별 카메라/모션 렌더링 힌트 ──────────────────────────────────────────
+// style-catalog.ts의 STYLE_RENDERING_OVERRIDES + CATEGORY_RENDERING_DEFAULTS를 Gemini용으로 압축
+const STYLE_RENDERING_HINTS: Record<string, string> = {
+  // live_action — 기본은 시네마틱 돌리/크레인이므로 별도 힌트 불필요
+  "docu-handheld": "Camera: handheld with natural shake, observational distance, whip pans. Motion: reactive following, not choreographed. No stabilized gimbal.",
+  "vintage-film": "Motion: slight film judder, vintage camera instability. Consistent grain level and color fade across all cuts. No mixing film stocks.",
+  "neon-noir": "Environment: 70%+ dark frame, wet reflective streets. Camera: neon-reflected tracking shots, low angles, Dutch tilts. Rain-slicked gliding movement.",
+  // 2d anime
+  "theatrical-anime": "Camera: sweeping cinematic anime pans, fluid parallax on deep backgrounds, dramatic push-ins. Motion: high frame-count, detailed secondary motion on hair/cloth, impact frames with screen shake.",
+  "watercolor-animation": "Characters: transparent watercolor washes, no opaque surfaces. Motion: wet-on-wet bleeding at motion edges, colors mix as elements overlap.",
+  "pixel-art": "Camera: pixel-aligned scroll, no sub-pixel motion. Motion: retro sprite animation, limited keyframes, no motion blur, no smooth interpolation.",
+  // 3d animation — 기본은 smooth 3D orbit/dolly이므로 별도 힌트 불필요
+  // painting
+  "east-asian-painting": "This is animated 2D sequence, NOT static artwork. Camera: smooth pans with parallax on painted layers. Motion: fluid animated movement, NOT motion poster. NO text/calligraphy/characters at any point.",
+  "ink-wash": "Animated 2D ink wash sequence, NOT static scroll painting. Camera: gentle reveals through ink wash world. Motion: ink density and white space shift dynamically. NO text/calligraphy.",
+  // stop_motion
+  "claymation": "Motion: frame-by-frame with visible material deformation, slight jitter from manual positioning. Clay surfaces subtly reshape between frames.",
+  // experimental
+  "rotoscoping": "Characters: performance-derived authentic human movement with painterly overlay. Camera: organic handheld documentary feel, not perfectly stabilized.",
+};
+
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
 interface GenerateCutsResponse {
   ok: boolean;
@@ -128,6 +149,9 @@ function buildDirectorEngine(
   ✗ "semi-realistic" as the only descriptor — must specify WHICH layer is real, WHICH is stylized
   ✗ Evenly stylized frame with no visible background/character contrast` : "";
 
+  // 스타일별 카메라/모션 기본값 — 스타일 렌더링 규칙을 컷 생성에 반영
+  const styleRenderingHint = STYLE_RENDERING_HINTS[animationMode] || "";
+
   const lines: string[] = [
     "### Director Aesthetic Engine (operational rules — NOT style tags)",
     `Persona core: ${persona}`,
@@ -137,6 +161,7 @@ function buildDirectorEngine(
     tech.colorPalette  ? `Color/lighting: ${tech.colorPalette}` : "",
     tech.characterDesign ? `Character design: ${tech.characterDesign}` : "",
     tech.emotionalCore ? `Emotional core: ${tech.emotionalCore}` : "",
+    styleRenderingHint ? `### Style Rendering Rules (medium-specific constraints)\n${styleRenderingHint}` : "",
     stopMotionRules,
     hybridRules,
     editorialPersona ? buildEditorialPlanningRules(editorialPersona) : "",
