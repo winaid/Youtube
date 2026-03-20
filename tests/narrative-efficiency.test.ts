@@ -168,7 +168,7 @@ describe("E. 생성 효율성", () => {
     const densified = densifyCuts(rawCuts, totalSec);
 
     for (const cut of densified) {
-      expect(cut.durationSec).toBeLessThanOrEqual(15);
+      expect(cut.durationSec).toBeLessThanOrEqual(8);
       // 고밀도 정책: densifyCuts가 2초까지 분할 가능 (2초 이하는 분할 중단)
       expect(cut.durationSec).toBeGreaterThanOrEqual(2);
     }
@@ -188,14 +188,14 @@ describe("F. dense 프리셋으로 빠른 편집 선택 가능", () => {
     expect(dense.min).toBeGreaterThanOrEqual(normal.max);
   });
 
-  it("dense(120초) → 32~34컷 추천", () => {
+  it("dense(120초) → 90~92컷 추천", () => {
     const dense = densityPresetToRange("dense", 120);
-    expect(dense.min).toBeGreaterThanOrEqual(32);
+    expect(dense.min).toBeGreaterThanOrEqual(90);
   });
 
-  it("sparse(120초) → 31~32컷 추천", () => {
+  it("sparse(120초) → 44~45컷 추천", () => {
     const sparse = densityPresetToRange("sparse", 120);
-    expect(sparse.min).toBeGreaterThanOrEqual(31);
-    expect(sparse.max).toBeLessThanOrEqual(32);
+    expect(sparse.min).toBeGreaterThanOrEqual(44);
+    expect(sparse.max).toBeLessThanOrEqual(45);
   });
 });

@@ -139,14 +139,14 @@ describe("Duration End-to-End Consistency", () => {
     expect(canonical._internal.timing.durationSec).toBe(12);
   });
 
-  test("safeDuration handles edge cases consistently", () => {
+  test("safeDuration handles edge cases consistently (fixed 8s policy)", () => {
     expect(safeDuration(0)).toBe(DURATION_FALLBACK);
     expect(safeDuration(undefined)).toBe(DURATION_FALLBACK);
     expect(safeDuration(null)).toBe(DURATION_FALLBACK);
     expect(safeDuration(NaN)).toBe(DURATION_FALLBACK);
-    expect(safeDuration(1)).toBe(3); // clamped to min
-    expect(safeDuration(20)).toBe(15); // clamped to max
-    expect(safeDuration(8)).toBe(8); // within range
+    expect(safeDuration(1)).toBe(8); // clamped to DURATION_MIN=8
+    expect(safeDuration(20)).toBe(8); // clamped to DURATION_MAX=8
+    expect(safeDuration(8)).toBe(8); // exactly 8
   });
 
   /**
