@@ -2,6 +2,40 @@ import { GeminiEnv, fetchWithAuth } from "./_gemini-keys";
 
 interface ProxyEnv extends GeminiEnv {
   VIDEO_BUCKET?: R2Bucket;
+  VIDEO_BUCKET_DOMAIN?: string;
+}
+
+/**
+ * SSRF 방지: 허용된 도메인/스킴만 프록시합니다.
+ * - gs:// URIs (GCS로 변환됨)
+ * - storage.googleapis.com (GCS)
+ * - cdn.klingai.com / cdn.kling.com (Kling 영상 CDN)
+ * - VIDEO_BUCKET_DOMAIN (R2 커스텀 도메인, 설정된 경우)
+ */
+function isAllowedUri(uri: string, videoBucketDomain?: string): boolean {
+  if (uri.startsWith("gs://")) return true;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:") return false;
+
+  const host = parsed.hostname.toLowerCase();
+  const allowedHosts = [
+    "storage.googleapis.com",
+    "cdn.klingai.com",
+    "cdn.kling.com",
+  ];
+
+  if (videoBucketDomain) {
+    allowedHosts.push(videoBucketDomain.toLowerCase());
+  }
+
+  return allowedHosts.includes(host);
 }
 
 /**
@@ -51,6 +85,12 @@ export const onRequestGet: PagesFunction<ProxyEnv> = async (context) => {
 
     if (!videoUri) {
       return new Response("uri or r2key parameter is required", { status: 400 });
+    }
+
+    // SSRF 방지: 허용된 도메인만 프록시
+    if (!isAllowedUri(videoUri, context.env.VIDEO_BUCKET_DOMAIN)) {
+      console.warn(`[proxy-video] Blocked disallowed URI: ${videoUri.slice(0, 120)}`);
+      return new Response("Forbidden: URI not in allowlist", { status: 403 });
     }
 
     // gs:// → GCS JSON API URL 변환 (Cloudflare Workers는 gs:// 미지원)

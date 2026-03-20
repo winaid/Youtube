@@ -67,7 +67,14 @@ export const onRequestPost: PagesFunction<UploadEnv> = async (context) => {
     const ext = mimeType.includes("webm") ? "webm" : "mp4";
     const timestamp = Date.now();
     const cutLabel = req.cutNumber ? `cut-${req.cutNumber}` : "unknown";
-    const session = req.sessionId || "default";
+    const rawSession = req.sessionId || "default";
+    const session = rawSession.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!session) {
+      return Response.json(
+        { error: "Invalid sessionId: must contain alphanumeric characters, hyphens, or underscores" },
+        { status: 400 },
+      );
+    }
     const key = `videos/${session}/${cutLabel}/${timestamp}.${ext}`;
 
     console.log("[upload-video] 시작", {

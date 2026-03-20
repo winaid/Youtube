@@ -238,8 +238,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     console.error("Suggest prompts error:", error);
     return Response.json({
       error: "Failed to generate prompts",
-      detail: error instanceof Error ? error.message : String(error),
-      authMode: context.env.GEMINI_API_KEY ? "gemini-api-key" : context.env.GEMINI_API_KEY_2 ? "gemini-api-key-2" : "none",
     }, { status: 500 });
   }
 };
