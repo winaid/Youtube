@@ -54,7 +54,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[check-video] Kling check error:", msg);
-      return Response.json({ status: "RUNNING" });
+      return Response.json({ status: "FAILED", error: `Kling API 오류: ${msg}` });
     }
 
     console.log("[check-video] Kling result", {

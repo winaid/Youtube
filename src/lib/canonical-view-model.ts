@@ -91,7 +91,7 @@ export function canonicalResultToViewModel(
   // Derive VideoPromptJson from canonical shotPlan
   // ShotPlan uses structured sub-objects; VideoPromptJson uses flat strings.
   // We flatten the canonical structure for UI display/edit compatibility.
-  const videoPromptJson: VideoPromptJson | null = seq.shotPlan ? {
+  const videoPromptJson: VideoPromptJson | null = seq.shotPlan?.camera ? {
     shotSize: seq.shotPlan.camera.framing,
     cameraAngle: seq.shotPlan.camera.angle,
     cameraMovement: seq.shotPlan.camera.motion,
@@ -179,7 +179,7 @@ export function canonicalToMultiShotViewModel(
     index: i + 1,
     prompt: `${shot.camera.framing} shot. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
     duration: String(Math.max(1, rawDurations[i])),
-    role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots.length),
+    role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seqShots.length),
   }));
 
   return {

@@ -118,7 +118,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
   // 여기서 한 번 더 확인. (9~15초: 최소 4샷, 4~8초: 최소 3샷)
   const dur = result.structuredSequence.durationSec;
   const minRequired = getMinShots("kling-o3-text-to-video", dur);
-  if (minRequired > 0 && multiShot.length > 0 && multiShot.length < minRequired) {
+  if (minRequired > 0 && multiShot.length < minRequired) {
     // 서버에서 보낸 cut.multiShot이 정책을 충족하면 그것을 사용
     if (input.cut.multiShot && input.cut.multiShot.length >= minRequired) {
       multiShot = input.cut.multiShot;
@@ -170,7 +170,7 @@ export function canonicalShotsToMultiShot(
     index: i + 1,
     prompt: `${shot.camera.framing} shot. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
     duration: String(Math.max(1, rawDurations[i])),
-    role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots.length),
+    role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length),
   }));
 }
 
@@ -385,13 +385,13 @@ export function validateCanonicalChain(
   }
 
   // Shots are explicit (not hidden single-shot fallback)
-  const shotsExplicit = seq.shots.length > 0;
+  const shotsExplicit = (seq.shots?.length ?? 0) > 0;
   if (!shotsExplicit) {
     issues.push("No explicit shots[] in canonical sequence");
   }
 
   // No hidden single-shot when multi-shot is expected
-  const noHiddenFallback = !(seq.durationSec >= 6 && seq.shots.length === 1 &&
+  const noHiddenFallback = !(seq.durationSec >= 6 && (seq.shots?.length ?? 0) === 1 &&
     !isExplicitOneTake(seq));
   if (!noHiddenFallback) {
     issues.push(`Hidden single-shot for ${seq.durationSec}s clip — should be multi-shot`);

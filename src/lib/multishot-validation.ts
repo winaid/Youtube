@@ -226,7 +226,7 @@ export function validateMultiShots(
 
   // ── 프로그레션 품질 검증 ──
   if (shots.length >= 2) {
-    const roles = shots.map((s) => s.role ?? inferShotRole(shots.indexOf(s), shots.length));
+    const roles = shots.map((s, i) => s.role ?? inferShotRole(i, shots.length));
     const uniqueRoles = new Set(roles);
 
     // role 단조로움 경고
@@ -244,7 +244,7 @@ export function validateMultiShots(
           shotIndex: shots[i].index,
           field: "role",
           severity: "warning",
-          message: `샷 ${i}과 ${i + 1}이 같은 역할 (${roles[i]}) — 시각적 변화 없이 반복될 수 있음`,
+          message: `샷 ${shots[i - 1].index}과 ${shots[i].index}이 같은 역할 (${roles[i]}) — 시각적 변화 없이 반복될 수 있음`,
         });
       }
     }
