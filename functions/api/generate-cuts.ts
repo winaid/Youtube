@@ -1225,6 +1225,8 @@ function buildDeterministicCuts(
   regionFlavor: string,
   animationMode: string,
   editorialPersona?: EditorialPersona,
+  directorStyle?: string,
+  aspectRatio?: string,
 ) {
   const physics = getPhysicsForScene(storyText);
   const storyExcerpt = storyText.slice(0, 200);
@@ -2206,6 +2208,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             regionFlavor,
             String(animationMode),
             editorial,
+            String(directorStyle ?? ""),
+            String(aspectRatio ?? "16:9"),
           );
 
           const defaultSeeds: CharacterSeed[] = [{
