@@ -41,6 +41,7 @@ import { DEFAULT_EDITORIAL_PERSONA } from "@/types";
 import { assembleFromJSON, type SingleShotDocument } from "@/lib/sequence-assembler";
 import { buildFinalProviderPayload, type FinalProviderPayload } from "@/lib/final-payload-builder";
 import { safeDuration } from "@/lib/duration-reconciliation";
+import { getMinShots } from "@/lib/kling-capability";
 import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
 
@@ -99,7 +100,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
   });
 
   // Resolve multi-shot: prefer suggested (content-aware) over existing
-  const multiShot: MultiShotPrompt[] =
+  let multiShot: MultiShotPrompt[] =
     result.suggestedMultiShot ??
     input.cut.multiShot ??
     canonicalShotsToMultiShot(result.structuredSequence);
@@ -110,6 +111,21 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
     adapterConversions.push("adapter: preserved existing Cut.multiShot");
   } else {
     adapterConversions.push("adapter: derived multiShot from canonical shots[]");
+  }
+
+  // ── 최소 샷 수 정책 최종 방어 ──
+  // 서버 repair가 적용되었더라도 클라이언트 suggestedMultiShot이 덮어쓸 수 있으므로
+  // 여기서 한 번 더 확인. (9~15초: 최소 4샷, 4~8초: 최소 3샷)
+  const dur = result.structuredSequence.durationSec;
+  const minRequired = getMinShots("kling-o3-text-to-video", dur);
+  if (minRequired > 0 && multiShot.length > 0 && multiShot.length < minRequired) {
+    // 서버에서 보낸 cut.multiShot이 정책을 충족하면 그것을 사용
+    if (input.cut.multiShot && input.cut.multiShot.length >= minRequired) {
+      multiShot = input.cut.multiShot;
+      adapterConversions.push(`adapter: restored Cut.multiShot (${input.cut.multiShot.length} shots) — suggestedMultiShot ${result.suggestedMultiShot?.length ?? 0} < min ${minRequired}`);
+    } else {
+      adapterConversions.push(`adapter: WARNING multiShot ${multiShot.length} < min ${minRequired} for ${dur}s — server repair may not have run`);
+    }
   }
 
   return {

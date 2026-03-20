@@ -12,6 +12,10 @@
  */
 
 import type { TemporalBeat } from "@/types";
+import { getMinShots } from "@/lib/kling-capability";
+
+/** 기본 모델 ID — shot-splitting 정책에서 최소 샷 수 조회용 */
+const DEFAULT_MODEL_ID = "kling-o3-text-to-video";
 
 /** shot splitting이 생성할 수 있는 최대 샷 수 (O3 capability 기준) */
 export const MAX_SPLIT_SHOTS = 6;
@@ -331,9 +335,11 @@ export function splitSingleShotSequence(input: {
   }
 
   const template = SCENE_SPLIT_TEMPLATES[input.sceneType] || SCENE_SPLIT_TEMPLATES.environment!;
+  // duration 기반 최소 샷 수 정책 적용 (9~15초: 최소 4, 4~8초: 최소 3)
+  const durationMinShots = getMinShots(DEFAULT_MODEL_ID, input.durationSec);
   const shotCount = progression.hasProgression
-    ? Math.min(progression.suggestedShotCount, template.shots.length)
-    : Math.min(2, template.shots.length);  // default 2-shot minimum
+    ? Math.max(Math.min(progression.suggestedShotCount, template.shots.length), durationMinShots)
+    : Math.max(durationMinShots, Math.min(2, template.shots.length));
 
   // Reorder segments based on beat type priority
   const beatHint = input.beatHint || "default";
@@ -399,8 +405,18 @@ export function splitSingleShotSequence(input: {
   }
 
   // ── Anti-fake-split: merge back adjacent shots with identical visual objectives ──
-  const { shots: mergedShots, mergeLog } = mergeAdjacentFakeSplits(shots);
+  // 단, duration 기반 최소 샷 수 아래로는 머지하지 않음
+  const mergeMinFloor = getMinShots(DEFAULT_MODEL_ID, input.durationSec);
+  const mergeResult = mergeAdjacentFakeSplits(shots);
+  let mergedShots = mergeResult.shots;
+  const mergeLog = mergeResult.mergeLog;
   splitLog.push(...mergeLog);
+
+  // 머지 결과가 최소 샷 수 미만이면 머지 전 상태로 복원
+  if (mergedShots.length < mergeMinFloor && shots.length >= mergeMinFloor) {
+    splitLog.push(`[anti-fake-split] Merge would reduce below min ${mergeMinFloor} shots — keeping ${shots.length} shots`);
+    mergedShots = shots;
+  }
 
   // If merge collapsed everything back to 1 shot, it wasn't a genuine split
   if (mergedShots.length <= 1 && shots.length > 1) {
@@ -485,8 +501,9 @@ export function enforceMinimumShotCount(input: {
   beatHint?: ShotBeatHint;
   styleSuffix?: string;
 }): SplitResult | null {
-  // Already has multiple shots
-  if (input.currentShotCount >= 2) return null;
+  // Duration 기반 최소 샷 수 — 이미 충족하면 분할 불필요
+  const minRequired = getMinShots(DEFAULT_MODEL_ID, input.durationSec);
+  if (input.currentShotCount >= Math.max(2, minRequired)) return null;
 
   // ── TOP PRIORITY: Arrow/progression detection always splits ──
   // If action or subject contains progression markers (→, then, etc.),
