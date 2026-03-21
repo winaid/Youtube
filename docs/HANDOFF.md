@@ -54,7 +54,7 @@ V1 완성 단계. 핵심 파이프라인/프롬프트/규칙이 구현 완료되
 | Studio vs Batch validation | Complete |
 | Submission-time auto-repair | Complete |
 | Runtime budget (300s/batch) | Complete |
-| Intentional one-take exception | Complete |
+| Intentional one-take exception | UI 비활성 (내부 코드 하위 호환 유지) |
 | Server-side enforcement & repair | Complete |
 | Unsupported-model messaging | Complete |
 | Job recovery & history | Complete |

@@ -19,10 +19,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       bodyText = await context.request.text();
       const parsed = JSON.parse(bodyText) as {
         operationName?: string;
+        taskId?: string; // node-execution.ts 호환 alias
         isExtend?: boolean;
         cutNumber?: number;
       };
-      operationName = parsed.operationName || "";
+      operationName = parsed.operationName || parsed.taskId || "";
       isExtend  = parsed.isExtend  ?? false;
       cutNumber = typeof parsed.cutNumber === "number" ? parsed.cutNumber : null;
     } catch (parseErr) {

@@ -367,9 +367,9 @@ export default function VideoSettingsPanel({
 
           <Separator style={{ background: "#c4b80030" }} />
 
-          {/* Reference Images */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">참조 이미지 (최대 3장 - 캐릭터/제품 외형 유지)</Label>
+          {/* Reference Images — VEO API 미지원으로 비활성화 */}
+          <div className="space-y-1.5 opacity-50 pointer-events-none">
+            <Label className="text-xs">참조 이미지 (준비 중)</Label>
             <div className="flex gap-2">
               {[0, 1, 2].map((i) => (
                 <ImageUploadSlot
@@ -383,9 +383,8 @@ export default function VideoSettingsPanel({
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground">
-              같은 캐릭터/인물의 다른 각도 사진을 올리면 외형 일관성이 높아집니다
+              VEO에서 참조 이미지를 아직 지원하지 않습니다. 시작 프레임을 대신 활용하세요.
             </p>
-            {/* 스토리보드 참조이미지 섹션 제거됨 */}
           </div>
 
           {/* First / Last Frame */}

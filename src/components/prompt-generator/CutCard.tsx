@@ -576,27 +576,18 @@ export default function CutCard({
             return (
               <div className="space-y-1">
                 <MultiShotEditor cut={cut} modelId={modelId} onUpdate={onUpdate} effectiveMultiShot={effectiveMultiShot} effectiveDurationSec={effectiveDurationSec} />
-                {/* 의도적 원테이크 전환 — 강제 멀티샷 클립에서도 예외 허용 */}
-                {forced && (
-                  <button
-                    onClick={() => onUpdate({ ...cut, multiShot: [], intentionalOneTake: true })}
-                    className="text-[9px] px-2 py-0.5 rounded transition-colors"
-                    style={{ color: "#6b7280", border: "1px solid #e5e7eb" }}
-                  >
-                    단일 샷으로 전환
-                  </button>
-                )}
+                {/* 단일 샷 전환 — 현재 제품 정책상 비활성 (8초 멀티샷 고정) */}
               </div>
             );
           }
 
-          // 의도적 원테이크 상태
+          // 의도적 원테이크 상태 — 현재 정책에서는 자동으로 멀티샷 복구 유도
           if (cut.intentionalOneTake) {
             return (
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[9px]" style={{ borderColor: "#6b7280", color: "#6b7280" }}>
-                    단일 샷
+                  <Badge variant="outline" className="text-[9px]" style={{ borderColor: "#e85d04", color: "#e85d04" }}>
+                    단일 샷 (권장하지 않음)
                   </Badge>
                   <button
                     onClick={() => {
@@ -609,12 +600,13 @@ export default function CutCard({
                       });
                       onUpdate({ ...cut, multiShot: initial, intentionalOneTake: undefined });
                     }}
-                    className="text-[9px] px-2 py-0.5 rounded transition-colors"
-                    style={{ color: "#e85d04", border: "1px solid #e85d0420" }}
+                    className="text-[9px] px-2 py-0.5 rounded transition-colors font-medium"
+                    style={{ color: "#e85d04", border: "1px solid #e85d0440" }}
                   >
-                    멀티샷으로 전환
+                    멀티샷으로 전환 (권장)
                   </button>
                 </div>
+                <p className="text-[8px]" style={{ color: "#9ca3af" }}>현재 정책: 8초 멀티샷 생성이 기본입니다.</p>
               </div>
             );
           }

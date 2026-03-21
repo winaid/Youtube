@@ -128,7 +128,9 @@ Roles: NOT assigned (VEO timestamp format has no role field).
 
 After auto-repair, `normalizeMultiShots()` clamps to model limits and enforces `minShotDuration`.
 
-## Intentional One-Take
+## Intentional One-Take (현재 제품 정책: 비활성)
+
+> **현재 정책:** 모든 생성은 8초 멀티샷 고정. UI에서 "단일 샷으로 전환" 버튼은 제거되었으며, 기존 원테이크 상태의 컷은 멀티샷 전환을 권장 표시합니다. 내부 코드 경로는 하위 호환을 위해 유지하되, 사용자가 새로 one-take를 설정하는 UI 진입점은 없습니다.
 
 One-take is an explicit exception, not a default. The user must actively set `intentionalOneTake=true`.
 
@@ -143,21 +145,17 @@ One-take is an explicit exception, not a default. The user must actively set `in
 | Server `generate-video.ts` | `isIntentionalOneTake` check in `shouldForce` calculation |
 | CutCard auto-init useEffect | Returns early if `cut.intentionalOneTake` |
 
-### UI visibility
+### UI visibility (현재 정책 반영)
 
-- CutCard shows a gray "의도적 원테이크" badge when active.
-- Toggle button: "멀티샷으로 전환" (convert to multi-shot).
-- Recovery UI shows "원테이크" badge on job cards.
-- Export JSON includes `intentionalOneTake: true` per cut.
+- "단일 샷으로 전환" 버튼: **제거됨** (현재 정책상 8초 멀티샷 고정).
+- 기존 원테이크 컷: "단일 샷 (권장하지 않음)" 배지 + "멀티샷으로 전환 (권장)" 버튼 표시.
+- Recovery UI는 "원테이크" 배지를 하위 호환용으로 유지.
+- Export JSON에는 `intentionalOneTake: true`가 하위 호환용으로 남아 있을 수 있음.
 
-### How to set it
+### How to set it (deprecated)
 
-In CutCard, clicking "의도적 원테이크로 전환" calls:
-```ts
-onUpdate({ ...cut, multiShot: [], intentionalOneTake: true })
-```
-
-This clears the multi-shot array and sets the flag. The reverse operation ("멀티샷으로 전환") rebuilds shots via `buildDefaultMultiShot()` and clears the flag.
+현재 UI에서 새로 one-take를 설정하는 진입점은 없습니다.
+기존 데이터 호환을 위해 코드 경로는 유지하되, 멀티샷 전환을 적극 권장합니다.
 
 ## Unsupported Model Fallback
 

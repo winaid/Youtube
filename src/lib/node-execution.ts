@@ -175,16 +175,16 @@ async function executeGenerateVideo(
   }
 
   // Polling result
-  if (data.taskId) {
+  const operationId = data.operationName || data.taskId;
+  if (operationId) {
     const engine = data.engine || "veo";
-    const taskId = data.taskId;
-    await pollVideoStatus(node.id, taskId, engine, callbacks);
+    await pollVideoStatus(node.id, operationId, engine, callbacks);
   }
 }
 
 async function pollVideoStatus(
   nodeId: string,
-  taskId: string,
+  operationName: string,
   engine: string,
   callbacks: ExecutionCallbacks,
 ): Promise<void> {
@@ -197,7 +197,7 @@ async function pollVideoStatus(
     const res = await fetch("/api/check-video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, engine }),
+      body: JSON.stringify({ operationName, engine }),
     });
 
     if (!res.ok) continue;

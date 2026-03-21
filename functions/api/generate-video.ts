@@ -299,7 +299,7 @@ interface GenerateVideoRequest {
   generateAudio?: boolean;
   generationMode?: "studio" | "batch";
   intentionalOneTake?: boolean;
-  referenceImages?: string[];
+  referenceImages?: string[]; // 현재 VEO API 미지원 — 클라이언트 호환용으로 수신만 함
   continuityMeta?: {
     segmentIndex: number;
     totalSegments: number;

@@ -147,7 +147,10 @@ The export JSON and preview must show `multiShot[]` with roles, durations, and p
 
 Studio blocks invalid payloads. Batch auto-repairs. These are different products for different users. Don't add review-heavy friction to Batch, and don't add auto-repair to Studio.
 
-### Don't break intentional one-take
+### Don't break intentional one-take (현재 UI 비활성, 내부 호환 유지)
+
+> **현재 정책:** UI에서 "단일 샷으로 전환" 버튼이 제거되어 사용자가 새로 one-take를 설정할 수 없습니다.
+> 기존 데이터/드래프트 호환을 위해 내부 코드 경로는 유지합니다.
 
 One-take is an explicit user decision. It must flow through all layers:
 - Editor: `cut.intentionalOneTake = true`

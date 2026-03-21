@@ -227,7 +227,7 @@ describe("executeGenerateVideo", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("video polling uses POST /api/check-video", () => {
-  it("should poll with POST and { taskId, engine } body", async () => {
+  it("should poll with POST and { operationName, engine } body", async () => {
     const vidNode = createNode(findDef("generate-video"), 0, 0);
     let state = createInitialCanvasState();
     state = addNode(state, { ...vidNode, data: { ...vidNode.data, prompt: "ocean waves" } });
@@ -235,10 +235,10 @@ describe("video polling uses POST /api/check-video", () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock;
 
-    // First call: generate-video returns taskId
+    // First call: generate-video returns operationName
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ taskId: "task-abc", engine: "veo", status: "RUNNING" }),
+      json: async () => ({ operationName: "op-abc", taskId: "op-abc", engine: "veo", status: "RUNNING" }),
     });
     // Second call: check-video returns RUNNING
     fetchMock.mockResolvedValueOnce({
@@ -258,12 +258,12 @@ describe("video polling uses POST /api/check-video", () => {
     await vi.advanceTimersByTimeAsync(6000); // second poll
     await promise;
 
-    // Verify polling call uses POST to /api/check-video
+    // Verify polling call uses POST to /api/check-video with operationName
     const pollCall = fetchMock.mock.calls[1];
     expect(pollCall[0]).toBe("/api/check-video");
     expect(pollCall[1].method).toBe("POST");
     const pollBody = JSON.parse(pollCall[1].body);
-    expect(pollBody.taskId).toBe("task-abc");
+    expect(pollBody.operationName).toBe("op-abc");
     expect(pollBody.engine).toBe("veo");
 
     // Verify final state
@@ -287,7 +287,7 @@ describe("video polling uses POST /api/check-video", () => {
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ taskId: "task-fail", status: "RUNNING" }),
+      json: async () => ({ operationName: "op-fail", taskId: "op-fail", status: "RUNNING" }),
     });
     fetchMock.mockResolvedValueOnce({
       ok: true,
