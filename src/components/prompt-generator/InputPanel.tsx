@@ -781,6 +781,10 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
         resultMode: meta?.resultMode ?? null,
         grounded: meta?.finalGrounded ?? null,
       });
+      // grounding 진단 데이터 출력
+      if (debug?.retryStages?.[0]?.groundingDiag) {
+        console.log("[recommend-director] groundingDiag:", debug.retryStages[0].groundingDiag);
+      }
 
       appendRecommendLog({
         timestamp: Date.now(), storySnippet, storyLength: storyText.length,
