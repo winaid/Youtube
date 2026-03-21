@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, GEMINI_MODEL_SEARCH, fetchWithModelFallback, geminiErrorResponse, parseFirstJsonArray } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -139,11 +139,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     console.info(`[suggest-prompts] persona=${personaId} promptLen=${prompt.length}`);
 
-    // grounded 웹 검색: Pro 모델로 호출 — google_search 도구는 Pro만 지원
-    // Pro 실패 시 Flash-Lite 모델 지식 폴백
+    // grounded 웹 검색: Flash-Lite 사용
+    // 실패 시 모델 지식 폴백
     let res = await fetchWithAuth(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+      buildGeminiUrl(context.env, GEMINI_MODEL_SEARCH),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

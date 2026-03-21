@@ -1245,16 +1245,11 @@ Each director object must have:
           : [];
         const isGrounded = opts.useGrounding && (sources.length > 0 || webSearchQueries.length > 0);
 
-        // grounding 요청했는데 소스가 비었으면 디버그 로그 (응답 구조 진단용)
-        if (opts.useGrounding && sources.length === 0) {
-          const metaKeys = grMeta ? Object.keys(grMeta) : [];
+        // grounding 디버그 로그 — 항상 출력하여 응답 구조 확인
+        if (opts.useGrounding) {
           const candidateKeys = candidate ? Object.keys(candidate) : [];
-          const hasSupports = !!(grMeta as Record<string, unknown>)?.groundingSupports;
-          if (webSearchQueries.length > 0) {
-            console.log(`[recommend-director] grounding 소스 URL 없으나 webSearchQueries 존재 → grounded=true (${opts.label}). queries=[${webSearchQueries.join(", ")}]`);
-          } else {
-            console.warn(`[recommend-director] ⚠ grounding 소스 없음 (${opts.label}). model=${opts.model}, meta keys=[${metaKeys.join(",")}], candidate keys=[${candidateKeys.join(",")}], hasSupports=${hasSupports}, hasSearchQueries=false`);
-          }
+          const metaSnapshot = grMeta ? JSON.stringify(grMeta).slice(0, 500) : "null";
+          console.log(`[recommend-director] grounding 응답 진단 (${opts.label}): model=${opts.model}, sources=${sources.length}, webSearchQueries=${webSearchQueries.length}, candidateKeys=[${candidateKeys.join(",")}], groundingMetadata=${metaSnapshot}`);
         }
 
         const result = processWebResponse(text, sources, opts.label);
@@ -1299,8 +1294,7 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (2.5 Flash + google_search) ──
-          // 3.x Flash 계열은 groundingMetadata 미반환 버그 → 2.5 Flash 사용
+          // ── STAGE 1: Grounded 웹 검색 (Flash-Lite + google_search) ──
           stageLabel = "stage1_grounded_web";
           model = GEMINI_MODEL_SEARCH;
           prompt = buildWebPrompt();

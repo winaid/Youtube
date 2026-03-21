@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, GEMINI_MODEL_SEARCH, geminiErrorResponse } from "./_gemini-keys";
 import { extractGroundingSources } from "./_director-shared";
 
 type Env = GeminiEnv;
@@ -131,7 +131,7 @@ ${personaPrompt || ""}
         tools: [{ google_search: {} }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
       }),
-    }); // google_search 사용 → Pro 기본값 (Flash-Lite는 grounding 미지원)
+    }, { primaryModel: GEMINI_MODEL_SEARCH }); // google_search → SEARCH 모델 사용
 
     if (!res.ok) {
       const errText = await res.text();
