@@ -99,7 +99,7 @@ export function preExtractSignals(storyText: string): PreExtractedSignals {
   // ── Direct genre keywords (Korean + English) ──
   const genreMap: [RegExp, string][] = [
     [/(?:로맨스|사랑|연인|연애|설레|키스)/, "로맨스"],
-    [/(?:호러|공포|귀신|유령|좀비|저주|괴물|으스스|소름|horror)/, "호러"],
+    [/(?:호러|공포|귀신|유령|좀비|저주|괴물|으스스|horror)/, "호러"],
     [/(?:스릴러|추격|도주|쫓기|쫓아|범인|범죄|살인|미스터리|수사|탐정|사건)/, "스릴러"],
     [/(?:코미디|웃기|유머|개그|웃음|장난)/, "코미디"],
     [/(?:액션|폭발|전투|격투|싸움|추격전|총|무기)/, "액션"],
@@ -160,7 +160,7 @@ export function preExtractSignals(storyText: string): PreExtractedSignals {
     [/(?:초현실|surreal|비현실|현실.*흔들|현실.*무너)/, "초현실적"],
     [/(?:우울|멜랑콜리|melanchol|암울|음울|침울)/, "우울한"],
     [/(?:서정|서정적|lyrical|감성적|감성)/, "서정적"],
-    [/(?:공포|무서|섬뜩|으스스|소름|creepy)/, "공포"],
+    [/(?:공포|섬뜩|으스스|creepy)/, "공포"],
     [/(?:긴장|tension|tense|팽팽|위기|위험|아슬)/, "긴장"],
     [/(?:유머|웃기|코믹|재미|유쾌|즐거)/, "유머"],
     [/(?:비장|장엄|epic|웅장|거대|압도)/, "비장한"],

@@ -388,9 +388,9 @@ describe("buildEnhancedWebSearchQuery", () => {
 describe("golden cases: 기존 명확한 입력은 여전히 잘 추출됨", () => {
   it("호러 추격 — 공포/긴장 mood + ruins visual", () => {
     const result = preExtractSignals(
-      "자정, 폐공장에서 마지막 야근을 하던 경비원. 3층에서 소름 돋는 발소리가 들린다."
+      "자정, 폐공장에서 마지막 야근을 하던 경비원. 3층에서 으스스한 발소리가 들린다."
     );
-    expect(result.genres).toContain("호러"); // "소름" 키워드
+    expect(result.genres).toContain("호러"); // "으스스" 키워드
     expect(result.moods).toContain("공포");
     expect(result.visualHints).toContain("ruins"); // 폐공장
   });
