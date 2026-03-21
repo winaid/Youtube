@@ -504,6 +504,7 @@ interface CutOutline {
   sceneBeat2?: string;     // English ≤12w — SITUATION beat (Step1에서 생략 가능)
   sceneBeat3?: string;     // English ≤12w — EMOTION beat (Step1에서 생략 가능)
   endHook?: string;        // English ≤10w — 다음 씬으로 이어지는 시각적 고리 (Step1에서 생략 가능)
+  dialogueText?: string;   // 한국어 — 극 중 인물이 말하는 대사 (TTS용, videoPrompt에 포함 금지)
 }
 
 interface MultiShotItem {
@@ -775,6 +776,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 - locationCue: 영어 ≤8 words — 서사 기능을 뒷받침하는 장소 시각 단서
 - situationCue: 영어 ≤8 words — 서사 기능이 드러나는 상황 증거 (원인/변화/결과가 보이는 시각적 사실)
 - emotionalAnchor: 영어 ≤8 words — 이 서사 기능의 감정적 무게가 집약되는 시각 포인트
+- dialogueText: (선택) 한국어 — 이 장면에서 인물이 말하는 대사. TTS 음성으로 재생됨. ⚠️ 이 텍스트는 videoPrompt/imagePrompt에 절대 포함하지 마라. subjectAction에는 "말하는 행동"만 묘사 (예: "lips move urgently", "speaks with clenched jaw")
 
 ## ⚠️ 시퀀스 밀도 규칙
 - 총 ${secPerCut * cutCount}초 기준: 반드시 ${cutCount}개의 개별 시퀀스(outlines)를 작성하라
@@ -1224,6 +1226,19 @@ moodLighting (≤55 chars English — 반드시 4요소: source + direction + in
   BANNED: "dramatic lighting" / "moody atmosphere" / "cinematic light" — 추상어만 사용 절대 금지
   BANNED: "storefront signs" / "neon signs" — sign 오브젝트는 텍스트를 유도하므로 사용 금지
   필수: source(광원 종류) + direction(방향/위치) + intensity(강도) + quality(질감)
+
+## ⚠️ 대사(DIALOGUE) 처리 규칙 — 극 중 인물 대사는 TTS로 분리
+스토리에 대사가 있으면 반드시 아래 규칙을 따르라:
+1. videoPrompt / imagePrompt / subjectAction에 대사 텍스트를 절대 포함하지 마라
+   ❌ BANNED: "character says 'I will return'", "whispers 'help me'", "shouts '멈춰!'"
+   ❌ BANNED: 따옴표(', ", 「, 」, 『, 』) 안의 모든 텍스트
+   ❌ BANNED: says, whispers, shouts, yells, murmurs, mutters + 인용문
+2. 대사가 있는 장면은 **말하는 행동**만 시각적으로 묘사하라:
+   ✅ "lips move with urgent expression", "mouth opens mid-speech, brow furrowed"
+   ✅ "leans forward speaking intensely, hand gestures emphasizing"
+   ✅ "whispers close to companion's ear, hand cupping mouth"
+3. 실제 대사 텍스트는 narrationText 필드에 저장하라 (TTS 음성으로 재생됨)
+4. 한국어/한글 텍스트는 videoPrompt/imagePrompt에 절대 포함 금지 (VEO가 자막으로 렌더링함)
 
 ## ⚠️ TEXT-FREE 규칙 (간판/텍스트 유도 오브젝트 금지)
 프롬프트에 "no text" / "no readable text"를 포함하는 동시에 텍스트를 연상시키는 오브젝트를 사용하면 영상 모델에게 상충 신호가 됩니다.
@@ -2707,6 +2722,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // defaultVideoPrompt: 자연어 중심 (메타태그 제거)
       const defaultVideoPrompt = `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.cameraMovement}. ${sceneTimingBeat}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${noTextSuffix}`;
 
+      // ── 대사 텍스트: outline.dialogueText → narrationText로 매핑 (TTS용) ──
+      const dialogueAsNarration = outline.dialogueText?.trim() || undefined;
+
       return {
         cutNumber:     outline.cutNumber,
         durationSec:   secPerCut,
@@ -2722,6 +2740,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         moodLighting,
         imagePrompt:      d?.imagePrompt      ?? defaultImagePrompt,
         endImagePrompt:   d?.endImagePrompt   ?? defaultEndImagePrompt,
+        // 극 중 대사 → TTS 나레이션으로 출력 (영상 프롬프트에는 포함 안 됨)
+        ...(dialogueAsNarration ? { narrationText: dialogueAsNarration } : {}),
         videoPrompt:      d?.videoPrompt      ?? defaultVideoPrompt,
         extendPrompt:     i === 0 ? "" : (d?.extendPrompt && d.extendPrompt.trim().length > 20
           ? d.extendPrompt

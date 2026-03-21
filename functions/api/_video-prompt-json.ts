@@ -54,6 +54,26 @@ export interface ExtendPromptJson {
   styleSuffix: string;
 }
 
+// ─── Dialogue / Quoted Text Stripping ─────────────────────────────────────────
+// VEO가 인용문/대사를 자막으로 렌더링하는 것을 방지
+
+/** 인용문(따옴표, 꺽쇠 등)과 한글 텍스트를 프롬프트에서 제거 */
+function stripDialogueAndKorean(text: string): string {
+  let cleaned = text;
+  // 1. 따옴표로 둘러싸인 대사 제거: 'text', "text", "text", 「text」, 『text』
+  cleaned = cleaned.replace(/[""\u201C\u201D][^""\u201C\u201D]*[""\u201C\u201D]/g, "");
+  cleaned = cleaned.replace(/['''][^''']*[''']/g, "");
+  cleaned = cleaned.replace(/「[^」]*」/g, "");
+  cleaned = cleaned.replace(/『[^』]*』/g, "");
+  // 2. "says/whispers/shouts + quoted text" 패턴 → 행동만 보존
+  cleaned = cleaned.replace(/\b(says?|whispers?|shouts?|yells?|murmurs?|mutters?|exclaims?)\s*[:,"'""'「『].*/gi, "speaks");
+  // 3. 한글 텍스트 제거 (VEO가 자막으로 렌더링함)
+  cleaned = cleaned.replace(/[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+/g, "");
+  // 4. 정리: 중복 공백/구두점
+  cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/[,.]\s*[,.]/g, ",").replace(/\.\s*\./g, ".").trim();
+  return cleaned;
+}
+
 // ─── Cinematic Realism Medium Enforcement ─────────────────────────────────────
 
 function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): void {
@@ -110,7 +130,7 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
     .trim();
   parts.push(cleanSuffix);
   enforceCinematicRealismMedium(parts, json);
-  return parts.filter(Boolean).join(". ");
+  return stripDialogueAndKorean(parts.filter(Boolean).join(". "));
 }
 
 export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
@@ -124,5 +144,5 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();
   parts.push(cleanSuffix);
-  return parts.filter(Boolean).join(". ");
+  return stripDialogueAndKorean(parts.filter(Boolean).join(". "));
 }
