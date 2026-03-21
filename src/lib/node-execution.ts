@@ -144,7 +144,7 @@ async function executeGenerateVideo(
   const body: Record<string, unknown> = {
     prompt,
     engine: "veo",
-    durationSeconds: (node.data.durationSec as number) || 8, // VEO 정책: 8초 고정
+    durationSeconds: 8, // VEO 정책: 8초 고정 (node.data.durationSec 무시)
     aspectRatio: node.data.aspectRatio ?? "16:9",
   };
 

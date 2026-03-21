@@ -80,7 +80,7 @@ function chainToCut(chain: ExportChain, cutNumber: number): Cut {
   const vidNode = chain.videoNode;
   const preserved = (vidNode.data._preservedCut as PreservedCutData) || {};
   const prompt = (vidNode.data.prompt as string) || "";
-  const durationSec = (vidNode.data.durationSec as number) || 6;
+  const durationSec = (vidNode.data.durationSec as number) || 8; // VEO 정책: 8초 고정
   const sceneDescription = (vidNode.data.sceneDescription as string) || "";
 
   return {
