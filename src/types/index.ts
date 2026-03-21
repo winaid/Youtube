@@ -355,6 +355,8 @@ export interface Cut {
   durationClass?: DurationClass;
   /** scene/sequence 그룹 ID — 같은 그룹에 속하는 cut끼리 공유 */
   groupId?: string;
+  /** 극 중 인물 대사 — TTS 음성으로 재생 (videoPrompt에는 포함 안 됨) */
+  narrationText?: string;
   /** continuity mode 세그먼트 메타 — 이어 만들기 시 세그먼트 경계 상태 추적 */
   continuitySegment?: {
     segmentIndex: number;

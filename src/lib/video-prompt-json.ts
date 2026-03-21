@@ -727,8 +727,8 @@ function stripDialogueAndKorean(text: string): string {
   cleaned = cleaned.replace(/['''][^''']*[''']/g, "");
   cleaned = cleaned.replace(/「[^」]*」/g, "");
   cleaned = cleaned.replace(/『[^』]*』/g, "");
-  // 2. "says/whispers/shouts + quoted text" 패턴 → 행동만 보존
-  cleaned = cleaned.replace(/\b(says?|whispers?|shouts?|yells?|murmurs?|mutters?|exclaims?)\s*[:,"'""'「『].*/gi, "speaks");
+  // 2. "says/whispers/shouts + quoted text" 패턴 → 인용 부분만 제거, 뒤 텍스트 보존
+  cleaned = cleaned.replace(/\b(says?|whispers?|shouts?|yells?|murmurs?|mutters?|exclaims?)\s*["'""'「『][^"'""'」』]*["'""'」』]/gi, "speaks");
   // 3. 한글 텍스트 제거 (VEO가 자막으로 렌더링함)
   cleaned = cleaned.replace(/[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+/g, "");
   // 4. 정리
