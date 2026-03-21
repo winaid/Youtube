@@ -23,10 +23,10 @@ export interface GeminiEnv {
 
 /** 메인 추론 (분석, 이야기 생성) — Gemini 3.1 Pro Preview */
 export const GEMINI_MODEL_PRO   = "gemini-3.1-pro-preview";
-/** 폴백 모델 — Gemini 2.5 Flash (빠른 응답 + google_search 지원) */
-export const GEMINI_MODEL_FLASH = "gemini-2.5-flash-preview-05-20";
-/** 웹 검색 grounding 전용 — Gemini 2.5 Flash (grounding 지원 + 빠른 응답) */
-export const GEMINI_MODEL_SEARCH = "gemini-2.5-flash-preview-05-20";
+/** 폴백 모델 — Gemini 3.1 Pro Preview */
+export const GEMINI_MODEL_FLASH = "gemini-3.1-pro-preview";
+/** 웹 검색 grounding 전용 — Gemini 3.1 Pro Preview */
+export const GEMINI_MODEL_SEARCH = "gemini-3.1-pro-preview";
 /** 이미지 생성 (primary) — Nano Banana 2 */
 export const GEMINI_MODEL_IMAGE       = "gemini-3.1-flash-image-preview";
 /** 이미지 생성 (fallback) */

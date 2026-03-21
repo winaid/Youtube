@@ -31,8 +31,8 @@ describe("Gemini 모델 상수", () => {
     expect(GEMINI_MODEL_PRO).toBe("gemini-3.1-pro-preview");
   });
 
-  it("GEMINI_MODEL_FLASH는 gemini-2.5-flash-preview-05-20 (빠른 폴백)", () => {
-    expect(GEMINI_MODEL_FLASH).toBe("gemini-2.5-flash-preview-05-20");
+  it("GEMINI_MODEL_FLASH는 gemini-3.1-pro-preview (전체 Pro 통일)", () => {
+    expect(GEMINI_MODEL_FLASH).toBe("gemini-3.1-pro-preview");
   });
 
   it("이미지 모델은 별도 도메인 (Flash-Lite 아님)", () => {
@@ -42,8 +42,8 @@ describe("Gemini 모델 상수", () => {
     expect(GEMINI_MODEL_IMAGE_FB).not.toBe(GEMINI_MODEL_FLASH);
   });
 
-  it("Pro와 Flash가 서로 다른 모델", () => {
-    expect(GEMINI_MODEL_PRO).not.toBe(GEMINI_MODEL_FLASH);
+  it("Pro와 Flash가 동일 모델 (현재 정책: 전체 Pro 통일)", () => {
+    expect(GEMINI_MODEL_PRO).toBe(GEMINI_MODEL_FLASH);
   });
 });
 
@@ -104,7 +104,7 @@ describe("ModelFallbackMeta 구조", () => {
     expect(meta.fallbackModel).toBe(GEMINI_MODEL_FLASH);
   });
 
-  it("Pro 실패 → Flash 폴백 시 fallbackUsed=true, finalModel=Flash", () => {
+  it("Pro 실패 → 폴백도 Pro (현재 정책: 전체 Pro 통일)", () => {
     const meta: ModelFallbackMeta = {
       primaryModel: GEMINI_MODEL_PRO,
       fallbackModel: GEMINI_MODEL_FLASH,
@@ -114,7 +114,7 @@ describe("ModelFallbackMeta 구조", () => {
 
     expect(meta.fallbackUsed).toBe(true);
     expect(meta.finalModel).toBe(GEMINI_MODEL_FLASH);
-    expect(meta.finalModel).not.toBe(meta.primaryModel);
+    expect(meta.finalModel).toBe(meta.primaryModel);
   });
 });
 

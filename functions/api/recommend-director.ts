@@ -966,18 +966,22 @@ ${localList}
         const exclusionBlock = strengthenExclusion
           ? `## STRICT EXCLUSION LIST — do NOT recommend ANY of these directors under ANY name, alias, romanization, or indirect reference:\n${localNameExclusionPairs}\n\nCRITICAL: This exclusion is absolute. Do not recommend:\n- The same person under different spelling (e.g., "Park Chan Wook" vs "Park Chan-wook")\n- Films directed by excluded directors as indirect references\n- Directors commonly confused with excluded directors\nIf you are unsure, do NOT include them.\n`
           : `## STRICT EXCLUSION LIST — do NOT recommend any of these directors under any name, alias, or reference:\n${localNameExclusionPairs}\n\nThis means:\n- Do NOT suggest any director whose English name, Korean name, or common alias matches anyone above\n- Do NOT suggest the same director under a different romanization or spelling\n- Do NOT reference their notable works as a way to indirectly suggest them\n- If you are unsure whether a director is in the exclusion list, do NOT include them\n`;
-        const kw = queryOverride || `${extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ")} | ${extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ")}`;
+        const genresMoodsRaw = `${extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ")} | ${extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ")}`.replace(/^\s*\|\s*$/, "").trim();
+        const kw = queryOverride || genresMoodsRaw || "";
+        const excerpt = storyText.slice(0, 600);
+        // 장르/무드 추출 실패 시 스토리 텍스트 자체를 분석 대상으로 사용
+        const hasSignalKeywords = kw.length > 3;
         return `You are a film/animation director discovery engine.
-IMPORTANT: You MUST use the google_search tool to search the web before answering. Do NOT rely on your internal knowledge alone. Search for directors matching the scenario keywords to find accurate, up-to-date information.
+IMPORTANT: You MUST use the google_search tool to search the web before answering. Do NOT rely on your internal knowledge alone.${hasSignalKeywords ? " Search for directors matching the scenario keywords to find accurate, up-to-date information." : " Read the story text below carefully, analyze its themes, visual atmosphere, and narrative style, then search for directors whose visual style matches."}
 
 Your mission: find directors who are NOT in the user's existing collection but whose visual style matches the scenario.
 
 ${exclusionBlock}${retryNote}
 ## SCENARIO CONTEXT
-Keywords: ${kw}
-Excerpt: ${storyText.slice(0, 400)}
+${hasSignalKeywords ? `Keywords: ${kw}\n` : ""}Story text (analyze this directly for themes, mood, visual style, and genre):
+${excerpt}
 
-Search the web for: "${kw} film directors visual style"
+${hasSignalKeywords ? `Search the web for: "${kw} film directors visual style"` : `Based on the story text above, identify the core themes and visual atmosphere, then search the web for directors whose cinematographic style matches.`}
 
 ## REQUIREMENTS
 1. Recommend exactly 4 real, existing directors. No fictional directors.
@@ -1191,8 +1195,8 @@ Each director object must have:
 
         let res: Response;
         try {
-          // grounding 호출은 웹 검색 추가 지연 감안, Cloudflare 30s edge 제한 내
-          const timeoutMs = opts.useGrounding ? 25_000 : undefined;
+          // grounding 호출은 웹 검색 추가 지연 감안 — Pro 모델은 응답이 느릴 수 있음
+          const timeoutMs = opts.useGrounding ? 55_000 : undefined;
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
@@ -1294,7 +1298,7 @@ Each director object must have:
       let recoveredAtStage: number | null = null;
 
       const pipelineStartMs = Date.now();
-      const PIPELINE_DEADLINE_MS = 27_000; // edge 30s 제한 내에서 응답 마감
+      const PIPELINE_DEADLINE_MS = 58_000; // Pro 모델 google_search grounding 응답 시간 감안
 
       for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
         // ── 이미 후보 확보되면 종료 ──
