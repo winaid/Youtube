@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { PromptInput, PromptOutput, GeneratorStatus } from "@/types";
 import { generatePrompt } from "@/lib/mock-generator";
+import { directors } from "@/data/directors";
 import { saveProjectRecord } from "@/lib/analytics";
 import { savePromptHistory } from "@/lib/prompt-history";
 import { saveDraft, buildDraft, type DraftGenerationMeta, type SaveStatus, type OwnerSessionNote } from "@/lib/draft-store";
@@ -345,6 +346,10 @@ export default function PromptGenerator() {
               directorName={lastInput?.directorPersona}
               region={lastInput?.region}
               animationMode={lastInput?.animationMode}
+              directorTechniques={
+                lastInput?.customDirector?.signatureTechniques
+                ?? directors.find(d => d.id === lastInput?.directorPersona)?.signatureTechniques
+              }
               secondsPerScene={secondsPerScene}
               onSecondsPerSceneChange={setSecondsPerScene}
             />

@@ -4,12 +4,19 @@ type Env = GeminiEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode } = await context.request.json() as {
+    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode, directorTechniques } = await context.request.json() as {
       prompt: string;
       aspectRatio?: string;
       numberOfImages?: number;
       sceneDescription?: string;
       animationMode?: string;
+      directorTechniques?: {
+        cameraWork?: string;
+        colorPalette?: string;
+        lighting?: string;
+        editingStyle?: string;
+        moodKeywords?: string;
+      };
     };
 
     if (!prompt?.trim()) {
@@ -41,8 +48,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     };
     const styleDirective = styleMap[animationMode || ""] || "Cinematic photography. Professional lighting.";
 
+    // 감독 signatureTechniques → 이미지 스타일 지시
+    const directorLines: string[] = [];
+    if (directorTechniques) {
+      if (directorTechniques.cameraWork) directorLines.push(`Camera: ${directorTechniques.cameraWork}`);
+      if (directorTechniques.colorPalette) directorLines.push(`Color palette: ${directorTechniques.colorPalette}`);
+      if (directorTechniques.lighting) directorLines.push(`Lighting: ${directorTechniques.lighting}`);
+      if (directorTechniques.moodKeywords) directorLines.push(`Mood: ${directorTechniques.moodKeywords}`);
+    }
+    const directorBlock = directorLines.length > 0
+      ? `\nDirector visual style:\n${directorLines.join("\n")}`
+      : "";
+
     const imagePrompt = `Create a single storyboard frame. ${aspectLabel}
-Style: ${styleDirective} One clear composition per image.${sceneContext}
+Style: ${styleDirective} One clear composition per image.${directorBlock}${sceneContext}
 IMPORTANT: Do NOT render any readable text, letters, writing, characters, calligraphy, stamps, or inscriptions on the image. If the scene involves a document, scroll, letter, or book, show it as a prop but keep its surface blank or illegibly blurred — never show actual readable content.
 
 ${prompt}`;

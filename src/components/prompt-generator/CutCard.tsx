@@ -320,8 +320,8 @@ function JsonPromptView({
 
 export default function CutCard({
   cut, canonicalViewModel: cvm, characterSeeds, onUpdate,
-  storyboardImage: _storyboardImage, storyboardCandidates: _storyboardCandidates, storyboardLoading: _storyboardLoading, onGenerateImage: _onGenerateImage, onSelectCandidate: _onSelectCandidate,
-  storyboardEndImage: _storyboardEndImage, storyboardEndLoading: _storyboardEndLoading, onGenerateEndImage: _onGenerateEndImage,
+  storyboardImage, storyboardCandidates, storyboardLoading, onGenerateImage, onSelectCandidate,
+  storyboardEndImage, storyboardEndLoading, onGenerateEndImage,
   sceneTtsUrl, sceneTtsLoading, onGenerateSceneTts,
   onFeedbackRefine, onEnglishRefine,
   userVideoMode: _userVideoMode, modelId,
@@ -505,6 +505,64 @@ export default function CutCard({
       <CardContent className="px-4 pb-4 space-y-3">
         {/* 장면 설명 */}
         <p className="text-sm">{cut.sceneDescription}</p>
+
+        {/* 스토리보드 이미지 섹션 */}
+        <div className="flex items-start gap-2">
+          {storyboardImage ? (
+            <div className="flex items-center gap-2">
+              <div className="relative shrink-0 w-20 h-20 rounded-md overflow-hidden border" style={{ borderColor: isEven ? "#c4b800" : "#787fff" }}>
+                <img src={`data:image/png;base64,${storyboardImage}`} alt={`CUT ${cut.cutNumber} 스토리보드`} className="w-full h-full object-cover" />
+                <span className="absolute top-0.5 left-0.5 bg-black/60 text-[8px] text-white px-1 rounded">시작</span>
+              </div>
+              {storyboardEndImage && (
+                <div className="relative shrink-0 w-20 h-20 rounded-md overflow-hidden border" style={{ borderColor: "#22c55e" }}>
+                  <img src={`data:image/png;base64,${storyboardEndImage}`} alt={`CUT ${cut.cutNumber} 끝`} className="w-full h-full object-cover" />
+                  <span className="absolute top-0.5 left-0.5 bg-black/60 text-[8px] text-white px-1 rounded">끝</span>
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                {onGenerateImage && (
+                  <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={onGenerateImage} disabled={storyboardLoading}>
+                    {storyboardLoading ? "생성 중..." : "재생성"}
+                  </Button>
+                )}
+                {!storyboardEndImage && onGenerateEndImage && (
+                  <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={onGenerateEndImage} disabled={storyboardEndLoading}>
+                    {storyboardEndLoading ? "생성 중..." : "끝 프레임"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            onGenerateImage && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                style={{ borderColor: isEven ? "#c4b800" : "#787fff", color: isEven ? "#c4b800" : "#787fff" }}
+                onClick={onGenerateImage}
+                disabled={storyboardLoading}
+              >
+                {storyboardLoading ? "스토리보드 생성 중..." : "스토리보드 생성"}
+              </Button>
+            )
+          )}
+          {/* 스토리보드 후보 선택 */}
+          {storyboardCandidates && storyboardCandidates.length > 1 && (
+            <div className="flex gap-1 items-center">
+              {storyboardCandidates.map((b64, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSelectCandidate?.(b64)}
+                  className="w-8 h-8 rounded border overflow-hidden transition-all hover:scale-110"
+                  style={{ borderColor: b64 === storyboardImage ? "#22c55e" : "#555" }}
+                >
+                  <img src={`data:image/png;base64,${b64}`} alt={`후보 ${i + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* 멀티샷 기본 에디터 — eligible 클립은 자동 초기화 */}
         {modelId && onUpdate && (() => {

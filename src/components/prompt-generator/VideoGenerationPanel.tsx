@@ -508,6 +508,12 @@ export default function VideoGenerationPanel({
                           프레임 연결 OFF
                         </Badge>
                       )}
+                      {/* 스토리보드 기반 image-to-video 표시 */}
+                      {clip.continuityQuality?.frameSource?.startsWith("storyboard") && (
+                        <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#8b5cf6", color: "#7c3aed" }}>
+                          스토리보드 기반
+                        </Badge>
+                      )}
                     </div>
 
                     {/* 씬 타입별 세부 점수 */}

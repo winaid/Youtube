@@ -41,6 +41,14 @@ interface ResultPanelProps {
   directorName?: string;
   region?: string;
   animationMode?: string;
+  /** 감독 signatureTechniques — 스토리보드 이미지 생성 시 스타일 반영 */
+  directorTechniques?: {
+    cameraWork?: string;
+    colorPalette?: string;
+    lighting?: string;
+    editingStyle?: string;
+    moodKeywords?: string;
+  };
   /** 시퀀스당 초 — VEO 정책상 항상 8 (고정) */
   secondsPerScene?: number;
   /** 시퀀스당 초 변경 콜백 (8 고정) */
@@ -114,6 +122,7 @@ export default function ResultPanel({
   directorName: _directorName,
   region,
   animationMode,
+  directorTechniques,
   secondsPerScene,
   onSecondsPerSceneChange,
 }: ResultPanelProps) {
@@ -1020,7 +1029,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode }),
+                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode, directorTechniques }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
@@ -1052,7 +1061,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}`, animationMode }),
+                        body: JSON.stringify({ prompt: endPrompt, aspectRatio: "9:16", sceneDescription: `END of: ${cut.sceneDescription}`, animationMode, directorTechniques }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
