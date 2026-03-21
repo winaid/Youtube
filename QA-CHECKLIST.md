@@ -38,14 +38,13 @@
 - [ ] 연속 재생 시 컷 간 시각적 연속성(인물, 배경, 색감)이 유지되는가
 - [ ] sourceVideo가 없는 경우 text-to-video 폴백이 작동하는가 (콘솔에 degradation 로그)
 
-### B-3. Reference Image 동작 (최우선)
+### B-3. Reference Image 동작 (현재 비활성)
 
-- [ ] 캐릭터 매니저에서 얼굴 추출 버튼 클릭 → 512px 정사각 크롭 이미지 생성
-- [ ] 추출된 얼굴이 캐릭터 카드에 썸네일로 표시되는가
-- [ ] 영상 설정에서 reference image 수동 업로드 (최대 3장) 가능한가
-- [ ] 4장째 업로드 시 3장으로 제한되는가 (초과 무시 또는 경고)
-- [ ] 생성 요청 body의 `referenceImageBase64s` 배열에 이미지가 포함되는가
-- [ ] VEO 3.0/2.0 모델 사용 시 reference image가 무시되는가 (3.1만 지원)
+> **현재 정책:** VEO API가 reference image를 지원하지 않으므로 UI 비활성 상태.
+> 아래 항목은 향후 API 지원 시 재활성화 대상이며, 현재는 점검 대상이 아닙니다.
+
+- [x] ~~영상 설정 패널에서 참조 이미지 영역이 `opacity-50 pointer-events-none`으로 비활성화~~
+- [x] ~~서버에서 `referenceImages` 필드 수신 시 무시 (호환용 수신만)~~
 
 ### B-4. 히스토리 / 새로고침 후 이어서 작업 (최우선)
 
@@ -116,7 +115,7 @@
 
 - [ ] 사용자 생성 성공률 > 90% (실패 job 비율 추적)
 - [ ] extend 체인 평균 길이 확인 (3컷 이상 도달 비율)
-- [ ] reference image 사용 비율 및 관련 에러율 추적
+- [ ] ~~reference image~~ (현재 비활성 — 향후 API 지원 시 재추가)
 - [ ] localStorage 관련 클라이언트 에러 보고 유무
 - [ ] VEO API 모델별(3.1 fast / 3.1 standard) 성공률 비교
 - [ ] 사용자 세션 평균 체류 시간 및 이탈 지점 파악

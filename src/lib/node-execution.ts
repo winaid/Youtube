@@ -224,7 +224,21 @@ async function pollVideoStatus(
       continue;
     }
     consecutiveErrors = 0;
-    const data = await res.json();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
+    try {
+      data = await res.json();
+    } catch {
+      consecutiveErrors++;
+      if (consecutiveErrors >= 5) {
+        callbacks.onStateChange(s =>
+          updateNodeStatus(s, nodeId, "failed", undefined, undefined, "응답 파싱 실패"),
+        );
+        return;
+      }
+      continue;
+    }
 
     if (data.status === "COMPLETED" && data.videoUri) {
       callbacks.onStateChange(s => updateNodeStatus(s, nodeId, "success", data.videoUri, "video"));
