@@ -1299,16 +1299,16 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Flash-Lite + google_search) ──
-          // Flash-Lite로 검색 — Pro는 분석/이야기 생성에만 사용
+          // ── STAGE 1: Grounded 웹 검색 (Pro + google_search) ──
+          // google_search 도구는 Pro 모델만 지원 — Flash-Lite는 grounding 불가
           stageLabel = "stage1_grounded_web";
-          model = GEMINI_MODEL_FLASH;
+          model = GEMINI_MODEL_PRO;
           prompt = buildWebPrompt();
           useGrounding = true;
           forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
           triggerReason = "initial";
         } else if (stageNum === 2) {
-          // ── STAGE 2: grounding 실패 시 JSON 폴백 (grounding 재시도 불필요 — Stage 1이 이미 Flash) ──
+          // ── STAGE 2: grounding 실패 시 Flash-Lite JSON 폴백 (grounding 재시도 무의미) ──
           const prevReasons = allEmptyReasons;
           const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
           if (shouldSkipToStage4) { continue; }

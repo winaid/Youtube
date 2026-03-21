@@ -139,11 +139,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     console.info(`[suggest-prompts] persona=${personaId} promptLen=${prompt.length}`);
 
-    // grounded 웹 검색은 Flash-Lite 모델로 호출 — Pro는 분석/이야기 생성에만 사용
-    // Flash-Lite 실패 시 모델 지식 폴백
+    // grounded 웹 검색: Pro 모델로 호출 — google_search 도구는 Pro만 지원
+    // Pro 실패 시 Flash-Lite 모델 지식 폴백
     let res = await fetchWithAuth(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
+      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
