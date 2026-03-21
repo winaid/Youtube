@@ -301,54 +301,18 @@ function buildCharacterPersonaBlock(cps: Array<{
  * 원칙: form(형태) + function(기능) + material(재질) + era(시대)가 드러나는 용어 사용.
  */
 const SCENE_TERM_PRECISION_BLOCK = `
-## SCENE TERM PRECISION — MANDATORY (generic nouns produce wrong visuals)
-RULE: Bare generic nouns are BANNED in imagePrompt / videoPrompt.
-Every prop / space / equipment / object MUST reveal FORM + FUNCTION + MATERIAL (+ ERA if historical).
-
-### Medical / Dental
-BANNED → REQUIRED replacement:
-- "dental chair" / 치과 의자 → "reclining dental unit chair: padded vinyl headrest, chrome articulated armrests, attached rubber suction hose at side"
-- "dental machine" / 치과 기계 → specify ONE: "overhead tungsten exam lamp on swivel arm" | "foot-pedal belt-driven drill unit with flexible handpiece" | "floor-mounted suction canister with rubber hose" | "hinged instrument tray holding mirror, cotton rolls, extraction forceps"
-- "hospital bed" / 병원 침대 → "padded leather examination table" | "iron-frame recovery cot with canvas mattress" | "tilt-adjustable surgical table"
-- "clinic" / 진료실 → "dental operatory room" | "late 19th-century dental surgery: bare-plank floor, glass-front cabinet of instruments" | "tiled examination room with ceiling-mounted lamp"
-- "tools / equipment" / 도구·장비 → name each item: "steel dental mirror, cotton pellets, ivory-handled extraction forceps on metal tray"
-- "old hospital" / 옛날 병원 → "1890s clinic interior: whitewashed plaster walls, gas-bracket wall lamp, wooden instrument cabinet with beveled glass doors"
-
-### Advertising / Historical Props
-BANNED → REQUIRED replacement:
-- "advertisement" / 광고 → "hand-painted wooden panel on brick wall" | "lithographic street illustration tacked to post" | "carved wooden bracket hung above doorway"
-- "sign / 간판" → "gilded hanging wooden panel on wrought-iron bracket" | "weathered wooden plaque over entrance" | "mounted facade panel with iron frame"
-- "promotional / 홍보" → "street barker standing on wooden crate, gesturing to crowd" | "market-square public demonstration with illustrated board"
-- "flyer / pamphlet" / 전단 → "single-leaf letterpress broadside, bold woodcut typeface" | "folded paper handbill with hand-drawn illustration"
-- "poster" / 포스터 → "hand-printed broadside pinned to wooden post" | "lithographed circus-style advertisement with colored inks"
-
-### Space & Set
-BANNED → REQUIRED replacement:
-- "room" / 방 → specify: "narrow dental operatory, single sash window, instrument cabinet along one wall" | "cramped waiting area with long wooden bench against plaster wall" | "back-office consultation room with rolltop desk"
-- "wall" / 벽 → "whitewashed lime-plaster wall, hairline cracks visible" | "dark tongue-and-groove wood paneling with framed diplomas" | "exposed red brick wall"
-- "floor" / 바닥 → "worn wide-plank hardwood floor, gap-jointed" | "black-and-white octagonal tile floor, grout lines visible" | "bare concrete floor"
-- "desk" / 책상 → "oak consultation desk with green baize writing surface and brass inkwell" | "metal instrument table on locking rubber casters"
-- "window" / 창문 → "tall double-hung sash window, lower pane frosted glass" | "street-facing display window with gold-leaf lettering on glass"
-- "light / lamp" / 조명·램프 → "gas mantle wall sconce, warm amber flicker" | "bare carbon-filament Edison bulb on pendant cord" | "oil lamp with glass chimney on desk surface"
-
-### Props & Objects
-BANNED → REQUIRED replacement:
-- "bottle" / 병 → "amber glass medicine bottle, cork stopper, paper label with printed text" | "tall cylindrical apothecary jar, glass stopper, colored liquid inside"
-- "paper / document" / 종이·서류 → "yellowed broadside newsprint" | "letterpress-printed receipt on carbon paper" | "handwritten ledger page, iron-gall ink entries"
-- "money" / 돈·돈봉투 → "silver dollar coin placed face-up on oak desktop" | "folded paper banknote slid across wooden counter surface"
-- "bag" / 가방 → "black leather physician's satchel with brass clasp and carry handle" | "wicker basket with hinged lid" | "canvas drawstring pouch"
-- "chair" / 의자 → always specify type: "wooden spindle-back chair" | "upholstered armchair with turned legs" | "metal folding chair" — NEVER just "chair"
-
-### Character Behavior (translate emotion → physical action ONLY)
-BANNED → REQUIRED replacement:
-- "scared / 겁먹음" → "jaw locked shut, shoulders pulling back from armrests, knuckles whitening on grip"
-- "nervous / 불안" → "eyes darting toward exit, foot pressing rhythmically on footrest, throat swallowing visibly"
-- "in pain / 아프다" → "neck tendons visibly tensing, sharp breath pulling shoulders upward, fingers pressing hard into padded surface"
-- "reluctant / 주저함" → "body weight shifted backward in seat, hands drawing inward toward lap, chin lowering"
-- "suspicious / 의심" → "chin dropping, eyes sliding laterally without head movement, hands going still mid-gesture"
-- "relieved / 안도" → "jaw releasing, shoulders dropping on slow controlled exhale, grip on surface loosening"
-
-FINAL RULE: If a prop/space/equipment cannot be described without a generic noun (chair, machine, room), ADD at minimum: material + one distinguishing physical feature.`;
+## SCENE TERM PRECISION — generic nouns produce wrong visuals
+RULE: Every prop/space/object MUST specify FORM + MATERIAL (+ ERA if historical). Bare nouns BANNED.
+Examples — BANNED → USE INSTEAD:
+- "chair" → "wooden spindle-back chair" | "reclining dental unit chair with chrome armrests"
+- "room" → "narrow dental operatory, sash window, instrument cabinet along wall"
+- "sign/poster/advertisement" → "weathered wooden panel" | "mounted facade panel with iron frame" (텍스트 유도 단어 금지)
+- "light" → "gas mantle wall sconce, warm amber flicker" | "bare Edison bulb on pendant cord"
+- "desk" → "oak consultation desk with green baize surface and brass inkwell"
+- "bottle" → "amber glass medicine bottle, cork stopper, paper label"
+- "tools" → name each: "steel dental mirror, cotton pellets, extraction forceps on metal tray"
+EMOTIONS → BODY ONLY: "scared" → "jaw locked, knuckles whitening on grip" | "nervous" → "eyes darting, throat swallowing" | "in pain" → "tendons tensing, sharp breath"
+FALLBACK: If generic noun unavoidable, ADD material + one distinguishing physical feature.`;
 
 // ─── 스타일/지역 맵 (모듈 레벨: 요청마다 재생성 방지) ───────────────────────
 const VIDEO_STYLE_MAP: Record<string, string> = {
@@ -1069,31 +1033,17 @@ async function step23DetailBatch(
   Transition out: ${o.transitionHint}`;
   }).join("\n\n");
 
-  const prompt = `당신은 아래 연출 철학을 완전히 내면화한 촬영 감독입니다.
-스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""}
-${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
+  const prompt = `당신은 촬영 감독이다. 스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""} | ${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
 
-## ⚠️ 핵심 원칙: ${secPerCut}초 = "짧은 시퀀스(sequence)"이다 (단일 샷이 아님!)
-- 각 ${secPerCut}초 단위는 여러 시각 비트가 모여 하나의 의미를 전달하는 시퀀스이다.
-- 예: "치과 간판 → 텅 빈 대기실 → 한숨 쉬는 원장" = 3개의 시각 비트 = 1개의 시퀀스 = "한산한 치과" 즉시 이해
-- 시퀀스의 각 비트(sceneBeat)는 서로 다른 구도/앵글/피사체를 가진다.
-- ${secPerCut}초가 끝났을 때 시청자는 "어디서, 무슨 상황이고, 누가 어떤 감정인지"를 바로 알아야 한다.
+## 핵심 원칙
+- ${secPerCut}초 = 3개 비트(sceneBeat)로 구성된 시퀀스. 각 비트는 다른 구도/앵글/피사체.
+- ${secPerCut}초 종료 시 "어디서, 무슨 상황, 누가 어떤 감정" 즉시 인식 필수.
+- 최우선: STORY ROLE → 시각적 번역. 서사 기능이 보이는 장면 > 멋있는 비주얼.
+- 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
+- 상징/분위기 샷은 서사 보조용만 허용.
+캐릭터 외형(verbatim): "${charRef}" — shotCategory별 사용 규칙은 아래 참조
 
-## ⚠️ 최우선 기준: 서사 기능의 시각적 번역
-- 각 컷의 STORY ROLE을 먼저 확인하고, 그 서사 기능이 시각적으로 즉시 전달되도록 설계한다.
-- 모든 장면은 보자마자 아래가 이해되어야 한다:
-  1. 이 장면이 이야기에서 무슨 역할인가? (원인 제시, 변화 발생, 결과 증거 등)
-  2. 어디인가? (서사 기능을 뒷받침하는 장소)
-  3. 무슨 상황인가? (서사 기능이 드러나는 시각적 증거)
-- "서사와 무관한 멋있는 비주얼"보다 "이야기의 의미가 보이는 장면"을 우선한다.
-- 상징/분위기 샷은 서사 기능을 보조할 때만 허용. 이야기 본체를 대체하면 안 된다.
-- 상황은 증거로: 추상적 설명 대신 시각적 증거(빈 의자, 줄 선 사람, 꺼진 조명)로 보여준다.
-캐릭터 외형(verbatim — 절대 수정/확장 금지): "${charRef}"
-⚠️ 단, shotCategory에 따라 캐릭터 사용 여부가 달라짐 — 아래 SHOT CATEGORY RULES 참조
-
-## 연출 엔진 (서사 기능이 결정된 후, 이 철학으로 시각 표현 방식을 결정한다)
-⚠️ 연출 엔진은 서사 기능에 종속된다. 감독 스타일이 서사 기능과 충돌하면 서사 기능이 우선한다.
-예: 감독이 "느린 정적 화면"을 선호해도, 서사 기능이 "급격한 변화 시각화"이면 변화가 보여야 한다.
+## 연출 엔진 (서사 기능 종속 — 감독 스타일과 충돌 시 서사 기능 우선)
 ${directorEngine}
 ${editorialSummary ? `\n## ⚠️ EDITORIAL PERSONA REMINDER (step1에서 결정된 편집 기조 — 모든 컷에 적용)\n${editorialSummary}\n- complexity budget 유지: max 1 subject, 1 action, 1 camera motion per cut.` : ""}
 
@@ -1104,215 +1054,69 @@ ${sequenceContext}
 
 ${batchDirectives}
 
-${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}## 드라마타이즈 규칙 (절대 금지 / 필수)
-절대 금지:
-- 자막(subtitle overlay, caption, on-screen lesson text) 생성 금지
-- 나레이션/보이스오버(narration audio, voiceover) 생성 금지
-- 카메라를 향해 설명하는 진행자/강사/해설자 인물 생성 금지
-- "여러분, 오늘은 ...", "이 장면에서 배울 점은 ..." 식의 강의형 대사 금지
-필수:
-- 모든 대사(dialogue)는 반드시 한국어로 작성
-- 정보 전달은 갈등·협상·유머·공포·아이러니를 통해 자연스럽게 드러남
-- 인물은 극 중 목적을 가지고 행동하는 배우여야 함 (해설자 절대 금지)
-- 교훈적 내용은 인물의 결정이나 상황 결과로 드러남 (해설자 대사 금지)
+${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}## 드라마타이즈 규칙
+금지: 자막, 나레이션, 해설자/진행자, 강의형 대사. 필수: 대사는 한국어. 정보는 갈등·유머·공포·아이러니로 전달. 인물은 극 중 목적으로 행동. 교훈은 상황 결과로.
 
-## SHOT CATEGORY RULES (컷 유형별 피사체 설계 — 모든 컷에 캐릭터를 강제하지 않는다)
+## SHOT CATEGORY × charRef 규칙
+- character-driven (protagonist/partial): charRef 포함, 구체적 행동 필수 (standing/motionless 금지)
+- environment (absent/background/silhouette): 공간이 주 피사체, charRef 생략/"distant silhouette" 정도
+- object-detail (absent/partial): 사물이 주 피사체, charRef 생략
+- transition-atmosphere (absent): 전환 샷, charRef 완전 생략
+charRef 수위: protagonist=전체 | partial=부분(손,뒷모습) | silhouette=실루엣만 | background=최소힌트 | absent=생략
+행동 없는 캐릭터 금지 — stands/motionless/faces camera 금지. 반드시 동사 포함.
 
-### Shot category별 프롬프트 설계
-- **character-driven** (characterRole=protagonist/partial): 캐릭터가 주 피사체. charRef 포함. subjectAction은 반드시 구체적 행동 (standing/motionless 절대 금지). 캐릭터가 나올 이유가 있어야 함.
-- **environment** (characterRole=absent/background/silhouette): 공간/환경이 주 피사체. charRef 생략 또는 "distant silhouette"/"passing figure" 정도만. subjectAction은 환경 움직임 묘사 (풍경, 조명, 기상 변화 등).
-- **object-detail** (characterRole=absent/partial): 사물/디테일이 주 피사체. charRef 생략. subjectAction은 오브젝트의 움직임/변화 묘사 (간판 깜빡임, 손의 움직임, 차트 변화 등).
-- **transition-atmosphere** (characterRole=absent): 전환/분위기 샷. charRef 생략. subjectAction은 분위기 전환 묘사 (빛 변화, 공간 이동, 시간 흐름 등).
+## CINEMATIC SHOT PROGRESSION
+- SCENE1=WS/LS(공간만, 얼굴CU 금지), 이후 MS→CU→ECU 점진 축소, 중반 LS/WS 삽입, 같은 shot size 2연속 금지
+- 카메라: 반드시 이유 명시. push-in(긴장), dolly(심리변화), pan(발견), static(억압). 장식용 움직임 금지. Format: MOVEMENT + "(reason: [why])"
+- Reveal/Withhold: 매 장면 새 정보 1개 공개 + 미공개 1개 보류. 순서: 공간→위치→표정→소품→정점→결과
 
-### characterRole별 charRef 사용
-- protagonist: charRef 전체 사용 (얼굴/외형 완전 표현)
-- partial: charRef의 관련 부분만 사용 (예: 손, 뒷모습, 어깨 등)
-- silhouette: "dark silhouette of [gender] figure" 정도만 — 외형 디테일 생략
-- background: "distant figure in [clothing hint]" — 최소한의 힌트만
-- absent: charRef 완전 생략 — 인물 묘사 넣지 않음
-
-### 행동 없는 캐릭터 금지
-캐릭터가 등장하면 반드시 서사적/시각적 이유가 있어야 함:
-✅ 걷는다, 돌아본다, 멈칫한다, 간판을 올려다본다, 문을 밀기 전 숨을 고른다, 손을 만지작거린다
-❌ stands, remains motionless, faces camera, watches quietly
-
-## CINEMATIC SHOT PROGRESSION ENGINE (영화적 시선 설계 — 단순 다양화가 아닌 의도된 정보 공개 순서)
-
-### Shot Sequence Law
-- 첫 장면(SCENE1)은 WS 또는 LS — 공간과 분위기만 열 것. 인물 얼굴 클로즈업 금지.
-- 이후 장면에서 MS→CU→ECU 방향으로 점진적으로 좁혀들 것.
-- 중반부 이후 LS/WS 한 번 삽입 — 대비와 호흡을 만들 것.
-- 같은 shot size의 장면 2회 연속 금지. 반드시 closer 또는 further.
-
-### Camera Movement Motivation Law (카메라는 이유 없이 움직이지 않는다)
-- Allowed with mandatory reason:
-  • slow push-in: 긴장 고조, 인물 내면으로 진입, 정보 공개 임박
-  • subtle dolly forward/back: 친밀감 변화, 심리적 접근/후퇴
-  • gentle pan: 새 인물/요소 발견, 공간 관계 탐색
-  • restrained reframing: 심리적 불안, 무언가를 놓친 인식
-  • locked-off static: 억압된 감정, 격식, 통제된 긴장
-- BANNED: 이유 없는 핸드헬드 흔들림, 장식용 crane/jib/dutch, 목적 없는 zoom
-- Camera movement = CAMERA_MOVEMENT + "(reason: [why it moves])" 형식으로 작성
-
-### Visual Reveal / Withhold Law (관객 궁금증 유지 구조)
-- 각 장면은 반드시 "이전 장면에 없던 새 시각 정보 하나"를 공개한다.
-- 동시에 "아직 보여주지 않는 정보 하나"를 프레임 밖에 보류한다.
-- WITHHELD 전략: 인물 얼굴을 등/측면으로 숨기기, 핵심 소품을 프레임 경계에 걸치기, 갈등 원인을 암시만
-- REVEALED 순서: 공간 → 인물 위치 → 인물 표정 → 핵심 소품 → 감정 정점 → 결과
-
-## 감독 연출 원칙 (반드시 준수)
-1. videoPrompt는 "스토리 설명"이 아니라 "카메라 지시"다
-2. 이전 장면과 shotType이 이미 다르게 설정되어 있음 — 이것을 반드시 반영
-3. subjectAction을 그대로 영상화하되, 구체적 신체 동작으로 묘사
-4. 감정을 형용사/추상어로 절대 이름 붙이지 말 것. 그 감정이 유발하는 "신체 행동 + 망설임/중단/충동"으로만 표현.
-   감정→행동 번역 원칙:
-   - anxiety/fear   → fingers stop mid-motion, gaze darts between two points, body fails to settle
-   - hesitation     → hand extends toward target then recoils, weight shifts forward then back
-   - resolve        → after pause, gaze locks and action completes without stopping
-   - guilt          → eye contact broken, speech impulse swallowed, hand hidden or covered
-   - suppressed anger→ jaw sets, fist closes slowly, movement becomes short and cut-off
-   - relief         → shoulders lose tension on exhale, grip releases, breath elongates
-   - anticipation   → torso tilts forward, eyes arrive before the body moves
-   - resignation    → action begun then abandoned, hand lowered slowly, gaze drops
-   - jealousy       → quick side-glance immediately retracted, neutral mask reassembled
-   - embarrassment  → gaze redirected, micro-smile suppressed, body self-adjusted
-5. 각 장면에서 "이전 장면에 없던 시각 정보" 최소 1개 포함
-6. 동일 감정이 연속되면 다른 행동 양상으로 드러낼 것. 같은 행동 반복 금지.
-7. 감정 상태를 정지된 포즈가 아니라 "진행 중인 행동 비트"로 설계할 것
+## 감독 연출 원칙
+1. videoPrompt = 카메라 지시 (스토리 설명 아님). shotType 변화 반영 필수.
+2. subjectAction → 구체적 신체 동작. 감정은 형용사 금지 → 신체 행동으로만:
+   anxiety→fingers stop, gaze darts | hesitation→hand extends then recoils | resolve→gaze locks, action completes
+   guilt→eye contact broken, hand hidden | anger→jaw sets, fist closes | relief→shoulders drop on exhale
+3. 매 장면 새 시각 정보 1개+. 동일 감정 연속 시 다른 행동. 정지 포즈 금지 → 진행 중 행동.
 ${SCENE_TERM_PRECISION_BLOCK}
 
-## STRICT 글자 제한
+## STRICT 글자 제한 (자연어만 — 메타태그 SHOT_SIZE:/CAMERA_ANGLE:/REVEALED: 등 절대 금지)
 
-imagePrompt (≤80 words English — 씬의 오프닝 순간, 자연어만):
-  If characterRole=protagonist/partial: "[shot type] shot, [angle]. [charRef or partial]. [sceneBeat1 시각 묘사]. [환경 디테일 2개 이상]. [moodLighting]. [noTextSuffix]"
-  If characterRole=absent: "[shot type] shot, [angle]. [environment/object 구체적]. [sceneBeat1]. [환경 디테일]. [moodLighting]. [noTextSuffix]"
-  If characterRole=silhouette/background: "[shot type] shot, [angle]. [environment]. [distant figure hint]. [sceneBeat1]. [moodLighting]. [noTextSuffix]"
+imagePrompt (≤80 words EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
+endImagePrompt (≤65 words EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
 
-endImagePrompt (≤65 words English — 씬의 마지막 순간, 자연어만):
-  If characterRole=protagonist/partial: "[charRef or partial]. [sceneBeat3 결과 상태]. [무엇이 변했는지]. [noTextSuffix]"
-  If characterRole=absent: "[sceneBeat3 결과 상태]. [무엇이 변했는지]. [noTextSuffix]"
+videoPrompt (≤180 words EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
+  Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+]").replace("[develop]", "[BEAT2: WHAT 상황 증거(빈 의자, 꺼진 조명 등)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동]")}. [charRef if not absent]. [noTextSuffix]"
+  BANNED: continues/still/same as before/standing/motionless, sign/signboard, emotion labels(anxious/sad/angry 등)
 
-videoPrompt (≤180 words English — ⚠️ ${secPerCut}초 = 짧은 시퀀스. 단일 샷 설명이 아니라 3개 비트의 시퀀스 블록이다):
-  ⚠️ 자연어로만 작성 — SHOT_SIZE: / CAMERA_ANGLE: / REVEALED: 같은 메타태그 절대 사용 금지!
-  ⚠️ 핵심: 각 비트(beat)는 서로 다른 구도/앵글/피사체를 가져야 한다. 같은 카메라 위치에서 같은 구도로 ${secPerCut}초를 채우지 마라!
-  Format: "[Beat1 shot type], [angle]. [locationCue 시각화 — 장소 정체성이 즉시 인식되는 오브젝트]. ${beatTemplate.replace("[start]", "[BEAT1 LOCATION: 장소 인식 — WHERE가 즉시 읽히는 환경 디테일]").replace("[develop]", "[BEAT2 SITUATION: 상황 증거 — WHAT이 보이는 시각적 증거(빈 의자, 꺼진 조명, 줄 선 사람 등)]").replace("[climax]", "[BEAT3 EMOTION: 감정/갈등 — WHO/EMOTION 앵커(인물 행동, 반응, 갈등 집약)]")}. [charRef if characterRole is NOT absent — omit entirely if absent]. [noTextSuffix]"
-  예시: "Wide shot, eye-level. Dental clinic waiting room — empty reception desk, overhead fluorescent buzzing. 0s-2s: wide establishing — three vacant blue plastic chairs, water dispenser with still surface, appointment board on wall. 2s-5s: medium shot — camera pushes in to reception counter, dust particles float in pale window light, phone sits untouched, withered plant on corner. 5s-8s: close-up — doctor slumps at desk behind frosted partition, fingers tap idle pen, stethoscope coiled unused beside cold coffee cup. [charRef]. [noTextSuffix]"
-  ⚠️ videoPrompt 시퀀스 설계 원칙:
-  - 3개 비트 각각 다른 shot size 사용 (예: WS→MS→CU 또는 LS→MS→ECU) — 같은 구도 반복 금지
-  - BEAT1: 장소 정체성 오브젝트 2개 이상 (치과=치과의자+소독등, 식당=테이블+메뉴판 등)
-  - BEAT2: 상황을 시각적 증거로 (빈=빈 의자, 성공=줄 선 사람, 위기=꺼진 조명) — 추상 설명 금지
-  - BEAT3: 인물 감정을 구체적 신체 행동으로 (한숨, 고개 숙임, 손 떨림 등)
-  - ${secPerCut}초 끝나면 시청자가 "어디서, 무슨 상황, 누가 어떤 감정"을 즉시 알아야 한다
-  - 환경 디테일을 구체적으로 (예: "dusty floor reflection, peeling wallpaper, rusted pipe")
-  BANNED: "continues", "still", "same as before", "watches quietly", "stands facing", "remains motionless", "standing"
-  BANNED: SHOT_SIZE: / CAMERA_ANGLE: / REVEALED: / WITHHELD: / END_HOOK: / SUBJECT_ACROSS_SCENE: 같은 메타태그
-  BANNED: "sign", "faded sign", "signboard" — 텍스트 유도 오브젝트 금지
-  BANNED emotion labels: "anxious", "nervous", "sad", "angry", "happy", "scared", "guilty", "relieved" — body behavior only
+extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤120 words EN):
+  "Continuing from previous — [endHook]. [Beat1 다른 앵글]. [Beat2 상황 증거]. [Beat3 감정 행동]. [charRef if applicable]. [noTextSuffix]"
 
-extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | others ≤120 words English):
-  ⚠️ 자연어로만 작성 — 메타태그 절대 사용 금지!
-  ⚠️ extendPrompt도 시퀀스 블록이다 — 이전 장면 연결 후 location→situation→emotion 순서로 전개
-  Format: "Continuing from previous shot — [prevScene endHook]. [Beat1: location establishing with different angle]. [Beat2: situation evidence]. [Beat3: emotional anchor]. [charRef if characterRole is NOT absent — omit if absent]. [noTextSuffix]"
-  BANNED: "continuing", "similar to previous", "same pose", emotion adjectives, 모든 메타태그(SHOT_SIZE:/CAMERA_ANGLE: 등)
+cameraDirection (≤55 chars): "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
+moodLighting (≤55 chars, source+direction+intensity+quality 4요소 필수):
+  예: "cold daylight from upper right, weak diffused glow, blue-grey cast"
+  BANNED: dramatic lighting/moody atmosphere/cinematic light, sign 오브젝트
 
-cameraDirection (≤55 chars English):
-  Format: "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
+## 대사/텍스트 규칙
+- 대사 텍스트 videoPrompt/imagePrompt 포함 절대 금지 → narrationText에만 저장. 말하는 행동만 묘사("lips move urgently" ✅ / "says '...'" ❌)
+- 한국어 텍스트 videoPrompt/imagePrompt 금지 (VEO가 자막 렌더링). sign/signboard/billboard 금지 → wooden panel/metal plate 대체
+- 환경 오브젝트 2개+ 필수. 메타 정보 대신 화면 디테일(cracked tile, rusted pipe 등).
 
-moodLighting (≤55 chars English — 반드시 4요소: source + direction + intensity + quality):
-  Format: "[light source] from [direction], [intensity] [quality]. [color grade]."
-  예: "cold daylight entering from the upper right, weak diffused glow, blue-grey cast"
-  예: "weak overhead fluorescent light, flickering green-white, casting hard downward shadows"
-  예: "soft diffused window light from the left, pale warm wash, gentle falloff on floor"
-  예: "pale neon spill from corridor tubes behind, dim blue-pink rim on edges"
-  예: "single desk lamp from below-left, warm amber spot, deep shadows on ceiling"
-  BANNED: "dramatic lighting" / "moody atmosphere" / "cinematic light" — 추상어만 사용 절대 금지
-  BANNED: "storefront signs" / "neon signs" — sign 오브젝트는 텍스트를 유도하므로 사용 금지
-  필수: source(광원 종류) + direction(방향/위치) + intensity(강도) + quality(질감)
-
-## ⚠️ 대사(DIALOGUE) 처리 규칙 — 극 중 인물 대사는 TTS로 분리
-스토리에 대사가 있으면 반드시 아래 규칙을 따르라:
-1. videoPrompt / imagePrompt / subjectAction에 대사 텍스트를 절대 포함하지 마라
-   ❌ BANNED: "character says 'I will return'", "whispers 'help me'", "shouts '멈춰!'"
-   ❌ BANNED: 따옴표(', ", 「, 」, 『, 』) 안의 모든 텍스트
-   ❌ BANNED: says, whispers, shouts, yells, murmurs, mutters + 인용문
-2. 대사가 있는 장면은 **말하는 행동**만 시각적으로 묘사하라:
-   ✅ "lips move with urgent expression", "mouth opens mid-speech, brow furrowed"
-   ✅ "leans forward speaking intensely, hand gestures emphasizing"
-   ✅ "whispers close to companion's ear, hand cupping mouth"
-3. 실제 대사 텍스트는 narrationText 필드에 저장하라 (TTS 음성으로 재생됨)
-4. 한국어/한글 텍스트는 videoPrompt/imagePrompt에 절대 포함 금지 (VEO가 자막으로 렌더링함)
-
-## ⚠️ TEXT-FREE 규칙 (간판/텍스트 유도 오브젝트 금지)
-프롬프트에 "no text" / "no readable text"를 포함하는 동시에 텍스트를 연상시키는 오브젝트를 사용하면 영상 모델에게 상충 신호가 됩니다.
-BANNED objects: sign, faded sign, dusty sign, signboard, placard, billboard, marquee, banner text, lettered, nameplate
-ALLOWED replacements: weathered wooden panel, blank metal plate, textless facade panel, empty storefront overhang, mounted panel, wall bracket, awning
-
-## ⚠️ 시각 디테일 밀도 (Visual Detail Density)
-각 씬 프롬프트에 화면에 실제로 보이는 구체적 환경 오브젝트를 2개 이상 포함하라:
-예: empty reception desk, dusty floor reflection, worn dental chair silhouette, flickering fluorescent tube, half-open blinds, faded wall paint, cracked tile floor, condensation on window, peeling wallpaper strip, rusted pipe along wall
-메타 정보(REVEALED/WITHHELD)를 늘리지 말고 실제 화면 디테일을 늘려라.
-
-## MULTI-SHOT 릴 프로그레션 규칙 (secPerCut 기반 — 인스타그램 릴처럼 빠른 시각 진행)
+## MULTI-SHOT 릴 프로그레션
 ${(() => {
     const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
     if (maxShots <= 0) {
-      return `### multiShot 비활성 (secPerCut=${secPerCut}초 ≤ 3초)
-- ${secPerCut}초는 하나의 독립 컷이다. multiShot 배열을 생성하지 마라.
-- 하나의 연속된 카메라 무빙과 하나의 핵심 비트로 구성.
-- "multiShot" 필드는 출력하지 말 것.`;
+      return `multiShot 비활성 (${secPerCut}초 ≤ 3초) — multiShot 필드 생성 금지.`;
     }
     if (maxShots <= 2) {
-      return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 ${maxShots}개)
-핵심 원칙: 모든 서브샷은 이전 샷과 반드시 다른 것을 보여줘야 한다.
-- ${secPerCut}초에서는 반드시 ${maxShots}개 서브샷을 생성하라. 1개만 생성하면 실패.
-- 숏폼 리듬 규칙: 감독 스타일이 정적이어도 내부 서브샷 수를 줄이지 마라.
-- 각 서브샷은 반드시: (1) 다른 shot size, (2) 다른 카메라 앵글, (3) 다른 시각적 정보를 사용
-- 같은 프레이밍에서 같은 액션을 반복하면 안 됨 = 가짜 분할
-- 각 서브샷에 "role" 필드 포함: "establish"|"resolve"
-- duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
-- 서브샷 1(establish): 공간/대상 확인 (WS/LS). 서브샷 2(resolve): 감정적 payoff (CU/ECU).`;
+      return `${maxShots}개 서브샷 필수. 각각 다른 shot size+앵글+피사체. role: "establish"|"resolve". duration 합산=${secPerCut}(최소 2초/샷).
+establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
     }
-    const progressionRoles = [
-      { role: "establish", desc: "HOOK — WS/LS. 공간 정체성 즉시 전달. 위치/상황/분위기를 구체적으로 보여줌." },
-      { role: "develop",   desc: "EVIDENCE — MS/MCU. 새로운 시각 정보 도입. 이전 샷에 없던 행동/디테일/인물 표정." },
-      { role: "peak",      desc: "CLIMAX — CU/ECU. 가장 극적인 순간. 감정/갈등 최고점. 시청자가 기억할 핵심 디테일." },
-      { role: "resolve",   desc: "PAYOFF — WS/CU. 시각적 해소. 에너지 릴리즈. 결과/변화/여운을 보여줌." },
-    ];
-    const roles = progressionRoles.map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
-    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 4개)
-
-🚨 MANDATORY: 각 컷의 multiShot 배열은 반드시 정확히 4개 서브샷을 포함해야 한다. 3개 이하는 규칙 위반이며 절대 허용하지 않는다.
-⚠️ 숏폼 필수: 감독이 롱테이크/정적 스타일이어도 서브샷 수를 4개 미만으로 줄이지 마라.
-
-핵심 원칙 — 이것은 숫자 규칙이 아니라 프로그레션 규칙이다:
-1. 모든 서브샷은 존재 이유가 있어야 한다 — 같은 화면을 나누는 것은 금지
-2. 인접 서브샷은 반드시 shot size + 앵글이 달라야 한다 (WS→MCU→ECU→WS 식 진행)
-3. 에스컬레이션: establish → develop → peak → resolve 순으로 감정/액션 강도가 올라감
-4. 마지막 서브샷(resolve)은 반드시 시각적 payoff를 제공 — 시청자가 "봤다" 느끼는 보상
-5. 프롬프트가 구체적으로 다른 화면을 묘사해야 함 (같은 텍스트 복사 금지)
-
-⚠️ ANTI-REPETITION (가장 중요한 규칙):
-- 인접 서브샷은 반드시 다른 피사체(SUBJECT)를 묘사해야 함
-- 카메라 앵글만 바꾸고 같은 피사체+행동을 반복하는 것은 가짜 분할 → 금지
-- 정보 증가(information gain): 각 서브샷은 이전 샷에서 볼 수 없었던 것을 보여줘야 함
-- 예: establish=환경 공간 → develop=인물의 구체적 행동 → peak=감정이 집약되는 한 디테일 → resolve=상황이 변한 결과
-- ❌ 나쁜 예: "warrior in hall" → "closer shot of warrior in hall" → "close-up of warrior in hall" (같은 피사체 반복)
-- ✅ 좋은 예: "empty throne hall at dawn" → "warrior kneeling before altar, hands pressed" → "ECU warrior's eyes opening with resolve" → "wide pull-back, morning light flooding through door"
-
-릴 프로그레션 role별 지침:
-${roles}
-
-- duration 합산 = ${secPerCut} (정수만). 각 서브샷 최소 2초.
-- 서브샷마다 구체적으로 다른 화면을 묘사 (≤80 words each)
-- 프롬프트에 shot size 명시 필수 (예: "ECU on trembling hands", "WS of empty hallway")
-- 각 서브샷의 주 피사체(subject)를 이전 샷과 다르게 설정 (예: 공간→인물→소품→표정)
-
-🚨 서브샷 프롬프트 필수 3요소 — 하나라도 빠지면 규칙 위반:
-- 등장인물이 있는 장면: [1. 샷 사이즈 (WS/MS/CU/ECU)] + [2. 인물의 구체적 행동 (동사 필수)] + [3. 장소/공간 (어디인지)]
-- 등장인물이 없는 장면: [1. 샷 사이즈 (WS/MS/CU/ECU)] + [2. 카메라가 비추는 구체적 대상] + [3. 장소/공간 (어디인지)]
-❌ 나쁜 예: "따뜻한 사무실 전경이 보임" (샷 사이즈 없음, 구체적 행동 없음, 추상적)
-✅ 좋은 예: "WS, dental clinic waiting room. Three empty chairs under buzzing fluorescent light."
-✅ 좋은 예: "MS, office kitchen. Chef reaches for the knife rack, wiping flour from apron."`;
+    return `🚨 반드시 4개 서브샷. 감독 스타일 무관. 3개 이하 = 규칙 위반.
+프로그레션: establish→develop→peak→resolve 순 강도 상승.
+- 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
+- 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
+- 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소
+- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤80 words/샷.
+- 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]`;
   })()}
 
 JSON 배열로만 출력 (마크다운 없이):
