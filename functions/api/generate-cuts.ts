@@ -2334,7 +2334,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           }];
 
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
-          for (const fc of finalizedCuts) { if (fc.durationSec > VEO_SEGMENT_CAP) fc.durationSec = VEO_SEGMENT_CAP; }
+          for (const fc of finalizedCuts) { fc.durationSec = VEO_SEGMENT_CAP; }
           repairMultiShotMinimums(finalizedCuts);
           const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
@@ -2381,7 +2381,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }];
 
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
-        for (const fc of finalizedCuts) { if (fc.durationSec > VEO_SEGMENT_CAP) fc.durationSec = VEO_SEGMENT_CAP; }
+        for (const fc of finalizedCuts) { fc.durationSec = VEO_SEGMENT_CAP; }
         repairMultiShotMinimums(finalizedCuts);
         const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
@@ -2824,13 +2824,31 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ═══ density 보정 + classify → finalizedCuts ═══════════════════
     const finalizedCuts = classifyCuts(densifyCuts(rhythmCuts));
 
-    // ═══ VEO 8초 상한 강제 클램핑 ═══════════════════════════════
-    // 리듬 분배/density 보정 후에도 durationSec이 8초를 초과할 수 있음.
-    // VEO API 최대값은 8초이므로 여기서 강제 클램핑.
+    // ═══ VEO 8초 고정 클램핑 (상한 + 하한) ═══════════════════════
+    // VEO 정책: 각 segment는 정확히 8초. rhythm distribution이 cut-level
+    // duration을 변경했더라도 VEO 생성 단위는 항상 8초여야 한다.
+    // multiShot 서브샷 내 비율은 rhythm weight로 이미 조정되어 있으므로
+    // cut-level duration만 고정하고 서브샷 합계를 재보정한다.
     for (const fc of finalizedCuts) {
-      if (fc.durationSec > VEO_SEGMENT_CAP) {
-        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} duration ${fc.durationSec}s exceeds ${VEO_SEGMENT_CAP}s cap → clamping`);
+      if (fc.durationSec !== VEO_SEGMENT_CAP) {
+        const oldDur = fc.durationSec;
         fc.durationSec = VEO_SEGMENT_CAP;
+        // 서브샷 합계도 8초에 맞게 재보정
+        if (fc.multiShot && Array.isArray(fc.multiShot) && fc.multiShot.length > 0 && oldDur !== VEO_SEGMENT_CAP) {
+          const subTotal = fc.multiShot.reduce((s: number, sh: { duration: string }) => s + (parseFloat(sh.duration) || 0), 0);
+          if (subTotal > 0 && subTotal !== VEO_SEGMENT_CAP) {
+            const ratio = VEO_SEGMENT_CAP / subTotal;
+            let remaining = VEO_SEGMENT_CAP;
+            fc.multiShot = fc.multiShot.map((sh: { index: number; prompt: string; duration: string }, si: number, arr: Array<{ index: number; prompt: string; duration: string }>) => {
+              if (si === arr.length - 1) {
+                return { ...sh, duration: String(Math.max(1, remaining)) };
+              }
+              const scaled = Math.max(1, Math.round((parseFloat(sh.duration) || 0) * ratio));
+              remaining -= scaled;
+              return { ...sh, duration: String(scaled) };
+            });
+          }
+        }
       }
     }
 

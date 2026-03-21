@@ -603,6 +603,7 @@ interface DirectorRecommendationDebug {
   extractedGenres: string[];
   extractedMoods: string[];
   extractedKeywords: string[];
+  scenarioRegions: string[];
   consideredLocalCount: number;
   consideredLocalIds: string[];
   validLocalCount: number;
@@ -680,6 +681,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let extractedGenres: string[] = [];
     let extractedMoods: string[] = [];
     let extractedKeywords: string[] = [];
+    let scenarioRegions: string[] = [];
     let consideredLocalIds: string[] = [];
     let rejectedLocalIds: string[] = [];
     let localRejectionReasons: string[] = [];
@@ -745,10 +747,12 @@ ${localList}
 - extractedGenres: 장르 키워드 배열 (직접 키워드가 없더라도 맥락에서 유추 가능한 장르 포함. 단, 근거 있는 유추만 허용)
 - extractedMoods: 무드 키워드 배열 (감정선, 분위기, 톤 등. 간접적 단서도 포함)
 - extractedKeywords: 핵심 시각 키워드 배열 (장소, 오브젝트, 시각적 특징, 시대 배경 등)
+- scenarioRegions: 시나리오에 등장하는 국가/지역 배열 (예: ["한국"], ["한국", "일본"], ["미국"]). 조선시대→한국, 에도시대→일본 등 시대 배경에서 유추 가능한 국가도 포함. 특정 국가가 없으면 빈 배열.
 
 ### 로컬 감독 매칭 규칙
 - 반드시 목록에 있는 id만 사용 (새로 만들지 말 것)
 - 각 감독에 fitScore(0-100)과 reason(한국어 2문장) 포함
+- 시나리오 배경 국가와 같은 region의 감독이 있으면 우선 추천 (예: 조선시대 시나리오 → 한국 감독 우선)
 - 목록에 어울리는 감독이 없어도 가장 가까운 1명을 fitScore 30 이상으로 포함
 - 검토했지만 제외한 감독이 있으면 rejectedLocalIds와 rejectionReasons에 기록
 
@@ -758,6 +762,7 @@ ${localList}
     "extractedGenres": [],
     "extractedMoods": [],
     "extractedKeywords": [],
+    "scenarioRegions": [],
     "consideredLocalCount": 0,
     "consideredLocalIds": [],
     "rejectedLocalIds": [],
@@ -824,6 +829,7 @@ ${localList}
     extractedGenres = Array.isArray(geminiPipeline.extractedGenres) ? geminiPipeline.extractedGenres as string[] : [];
     extractedMoods = Array.isArray(geminiPipeline.extractedMoods) ? geminiPipeline.extractedMoods as string[] : [];
     extractedKeywords = Array.isArray(geminiPipeline.extractedKeywords) ? geminiPipeline.extractedKeywords as string[] : [];
+    scenarioRegions = Array.isArray(geminiPipeline.scenarioRegions) ? (geminiPipeline.scenarioRegions as string[]).filter(r => typeof r === "string" && r.length > 0) : [];
     consideredLocalIds = Array.isArray(geminiPipeline.consideredLocalIds) ? geminiPipeline.consideredLocalIds as string[] : [];
     rejectedLocalIds = Array.isArray(geminiPipeline.rejectedLocalIds) ? geminiPipeline.rejectedLocalIds as string[] : [];
     localRejectionReasons = Array.isArray(geminiPipeline.rejectionReasons) ? geminiPipeline.rejectionReasons as string[] : [];
@@ -986,9 +992,10 @@ ${hasSignalKeywords ? `Search the web for: "${kw} film directors visual style"` 
 ## REQUIREMENTS
 1. Recommend exactly 4 real, existing directors. No fictional directors.
 2. All 4 must be OUTSIDE the exclusion list above.
-3. Include at least 2 directors from DIFFERENT regions (e.g., not all from the same country).
-4. Avoid only listing the most famous directors — include at least 1 lesser-known but stylistically relevant director.
-5. Each director must have a specific, concrete reason tied to the scenario (not generic praise).
+3. If the scenario is set in a specific country/region (e.g., Joseon-era Korea → 한국, Edo Japan → 일본), prioritize directors from that same region FIRST — at least 2 of the 4 should be from the scenario's region if possible. Fill remaining slots with directors from other regions.
+4. If the scenario has no specific country setting, include at least 2 directors from DIFFERENT regions.
+5. Avoid only listing the most famous directors — include at least 1 lesser-known but stylistically relevant director.
+6. Each director must have a specific, concrete reason tied to the scenario (not generic praise).
 
 ## OUTPUT FORMAT (strict JSON)
 Return ONLY valid JSON: { "directors": [...] }
@@ -1545,6 +1552,18 @@ Each director object must have:
         }
       }
 
+      // ── 시나리오 지역 기반 정렬: 같은 region 감독 우선 ──
+      if (scenarioRegions.length > 0 && stageAccepted.length > 1) {
+        const regionSet = new Set(scenarioRegions.map(r => r.toLowerCase()));
+        stageAccepted.sort((a, b) => {
+          const aMatch = regionSet.has(String(a.region || "").toLowerCase()) ? 1 : 0;
+          const bMatch = regionSet.has(String(b.region || "").toLowerCase()) ? 1 : 0;
+          if (aMatch !== bMatch) return bMatch - aMatch; // 같은 region 우선
+          return (Number(b.fitScore) || 0) - (Number(a.fitScore) || 0); // 동일 region 내에서 fitScore 내림차순
+        });
+        console.log(`[recommend-director] region-based sort applied: scenarioRegions=${scenarioRegions.join(",")}, order=${stageAccepted.map(d => `${d.nameKo}(${d.region})`).join(" → ")}`);
+      }
+
       // ── 최종 결과 수집 ──
       webSuggestions = stageAccepted;
       webSearchResultCount = retryStagesLog.reduce((sum, s) => sum + s.rawResultCount, 0);
@@ -1629,6 +1648,7 @@ Each director object must have:
       extractedGenres,
       extractedMoods,
       extractedKeywords,
+      scenarioRegions,
       consideredLocalCount: typeof geminiPipeline.consideredLocalCount === "number"
         ? geminiPipeline.consideredLocalCount as number : consideredLocalIds.length,
       consideredLocalIds,
