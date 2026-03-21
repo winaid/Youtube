@@ -291,7 +291,7 @@ export async function submitVideoGeneration(
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
   if (params.continuityMeta) body.continuityMeta = params.continuityMeta;
   if (params.workflowType) body.workflowType = params.workflowType;
-  if (params.referenceImages && params.referenceImages.length > 0) body.referenceImages = params.referenceImages;
+  // referenceImages: VEO API 미지원 — 전송하지 않음
 
   // hook-specific 추가 필드 passthrough
   if (params.extraFields) {

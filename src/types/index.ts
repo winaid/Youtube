@@ -7,8 +7,8 @@ export type Duration = 10 | 12 | 13 | 15 | 30 | 60 | 90 | 120 | 180 | 240 | 300 
 export type AspectRatio = "9:16" | "16:9";
 /** 영상 해상도 (VEO 기준) */
 export type VideoResolution = "720p" | "1080p" | "4k";
-// VEO 정책: 8초 고정 (멀티샷 필수)
-export type ClipDuration = number;
+/** VEO 정책: 8초 고정. 내부 플래닝 휴리스틱은 number로 별도 처리 */
+export type ClipDuration = 8;
 export type PersonGeneration = "allow_all" | "allow_adult" | "dont_allow";
 
 export interface SignatureTechniques {

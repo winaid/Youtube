@@ -4,7 +4,6 @@ import { useState, useRef } from "react";
 import {
   VideoGenerationConfig,
   VideoResolution,
-  ClipDuration,
   AspectRatio,
   PersonGeneration,
   VideoMode,
