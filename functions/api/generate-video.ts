@@ -56,6 +56,21 @@ const INTERNAL_TAG_PATTERNS = [
   /\[Shot \d+\/\d+[^\]]*\]\s*/gi,
 ];
 
+/** 한글 텍스트, 인용문, 대사 패턴을 VEO 전달 직전에 최종 제거 */
+function stripTextForVeo(text: string): string {
+  let cleaned = text;
+  // 따옴표 인용문 제거
+  cleaned = cleaned.replace(/[""\u201C\u201D][^""\u201C\u201D]*[""\u201C\u201D]/g, "");
+  cleaned = cleaned.replace(/['''][^''']*[''']/g, "");
+  cleaned = cleaned.replace(/「[^」]*」/g, "");
+  cleaned = cleaned.replace(/『[^』]*』/g, "");
+  // "says/whispers + 인용" → speaks
+  cleaned = cleaned.replace(/\b(says?|whispers?|shouts?|yells?|murmurs?|mutters?|exclaims?)\s*["'""'「『][^"'""'」』]*["'""'」』]/gi, "speaks");
+  // 한글 제거
+  cleaned = cleaned.replace(/[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+/g, "");
+  return cleaned.replace(/\s{2,}/g, " ").replace(/[,.]\s*[,.]/g, ",").replace(/\.\s*\./g, ".").trim();
+}
+
 function stripInternalTags(text: string): string {
   let cleaned = text;
   for (const pattern of INTERNAL_TAG_PATTERNS) {
@@ -362,6 +377,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── Tag cleanup & deduplication ──────────────────────────────────────────
     finalPromptForProvider = stripInternalTags(finalPromptForProvider);
     finalPromptForProvider = deduplicatePromptClauses(finalPromptForProvider);
+    // ── 한글/인용문 최종 제거 (VEO가 자막으로 렌더링하는 것 방지) ──────────
+    finalPromptForProvider = stripTextForVeo(finalPromptForProvider);
 
     // ── Continuity Mode 주입 ─────────────────────────────────────────────────
     if (req.continuityMeta) {

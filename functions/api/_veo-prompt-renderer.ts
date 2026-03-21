@@ -290,6 +290,10 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
     cleanupLog.push(`[veo-renderer] Prompt truncated: ${timestampPrompt.length} → ${finalPrompt.length} chars`);
   }
 
+  // ── 자막/텍스트 방지 강화: VEO는 negative prompt 미지원 → positive에서 강제 ──
+  const TEXT_FREE_DIRECTIVE = "This video must contain absolutely no text, no subtitles, no captions, no title cards, no written words, no on-screen typography of any kind. Purely visual storytelling only.";
+  finalPrompt = TEXT_FREE_DIRECTIVE + "\n\n" + finalPrompt;
+
   return {
     timestampPrompt: finalPrompt,
     negativePrompt: input.negativePrompt || "text overlay, watermark, logo, blurry, distorted face",

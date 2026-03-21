@@ -1022,7 +1022,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no watermark, no captions`;
+  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no subtitle, no caption, no watermark, no title card, no on-screen text, no written words, purely visual`;
 
   // 전체 시퀀스 컨텍스트 (이전 씬 상태 파악용)
   const sequenceContext = allOutlines
@@ -2617,7 +2617,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const finalStyleFingerprint = String(directorStyle ?? "")
       ? String(directorStyle).split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
       : String(directorName);
-    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, ${String(aspectRatio ?? "16:9")} aspect ratio, no text, no watermark, no captions`;
+    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, ${String(aspectRatio ?? "16:9")} aspect ratio, no text, no subtitle, no caption, no watermark, no title card, no on-screen text, no written words, purely visual`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);
