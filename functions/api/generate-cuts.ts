@@ -142,8 +142,8 @@ const STEP1_TOKENS_PER_OUTLINE = 400;
 const STEP1_TIMEOUT_MS = 55_000;
 /** Ultra-compact retry 타임아웃 (ms) — 25초로 단축하여 빠른 응답 */
 const STEP1_ULTRA_TIMEOUT_MS = 25_000;
-/** Step2/3 타임아웃 (ms) — 30초로 단축하여 Pro 실패 시 빠른 Flash 전환 */
-const STEP23_TIMEOUT_MS = 30_000;
+/** Step2/3 타임아웃 (ms) — 프롬프트 압축 후 Pro 성공률 향상, 45초로 상향 */
+const STEP23_TIMEOUT_MS = 45_000;
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**
@@ -1144,7 +1144,7 @@ ${(() => {
   const effectiveDetailModel = modelOverride || MODEL_DETAIL;
   console.info(`[cuts:${stepLabel}] model=${effectiveDetailModel} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
 
-  const step23Timeout = modelOverride ? STEP23_TIMEOUT_MS + 10_000 : STEP23_TIMEOUT_MS; // Flash gets extra time
+  const step23Timeout = modelOverride ? STEP23_TIMEOUT_MS + 5_000 : STEP23_TIMEOUT_MS; // Flash gets modest extra time
   let result = await streamingGenerate(env, effectiveDetailModel, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.75, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
