@@ -30,22 +30,64 @@ import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 // ─── 스타일별 카메라/모션 렌더링 힌트 ──────────────────────────────────────────
 // style-catalog.ts의 STYLE_RENDERING_OVERRIDES + CATEGORY_RENDERING_DEFAULTS를 Gemini용으로 압축
 const STYLE_RENDERING_HINTS: Record<string, string> = {
-  // live_action — 기본은 시네마틱 돌리/크레인이므로 별도 힌트 불필요
+  // ═══ live_action ═══
+  "cinematic-realism": "Camera: smooth dolly/crane, anamorphic lens with shallow DOF. Motivated camera movement only. Natural practical lighting with dramatic contrast.",
   "docu-handheld": "Camera: handheld with natural shake, observational distance, whip pans. Motion: reactive following, not choreographed. No stabilized gimbal.",
+  "commercial-ad": "Camera: ultra-smooth dolly/slider, product hero angles. Studio-perfect lighting. Clean symmetrical compositions with golden ratio.",
   "vintage-film": "Motion: slight film judder, vintage camera instability. Consistent grain level and color fade across all cuts. No mixing film stocks.",
   "neon-noir": "Environment: 70%+ dark frame, wet reflective streets. Camera: neon-reflected tracking shots, low angles, Dutch tilts. Rain-slicked gliding movement.",
-  // 2d anime
+  "vhs-retro": "Camera: static or slow zoom, VHS-era framing. Visible scan lines and tracking glitches. Warm CRT glow on subjects. No modern stabilization.",
+  "sf-futuristic": "Camera: sweeping sci-fi establishing shots, dramatic reveals of scale. Holographic UI overlays. Volumetric fog with neon rim lighting.",
+  "gothic-horror": "Camera: slow deliberate tracking through shadow. Low angles, canted frames. Minimal lighting — candles, moonbeams through fog. Long shadows.",
+  // ═══ animation_2d ═══
+  "tv-anime": "Camera: anime-standard pans, zoom lines for speed, static hold on dialogue. Motion: limited animation with key poses. Speed lines and impact frames.",
   "theatrical-anime": "Camera: sweeping cinematic anime pans, fluid parallax on deep backgrounds, dramatic push-ins. Motion: high frame-count, detailed secondary motion on hair/cloth, impact frames with screen shake.",
+  "storybook-anime": "Camera: gentle slow pans across illustrated scenes. Motion: soft gentle movement, no sudden cuts. Fairy-tale transition wipes.",
+  "painted-2d": "Camera: slow painterly pans revealing brushwork. Motion: every frame shows visible brush texture. Oil paint consistency across all elements.",
   "watercolor-animation": "Characters: transparent watercolor washes, no opaque surfaces. Motion: wet-on-wet bleeding at motion edges, colors mix as elements overlap.",
-  "pixel-art": "Camera: pixel-aligned scroll, no sub-pixel motion. Motion: retro sprite animation, limited keyframes, no motion blur, no smooth interpolation.",
-  // 3d animation — 기본은 smooth 3D orbit/dolly이므로 별도 힌트 불필요
-  // painting
+  "ink-drawing-anime": "Camera: clean tracking with architectural precision. Motion: bold ink strokes with varying weight. Cross-hatching visible in shadow areas.",
+  "webtoon-motion": "Camera: vertical-scroll-inspired reveals, dramatic zoom punches. Motion: manhwa impact frames, bold speed lines. Clean digital linework.",
+  "cutout-anime": "Camera: flat lateral movement, layered depth parallax. Motion: hinged-joint paper puppet articulation. Visible paper-edge shadows between layers.",
+  // ═══ animation_3d ═══
+  "pixar-style": "Camera: smooth orbits with rack focus. Warm soft key lighting. Motion: squash-and-stretch principles, expressive secondary animation.",
+  "dreamworks-style": "Camera: dynamic action tracking, dramatic angles. Motion: exaggerated physical comedy, energetic poses. Bold saturated lighting shifts.",
+  "stylized-3d": "Camera: anime-influenced angles in 3D space. Motion: cel-shaded snappy poses with held keyframes. Bold outline visibility.",
+  "semi-real-3d": "Camera: cinematic dolly/crane in photorealistic environments. Motion: anime-proportion characters with realistic physics. Ray-traced reflections.",
+  "low-poly-3d": "Camera: clean geometric orbits. Motion: faceted surfaces catch light differently as camera moves. Minimal texture, flat shading.",
+  "miniature-3d": "Camera: extreme tilt-shift shallow DOF, bird's-eye angle. Motion: miniature-scale movement — everything appears toy-sized.",
+  "game-cinematic-3d": "Camera: epic cinematic choreography, dramatic slow-mo. Motion: UE5-level detail, ray-traced GI. Hero poses with volumetric effects.",
+  // ═══ painting ═══
+  "watercolor": "Camera: gentle pans across watercolor surfaces. Motion: transparent wash layers shifting, colors bleeding at movement edges. White paper visible.",
+  "oil-painting": "Camera: slow dramatic reveals of impasto texture. Motion: thick paint strokes visible on all surfaces. Canvas texture throughout.",
+  "gouache": "Camera: flat illustrative pans. Motion: opaque matte layers with subtle blending. Rich saturated flat color areas.",
+  "pastel": "Camera: soft dreamy movement. Motion: chalky texture visible, gentle blending. Warm diffused lighting through soft grain.",
   "east-asian-painting": "This is animated 2D sequence, NOT static artwork. Camera: smooth pans with parallax on painted layers. Motion: fluid animated movement, NOT motion poster. NO text/calligraphy/characters at any point.",
   "ink-wash": "Animated 2D ink wash sequence, NOT static scroll painting. Camera: gentle reveals through ink wash world. Motion: ink density and white space shift dynamically. NO text/calligraphy.",
-  // stop_motion
+  "inkwash-painting": "Camera: horizontal scroll reveals. Motion: fluid ink dilution dynamics, wet brush energy. Western ink wash with broader contrast range.",
+  "van-gogh-painted": "Camera: swirling movement echoing brushstroke direction. Motion: thick impasto texture catches light dynamically. Starry-night energy in all elements.",
+  "editorial-illustration": "Camera: clean graphic compositions, strong silhouette framing. Motion: limited but impactful. Bold 3-4 color palette consistency.",
+  "storybook-illustration": "Camera: gentle page-turn-like transitions. Motion: warm whimsical movement, fairy-tale pacing. Hand-crafted watercolor/gouache feel.",
+  // ═══ stop_motion ═══
   "claymation": "Motion: frame-by-frame with visible material deformation, slight jitter from manual positioning. Clay surfaces subtly reshape between frames.",
-  // experimental
+  "paper-collage": "Camera: flat lateral pans with layered parallax. Motion: cut-paper layers sliding and overlapping. Visible scissors-cut edges and shadow between layers.",
+  "felt-craft": "Camera: warm close-ups showing fabric texture. Motion: soft tactile movement, visible stitching. Cozy handmade aesthetic with button details.",
+  "wooden-puppet": "Camera: miniature stage framing with warm wood tones. Motion: marionette-like jointed articulation. Visible wood grain on all surfaces.",
+  "paper-puppet": "Camera: fixed frontal theater view with backlit screen. Motion: traditional shadow puppet articulation. Silhouette drama with intricate paper-cut detail.",
+  "miniature-diorama": "Camera: macro lens on handcrafted sets. Motion: stop-motion jitter, material imperfections visible. Tactile surfaces — clay, fabric, felt.",
+  // ═══ retro_game ═══
+  "pixel-art": "Camera: pixel-aligned scroll, no sub-pixel motion. Motion: retro sprite animation, limited keyframes, no motion blur, no smooth interpolation.",
+  "16bit-jrpg": "Camera: SNES-era parallax scrolling backgrounds. Motion: chibi sprite animation with limited frames. 256-color dithered palette.",
+  "8bit-arcade": "Camera: fixed or single-axis scroll. Motion: 4-color-per-sprite chunky animation. Large visible pixels, no anti-aliasing.",
+  "ps1-lowpoly": "Camera: early 3D camera with polygon warping. Motion: affine texture distortion, vertex snapping. Low-res textures with visible seams.",
+  "90s-game-cutscene": "Camera: dramatic pre-rendered CG rotations. Motion: early CGI with Gouraud shading. Chrome reflections and lens flares.",
+  "visual-novel": "Camera: static or subtle parallax on character layers. Motion: minimal — breathing, blink, hair sway. Clean anime art on illustrated backgrounds.",
+  // ═══ experimental ═══
   "rotoscoping": "Characters: performance-derived authentic human movement with painterly overlay. Camera: organic handheld documentary feel, not perfectly stabilized.",
+  "mixed-media-collage": "Camera: collage-layered depth with mixed textures. Motion: different media layers animate at different speeds. Cut-paste seam edges visible.",
+  "live-paint-overlay": "Camera: live-action base with painted strokes tracking motion. Motion: dual reality — photography underneath, animated paint on top.",
+  "docu-illustrated": "Camera: documentary footage base with floating illustrations. Motion: animated diagrams/infographics overlaying real-world footage.",
+  "2d-3d-hybrid": "Camera: 3D environment camera with 2D character layers. Motion: clear visual distinction — hand-drawn characters in photorealistic 3D spaces.",
+  "surreal-composite": "Camera: dream-logic spatial transitions, impossible perspectives. Motion: scale distortion, morphing elements, gravity-defying objects.",
 };
 
 // ─── Degraded response 타입 ─────────────────────────────────────────────────
@@ -378,6 +420,14 @@ const VIDEO_STYLE_MAP: Record<string, string> = {
   "2d-3d-hybrid":      "2D-3D hybrid animation. Hand-drawn 2D animated characters within photorealistic 3D environments. Clear visual distinction between character and environment rendering.",
   "surreal-composite": "Surreal composite visual. Dream-logic spatial composition — impossible architecture, gravity-defying objects. Scale distortion. Melting, morphing, transforming elements.",
   "로토스코핑":        "rotoscoped 2D animation over live-action performance, movement from real human motion, traced-from-live-motion rhythm",
+  // ═══ parent category fallbacks ═══
+  "live_action":    "Photorealistic cinematic live-action. Natural lighting with dramatic shadows. Filmic depth of field. Subject-focused composition.",
+  "animation_2d":   "2D anime animation style. Cel-shaded illustration with clean outlines and vibrant flat colors. Dynamic camera angles.",
+  "animation_3d":   "High-quality 3D animation with stylized character designs. Smooth skin tones and cinematic lighting. Rich detailed environments.",
+  "painting":       "Painterly animation style. Visible brushwork and artistic texture. Expressive color mixing with hand-crafted aesthetic.",
+  "stop_motion":    "Stop-motion animation with handcrafted tactile textures. Frame-by-frame movement. Real-world material surfaces — clay, fabric, felt, wood.",
+  "retro_game":     "Retro game pixel art style. Crisp pixel edges with limited color palette. Nostalgic 16-bit era aesthetic with dithered gradients.",
+  "experimental":   "Experimental mixed-media animation. Creative layering of different art forms. Boundary-pushing visual techniques with artistic freedom.",
 };
 
 const REGION_FLAVOR_MAP: Record<string, string> = {
