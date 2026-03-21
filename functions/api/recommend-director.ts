@@ -1005,6 +1005,41 @@ Each director object must have:
       };
 
       /**
+       * MAX_TOKENS로 잘린 JSON에서 완성된 director 객체들만 추출.
+       * 예: '{"directors":[{...완성},{...완성},{...미완성' → 완성된 2개 반환
+       */
+      const recoverTruncatedDirectors = (text: string): Array<Record<string, unknown>> => {
+        // "directors" 배열 시작점 찾기
+        const arrStart = text.indexOf("[");
+        if (arrStart < 0) return [];
+
+        const recovered: Array<Record<string, unknown>> = [];
+        let depth = 0;
+        let objStart = -1;
+
+        for (let i = arrStart; i < text.length; i++) {
+          const ch = text[i];
+          if (ch === "{") {
+            if (depth === 0) objStart = i;
+            depth++;
+          } else if (ch === "}") {
+            depth--;
+            if (depth === 0 && objStart >= 0) {
+              const objStr = text.slice(objStart, i + 1);
+              try {
+                const obj = JSON.parse(objStr) as Record<string, unknown>;
+                if (obj.name || obj.nameKo) {
+                  recovered.push(obj);
+                }
+              } catch { /* 불완전 객체 무시 */ }
+              objStart = -1;
+            }
+          }
+        }
+        return recovered;
+      };
+
+      /**
        * 웹 검색 결과를 파싱하고 중복 제거하는 내부 함수.
        * 재시도 시에도 동일 로직 사용.
        */
@@ -1032,8 +1067,15 @@ Each director object must have:
           if (fallbackParsed) {
             webParsed = fallbackParsed;
           } else {
-            webParsed = {};
-            parseFailed = true;
+            // ── MAX_TOKENS 절단 복구: 잘린 JSON에서 완성된 객체들만 추출 ──
+            const truncatedRecovery = recoverTruncatedDirectors(cleanText);
+            if (truncatedRecovery.length > 0) {
+              webParsed = { directors: truncatedRecovery };
+              console.log(`[recommend-director] processWebResponse: truncated JSON에서 ${truncatedRecovery.length}명 복구`);
+            } else {
+              webParsed = {};
+              parseFailed = true;
+            }
           }
         }
 
@@ -1187,7 +1229,7 @@ Each director object must have:
           contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
           generationConfig: {
             temperature: opts.useGrounding ? 0.3 : 0.5,
-            maxOutputTokens: 3072,
+            maxOutputTokens: 8192,
             ...(opts.forceMimeType ? { responseMimeType: "application/json" as const } : {}),
           },
           ...(opts.useGrounding ? { tools: [{ google_search: {} }] } : {}),
@@ -1195,8 +1237,8 @@ Each director object must have:
 
         let res: Response;
         try {
-          // grounding 호출은 웹 검색 추가 지연 감안 — Pro 모델은 응답이 느릴 수 있음
-          const timeoutMs = opts.useGrounding ? 55_000 : undefined;
+          // grounding 호출 타임아웃 — 후속 stage 여유를 위해 30초로 제한
+          const timeoutMs = opts.useGrounding ? 30_000 : undefined;
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
@@ -1298,7 +1340,7 @@ Each director object must have:
       let recoveredAtStage: number | null = null;
 
       const pipelineStartMs = Date.now();
-      const PIPELINE_DEADLINE_MS = 58_000; // Pro 모델 google_search grounding 응답 시간 감안
+      const PIPELINE_DEADLINE_MS = 55_000; // Stage1 30s + 후속 stage 여유
 
       for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
         // ── 이미 후보 확보되면 종료 ──
