@@ -212,14 +212,7 @@ function buildDirectorEngine(
     stopMotionRules,
     hybridRules,
     editorialPersona ? buildEditorialPlanningRules(editorialPersona) : "",
-    "### Per-cut application (apply ALL of the above to EVERY cut):",
-    "- How are characters physically exaggerated or stylized by this director's eye?",
-    "- Is movement fluid, jerky, stiff, or rhythmically authored — and WHY for this scene?",
-    "- Does the camera sympathize with, observe, or mock the character?",
-    "- Does the set/environment mirror the character's psychological state?",
-    "- How do lighting and color PUSH the emotion — not just describe it?",
-    "- What makes THIS cut feel authored rather than generated?",
-    "BANNED in all cuts: generic visuals, anonymous style, unnamed darkness, meaningless symmetry",
+    "### Per-cut: character stylization, movement motivation, camera attitude, set=psychology, lighting pushes emotion. BANNED: generic/anonymous visuals.",
   ].filter(Boolean);
 
   return lines.join("\n");
@@ -245,13 +238,13 @@ function buildGenerationPersonaBlock(gp: {
   const forbidden: string[] = [];
   const required: string[] = [];
 
-  if (gp.noSubtitles)          forbidden.push("subtitle overlay, caption, on-screen lesson text, any readable text burned into frame");
-  if (gp.noNarration)          forbidden.push("narration audio, voiceover, off-screen explanatory voice");
-  if (gp.noLecturerChar)       forbidden.push("lecturer / presenter / host / narrator character — no one explains to camera");
-  if (gp.subjectFirst)         required.push("subject-first composition: character occupies primary frame zone, background is support — NOT decoration that competes");
-  if (gp.noBackgroundClutter)  required.push("minimal background: NO excessive banners, ornate patterns, wall clutter, or decorative elements that override subject");
-  if (gp.emotionAsAction)      required.push("emotion ONLY through specific physical action — never abstract emotion labels, never adjectives like 'nervously' or 'sadly'");
-  if (gp.noRepeatComposition)  required.push("each cut: different shot type + different body position + different emotional beat than previous cut");
+  if (gp.noSubtitles)          forbidden.push("subtitle/caption/on-screen text");
+  if (gp.noNarration)          forbidden.push("narration/voiceover");
+  if (gp.noLecturerChar)       forbidden.push("lecturer/presenter/narrator character");
+  if (gp.subjectFirst)         required.push("subject-first composition: character=primary, background=support");
+  if (gp.noBackgroundClutter)  required.push("minimal background: no excessive banners/patterns/clutter");
+  if (gp.emotionAsAction)      required.push("emotion=physical action only, no abstract labels");
+  if (gp.noRepeatComposition)  required.push("each cut: different shot+position+emotion vs previous");
 
   if (forbidden.length === 0 && required.length === 0) return "";
 
@@ -301,18 +294,10 @@ function buildCharacterPersonaBlock(cps: Array<{
  * 원칙: form(형태) + function(기능) + material(재질) + era(시대)가 드러나는 용어 사용.
  */
 const SCENE_TERM_PRECISION_BLOCK = `
-## SCENE TERM PRECISION — generic nouns produce wrong visuals
-RULE: Every prop/space/object MUST specify FORM + MATERIAL (+ ERA if historical). Bare nouns BANNED.
-Examples — BANNED → USE INSTEAD:
-- "chair" → "wooden spindle-back chair" | "reclining dental unit chair with chrome armrests"
-- "room" → "narrow dental operatory, sash window, instrument cabinet along wall"
-- "sign/poster/advertisement" → "weathered wooden panel" | "mounted facade panel with iron frame" (텍스트 유도 단어 금지)
-- "light" → "gas mantle wall sconce, warm amber flicker" | "bare Edison bulb on pendant cord"
-- "desk" → "oak consultation desk with green baize surface and brass inkwell"
-- "bottle" → "amber glass medicine bottle, cork stopper, paper label"
-- "tools" → name each: "steel dental mirror, cotton pellets, extraction forceps on metal tray"
-EMOTIONS → BODY ONLY: "scared" → "jaw locked, knuckles whitening on grip" | "nervous" → "eyes darting, throat swallowing" | "in pain" → "tendons tensing, sharp breath"
-FALLBACK: If generic noun unavoidable, ADD material + one distinguishing physical feature.`;
+## SCENE TERM PRECISION
+모든 소품/공간은 FORM+MATERIAL 명시 필수. bare nouns 금지.
+예: "chair"→"wooden spindle-back chair" | "room"→"narrow operatory, sash window, instrument cabinet" | "light"→"bare Edison bulb on pendant cord"
+sign/poster 금지 → "weathered wooden panel". 감정은 body only: "scared"→"jaw locked, knuckles whitening".`;
 
 // ─── 스타일/지역 맵 (모듈 레벨: 요청마다 재생성 방지) ───────────────────────
 const VIDEO_STYLE_MAP: Record<string, string> = {
@@ -990,47 +975,36 @@ async function step23DetailBatch(
     : directorName;
   const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no subtitle, no caption, no watermark, no title card, no on-screen text, no written words, purely visual`;
 
-  // 전체 시퀀스 컨텍스트 (이전 씬 상태 파악용)
+  // 전체 시퀀스 컨텍스트 (배치 외 컷은 간략화하여 토큰 절약)
+  const batchCutNums = new Set(batchOutlines.map(o => o.cutNumber));
   const sequenceContext = allOutlines
-    .map(o => `SCENE${o.cutNumber}[${o.shotType}|${o.purpose}|${o.shotCategory}]: "${o.sceneKo}" | beats: ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3} | endHook: ${o.endHook}`)
+    .map(o => batchCutNums.has(o.cutNumber)
+      ? `SCENE${o.cutNumber}[${o.shotType}|${o.purpose}|${o.shotCategory}]: "${o.sceneKo}" | beats: ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3} | endHook: ${o.endHook}`
+      : `SCENE${o.cutNumber}[${o.shotType}|${o.shotCategory}]: "${o.sceneKo}" | endHook: ${o.endHook}`)
     .join("\n");
 
-  // 이번 배치 컷 연출 지시
+  // 이번 배치 컷 연출 지시 (압축형)
   const batchDirectives = batchOutlines.map((o, i) => {
     const prevOutline = allOutlines.find(a => a.cutNumber === o.cutNumber - 1);
     const nextOutline = allOutlines.find(a => a.cutNumber === o.cutNumber + 1);
     const prevDesc = prevOutline
-      ? `[PREV SCENE${prevOutline.cutNumber}: ${prevOutline.shotType}, movement="${prevOutline.cameraMovement}", action="${prevOutline.subjectAction}", emotion="${prevOutline.emotion}"]`
-      : "[PREV: none — this is establishing shot]";
+      ? `prev=${prevOutline.shotType},${prevOutline.cameraMovement},action="${prevOutline.subjectAction}"`
+      : "prev=none(establishing)";
     const nextHint = nextOutline
-      ? `[NEXT SCENE${nextOutline.cutNumber}: ${nextOutline.shotType} — audience will see ${nextOutline.shotType} next, so THIS scene must withhold something]`
-      : "[NEXT: final scene — resolve all withheld information]";
+      ? `next=${nextOutline.shotType}(withhold something)`
+      : "next=final(resolve all)";
     const isFirst = o.cutNumber === 1;
     const revealHint = isFirst
-      ? "REVEAL: space layout, atmosphere, physical environment only. WITHHOLD: character face, central conflict object, dramatic information."
-      : `REVEAL: one new layer beyond prev scene (${prevOutline?.shotType ?? "unknown"} → ${o.shotType}). WITHHOLD: at least one element that sustains curiosity.`;
-    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}) — ${secPerCut}초 MICRO-SCENE:
-  Purpose: ${o.purpose} | Opening shot: ${o.shotType} | Emotion shift: ${o.emotionalDelta}
-  Shot category: ${o.shotCategory} | Character role: ${o.characterRole}
-  Camera progression: ${o.cameraMovement}
-  Core action across scene: ${o.subjectAction}
-  Scene summary: ${o.sceneKo}
-  ── NARRATIVE FUNCTION (이 시퀀스가 전체 이야기에서 맡는 역할) ──
-  STORY ROLE: ${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose}
-  ── INSTANT READABILITY (서사 기능의 시각적 번역) ──
-  WHERE (장소 단서): ${o.locationCue}
-  WHAT (상황 단서): ${o.situationCue}
-  WHO/EMOTION (감정 앵커): ${o.emotionalAnchor}
-  ── SCENE BEATS: location → situation → emotion ──
-  BEAT1 LOCATION (${beatTimings(secPerCut).b1}): ${o.sceneBeat1}  — 장소가 즉시 인식되어야 함
-  BEAT2 SITUATION (${beatTimings(secPerCut).b2}): ${o.sceneBeat2}  — 상황/문제의 시각적 증거
-  BEAT3 EMOTION (${beatTimings(secPerCut).b3}): ${o.sceneBeat3}  — 감정/갈등 집약
-  END HOOK: ${o.endHook}
-  ── CONTEXT ──
-  Previous: ${prevDesc}
-  ${nextHint}
-  ${revealHint}
-  Transition out: ${o.transitionHint}`;
+      ? "reveal=space+atmosphere only, withhold=face+conflict"
+      : `reveal=new layer(${prevOutline?.shotType ?? "?"}→${o.shotType}), withhold=1 element`;
+    return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}):
+  ${o.purpose}|${o.shotType}|${o.shotCategory}|charRole=${o.characterRole}|emotionDelta=${o.emotionalDelta}
+  camera=${o.cameraMovement} | action=${o.subjectAction}
+  summary=${o.sceneKo}
+  STORY_ROLE=${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose}
+  WHERE=${o.locationCue} | WHAT=${o.situationCue} | EMOTION=${o.emotionalAnchor}
+  beats(${beatTimings(secPerCut).b1}/${beatTimings(secPerCut).b2}/${beatTimings(secPerCut).b3}): ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3}
+  endHook=${o.endHook} | ${prevDesc} | ${nextHint} | ${revealHint} | transition=${o.transitionHint}`;
   }).join("\n\n");
 
   const prompt = `당신은 촬영 감독이다. 스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""} | ${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
