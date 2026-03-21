@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ShotTimeline from "./ShotTimeline";
@@ -74,6 +74,13 @@ export default function SequenceTimelineEditor({
   );
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+
+  // prop이 변경되면 (재생성 등) 편집 중이 아닌 경우 자동 동기화
+  useEffect(() => {
+    if (!isDirty) {
+      setEditable(extractEditable(structuredSequence));
+    }
+  }, [structuredSequence, isDirty]);
 
   // variant state: prefer external (from useVideoGeneration), fallback to local
   const [localVariantState] = useState<ShotVariantState>(createInitialVariantState);
