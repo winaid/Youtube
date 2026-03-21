@@ -526,9 +526,12 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: webDir.name,
+        directorName: webDir.name,
+        directorNameKo: webDir.nameKo,
         style: webDir.style,
         description: webDir.description,
+        storyText: storyText,
+        animationMode: animationMode,
         signatureTechniques: webDir.signatureTechniques,
         notableWorks: webDir.notableWorks,
       }),

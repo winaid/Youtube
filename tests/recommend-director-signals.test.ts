@@ -57,11 +57,12 @@ describe("signal extraction: what-if / speculative 입력", () => {
     expect(result.reasons.some(r => r.includes("inferred fantasy"))).toBe(true);
   });
 
-  it("what-if 단독 (맥락 없음) → 장르 추론 안 함 + reason에 기록", () => {
+  it("what-if 단독 (맥락 없음) → 드라마 기본값으로 추론", () => {
     const result = preExtractSignals("만약 이 길이 아니라 다른 길을 갔다면");
     expect(result.formatHints).toContain("speculative");
-    // 장르가 안 잡혀도 reason에 기록돼야 함
-    expect(result.reasons.some(r => r.includes("no genre-confirming context"))).toBe(true);
+    // 맥락 없어도 최소 드라마 장르는 보장
+    expect(result.genres).toContain("드라마");
+    expect(result.reasons.some(r => r.includes("default drama"))).toBe(true);
   });
 
   it("'상상해보자' 패턴도 what-if로 감지", () => {
@@ -285,13 +286,11 @@ describe("signal extraction: 오탐 방지", () => {
     expect(result.genres).not.toContain("SF");
   });
 
-  it("format hint가 있어도 genre 확정은 맥락 필요", () => {
+  it("format hint가 있으면 최소 드라마 장르 보장", () => {
     const result = preExtractSignals("만약 오늘 비가 온다면 우산을 가져가야지");
     expect(result.formatHints).toContain("speculative");
-    // 기술/미래/감정/비현실 맥락 없으므로 장르 확정 안 됨
-    // "비"에서 rain visual이 잡힐 수 있지만 장르 추론은 안 됨
-    expect(result.genres.length).toBe(0);
-    expect(result.reasons.some(r => r.includes("no genre-confirming context"))).toBe(true);
+    // what-if 포맷이 감지되면 최소 드라마 장르는 보장
+    expect(result.genres).toContain("드라마");
   });
 
   it("alternate-reality 없이 '평행' 단어에 반응하되 적절한 범위", () => {

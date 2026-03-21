@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithModelFallback, geminiErrorResponse } from "./_gemini-keys";
+import { GeminiEnv, fetchWithModelFallback, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
 
 type Env = GeminiEnv;
 
@@ -130,7 +130,7 @@ ${personaPrompt || ""}
         tools: [{ google_search: {} }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
       }),
-    });
+    }, { primaryModel: GEMINI_MODEL_FLASH });
 
     if (!res.ok) {
       const errText = await res.text();

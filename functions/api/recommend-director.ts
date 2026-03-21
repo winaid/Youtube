@@ -66,6 +66,35 @@ export function preExtractSignals(storyText: string): PreExtractedSignals {
     if (!contentType) contentType = "alternate-reality";
     reasons.push("alternate reality format detected");
   }
+  if (/(?:역사|시대|왕조|조선|고려|삼국|로마|제국|혁명|독립|전쟁사|세계대전|식민|근대|고대|중세|문명사|사료|역사적|연대기|연표)/.test(text)) {
+    formatHints.push("history");
+    if (!contentType) contentType = "history";
+    reasons.push("history/period format detected");
+    // 역사 콘텐츠는 장르 힌트를 직접 생성
+    if (!genres.includes("드라마")) {
+      genres.push("드라마");
+      reasons.push("inferred drama from history format");
+    }
+  }
+
+  // ── what-if + history 복합 시그널 보강 ──
+  if (formatHints.includes("what-if") && formatHints.includes("history")) {
+    // "만약 역사가 달랐다면" 류 — 시각적으로 강한 장르 신호
+    if (!genres.includes("전쟁")) {
+      if (/(?:전쟁|전투|침략|정복|군|병|싸움|세계대전|승리|패배|점령)/.test(text)) {
+        genres.push("전쟁");
+        reasons.push("inferred war genre from what-if + history + military keywords");
+      }
+    }
+    if (!moods.includes("비장한")) {
+      moods.push("비장한");
+      reasons.push("inferred epic mood from what-if + history combo");
+    }
+    if (!moods.includes("철학적")) {
+      moods.push("철학적");
+      reasons.push("inferred philosophical mood from what-if + history combo");
+    }
+  }
 
   // ── Direct genre keywords (Korean + English) ──
   const genreMap: [RegExp, string][] = [
@@ -114,9 +143,10 @@ export function preExtractSignals(storyText: string): PreExtractedSignals {
         reasons.push("inferred fantasy from speculative format + surreal keywords");
       }
     }
-    // what-if 자체가 장르 힌트를 주지만, 단독으로 장르 확정은 금지
+    // what-if에서 장르가 하나도 안 잡혔으면 드라마를 기본값으로
     if (genres.length === 0) {
-      reasons.push("speculative format detected but no genre-confirming context found");
+      genres.push("드라마");
+      reasons.push("speculative format with no explicit genre → default drama");
     }
   }
 
@@ -435,6 +465,8 @@ export function correctWeakQuery(storyText: string): { query: string; reason: st
     /(?:요리|음식|셰프|레스토랑)/g, /(?:음악|밴드|콘서트|노래)/g,
     /(?:스포츠|경기|선수|올림픽)/g, /(?:기억|꿈|무의식)/g,
     /(?:시간|과거|미래|역사)/g, /(?:동물|야생|사파리)/g,
+    /(?:왕조|조선|고려|삼국|제국|혁명|독립|식민|근대|고대)/g,
+    /(?:문명|왕|황제|장군|영웅|정복)/g,
   ];
   const nounEnMap: Record<string, string> = {
     "전사": "warrior", "전투": "battle", "전쟁": "war", "군대": "military", "병사": "soldier",
@@ -454,6 +486,10 @@ export function correctWeakQuery(storyText: string): { query: string; reason: st
     "기억": "memory", "꿈": "dream", "무의식": "subconscious",
     "시간": "time", "과거": "past", "미래": "future", "역사": "history",
     "동물": "animal", "야생": "wild",
+    "왕조": "dynasty", "조선": "Joseon", "고려": "Goryeo", "삼국": "Three Kingdoms",
+    "제국": "empire", "혁명": "revolution", "독립": "independence", "식민": "colonial",
+    "근대": "modern era", "고대": "ancient", "문명": "civilization",
+    "왕": "king", "황제": "emperor", "장군": "general", "영웅": "hero", "정복": "conquest",
   };
   const foundNouns: string[] = [];
   for (const pattern of keyNounPatterns) {
@@ -1254,33 +1290,31 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Pro + google_search) ──
-          // Pro 모델이 Flash-Lite보다 google_search 도구 호출 성공률이 높음
+          // ── STAGE 1: Grounded 웹 검색 (Flash-Lite + google_search) ──
+          // Flash-Lite로 검색 — Pro는 분석/이야기 생성에만 사용
           stageLabel = "stage1_grounded_web";
-          model = GEMINI_MODEL_PRO;
+          model = GEMINI_MODEL_FLASH;
           prompt = buildWebPrompt();
           useGrounding = true;
           forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
           triggerReason = "initial";
         } else if (stageNum === 2) {
-          // ── STAGE 2: grounding 실패 시 Flash + grounding 재시도 OR JSON 폴백 ──
+          // ── STAGE 2: grounding 실패 시 JSON 폴백 (grounding 재시도 불필요 — Stage 1이 이미 Flash) ──
           const prevReasons = allEmptyReasons;
           const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
           if (shouldSkipToStage4) { continue; }
 
-          // Stage 1에서 grounding source가 없었으면 → Flash로 grounding 재시도
-          // Stage 1에서 파싱 실패였으면 → JSON 강제 (grounding 없이)
-          const stage1GroundingEmpty = prevReasons.includes("no_results") || prevReasons.includes("parse_failed") || prevReasons.length === 0;
           const stage1Log = retryStagesLog.find(s => s.stage === 1);
           const stage1HadNoSources = stage1Log && !stage1Log.grounded;
 
-          if (stage1HadNoSources && !prevReasons.includes("parse_failed")) {
-            // Pro가 grounding 소스를 안 줬으면 → Flash로 grounding 재시도 (모델마다 검색 행동이 다름)
-            stageLabel = "stage2_flash_grounded_retry";
+          if (stage1HadNoSources) {
+            // Stage 1에서 grounding 자체가 안 됐으면 → 바로 JSON 모델 지식 폴백 (grounding 재시도 무의미)
+            const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
+            stageLabel = "stage2_json_fallback";
             model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt();
-            useGrounding = true;
-            forceMimeType = false;
+            prompt = buildWebPrompt({ retryNote });
+            useGrounding = false;
+            forceMimeType = true;
             triggerReason = `stage1 grounding empty: ${prevReasons.join(",")}`;
           } else {
             // 파싱 실패 등 → JSON 강제로 재시도
@@ -1323,11 +1357,8 @@ Each director object must have:
           }
         } else {
           // ── STAGE 4: 모델 지식 폴백 (grounded=false, JSON 강제) ──
+          // Stage 4는 항상 Flash-Lite 폴백 — 검색 전체가 Flash-Lite 통일
           stageLabel = "stage4_model_fallback";
-
-          // provider_timeout/provider_failed가 2회 이상이면 Flash, 아니면 Pro
-          const timeoutCount = retryStagesLog.filter(s => s.timeoutOccurred).length;
-          // Stage 4는 항상 Flash-Lite 폴백 — Pro는 Stage 1-3에서 시도 완료
           model = GEMINI_MODEL_FLASH;
 
           const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");

@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import {
   generateSlugId,
   extractGroundingSources,
@@ -100,13 +100,13 @@ If no match, return { "directors": [] }`;
       },
     };
 
-    console.log(`[search-director] 웹 검색 시작: query="${query}", model=${GEMINI_MODEL_PRO}`);
+    console.log(`[search-director] 웹 검색 시작: query="${query}", model=${GEMINI_MODEL_FLASH}`);
 
-    // grounded 웹 검색: Pro 모델로 직접 호출 (Flash-Lite 폴백에서 groundingMetadata 누락 방지)
-    // Pro 실패 시 아래 !webRes.ok 블록에서 Flash-Lite 폴백 처리
+    // grounded 웹 검색: Flash-Lite 모델로 호출 — Pro는 분석/이야기 생성에만 사용
+    // Flash-Lite 실패 시 아래 !webRes.ok 블록에서 모델 지식 폴백 처리
     const webRes = await fetchWithAuth(
       context.env,
-      buildGeminiUrl(context.env, GEMINI_MODEL_PRO),
+      buildGeminiUrl(context.env, GEMINI_MODEL_FLASH),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
