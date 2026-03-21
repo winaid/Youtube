@@ -1,4 +1,5 @@
 import { GeminiEnv, fetchWithModelFallback, GEMINI_MODEL_FLASH, geminiErrorResponse } from "./_gemini-keys";
+import { extractGroundingSources } from "./_director-shared";
 
 type Env = GeminiEnv;
 
@@ -151,13 +152,10 @@ ${personaPrompt || ""}
 
     const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 
-    // 그라운딩 메타데이터에서 검색 소스 추출
+    // 그라운딩 메타데이터에서 검색 소스 추출 (groundingChunks + groundingSupports 모두 탐색)
     const grounding = data?.candidates?.[0]?.groundingMetadata;
-    const sources = grounding?.groundingChunks
-      ?.filter((c) => c.web?.uri)
-      .map((c) => ({ title: c.web?.title ?? "", url: c.web?.uri ?? "" }))
-      ?? [];
-    const searchQueries = grounding?.webSearchQueries ?? [];
+    const sources = extractGroundingSources(grounding as Parameters<typeof extractGroundingSources>[0]);
+    const searchQueries = (grounding as Record<string, unknown>)?.webSearchQueries as string[] ?? [];
 
     // 캐시 저장
     responseCache.set(cacheKey, { reply, sources, searchQueries, ts: Date.now() });

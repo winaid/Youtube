@@ -1234,18 +1234,27 @@ Each director object must have:
         };
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
         const snippet = text.slice(0, 200);
-        // grounding metadata 추출 — 여러 가능한 위치 탐색
+        // grounding metadata 추출 — groundingChunks + groundingSupports 모두 탐색
         const candidate = data?.candidates?.[0];
         const grMeta = candidate?.groundingMetadata;
-        const grChunks = grMeta?.groundingChunks;
-        const sources = extractGroundingSources(grChunks);
-        const isGrounded = opts.useGrounding && sources.length > 0;
+        // groundingMetadata 전체를 전달하여 groundingChunks가 없어도 groundingSupports에서 추출
+        const sources = extractGroundingSources(grMeta as Parameters<typeof extractGroundingSources>[0]);
+        // webSearchQueries가 존재하면 모델이 실제로 검색을 수행한 것 — 소스 URL이 없어도 grounded로 간주
+        const webSearchQueries = Array.isArray((grMeta as Record<string, unknown>)?.webSearchQueries)
+          ? (grMeta as Record<string, unknown>).webSearchQueries as string[]
+          : [];
+        const isGrounded = opts.useGrounding && (sources.length > 0 || webSearchQueries.length > 0);
 
-        // grounding 요청했는데 metadata가 비었으면 경고 로그
+        // grounding 요청했는데 소스가 비었으면 디버그 로그 (응답 구조 진단용)
         if (opts.useGrounding && sources.length === 0) {
           const metaKeys = grMeta ? Object.keys(grMeta) : [];
           const candidateKeys = candidate ? Object.keys(candidate) : [];
-          console.warn(`[recommend-director] ⚠ grounding 요청했으나 groundingChunks 비어있음 (${opts.label}). model=${opts.model}, groundingMetadata keys=${metaKeys.join(",") || "없음"}, candidate keys=${candidateKeys.join(",")}`);
+          const hasSupports = !!(grMeta as Record<string, unknown>)?.groundingSupports;
+          if (webSearchQueries.length > 0) {
+            console.log(`[recommend-director] grounding 소스 URL 없으나 webSearchQueries 존재 → grounded=true (${opts.label}). queries=[${webSearchQueries.join(", ")}]`);
+          } else {
+            console.warn(`[recommend-director] ⚠ grounding 소스 없음 (${opts.label}). model=${opts.model}, meta keys=[${metaKeys.join(",")}], candidate keys=[${candidateKeys.join(",")}], hasSupports=${hasSupports}, hasSearchQueries=false`);
+          }
         }
 
         const result = processWebResponse(text, sources, opts.label);

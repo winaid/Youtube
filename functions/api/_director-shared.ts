@@ -78,27 +78,73 @@ interface RawGroundingChunk {
   web?: { uri: string; title: string };
 }
 
+interface RawGroundingSupport {
+  segment?: { text?: string };
+  groundingChunkIndices?: number[];
+  supportChunkIndices?: number[];
+  chunk?: { web?: { uri?: string; title?: string } };
+}
+
+/** Gemini groundingMetadata 전체 구조 */
+export interface RawGroundingMetadata {
+  groundingChunks?: RawGroundingChunk[];
+  groundingSupports?: RawGroundingSupport[];
+  webSearchQueries?: string[];
+  searchEntryPoint?: { renderedContent?: string };
+  // Gemini 3.x에서 retrievalQueries / retrievalMetadata 등 추가 필드 가능
+  [key: string]: unknown;
+}
+
 /**
  * Gemini groundingMetadata에서 소스를 추출하고 정규화한다.
+ * - groundingChunks 우선 사용
+ * - groundingChunks가 비어있으면 groundingSupports에서 추출 시도
  * - 빈 title/url 제거
  * - 중복 URL 제거
  */
 export function extractGroundingSources(
-  groundingChunks: RawGroundingChunk[] | undefined | null,
+  groundingChunksOrMeta: RawGroundingChunk[] | RawGroundingMetadata | undefined | null,
 ): GroundingSource[] {
-  if (!groundingChunks || groundingChunks.length === 0) return [];
+  if (!groundingChunksOrMeta) return [];
+
+  // RawGroundingMetadata 객체인지 확인
+  let groundingChunks: RawGroundingChunk[] | undefined;
+  let groundingSupports: RawGroundingSupport[] | undefined;
+
+  if (Array.isArray(groundingChunksOrMeta)) {
+    groundingChunks = groundingChunksOrMeta;
+  } else {
+    groundingChunks = groundingChunksOrMeta.groundingChunks;
+    groundingSupports = groundingChunksOrMeta.groundingSupports;
+  }
 
   const seen = new Set<string>();
   const sources: GroundingSource[] = [];
 
-  for (const chunk of groundingChunks) {
-    if (!chunk.web) continue;
-    const url = chunk.web.uri?.trim();
-    const title = chunk.web.title?.trim();
-    if (!url) continue;
-    if (seen.has(url)) continue;
-    seen.add(url);
-    sources.push({ title: title || url, url });
+  // 1차: groundingChunks에서 추출
+  if (groundingChunks && groundingChunks.length > 0) {
+    for (const chunk of groundingChunks) {
+      if (!chunk.web) continue;
+      const url = chunk.web.uri?.trim();
+      const title = chunk.web.title?.trim();
+      if (!url) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      sources.push({ title: title || url, url });
+    }
+  }
+
+  // 2차: groundingChunks가 비어있고 groundingSupports가 있으면 거기서 추출
+  if (sources.length === 0 && groundingSupports && groundingSupports.length > 0) {
+    for (const support of groundingSupports) {
+      if (!support.chunk?.web) continue;
+      const url = support.chunk.web.uri?.trim();
+      const title = support.chunk.web.title?.trim();
+      if (!url) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      sources.push({ title: title || url, url });
+    }
   }
 
   return sources;

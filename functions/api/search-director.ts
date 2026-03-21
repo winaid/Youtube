@@ -136,16 +136,23 @@ If no match, return { "directors": [] }`;
 
       const text = webData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
 
-      // grounding source 추출 — 공통 유틸 사용
+      // grounding source 추출 — groundingMetadata 전체를 전달하여 chunks + supports 모두 탐색
       const grounding = webData?.candidates?.[0]?.groundingMetadata;
-      groundingSources = extractGroundingSources(grounding?.groundingChunks);
+      groundingSources = extractGroundingSources(grounding as Parameters<typeof extractGroundingSources>[0]);
+
+      // webSearchQueries가 존재하면 검색이 실행된 것 — 소스 URL이 없어도 grounded로 간주
+      const webSearchQueries = Array.isArray((grounding as Record<string, unknown>)?.webSearchQueries)
+        ? (grounding as Record<string, unknown>).webSearchQueries as string[]
+        : [];
 
       if (groundingSources.length > 0) {
         mode = "web";
         console.log(`[search-director] 웹 grounding 확인: ${groundingSources.length}개 소스`);
+      } else if (webSearchQueries.length > 0) {
+        mode = "web";
+        console.log(`[search-director] grounding 소스 URL 없으나 webSearchQueries 존재 → grounded=true. queries=[${webSearchQueries.join(", ")}]`);
       } else {
         mode = "model";
-        // grounding 실패 원인 진단 로그
         const candidate = webData?.candidates?.[0];
         const gmKeys = grounding ? Object.keys(grounding) : [];
         const candidateKeys = candidate ? Object.keys(candidate) : [];
@@ -153,9 +160,6 @@ If no match, return { "directors": [] }`;
           groundingMetadataExists: !!grounding,
           groundingMetadataKeys: gmKeys,
           candidateKeys,
-          hasSearchEntryPoint: !!grounding?.searchEntryPoint,
-          hasGroundingChunks: !!grounding?.groundingChunks,
-          groundingChunksLength: grounding?.groundingChunks?.length ?? 0,
         });
         warnings.push("웹 검색이 요청되었지만 grounding 소스가 반환되지 않았습니다. 모델 내부 지식 기반 결과입니다.");
       }
