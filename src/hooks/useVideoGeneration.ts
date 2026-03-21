@@ -793,7 +793,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                   });
                 }
               }
-            }).catch(() => {});
+            }).catch((err) => {
+              console.warn(`[CUT ${cutNumber}] quality verification failed:`, err);
+            });
           }
         } catch {
           // Quality verification is optional, don't block

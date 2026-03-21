@@ -188,7 +188,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           r2Key = `audio/${req.sessionId}/cut-${shot.cutNumber}/${Date.now()}.mp3`;
           const buffer = base64ToArrayBuffer(audioBase64);
 
-          await context.env.VIDEO_BUCKET!.put(r2Key, buffer, {
+          await context.env.VIDEO_BUCKET.put(r2Key, buffer, {
             httpMetadata: { contentType: "audio/mpeg" },
           });
 

@@ -384,7 +384,7 @@ export async function pollVideoTask(
         ? POLL_ERROR_BACKOFF[Math.min(consecutiveErrors - 1, POLL_ERROR_BACKOFF.length - 1)]
         : useAdaptive
           ? getAdaptivePollInterval(attempt)
-          : options.fixedIntervalMs!;
+          : options.fixedIntervalMs ?? 5000;
       await sleep(waitMs);
     }
 
