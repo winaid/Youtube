@@ -165,7 +165,6 @@ export async function veoGenerate(
     aspectRatio: req.aspectRatio || "16:9",
     durationSeconds: duration,
     resolution: req.resolution || cap.defaultResolution,
-    numberOfVideos: 1,
     personGeneration: req.personGeneration || "allow_all",
   };
   if (req.generateAudio !== false && cap.supportsAudio) {
@@ -258,7 +257,6 @@ export async function veoExtend(
   const parameters: Record<string, unknown> = {
     aspectRatio: req.aspectRatio || "16:9",
     resolution: req.resolution || "720p",  // 연장은 720p만 지원
-    numberOfVideos: 1,
     personGeneration: req.personGeneration || "allow_all",
   };
   if (req.generateAudio !== false && cap.supportsAudio) {
