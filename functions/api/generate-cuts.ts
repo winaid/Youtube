@@ -21,9 +21,9 @@ import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recomme
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
 import { VEO_DEFAULT_MODEL, getCapability } from "./_veo-capability";
-// VEO 정책: 8초, 3~4샷 고정
+// VEO 정책: 8초, 반드시 4샷 고정
 const getMaxShots = (_modelId: string, _durationSec: number) => 4;
-const getMinShots = (_modelId: string, _durationSec: number) => 3;
+const getMinShots = (_modelId: string, _durationSec: number) => 4;
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
@@ -1206,19 +1206,16 @@ ${(() => {
 - 서브샷 1(establish): 공간/대상 확인 (WS/LS). 서브샷 2(resolve): 감정적 payoff (CU/ECU).`;
     }
     const progressionRoles = [
-      { role: "establish", desc: "HOOK — 공간 정체성 즉시 전달. WS/LS로 위치/상황 보여줌. 시청자 시선 포착." },
-      { role: "transition", desc: "SHIFT — 시점 변경. 카메라 위치/앵글 이동. establish와 반드시 다른 거리감." },
-      { role: "develop",   desc: "EVIDENCE — 새로운 시각 정보 도입. 이전 샷에 없던 행동/디테일/인물 표정." },
-      { role: "insert",    desc: "TENSION — 스케일 급변 (ECU). 핵심 오브젝트/표정 극대화. 텐션 최고조." },
-      { role: "peak",      desc: "CLIMAX — 가장 극적인 순간. 감정/갈등 최고점. 시청자가 기억할 1프레임." },
-      { role: "resolve",   desc: "PAYOFF — 시각적 해소. 에너지 릴리즈. WS로 빠지거나 CU로 마지막 감정 비트." },
+      { role: "establish", desc: "HOOK — WS/LS. 공간 정체성 즉시 전달. 위치/상황/분위기를 구체적으로 보여줌." },
+      { role: "develop",   desc: "EVIDENCE — MS/MCU. 새로운 시각 정보 도입. 이전 샷에 없던 행동/디테일/인물 표정." },
+      { role: "peak",      desc: "CLIMAX — CU/ECU. 가장 극적인 순간. 감정/갈등 최고점. 시청자가 기억할 핵심 디테일." },
+      { role: "resolve",   desc: "PAYOFF — WS/CU. 시각적 해소. 에너지 릴리즈. 결과/변화/여운을 보여줌." },
     ];
-    const roles = progressionRoles.slice(0, maxShots).map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
-    const minShots = Math.max(2, getMinShots(VEO_DEFAULT_MODEL, secPerCut)); // duration 기반 최소 (10s+ → 4개)
-    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 ${minShots}개 이상 ~ 최대 ${maxShots}개)
+    const roles = progressionRoles.map((r, i) => `- 서브샷 ${i + 1} role="${r.role}": ${r.desc}`).join("\n");
+    return `### multiShot 릴 프로그레션 (secPerCut=${secPerCut}초, 반드시 4개)
 
-🚨 MANDATORY: 각 컷의 multiShot 배열은 반드시 ${minShots}개 이상 서브샷을 포함해야 한다. ${minShots}개 미만은 규칙 위반이며 절대 허용하지 않는다.
-⚠️ 숏폼 필수: 감독이 롱테이크/정적 스타일이어도 서브샷 수를 ${minShots}개 미만으로 줄이지 마라.
+🚨 MANDATORY: 각 컷의 multiShot 배열은 반드시 정확히 4개 서브샷을 포함해야 한다. 3개 이하는 규칙 위반이며 절대 허용하지 않는다.
+⚠️ 숏폼 필수: 감독이 롱테이크/정적 스타일이어도 서브샷 수를 4개 미만으로 줄이지 마라.
 
 핵심 원칙 — 이것은 숫자 규칙이 아니라 프로그레션 규칙이다:
 1. 모든 서브샷은 존재 이유가 있어야 한다 — 같은 화면을 나누는 것은 금지
@@ -1256,12 +1253,12 @@ ${(() => {
     const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
     const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."`;
     if (maxShots <= 0) return `[${base}}]`;
-    // 예시 multiShot: 균등 분배
-    const shotDur = Math.max(2, Math.floor(secPerCut / Math.min(maxShots, 3)));
+    // 예시 multiShot: 반드시 4샷 균등 분배
+    const shotDur = Math.max(2, Math.floor(secPerCut / 4));
     const exampleShots = [];
-    const exampleRoles = ["establish", "develop", "resolve"];
+    const exampleRoles = ["establish", "develop", "peak", "resolve"];
     let remaining = secPerCut;
-    const exampleCount = Math.min(maxShots, 3); // 예시는 3개까지만
+    const exampleCount = 4; // 반드시 4샷 예시
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
       exampleShots.push(`{"index":${i},"prompt":"...","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);

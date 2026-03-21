@@ -27,9 +27,9 @@
 import type { MultiShotPrompt, ShotRole } from "@/types";
 // VEO capability constants defined locally (VEO_MAX_SHOTS, VEO_MIN_SHOTS, VEO_MIN_SHOT_DURATION)
 
-/** VEO 멀티샷 정책: 3~4샷 (8s 기준) */
+/** VEO 멀티샷 정책: 반드시 4샷 (8s 기준) */
 const VEO_MAX_SHOTS = 4;
-const VEO_MIN_SHOTS = 3;
+const VEO_MIN_SHOTS = 4;
 const VEO_MIN_SHOT_DURATION = 2;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -163,8 +163,8 @@ export const RETENTION_ROLE_PATTERNS: Record<number, ShotRole[]> = {
  */
 const SHOT_COUNT_RANGES: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 3,  min: 1, max: 1 },  // 3초 이하: 멀티샷 불필요 (단일샷)
-  { maxSec: 8,  min: 3, max: 4 },
-  { maxSec: 15, min: 3, max: 4 },
+  { maxSec: 8,  min: 4, max: 4 },  // 8초: 반드시 4샷
+  { maxSec: 15, min: 4, max: 4 },  // 15초: 반드시 4샷
 ];
 
 /** scene type별 shot count 보정 */

@@ -286,7 +286,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
 
   "tv-anime": {
     styleId: "tv-anime",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsCustomElement: true, needsNegativeReinforcement: true }),
@@ -366,7 +366,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "ink-drawing-anime": {
     styleId: "ink-drawing-anime",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -384,7 +384,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "webtoon-motion": {
     styleId: "webtoon-motion",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsCustomElement: true, needsNegativeReinforcement: true }),
@@ -402,7 +402,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "cutout-anime": {
     styleId: "cutout-anime",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -456,7 +456,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "stylized-3d": {
     styleId: "stylized-3d",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -487,7 +487,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "low-poly-3d": {
     styleId: "low-poly-3d",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -567,7 +567,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "gouache": {
     styleId: "gouache",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -585,7 +585,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "pastel": {
     styleId: "pastel",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -603,7 +603,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "east-asian-painting": {
     styleId: "east-asian-painting",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -621,7 +621,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "ink-wash": {
     styleId: "ink-wash",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -639,7 +639,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "inkwash-painting": {
     styleId: "inkwash-painting",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -670,7 +670,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "editorial-illustration": {
     styleId: "editorial-illustration",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -724,7 +724,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "paper-collage": {
     styleId: "paper-collage",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -742,7 +742,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "felt-craft": {
     styleId: "felt-craft",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -760,7 +760,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "wooden-puppet": {
     styleId: "wooden-puppet",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -778,7 +778,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "paper-puppet": {
     styleId: "paper-puppet",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -819,7 +819,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
 
   "pixel-art": {
     styleId: "pixel-art",
-    tier: "postprocess-required",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsPostProcessing: true, needsResolutionPostProcess: true, needsNegativeReinforcement: true }),
@@ -837,7 +837,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "16bit-jrpg": {
     styleId: "16bit-jrpg",
-    tier: "postprocess-required",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsPostProcessing: true, needsResolutionPostProcess: true, needsNegativeReinforcement: true }),
@@ -855,7 +855,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "8bit-arcade": {
     styleId: "8bit-arcade",
-    tier: "postprocess-required",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsPostProcessing: true, needsResolutionPostProcess: true, needsNegativeReinforcement: true }),
@@ -873,7 +873,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "ps1-lowpoly": {
     styleId: "ps1-lowpoly",
-    tier: "postprocess-required",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 4,
     requirements: req({ needsPostProcessing: true, needsNegativeReinforcement: true }),
@@ -891,7 +891,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "90s-game-cutscene": {
     styleId: "90s-game-cutscene",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -909,7 +909,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "visual-novel": {
     styleId: "visual-novel",
-    tier: "gated",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsMotionConstraint: true, needsNegativeReinforcement: true }),
@@ -932,7 +932,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
 
   "rotoscoping": {
     styleId: "rotoscoping",
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 2,
     expectationGap: 3,
     requirements: req({ needsNegativeReinforcement: true }),
@@ -950,7 +950,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "mixed-media-collage": {
     styleId: "mixed-media-collage",
-    tier: "pipeline-upgrade-required",
+    tier: "supported-with-warning",
     stabilityScore: 1,
     expectationGap: 4,
     requirements: req({ needsCompositingPipeline: true, needsPostProcessing: true }),
@@ -968,7 +968,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "live-paint-overlay": {
     styleId: "live-paint-overlay",
-    tier: "pipeline-upgrade-required",
+    tier: "supported-with-warning",
     stabilityScore: 1,
     expectationGap: 4,
     requirements: req({ needsCompositingPipeline: true, needsPostProcessing: true }),
@@ -986,7 +986,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "docu-illustrated": {
     styleId: "docu-illustrated",
-    tier: "pipeline-upgrade-required",
+    tier: "supported-with-warning",
     stabilityScore: 1,
     expectationGap: 4,
     requirements: req({ needsCompositingPipeline: true, needsPostProcessing: true }),
@@ -1004,7 +1004,7 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
   },
   "2d-3d-hybrid": {
     styleId: "2d-3d-hybrid",
-    tier: "pipeline-upgrade-required",
+    tier: "supported-with-warning",
     stabilityScore: 1,
     expectationGap: 4,
     requirements: req({ needsCompositingPipeline: true, needsPostProcessing: true }),
@@ -1039,18 +1039,18 @@ export const STYLE_CAPABILITY_MAP: Record<string, StyleCapability> = {
 // Core Utility Functions
 // ═══════════════════════════════════════════════════════════════════
 
-/** 스타일 ID로 capability 조회. 미등록 스타일은 beta-supported로 처리 */
+/** 스타일 ID로 capability 조회. 미등록 스타일은 supported-with-warning으로 처리 */
 export function getStyleCapability(styleId: string): StyleCapability {
   return STYLE_CAPABILITY_MAP[styleId] ?? {
     styleId,
-    tier: "beta-supported",
+    tier: "supported-with-warning",
     stabilityScore: 3,
     expectationGap: 2,
     requirements: BASE_REQ,
     promptOnly: true,
     warningKo: null,
     fallbackStyleId: "cinematic-realism",
-    technicalNote: "capability matrix 미등록 — beta로 처리.",
+    technicalNote: "capability matrix 미등록 — 경고 수준으로 처리.",
     upgradePath: null,
     activeStrategies: ["prompt-only"],
   };
@@ -1333,26 +1333,10 @@ export function resolveGenerationStyle(styleId: string): GenerationStyleResoluti
     return resolved;
   }
 
-  // pipeline-upgrade-required → 근사 생성 + 안내
-  if (cap.tier === "pipeline-upgrade-required") {
-    resolved.preGenerationNoticeKo =
-      `'${styleId.replace(/-/g, " ")}' 스타일은 현재 근사 모드로 생성됩니다. ` +
-      `합성 파이프라인 도입 후 정확도가 개선됩니다.`;
-  }
-
-  // postprocess-required → 근사 생성 + 안내
-  if (cap.tier === "postprocess-required") {
-    resolved.preGenerationNoticeKo =
-      `'${styleId.replace(/-/g, " ")}' 스타일은 현재 근사 모드로 생성됩니다. ` +
-      `후처리 파이프라인 추가 시 정밀도가 개선됩니다.`;
-  }
-
-  // gated (visual-novel 등) → 모션 제한 + duration 제한
-  if (cap.tier === "gated") {
-    if (cap.requirements.needsMotionConstraint) {
-      resolved.generationConstraints.maxDuration = 5;
-      resolved.generationConstraints.forcedCameraPreset = "static-wide";
-    }
+  // 모션 제한이 필요한 스타일 (visual-novel 등) → duration/camera 제약
+  if (cap.requirements.needsMotionConstraint) {
+    resolved.generationConstraints.maxDuration = 5;
+    resolved.generationConstraints.forcedCameraPreset = "static-wide";
   }
 
   return resolved;

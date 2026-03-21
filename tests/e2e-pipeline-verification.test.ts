@@ -267,7 +267,7 @@ describe("Sample 1: Black Death — full pipeline verification", () => {
       });
 
       expect(splitResult.wasSplit).toBe(true);
-      expect(splitResult.shots.length).toBe(3);
+      expect(splitResult.shots.length).toBe(4);
 
       // With hook beatHint, first shot should be reordered to macro
       // "dark muddy medieval ground" contains "medieval" (macro indicator)
@@ -592,7 +592,7 @@ describe("Cross-cutting: No regressions across both samples", () => {
       });
 
       expect(splitResult.wasSplit).toBe(true);
-      expect(splitResult.shots.length).toBe(3);
+      expect(splitResult.shots.length).toBe(4);
 
       // No arrow in any shot
       for (const shot of splitResult.shots) {
@@ -601,16 +601,16 @@ describe("Cross-cutting: No regressions across both samples", () => {
     }
   });
 
-  it("non-progression content stays single-shot (no fake split)", () => {
+  it("non-progression content stays single-shot for short durations (no fake split)", () => {
     const simpleCuts = [
-      { action: "quiet medieval village at dusk, smoke rising from chimneys", dur: 5 },
-      { action: "Steve Jobs standing alone on stage with black turtleneck", dur: 5 },
+      { action: "quiet medieval village at dusk, smoke rising from chimneys", dur: 3 },
+      { action: "Steve Jobs standing alone on stage with black turtleneck", dur: 3 },
     ];
 
     for (const tc of simpleCuts) {
       const progression = detectShotProgression(tc.action, "");
       if (!progression.hasProgression) {
-        // No progression → enforceMinimumShotCount should respect scene type rules only
+        // No progression + <=3s → getMinShots returns 1, no forced split
         const result = enforceMinimumShotCount({
           sceneType: "transition-atmosphere",
           subjectPrimary: "scene",
@@ -621,8 +621,35 @@ describe("Cross-cutting: No regressions across both samples", () => {
           camera: { framing: "MS", angle: "eye_level", motion: "static" },
           currentShotCount: 1,
         });
-        // transition-atmosphere is excluded from forced multi-shot
+        // <=3s clips are never split (getMinShots returns 1)
         expect(result).toBeNull();
+      }
+    }
+  });
+
+  it("non-progression content >3s gets 4-shot split (min 4 policy)", () => {
+    const simpleCuts = [
+      { action: "quiet medieval village at dusk, smoke rising from chimneys", dur: 5 },
+      { action: "Steve Jobs standing alone on stage with black turtleneck", dur: 5 },
+    ];
+
+    for (const tc of simpleCuts) {
+      const progression = detectShotProgression(tc.action, "");
+      if (!progression.hasProgression) {
+        // No progression but >3s → getMinShots returns 4, forced split
+        const result = enforceMinimumShotCount({
+          sceneType: "transition-atmosphere",
+          subjectPrimary: "scene",
+          action: tc.action,
+          environment: "env",
+          moodLighting: "mood",
+          durationSec: tc.dur,
+          camera: { framing: "MS", angle: "eye_level", motion: "static" },
+          currentShotCount: 1,
+        });
+        // >3s clips always get 4 shots regardless of scene type
+        expect(result).not.toBeNull();
+        expect(result!.shots.length).toBe(4);
       }
     }
   });

@@ -15,8 +15,8 @@ import type { TemporalBeat } from "@/types";
 import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 
-/** VEO 정책: 고정 4샷, 최소 2샷 */
-const getMinShots = (_modelId: string, _durationSec: number) => 2;
+/** VEO 정책: 8초 = 반드시 4샷 */
+const getMinShots = (_modelId: string, durationSec: number) => durationSec <= 3 ? 1 : 4;
 
 /** 기본 모델 ID — shot-splitting 정책에서 최소 샷 수 조회용 */
 const DEFAULT_MODEL_ID = VEO_DEFAULT_MODEL;
