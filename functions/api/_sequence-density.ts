@@ -25,14 +25,8 @@ export const VEO_SEGMENT_CAP = 8;
 /**
  * 확정 규칙 (2026-03):
  *   ≤5초: 1컷, 6~9초: 3컷, 10~15초: 4컷
- *   DENSITY_POLICY는 레거시 — recommendMinimumCutCount()가 실제 source of truth.
+ *   recommendMinimumCutCount()가 source of truth.
  */
-const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
-  { maxSec: 5, minCuts: 1 },
-  { maxSec: 9, minCuts: 3 },
-  { maxSec: 15, minCuts: 4 },
-  { maxSec: Infinity, minCuts: 4 },
-];
 
 /**
  * Maximum allowed cut count.

@@ -34,14 +34,6 @@ export const SEQUENCE_MIN_DURATION = 8;
  *   ≤5초: 1컷 (micro), 6~9초: 3컷 (short), 10~15초: 4컷 (critical)
  *   DENSITY_POLICY는 레거시 — recommendMinimumCutCount()가 실제 source of truth.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const DENSITY_POLICY: { maxSec: number; minCuts: number }[] = [
-  { maxSec: 5, minCuts: 1 },
-  { maxSec: 9, minCuts: 3 },
-  { maxSec: 15, minCuts: 4 },
-  { maxSec: Infinity, minCuts: 4 },
-];
-
 // ═══════════════════════════════════════════════════════════════════
 // Duration → Recommended Cut Count Range Presets
 // ═══════════════════════════════════════════════════════════════════

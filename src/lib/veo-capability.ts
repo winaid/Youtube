@@ -205,11 +205,3 @@ export function isVideoGenerationModel(modelId: string): boolean {
   return !!VEO_MODEL_REGISTRY[modelId];
 }
 
-/**
- * 누적 연장 길이 계산.
- * cut 1 = 8초, cut 2 = 8+7=15초, cut 3 = 15+7=22초 ...
- */
-export function calculateCumulativeDuration(cutIndex: number): number {
-  if (cutIndex <= 0) return VEO_MANDATORY_DURATION;
-  return VEO_MANDATORY_DURATION + cutIndex * VEO_EXTENSION_DURATION;
-}
