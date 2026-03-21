@@ -163,7 +163,7 @@ export async function veoGenerate(
 
   const parameters: Record<string, unknown> = {
     aspectRatio: req.aspectRatio || "16:9",
-    durationSeconds: String(duration),
+    durationSeconds: duration,
     resolution: req.resolution || cap.defaultResolution,
     numberOfVideos: 1,
     personGeneration: req.personGeneration || "allow_all",
