@@ -594,6 +594,7 @@ export interface RetryStageLog {
   triggerReason: string;
   partialRecoveryCount: number;
   durationMs: number;
+  groundingDiag?: Record<string, unknown>;
 }
 
 interface DirectorRecommendationDebug {
@@ -1245,17 +1246,29 @@ Each director object must have:
           : [];
         const isGrounded = opts.useGrounding && (sources.length > 0 || webSearchQueries.length > 0);
 
-        // grounding 디버그 로그 — 항상 출력하여 응답 구조 확인
+        // grounding 디버그
+        const candidateKeys = candidate ? Object.keys(candidate) : [];
+        const groundingDiag = opts.useGrounding ? {
+          metaExists: !!grMeta,
+          metaKeys: grMeta ? Object.keys(grMeta) : [],
+          candidateKeys,
+          chunksCount: Array.isArray((grMeta as Record<string, unknown>)?.groundingChunks) ? ((grMeta as Record<string, unknown>).groundingChunks as unknown[]).length : 0,
+          supportsCount: Array.isArray((grMeta as Record<string, unknown>)?.groundingSupports) ? ((grMeta as Record<string, unknown>).groundingSupports as unknown[]).length : 0,
+          searchQueriesCount: webSearchQueries.length,
+          searchQueries: webSearchQueries.slice(0, 3),
+          extractedSources: sources.length,
+          metaSnapshot: grMeta ? JSON.stringify(grMeta).slice(0, 300) : "null",
+        } : undefined;
+
         if (opts.useGrounding) {
-          const candidateKeys = candidate ? Object.keys(candidate) : [];
-          const metaSnapshot = grMeta ? JSON.stringify(grMeta).slice(0, 500) : "null";
-          console.log(`[recommend-director] grounding 응답 진단 (${opts.label}): model=${opts.model}, sources=${sources.length}, webSearchQueries=${webSearchQueries.length}, candidateKeys=[${candidateKeys.join(",")}], groundingMetadata=${metaSnapshot}`);
+          console.log(`[recommend-director] grounding 진단 (${opts.label}):`, JSON.stringify(groundingDiag));
         }
 
         const result = processWebResponse(text, sources, opts.label);
         return {
           ...result,
           grounded: isGrounded,
+          groundingDiag,
           httpStatus,
           timeoutOccurred: false,
           rawSnippet: snippet,
@@ -1398,6 +1411,7 @@ Each director object must have:
           triggerReason,
           partialRecoveryCount: stageResult.partialRecoveryCount,
           durationMs: stageResult.durationMs,
+          groundingDiag: stageResult.groundingDiag,
         };
         retryStagesLog.push(stageLog);
 
