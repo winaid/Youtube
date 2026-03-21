@@ -172,6 +172,35 @@ function extractDomain(url: string): string {
   }
 }
 
+/** 영화/감독 관련 도메인 — 부분 관련성 인정 */
+const FILM_DOMAINS = new Set([
+  "wikipedia.org", "imdb.com", "rottentomatoes.com", "letterboxd.com",
+  "bfi.org.uk", "metacritic.com", "rogerebert.com", "mubi.com",
+  "themoviedb.org", "boxofficemojo.com", "screendaily.com",
+  "hollywoodreporter.com", "variety.com", "deadline.com", "indiewire.com",
+  "namu.wiki", "kmdb.or.kr", "kobis.or.kr", "cine21.com",
+]);
+
+/**
+ * 키워드를 토큰으로 분리한다.
+ * "Peter Weir" → ["peter weir", "peter", "weir"]
+ * 원본 전체 + 개별 토큰(2글자 이상)을 모두 반환한다.
+ */
+function tokenizeKeywords(keywords: string[]): string[] {
+  const tokens: string[] = [];
+  for (const kw of keywords) {
+    if (!kw || kw.length < 2) continue;
+    const lower = kw.toLowerCase();
+    tokens.push(lower);
+    // 공백/하이픈으로 분리된 개별 토큰도 추가
+    const parts = lower.split(/[\s\-]+/).filter(p => p.length >= 2);
+    if (parts.length > 1) {
+      for (const p of parts) tokens.push(p);
+    }
+  }
+  return [...new Set(tokens)];
+}
+
 /**
  * Grounding 품질 점수를 계산한다.
  *
@@ -208,29 +237,46 @@ export function computeGroundingQuality(
   const diversityScore = Math.round(diversityRatio * 25);
   detailParts.push(`domains=${uniqueDomains}/${sources.length}→${diversityScore}pts`);
 
-  // 3. relevance — source 제목에 관련 키워드가 포함되는 비율 (0-35점)
+  // 3. relevance — 키워드 매칭 + 도메인 보너스 (0-35점)
   let relevantSources = 0;
+  let filmDomainCount = 0;
+
+  // 도메인 보너스 계산 (영화 관련 도메인 비율)
+  for (const src of sources) {
+    const domain = extractDomain(src.url);
+    if (FILM_DOMAINS.has(domain)) filmDomainCount++;
+  }
+
+  let relevanceScore = 0;
   if (relevanceKeywords.length > 0) {
-    const lowerKeywords = relevanceKeywords
-      .filter(k => k && k.length >= 2)
-      .map(k => k.toLowerCase());
+    const tokens = tokenizeKeywords(relevanceKeywords);
 
     for (const src of sources) {
       const text = `${src.title} ${src.url}`.toLowerCase();
-      if (lowerKeywords.some(kw => text.includes(kw))) {
+      if (tokens.some(t => text.includes(t))) {
         relevantSources++;
       }
     }
-    const relevanceRatio = sources.length > 0 ? relevantSources / sources.length : 0;
-    const relevanceScore = Math.round(relevanceRatio * 35);
-    detailParts.push(`relevant=${relevantSources}/${sources.length}→${relevanceScore}pts`);
+
+    const keywordRatio = sources.length > 0 ? relevantSources / sources.length : 0;
+    const filmDomainRatio = sources.length > 0 ? filmDomainCount / sources.length : 0;
+    // 키워드 매칭(최대 25점) + 영화 도메인 보너스(최대 10점)
+    const keywordScore = Math.round(keywordRatio * 25);
+    const domainBonus = Math.round(filmDomainRatio * 10);
+    const relevanceScoreCalc = keywordScore + domainBonus;
+    detailParts.push(`relevant=${relevantSources}/${sources.length}→${keywordScore}pts, filmDomains=${filmDomainCount}→+${domainBonus}pts`);
+
+    // 소스 수 기반 baseline: Gemini가 5개 이상 반환하면 검색 자체가 유의미
+    const sourceBaseline = sources.length >= 5 ? 8 : 0;
+    relevanceScore = Math.max(relevanceScoreCalc, sourceBaseline);
+    if (sourceBaseline > 0 && relevanceScoreCalc < sourceBaseline) {
+      detailParts.push(`sourceBaseline→${sourceBaseline}pts`);
+    }
   } else {
     // 키워드 없으면 기본 15점 (소스 존재 자체에 가치)
+    relevanceScore = 15;
     detailParts.push("no keywords→15pts baseline");
   }
-  const relevanceScore = relevanceKeywords.length > 0
-    ? Math.round((sources.length > 0 ? relevantSources / sources.length : 0) * 35)
-    : 15;
 
   // 4. localWebOverlap 보너스 (0-10점)
   const overlapBonus = hasLocalOverlap ? 10 : 0;

@@ -205,6 +205,44 @@ describe("grounding 품질 점수", () => {
     expect(quality.relevantSources).toBe(0);
     expect(quality.label).not.toBe("strong");
   });
+
+  it("영화 도메인 소스가 많으면 키워드 불일치에도 moderate 이상", () => {
+    // 실제 사례: Gemini가 9개 소스를 반환했지만 제목에 감독 이름 미포함
+    const filmSources: GroundingSource[] = [
+      { title: "Best Drama Films of All Time", url: "https://en.wikipedia.org/wiki/Drama_film" },
+      { title: "Historical Korean Films", url: "https://www.imdb.com/list/ls093" },
+      { title: "Top Period Dramas", url: "https://www.rottentomatoes.com/browse/period" },
+      { title: "Film Directors Directory", url: "https://letterboxd.com/directors/" },
+      { title: "Asian Cinema Guide", url: "https://mubi.com/lists/asian-cinema" },
+      { title: "Movie Database", url: "https://www.themoviedb.org/collection/123" },
+      { title: "Film Reviews Archive", url: "https://www.bfi.org.uk/lists/best-dramas" },
+      { title: "Korean Movie Awards", url: "https://www.cine21.com/awards/2024" },
+      { title: "Box Office Report", url: "https://www.boxofficemojo.com/year/2024" },
+    ];
+
+    const quality = computeGroundingQuality(
+      filmSources,
+      ["Peter Weir", "피터 위어"],
+    );
+
+    expect(quality.score).toBeGreaterThanOrEqual(40);
+    expect(quality.label).not.toBe("weak");
+  });
+
+  it("토큰화된 키워드로 부분 매칭 가능", () => {
+    const sources: GroundingSource[] = [
+      { title: "Weir's filmography and career", url: "https://example.com/weir" },
+      { title: "Australian cinema masters", url: "https://wikipedia.org/wiki/Australian_film" },
+    ];
+
+    const quality = computeGroundingQuality(
+      sources,
+      ["Peter Weir", "피터 위어"],
+    );
+
+    // "Peter Weir" → "peter", "weir" 토큰 → "weir" 매칭
+    expect(quality.relevantSources).toBeGreaterThanOrEqual(1);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
