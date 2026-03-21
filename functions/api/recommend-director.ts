@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, GEMINI_MODEL_SEARCH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import {
   generateSlugId,
   extractGroundingSources,
@@ -1299,10 +1299,10 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Pro + google_search) ──
-          // google_search 도구는 Pro 모델만 지원 — Flash-Lite는 grounding 불가
+          // ── STAGE 1: Grounded 웹 검색 (2.5 Flash + google_search) ──
+          // 3.x Flash 계열은 groundingMetadata 미반환 버그 → 2.5 Flash 사용
           stageLabel = "stage1_grounded_web";
-          model = GEMINI_MODEL_PRO;
+          model = GEMINI_MODEL_SEARCH;
           prompt = buildWebPrompt();
           useGrounding = true;
           forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
