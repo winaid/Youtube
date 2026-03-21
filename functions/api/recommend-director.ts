@@ -967,13 +967,17 @@ ${localList}
           ? `## STRICT EXCLUSION LIST — do NOT recommend ANY of these directors under ANY name, alias, romanization, or indirect reference:\n${localNameExclusionPairs}\n\nCRITICAL: This exclusion is absolute. Do not recommend:\n- The same person under different spelling (e.g., "Park Chan Wook" vs "Park Chan-wook")\n- Films directed by excluded directors as indirect references\n- Directors commonly confused with excluded directors\nIf you are unsure, do NOT include them.\n`
           : `## STRICT EXCLUSION LIST — do NOT recommend any of these directors under any name, alias, or reference:\n${localNameExclusionPairs}\n\nThis means:\n- Do NOT suggest any director whose English name, Korean name, or common alias matches anyone above\n- Do NOT suggest the same director under a different romanization or spelling\n- Do NOT reference their notable works as a way to indirectly suggest them\n- If you are unsure whether a director is in the exclusion list, do NOT include them\n`;
         const kw = queryOverride || `${extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ")} | ${extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ")}`;
-        return `You are a film/animation director discovery engine with web search access.
+        return `You are a film/animation director discovery engine.
+IMPORTANT: You MUST use the google_search tool to search the web before answering. Do NOT rely on your internal knowledge alone. Search for directors matching the scenario keywords to find accurate, up-to-date information.
+
 Your mission: find directors who are NOT in the user's existing collection but whose visual style matches the scenario.
 
 ${exclusionBlock}${retryNote}
 ## SCENARIO CONTEXT
 Keywords: ${kw}
 Excerpt: ${storyText.slice(0, 400)}
+
+Search the web for: "${kw} film directors visual style"
 
 ## REQUIREMENTS
 1. Recommend exactly 4 real, existing directors. No fictional directors.
