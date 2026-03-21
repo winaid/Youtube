@@ -15,14 +15,14 @@ export interface GeminiEnv {
 // === 모델 상수 (Google AI Studio) ===
 // 모델 변경 시 여기만 수정하면 전체 엔드포인트에 반영됨.
 // 최종 업데이트: 2026-03-21
-// 변경: 검색 grounding → 3.1-flash-lite, 분석/생성 → 3.1-pro
+// 변경: 전체 모델 gemini-3.1-pro-preview 통일 (flash-lite는 grounding 미지원)
 
 /** 메인 추론 (분석, 이야기 생성) — Gemini 3.1 Pro Preview */
 export const GEMINI_MODEL_PRO   = "gemini-3.1-pro-preview";
-/** 폴백 + 검색 모델 — Gemini 3.1 Flash-Lite Preview */
-export const GEMINI_MODEL_FLASH = "gemini-3.1-flash-lite-preview";
-/** 웹 검색 grounding 전용 — Flash-Lite (빠른 응답 + 저비용) */
-export const GEMINI_MODEL_SEARCH = "gemini-3.1-flash-lite-preview";
+/** 폴백 모델 — Gemini 3.1 Pro Preview */
+export const GEMINI_MODEL_FLASH = "gemini-3.1-pro-preview";
+/** 웹 검색 grounding 전용 — Gemini 3.1 Pro Preview */
+export const GEMINI_MODEL_SEARCH = "gemini-3.1-pro-preview";
 /** 이미지 생성 (primary) — Nano Banana 2 */
 export const GEMINI_MODEL_IMAGE       = "gemini-3.1-flash-image-preview";
 /** 이미지 생성 (fallback) */
