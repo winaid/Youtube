@@ -6,13 +6,16 @@
  *
  * 계층 구조:
  *   ScriptAnalysisResult
- *     └── AnalyzedSequence[]          (8–15초 시퀀스 단위)
+ *     └── AnalyzedSequence[]          (8초 VEO 생성 단위)
  *           └── AnalyzedCut[]         (시퀀스 내 컷 프로그레션)
  *
  * 기존 3-layer 모델과의 관계:
  *   Layer 1: totalSuggestedRuntime → 전체 요청 런타임
- *   Layer 2: sequences[] → 시퀀스 분할 (8–15초 VEO 생성 단위)
+ *   Layer 2: sequences[] → 시퀀스 분할 (8초 VEO 생성 단위)
  *   Layer 3: cuts[] → 시퀀스 내 멀티샷 프로그레션
+ *
+ * 참고: 내부 플래닝/리듬 분석에서는 3~15초 범위를 참조할 수 있으나,
+ *       실제 생성 요청은 항상 8초 고정.
  */
 
 import type { ShotRole } from "./index";
@@ -113,7 +116,7 @@ export interface AnalyzedSequence {
   sourceText: string;
   /** 원본 대본 내 위치 (char offset) */
   sourceSpan?: { startChar: number; endChar: number };
-  /** 추천 duration (초). short-form: 8-15, youtube: 15-60 */
+  /** 추천 duration (초). 내부 플래닝용 (실제 생성은 8초 고정). short-form: 8-15, youtube: 15-60 */
   recommendedDurationSec: number;
   /** 추천 내부 컷 수 (short-form: 2-6, youtube: 2-12) */
   recommendedCutCount: number;
@@ -226,7 +229,7 @@ export type ScriptContentType =
 /**
  * Content mode determines planning strategy.
  *
- * short-form: 8-30초, 시퀀스/컷 단위 계획, 리텐션 압축
+ * short-form: 8-30초 총 런타임, 시퀀스/컷 단위 계획, 리텐션 압축 (생성 단위는 8초 고정)
  * youtube:    60-180초, 섹션 단위 계획, 논리적 전개, 나레이션 기반 타이밍
  */
 export type ContentMode = "short-form" | "youtube";

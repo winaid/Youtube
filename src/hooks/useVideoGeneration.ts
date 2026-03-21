@@ -2742,7 +2742,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         engine: "veo",
         videoMode: "generate", // shot-level always generates fresh
         mode: cfg.mode,
-        durationSeconds: Math.min(safeDuration(cfg.durationSeconds), Math.max(4, Math.ceil(shotDuration))),
+        durationSeconds: DURATION_FALLBACK, // VEO 정책: 8초 고정 (샷 재생성도 동일)
         resolution: cfg.resolution,
         aspectRatio: cfg.aspectRatio,
         generateAudio: cfg.generateAudio,

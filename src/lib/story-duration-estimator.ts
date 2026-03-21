@@ -212,8 +212,8 @@ export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
   const cutCount = Math.min(DEMO_CUT_CAP, Math.max(4, rawCutCount));
 
   // cutDuration 재조정: cutCount × cutDuration ≈ totalSec
-  // VEO는 최대 15초를 지원하므로 상한을 15초로 설정.
-  // 기존 Math.min(8, ...)은 auto 모드에서 8초 이상 추천을 차단했음.
+  // 내부 플래닝 휴리스틱: 3~15초 범위로 추정. 실제 생성은 8초 고정.
+  // 여기서의 cutDuration은 스토리 구조 분석용이며 VEO 요청에 직접 사용되지 않음.
   const adjustedDuration = Math.round(totalSec / cutCount);
   cutDuration = Math.min(15, Math.max(3, adjustedDuration));
 

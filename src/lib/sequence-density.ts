@@ -89,7 +89,7 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
 /**
  * 총 런타임(초) → 권장 시퀀스 수 범위 반환.
  * 15초 초과 시 segment 단위로 분할하여 합산.
- * 예: 48초 = 4 segments → 시퀀스 4개 (각 8–15초, 내부 3–6 멀티샷)
+ * 예: 48초 = 4 segments → 시퀀스 4개 (내부 플래닝 기준 8–15초, 실제 생성은 8초 고정)
  * 예: 120초 = 8 segments → 시퀀스 8개
  */
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
@@ -458,7 +458,7 @@ export function needsDensityBoost(
  * 시퀀스 밀도 보정 — 가장 긴 시퀀스부터 분할하되, SEQUENCE_MIN_DURATION 미만으로는 분할 불가.
  *
  * 3-Layer 모델에서 Layer 1→2 분할만 담당:
- *   - 총 런타임 → 시퀀스(8–15s 생성 단위) 분할
+ *   - 총 런타임 → 시퀀스 분할 (내부 플래닝 기준 8–15s, 실제 생성은 8초 고정)
  *   - 시퀀스 내부 샷(Layer 3)은 multi-shot-planner가 관리
  *
  * 분할 규칙:

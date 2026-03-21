@@ -36,7 +36,7 @@ The core workflow: a user provides a story or scene description, the system plan
 ## Absolute Rules (절대 규칙)
 
 1. **0~5초 = micro (1~2컷)** | **6~9초 = 최소 3컷** | **10~15초 = 4~6컷** | **16초+ = shortform 생성 불가**
-2. 각 컷(8-15초) 내부의 멀티샷은 **3-6개 권장** (리텐션 기반)
+2. 각 컷(8초 고정) 내부의 멀티샷은 **3-6개 권장** (리텐션 기반)
 3. **VEO 8초 고정: 모든 컷은 8초**. generate-cuts에서 리듬 분배, density 보정, reconciliation 적용
 4. 이 규칙은 추천/자동 조정/하드캡/예외 처리보다 우선
 4. 최종 출력에서 6초 이상 영상이 1-2컷으로 확정되면 안 됨

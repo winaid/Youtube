@@ -13,7 +13,7 @@
 | `video-generation-core.ts` | `submitVideoGeneration()`, `pollVideoTask()`, `prepareMultiShotPayload()`, error classification |
 | `batch-runtime-budget.ts` | 300s budget check, over-budget suggestions, batch split algorithm |
 | `video-job-store.ts` | localStorage job persistence, recovery, cleanup. `JobRequestSummary` type lives here. |
-| `duration-reconciliation.ts` | Duration slider logic (3-15s range), auto-duration, summary rendering |
+| `duration-reconciliation.ts` | Duration 정책 (8초 고정), auto-duration fallback, summary rendering |
 | `sequence-assembler.ts` | `assembleFromJSON()` — builds `StructuredSequenceDocument` from cuts + config |
 
 ### Server (functions/api/)

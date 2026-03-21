@@ -185,10 +185,10 @@ export default function ResultPanel({
   useEffect(() => {
     if (!result || result.cuts.length === 0) return;
     const dur = result.cuts[0].durationSec;
-    if (dur && dur > 0 && videoGen.config.durationSeconds !== dur) {
-      const clampedDur = Math.min(15, Math.max(3, dur));
+    if (dur && dur > 0 && videoGen.config.durationSeconds !== DURATION_FALLBACK) {
+      // VEO 정책: 8초 고정. 결과의 durationSec과 무관하게 config는 항상 8.
       const engine = videoGen.config.engine;
-      videoGen.updateConfig({ durationSeconds: clampedDur, engine });
+      videoGen.updateConfig({ durationSeconds: DURATION_FALLBACK, engine });
       // ⚠ 부모 슬라이더 역동기화 제거 — auto 상태 보존
       // onSecondsPerSceneChange?.(clampedDur);  // REMOVED: breaks auto mode
     }
