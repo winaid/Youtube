@@ -19,15 +19,15 @@ export interface GeminiEnv {
 //   PRO   = 고품질 추론 (분석, 생성)
 //   FLASH = 저비용 빠른 폴백 (JSON 파싱 재시도 등)
 //   SEARCH = google_search grounding 지원 + 빠른 응답 필수
-// 주의: 3.1-flash-lite는 google_search grounding 미지원, 3.1-pro는 검색 시 25s 타임아웃 초과
+// 주의: 3.1-pro는 검색 grounding 시 25s 타임아웃 초과 → SEARCH에 쓰지 않음
 // 최신 모델 목록: https://ai.google.dev/gemini-api/docs/models
 
 /** 메인 추론 (분석, 이야기 생성) — Gemini 3.1 Pro Preview (최신 reasoning 모델) */
 export const GEMINI_MODEL_PRO   = "gemini-3.1-pro-preview";
-/** 폴백 모델 — Gemini 2.5 Flash (안정 stable, 빠른 응답) */
-export const GEMINI_MODEL_FLASH = "gemini-2.5-flash";
-/** 웹 검색 grounding 전용 — Gemini 3 Flash Preview (Pro급 성능 + Flash 속도) */
-export const GEMINI_MODEL_SEARCH = "gemini-3-flash-preview";
+/** 폴백 모델 — Gemini 3.1 Flash Lite (최저비용, 빠른 응답) */
+export const GEMINI_MODEL_FLASH = "gemini-3.1-flash-lite-preview";
+/** 웹 검색 grounding 전용 — Gemini 3.1 Flash Lite (Search grounding 지원 + 최저 레이턴시) */
+export const GEMINI_MODEL_SEARCH = "gemini-3.1-flash-lite-preview";
 /** 이미지 생성 (primary) — Nano Banana 2 */
 export const GEMINI_MODEL_IMAGE       = "gemini-3.1-flash-image-preview";
 /** 이미지 생성 (fallback) */
