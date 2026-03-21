@@ -20,7 +20,7 @@ import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
-import { VEO_DEFAULT_MODEL, getCapability } from "./_veo-capability";
+import { VEO_DEFAULT_MODEL, VEO_SEGMENT_CAP, VEO_EXTENSION_DURATION, getCapability } from "./_veo-capability";
 // VEO 정책: 8초, 반드시 4샷 고정
 const getMaxShots = (_modelId: string, _durationSec: number) => 4;
 const getMinShots = (_modelId: string, _durationSec: number) => 4;
@@ -142,6 +142,8 @@ const STEP1_TOKENS_PER_OUTLINE = 400;
 const STEP1_TIMEOUT_MS = 55_000;
 /** Ultra-compact retry 타임아웃 (ms) — 25초로 단축하여 빠른 응답 */
 const STEP1_ULTRA_TIMEOUT_MS = 25_000;
+/** Step2/3 타임아웃 (ms) — 30초로 단축하여 Pro 실패 시 빠른 Flash 전환 */
+const STEP23_TIMEOUT_MS = 30_000;
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**
@@ -1338,12 +1340,13 @@ ${(() => {
   const effectiveDetailModel = modelOverride || MODEL_DETAIL;
   console.info(`[cuts:${stepLabel}] model=${effectiveDetailModel} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
 
+  const step23Timeout = modelOverride ? STEP23_TIMEOUT_MS + 10_000 : STEP23_TIMEOUT_MS; // Flash gets extra time
   let result = await streamingGenerate(env, effectiveDetailModel, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.75, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
-  });
+  }, { timeoutMs: step23Timeout });
 
-  console.info(`[cuts:${stepLabel}] responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
+  console.info(`[cuts:${stepLabel}] responseLen=${result.text.length} truncated=${result.truncated ?? false} timeoutMs=${step23Timeout}`);
 
   // Truncation retry: maxTokens 상향 후 재시도
   if (result.truncated && result.text && maxTokens < 32768) {
@@ -1351,7 +1354,7 @@ ${(() => {
     result = await streamingGenerate(env, effectiveDetailModel, {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7, maxOutputTokens: 32768, responseMimeType: "application/json" },
-    });
+    }, { timeoutMs: step23Timeout });
     console.info(`[cuts:${stepLabel}] retry responseLen=${result.text.length} truncated=${result.truncated ?? false}`);
   }
 
@@ -1773,8 +1776,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const rawCutCount = Number(cutCount) || 0;
     const totalDurationSec = Number(rawTotalDuration) || 0;
 
-    // ── VEO 8초 segment planning ──
-    const VEO_SEGMENT_CAP = 8;
+    // ── VEO segment planning (base=8초, extension=7초) ──
     const estimatedSegmentCount = totalDurationSec > 0
       ? Math.ceil(totalDurationSec / VEO_SEGMENT_CAP)
       : 0;
@@ -2334,7 +2336,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           }];
 
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
-          for (const fc of finalizedCuts) { fc.durationSec = VEO_SEGMENT_CAP; }
+          for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
           repairMultiShotMinimums(finalizedCuts);
           const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
@@ -2381,7 +2383,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }];
 
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
-        for (const fc of finalizedCuts) { fc.durationSec = VEO_SEGMENT_CAP; }
+        for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
         repairMultiShotMinimums(finalizedCuts);
         const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
@@ -2776,12 +2778,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         videoPromptJson,
         ...(extendPromptJson ? { extendPromptJson } : {}),
         // 멀티샷: VEO는 타임스탬프 프롬프트로 전달 + role 자동 추론
-        ...(d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0
-          ? { multiShot: d.multiShot.map((sh: MultiShotItem, si: number) => ({
+        // Flash fallback 시 빈 배열이라도 multiShot 필드를 유지해야 repairMultiShotMinimums가 복구 가능
+        multiShot: (d?.multiShot && Array.isArray(d.multiShot) && d.multiShot.length > 0)
+          ? d.multiShot.map((sh: MultiShotItem, si: number) => ({
               ...sh,
               role: sh.role ?? inferMultiShotRole(si, d.multiShot!.length),
-            })) }
-          : {}),
+            }))
+          : [],
       };
     });
 
@@ -2847,21 +2850,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ═══ density 보정 + classify → finalizedCuts ═══════════════════
     const finalizedCuts = classifyCuts(densifyCuts(rhythmCuts));
 
-    // ═══ VEO 8초 고정 클램핑 (상한 + 하한) ═══════════════════════
-    // VEO 정책: 각 segment는 정확히 8초. rhythm distribution이 cut-level
-    // duration을 변경했더라도 VEO 생성 단위는 항상 8초여야 한다.
-    // multiShot 서브샷 내 비율은 rhythm weight로 이미 조정되어 있으므로
-    // cut-level duration만 고정하고 서브샷 합계를 재보정한다.
+    // ═══ VEO 세그먼트 클램핑 (base=8초, extension=7초) ═══════════
+    // VEO 정책: 첫 번째 생성(base)은 8초, 연장(extension)은 7초.
+    // cutNumber === 1 → base (VEO_SEGMENT_CAP=8초)
+    // cutNumber >= 2 → extension (VEO_EXTENSION_DURATION=7초)
     for (const fc of finalizedCuts) {
-      if (fc.durationSec !== VEO_SEGMENT_CAP) {
+      const targetDur = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION;
+      if (fc.durationSec !== targetDur) {
         const oldDur = fc.durationSec;
-        fc.durationSec = VEO_SEGMENT_CAP;
-        // 서브샷 합계도 8초에 맞게 재보정
-        if (fc.multiShot && Array.isArray(fc.multiShot) && fc.multiShot.length > 0 && oldDur !== VEO_SEGMENT_CAP) {
+        fc.durationSec = targetDur;
+        // 서브샷 합계도 targetDur에 맞게 재보정
+        if (fc.multiShot && Array.isArray(fc.multiShot) && fc.multiShot.length > 0 && oldDur !== targetDur) {
           const subTotal = fc.multiShot.reduce((s: number, sh: { duration: string }) => s + (parseFloat(sh.duration) || 0), 0);
-          if (subTotal > 0 && subTotal !== VEO_SEGMENT_CAP) {
-            const ratio = VEO_SEGMENT_CAP / subTotal;
-            let remaining = VEO_SEGMENT_CAP;
+          if (subTotal > 0 && subTotal !== targetDur) {
+            const ratio = targetDur / subTotal;
+            let remaining = targetDur;
             fc.multiShot = fc.multiShot.map((sh: { index: number; prompt: string; duration: string }, si: number, arr: Array<{ index: number; prompt: string; duration: string }>) => {
               if (si === arr.length - 1) {
                 return { ...sh, duration: String(Math.max(1, remaining)) };
