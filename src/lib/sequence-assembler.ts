@@ -179,6 +179,13 @@ function parseTimingBeats(timingBeat?: string, durationSec?: number): TimingBeat
     if (b.startSec >= durationSec) b.startSec = Math.max(0, durationSec - 1);
   }
 
+  // startSec >= endSec인 역전된 비트 제거
+  const validBeats = beats.filter(b => b.startSec < b.endSec);
+  if (validBeats.length > 0 && validBeats.length < beats.length) {
+    beats.length = 0;
+    beats.push(...validBeats);
+  }
+
   if (beats.length === 0) {
     const mid1 = Math.floor(durationSec * 0.25);
     const mid2 = Math.floor(durationSec * 0.625);

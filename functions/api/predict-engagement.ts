@@ -125,7 +125,15 @@ Consider:
       );
     }
 
-    const result = extractJson(rawText) as ViewerPrediction;
+    const raw = extractJson(rawText) as Record<string, unknown>;
+    const result: ViewerPrediction = {
+      estimatedViews: String(raw.estimatedViews ?? "N/A"),
+      engagementRate: Number(raw.engagementRate) || 0,
+      retentionCurve: Array.isArray(raw.retentionCurve) ? raw.retentionCurve.map(Number) : [],
+      strengths: Array.isArray(raw.strengths) ? raw.strengths.map(String) : [],
+      weaknesses: Array.isArray(raw.weaknesses) ? raw.weaknesses.map(String) : [],
+      improvements: Array.isArray(raw.improvements) ? raw.improvements.map(String) : [],
+    };
 
     return new Response(JSON.stringify(result), {
       status: 200,

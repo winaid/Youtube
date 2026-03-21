@@ -63,8 +63,12 @@ JSON 배열로 응답:
       subtitles = parseFirstJsonArray(text) ?? [];
     }
 
-    // SRT 포맷 생성
-    const srtContent = (subtitles as { index: number; startTime: string; endTime: string; text: string }[])
+    // SRT 포맷 생성 — 필드 누락 시 해당 항목 스킵
+    const validSubs = (Array.isArray(subtitles) ? subtitles : []).filter(
+      (sub: Record<string, unknown>) =>
+        typeof sub?.startTime === "string" && typeof sub?.endTime === "string" && typeof sub?.text === "string",
+    ) as { index: number; startTime: string; endTime: string; text: string }[];
+    const srtContent = validSubs
       .map((sub, i) =>
         `${i + 1}\n${sub.startTime} --> ${sub.endTime}\n${sub.text}\n`
       )
