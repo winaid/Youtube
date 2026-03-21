@@ -121,7 +121,7 @@ async function executeGenerateImage(
   }
 
   const img = data.images[0];
-  const dataUri = `data:${img.mimeType};base64,${img.base64}`;
+  const dataUri = `data:${img.mimeType || "image/png"};base64,${img.base64}`;
   callbacks.onStateChange(s => updateNodeStatus(s, node.id, "success", dataUri, "image"));
 }
 
@@ -191,16 +191,39 @@ async function pollVideoStatus(
   const POLL_INTERVAL = 5000;
   const MAX_POLLS = 60;
 
+  let consecutiveErrors = 0;
   for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
 
-    const res = await fetch("/api/check-video", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operationName, engine }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/check-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operationName, engine }),
+      });
+    } catch {
+      consecutiveErrors++;
+      if (consecutiveErrors >= 5) {
+        callbacks.onStateChange(s =>
+          updateNodeStatus(s, nodeId, "failed", undefined, undefined, "네트워크 오류로 상태 확인 실패"),
+        );
+        return;
+      }
+      continue;
+    }
 
-    if (!res.ok) continue;
+    if (!res.ok) {
+      consecutiveErrors++;
+      if (consecutiveErrors >= 5) {
+        callbacks.onStateChange(s =>
+          updateNodeStatus(s, nodeId, "failed", undefined, undefined, `상태 확인 실패 (HTTP ${res.status})`),
+        );
+        return;
+      }
+      continue;
+    }
+    consecutiveErrors = 0;
     const data = await res.json();
 
     if (data.status === "COMPLETED" && data.videoUri) {
@@ -297,7 +320,7 @@ async function executeEditImage(
   }
 
   const img = data.images[0];
-  const dataUri = `data:${img.mimeType};base64,${img.base64}`;
+  const dataUri = `data:${img.mimeType || "image/png"};base64,${img.base64}`;
   callbacks.onStateChange(s => updateNodeStatus(s, node.id, "success", dataUri, "image"));
 }
 
@@ -347,7 +370,7 @@ async function executeUpscaleImage(
   }
 
   const img = data.images[0];
-  const dataUri = `data:${img.mimeType};base64,${img.base64}`;
+  const dataUri = `data:${img.mimeType || "image/png"};base64,${img.base64}`;
   callbacks.onStateChange(s => updateNodeStatus(s, node.id, "success", dataUri, "image"));
 }
 

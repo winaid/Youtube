@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { VEO_MODEL_REGISTRY } from "@/lib/veo-capability";
 import { Separator } from "@/components/ui/separator";
 
 interface VideoSettingsPanelProps {
@@ -122,7 +123,8 @@ export default function VideoSettingsPanel({
   };
 
   // 예상 비용 계산 (fast 모드, 8초 고정)
-  const pricePerSec = 0.15;
+  const modelCap = VEO_MODEL_REGISTRY["veo-3.0-fast-generate-preview"];
+  const pricePerSec = modelCap?.pricePerSecond720p ?? 0.15;
   const estimatedCost = pricePerSec * 8 * config.sampleCount;
 
   const modeLabels:   Record<VideoMode,   string> = { generate: "Generate", extend: "Extend" };

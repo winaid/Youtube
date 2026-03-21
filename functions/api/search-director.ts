@@ -112,7 +112,7 @@ If no match, return { "directors": [] }`;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(webBody),
       },
-      { timeoutMs: 25_000 }, // Cloudflare edge 30s 제한 감안
+      { timeoutMs: 55_000 }, // Pro 모델 + google_search grounding 응답 시간 감안
     );
 
     let directors: DirectorSearchResult[] = [];
