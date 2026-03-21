@@ -114,7 +114,7 @@ ${personaPrompt || ""}
         systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
         tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        generationConfig: { temperature: 1.0, topP: 0.95, maxOutputTokens: 4096 },
       }),
     }, { primaryModel: GEMINI_MODEL_SEARCH }); // google_search → SEARCH 모델 사용
 

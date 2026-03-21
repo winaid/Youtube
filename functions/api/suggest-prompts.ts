@@ -135,7 +135,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const { personaId } =
       await context.request.json() as Record<string, string>;
 
-    const prompt = getPromptForPersona(personaId || "history-marketing");
+    const basePrompt = getPromptForPersona(personaId || "history-marketing");
+
+    // ── 다양성 시드: 매 요청마다 랜덤 제약조건을 주입하여 반복 방지 ──
+    const diversitySeeds = {
+      eras: ["고대(BC~5세기)", "중세(5~15세기)", "근세(15~18세기)", "근대(18~19세기)", "현대(20세기)", "냉전기(1945~1991)", "21세기"],
+      regions: ["동남아시아", "중앙아시아", "북아프리카", "서아프리카", "동아프리카", "남미", "카리브해", "중동", "코카서스", "동유럽", "북유럽", "오세아니아", "인도 아대륙", "중국 변방", "일본", "한반도", "페르시아", "오스만 제국권"],
+      angles: ["전쟁/군사 분기점", "과학/기술 분기점", "외교/조약 분기점", "경제/무역 분기점", "문화/종교 분기점", "자연재해/전염병 분기점", "암살/쿠데타 분기점", "탐험/발견 분기점", "혁명/민중봉기 분기점", "왕조 계승 분기점"],
+    };
+    const pickRandom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    const era = pickRandom(diversitySeeds.eras);
+    const region = pickRandom(diversitySeeds.regions);
+    const angle = pickRandom(diversitySeeds.angles);
+    const diversitySuffix = `\n\n## 이번 요청의 다양성 시드 (반드시 반영)\n- 4개 카드 중 최소 1개는 "${era}" 시대를 다룰 것\n- 4개 카드 중 최소 1개는 "${region}" 지역을 다룰 것\n- 4개 카드 중 최소 1개는 "${angle}" 관점을 다룰 것\n- 이전에 자주 등장하는 뻔한 주제(로마 멸망, 히틀러 암살, 콜럼버스 항해 등)는 피하고 잘 알려지지 않은 역사적 갈림길을 우선 탐색할 것`;
+
+    const prompt = basePrompt + diversitySuffix;
 
     console.info(`[suggest-prompts] persona=${personaId} promptLen=${prompt.length}`);
 
@@ -152,6 +166,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           tools: [{ google_search: {} }],
           generationConfig: {
             temperature: 1.0,
+            topP: 0.95,
             maxOutputTokens: 2048,
             responseMimeType: "text/plain",
           },
@@ -171,6 +186,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 1.0,
+            topP: 0.95,
             maxOutputTokens: 2048,
             responseMimeType: "text/plain",
           },
