@@ -3,10 +3,6 @@ import { extractGroundingSources } from "./_director-shared";
 
 type Env = GeminiEnv;
 
-// 인메모리 캐시 — Workers stateless 특성상 warm instance에서만 효과적 (cold start 시 빈 상태)
-const responseCache = new Map<string, { reply: string; sources: { title: string; url: string }[]; searchQueries: string[]; ts: number }>();
-const CACHE_TTL = 1000 * 60 * 30; // 30분
-
 const SYSTEM_INSTRUCTION = `당신은 유튜브 쇼츠/릴스용 대체역사 콘텐츠 작가입니다.
 실제 역사적 사실을 바탕으로, 세계사의 갈림길을 상상하는 대체역사 쇼츠를 생성합니다.
 
@@ -106,17 +102,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "message is required" }, { status: 400 });
     }
 
-    // 캐시 확인
-    const cacheKey = `${personaId}:${message}`;
-    const cached = responseCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < CACHE_TTL) {
-      return Response.json({
-        reply: cached.reply,
-        sources: cached.sources,
-        searchQueries: cached.searchQueries,
-      });
-    }
-
     const userPrompt = `[페르소나: ${personaName || "팩트 기반 대체역사 콘텐츠 작가"}]
 ${personaPrompt || ""}
 
@@ -156,17 +141,6 @@ ${personaPrompt || ""}
     const grounding = data?.candidates?.[0]?.groundingMetadata;
     const sources = extractGroundingSources(grounding as Parameters<typeof extractGroundingSources>[0]);
     const searchQueries = (grounding as Record<string, unknown>)?.webSearchQueries as string[] ?? [];
-
-    // 캐시 저장
-    responseCache.set(cacheKey, { reply, sources, searchQueries, ts: Date.now() });
-
-    // 오래된 캐시 정리
-    if (responseCache.size > 100) {
-      const now = Date.now();
-      for (const [key, val] of responseCache) {
-        if (now - val.ts > CACHE_TTL) responseCache.delete(key);
-      }
-    }
 
     return Response.json({
       reply,
