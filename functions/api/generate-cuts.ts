@@ -2571,6 +2571,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           step1Degraded = true;
           step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + providerReason;
         }
+      } else if (isTimeout) {
+        // ── Step 2/3 타임아웃 → Flash 모델로 한 번 시도 ──
+        console.warn("[generate-cuts] step2/3 timeout — trying Flash model (faster)");
+        try {
+          [details1, details2] = await Promise.all([
+            step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH),
+            batch2.length > 0
+              ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH)
+              : Promise.resolve([]),
+          ]);
+          step1Degraded = true;
+          step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + "step2/3 Pro timeout → Flash fallback 성공";
+          step1Warnings.push("step2/3: Flash model fallback (Pro 타임아웃)");
+          console.log("[generate-cuts] step2/3 timeout Flash fallback succeeded");
+        } catch (flashErr) {
+          const flashMsg = flashErr instanceof Error ? flashErr.message : String(flashErr);
+          console.warn("[generate-cuts] step2/3 timeout Flash fallback failed:", flashMsg.slice(0, 200));
+          // Flash도 실패 → outline-only fallback
+          step1Warnings.push(`step2/3 timeout + Flash failed: ${msg.slice(0, 200)}`);
+          step1Warnings.push("proceeding with outline-only cuts (no detailed prompts)");
+          step1Degraded = true;
+          step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + `step2/3 timeout: ${msg.slice(0, 100)}`;
+        }
       } else if (isProviderError && !isTimeout) {
         // Provider 503 등 — outline-only fallback
         const nonRetryReason = "AI 서버 일시 혼잡으로 세부 장면 보강을 건너뛰었습니다";

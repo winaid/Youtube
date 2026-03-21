@@ -1236,7 +1236,7 @@ Each director object must have:
           contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
           generationConfig: {
             temperature: opts.useGrounding ? 0.3 : 0.5,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 4096,
             ...(opts.forceMimeType ? { responseMimeType: "application/json" as const } : {}),
           },
           ...(opts.useGrounding ? { tools: [{ google_search: {} }] } : {}),
