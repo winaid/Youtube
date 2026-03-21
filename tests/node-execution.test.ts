@@ -215,7 +215,7 @@ describe("executeGenerateVideo", () => {
     const body = JSON.parse(generateCall[1].body);
     expect(body.firstFrameBase64).toBe("RAWBASE64DATA"); // data URI prefix stripped
     expect(body.engine).toBe("veo");
-    expect(body.durationSeconds).toBe(6);
+    expect(body.durationSeconds).toBe(8); // VEO 정책: 8초 고정
     expect(body.prompt).toBe("animate this");
     // Should NOT have imageUrl
     expect(body.imageUrl).toBeUndefined();

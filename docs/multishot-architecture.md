@@ -4,9 +4,9 @@
 
 This product treats multi-shot as the default operating mode for eligible clips — not an optional enhancement. The reasoning:
 
-1. **Retention.** Single-shot video over 6-9 seconds tends to lose viewer attention. Structured shot progression (establish → develop → peak → resolve) creates rhythm.
-2. **Production quality.** Real cinematography uses shot changes. A 12-second single-take feels like raw footage, not a produced sequence.
-3. **VEO capability alignment.** VEO supports 4-shot multishot (2+2+2+2) per generation with 2-second minimum shot duration. The product is built to use this capability by default.
+1. **Retention.** Single-shot 8-second video tends to lose viewer attention. Structured shot progression (establish → develop → peak → resolve) creates rhythm.
+2. **Production quality.** Real cinematography uses shot changes. A single-take feels like raw footage, not a produced sequence.
+3. **VEO capability alignment.** VEO generates 8-second clips with 4-shot multishot (2+2+2+2) and 2-second minimum shot duration. The product is built to use this capability by default.
 
 ## Planning Flow
 
@@ -30,15 +30,15 @@ Input: durationSec, sceneType, modelId, basePrompt
 
 ### Shot Count Heuristics
 
-| Duration | Recommended Shots |
-|----------|-------------------|
-| ≤3s | 1 (single-shot only) |
-| 4-5s | 2 |
-| 6-8s | 2-3 |
-| 9-12s | 3-4 |
-| 13-15s | 4-6 |
+현재 VEO 정책은 **8초 고정 멀티샷**. 아래 테이블은 내부 플래닝 기준이며, 실제 생성은 항상 8초.
 
-These are starting recommendations. `getMaxShots()` applies further limits based on model capability and physical constraints (`floor(duration / minShotDuration)`).
+| Duration | Recommended Shots | 비고 |
+|----------|-------------------|------|
+| ≤3s | 1 (단일샷) | 멀티샷 불필요 |
+| 4-8s | 3-4 | 기본 멀티샷 범위 (현재 정책: 8초 고정) |
+| 9-15s | 3-4 | 내부 플래닝 기준 |
+
+`getMaxShots()` 가 모델 capability와 물리 제약(`floor(duration / minShotDuration)`)으로 추가 제한.
 
 ### Role Progression Patterns
 

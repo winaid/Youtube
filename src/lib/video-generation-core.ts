@@ -24,7 +24,7 @@ export interface VideoSubmitParams {
   durationSeconds?: number;
   aspectRatio?: string;
   negativePrompt?: string;
-  engine?: "veo" | "auto";
+  engine?: "veo" | "auto"; // 현재 "veo"만 사용. "auto"는 서버 예약값.
   videoMode?: "generate" | "extend";
   /** 워크플로우 타입 — 서버에서 모델 자동 선택에 사용 */
   workflowType?: import("@/types").VideoWorkflowType;

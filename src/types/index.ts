@@ -457,7 +457,7 @@ export interface StoryAIPersona {
 }
 
 // ===== 영상 생성 엔진 & 모드 =====
-/** Video generation engine. VEO = sole generation engine. */
+/** Video generation engine. 현재 "veo"만 사용. "auto"는 서버 모델 자동 선택용 예약값 (클라이언트 미사용). */
 export type VideoEngine = "veo" | "auto";
 export type VideoMode   = "generate" | "extend";
 

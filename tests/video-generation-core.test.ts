@@ -60,9 +60,9 @@ describe("normalized response shape — consistent between node and hook paths",
         modelUsed: "veo-3.1-fast-generate-preview",
         status: "RUNNING",
         durationMeta: {
-          requestedSecondsPerScene: 6,
-          normalizedSecondsPerScene: 6,
-          sentSecondsPerScene: 5,
+          requestedSecondsPerScene: 8,
+          normalizedSecondsPerScene: 8,
+          sentSecondsPerScene: 8,
           warnings: [],
         },
       }),
@@ -70,7 +70,7 @@ describe("normalized response shape — consistent between node and hook paths",
 
     const result = await submitVideoGeneration({
       prompt: "test prompt",
-      durationSeconds: 6,
+      durationSeconds: 8, // VEO 정책: 8초 고정
       aspectRatio: "16:9",
     });
 
@@ -82,7 +82,7 @@ describe("normalized response shape — consistent between node and hook paths",
     expect(result.modelUsed).toBe("veo-3.1-fast-generate-preview");
     expect(result.status).toBe("RUNNING");
     expect(result.durationMeta).toBeDefined();
-    expect(result.durationMeta!.normalizedSecondsPerScene).toBe(6);
+    expect(result.durationMeta!.normalizedSecondsPerScene).toBe(8);
   });
 
   it("submitVideoGeneration should handle immediate completion (cache hit)", async () => {
@@ -583,7 +583,7 @@ describe("submit request shape — consistent with /api/generate-video", () => {
     await submitVideoGeneration({
       prompt: "mountain vista",
       firstFrameBase64: "base64data",
-      durationSeconds: 10,
+      durationSeconds: 8, // VEO 정책: 8초 고정
       aspectRatio: "16:9",
       negativePrompt: "blurry",
       engine: "veo",
@@ -595,7 +595,7 @@ describe("submit request shape — consistent with /api/generate-video", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.prompt).toBe("mountain vista");
     expect(body.firstFrameBase64).toBe("base64data");
-    expect(body.durationSeconds).toBe(10);
+    expect(body.durationSeconds).toBe(8);
     expect(body.aspectRatio).toBe("16:9");
     expect(body.negativePrompt).toBe("blurry");
     expect(body.engine).toBe("veo");

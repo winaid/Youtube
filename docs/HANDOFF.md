@@ -60,7 +60,7 @@ V1 완성 단계. 핵심 파이프라인/프롬프트/규칙이 구현 완료되
 | Job recovery & history | Complete |
 | Export JSON with `multiShot[]` | Complete |
 | Payload preview (3-tier) | Complete |
-| Duration reconciliation (3-15s) | Complete |
+| Duration 정책 (8초 고정, 내부 플래닝 3-15s 휴리스틱) | Complete |
 | Editorial persona system | Complete |
 | Narration pipeline | Complete |
 | Quality verification pipeline | Complete |

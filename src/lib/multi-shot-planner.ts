@@ -162,7 +162,7 @@ export const RETENTION_ROLE_PATTERNS: Record<number, ShotRole[]> = {
  * 이 모듈이 default planning engine이므로 기존 heuristic은 validation용으로 유지.
  */
 const SHOT_COUNT_RANGES: { maxSec: number; min: number; max: number }[] = [
-  { maxSec: 3,  min: 3, max: 4 },
+  { maxSec: 3,  min: 1, max: 1 },  // 3초 이하: 멀티샷 불필요 (단일샷)
   { maxSec: 8,  min: 3, max: 4 },
   { maxSec: 15, min: 3, max: 4 },
 ];
