@@ -1249,9 +1249,15 @@ Each director object must have:
         // grounding 디버그
         const candidateKeys = candidate ? Object.keys(candidate) : [];
         const groundingDiag = opts.useGrounding ? {
+          // API 응답 최상위 구조
+          responseTopKeys: Object.keys(data),
+          candidateKeys,
+          // candidate 전체 스냅샷 (text 제외, 300자)
+          candidateSnapshot: candidate
+            ? JSON.stringify(candidate, (k, v) => k === "parts" ? "[omitted]" : v).slice(0, 400)
+            : "null",
           metaExists: !!grMeta,
           metaKeys: grMeta ? Object.keys(grMeta) : [],
-          candidateKeys,
           chunksCount: Array.isArray((grMeta as Record<string, unknown>)?.groundingChunks) ? ((grMeta as Record<string, unknown>).groundingChunks as unknown[]).length : 0,
           supportsCount: Array.isArray((grMeta as Record<string, unknown>)?.groundingSupports) ? ((grMeta as Record<string, unknown>).groundingSupports as unknown[]).length : 0,
           searchQueriesCount: webSearchQueries.length,
