@@ -5,6 +5,7 @@ import { VideoClip, AudioMeta, ShotNarrationState, SequenceNarrationState, Batch
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getVideoFilterStyle } from "@/lib/style-postprocess";
 
 function formatTimecode(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -39,6 +40,8 @@ interface TimelineEditorProps {
   batchNarrationState?: BatchNarrationRegenerationState;
   /** 배치 나레이션 재생성 콜백 */
   onRegenerateAllDirtyNarrations?: () => void;
+  /** 스타일 ID — 후처리 CSS 필터 적용용 */
+  styleId?: string;
 }
 
 function TrimSlider({
@@ -119,6 +122,7 @@ export default function TimelineEditor({
   sequenceNarrationState,
   batchNarrationState,
   onRegenerateAllDirtyNarrations,
+  styleId,
 }: TimelineEditorProps) {
   const completedClips = clips.filter((c) => c.status === "completed" && c.videoUri);
 
@@ -508,14 +512,14 @@ export default function TimelineEditor({
           <video
             ref={vidA}
             className="absolute inset-0 w-full h-full object-contain"
-            style={{ opacity: 1, background: "black" }}
+            style={{ opacity: 1, background: "black", ...getVideoFilterStyle(styleId || "") }}
             playsInline
             muted={false}
           />
           <video
             ref={vidB}
             className="absolute inset-0 w-full h-full object-contain"
-            style={{ opacity: 0, background: "black" }}
+            style={{ opacity: 0, background: "black", ...getVideoFilterStyle(styleId || "") }}
             playsInline
             muted={false}
           />
@@ -735,7 +739,7 @@ export default function TimelineEditor({
                       src={clip.videoUri}
                       controls
                       className="w-full rounded-lg mb-2"
-                      style={{ maxHeight: "200px" }}
+                      style={{ maxHeight: "200px", ...getVideoFilterStyle(styleId || "") }}
                     />
                   )}
                   <TrimSlider

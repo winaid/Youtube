@@ -1457,6 +1457,7 @@ export default function ResultPanel({
                   onMarkNarrationDirty={videoGen.markNarrationDirty}
                   onRegenerateShotNarration={videoGen.regenerateShotNarration}
                   batchActiveCutNumber={videoGen.batchNarrationState.isRunning ? videoGen.batchNarrationState.activeCutNumber : undefined}
+                  styleId={animationMode}
                 />
               ))
           )}
@@ -1475,6 +1476,7 @@ export default function ResultPanel({
           sequenceNarrationState={videoGen.sequenceNarrationState}
           batchNarrationState={videoGen.batchNarrationState}
           onRegenerateAllDirtyNarrations={videoGen.regenerateAllDirtyNarrations}
+          styleId={animationMode}
         />
       )}
 

@@ -183,18 +183,37 @@ export async function veoGenerate(
     body: JSON.stringify(body),
   });
 
-  const text = await res.text();
+  let text = await res.text();
   if (!res.ok) {
     const httpStatus = res.status;
     console.error("[_veo-api] veoGenerate failed", { httpStatus, body: text.slice(0, 500) });
 
-    if (httpStatus === 403 || httpStatus === 401) {
-      throw new VeoApiError(`VEO API 인증 실패 (${httpStatus}): ${text.slice(0, 300)}`, "auth_error", false, httpStatus);
+    // ── generateAudio 미지원 모델 → 자동 재시도 (오디오 없이) ──
+    if (httpStatus === 400 && text.includes("generateAudio") && parameters.generateAudio) {
+      console.warn("[_veo-api] generateAudio not supported by model — retrying without audio");
+      delete parameters.generateAudio;
+      const retryBody = { instances: body.instances, parameters };
+      const retryRes = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(retryBody),
+      });
+      text = await retryRes.text();
+      if (!retryRes.ok) {
+        const retryStatus = retryRes.status;
+        console.error("[_veo-api] veoGenerate retry (no audio) failed", { retryStatus, body: text.slice(0, 500) });
+        throw new VeoApiError(`VEO generate (${retryStatus}): ${text.slice(0, 400)}`, "api_error", retryStatus >= 500, retryStatus);
+      }
+      // fall through to parse the retry response
+    } else {
+      if (httpStatus === 403 || httpStatus === 401) {
+        throw new VeoApiError(`VEO API 인증 실패 (${httpStatus}): ${text.slice(0, 300)}`, "auth_error", false, httpStatus);
+      }
+      if (httpStatus === 429) {
+        throw new VeoApiError(`VEO API 속도 제한: ${text.slice(0, 300)}`, "rate_limited", true, httpStatus);
+      }
+      throw new VeoApiError(`VEO generate (${httpStatus}): ${text.slice(0, 400)}`, "api_error", httpStatus >= 500, httpStatus);
     }
-    if (httpStatus === 429) {
-      throw new VeoApiError(`VEO API 속도 제한: ${text.slice(0, 300)}`, "rate_limited", true, httpStatus);
-    }
-    throw new VeoApiError(`VEO generate (${httpStatus}): ${text.slice(0, 400)}`, "api_error", httpStatus >= 500, httpStatus);
   }
 
   let data: { name?: string; error?: { message?: string } };
@@ -275,11 +294,30 @@ export async function veoExtend(
     body: JSON.stringify(body),
   });
 
-  const text = await res.text();
+  let text = await res.text();
   if (!res.ok) {
     const httpStatus = res.status;
     console.error("[_veo-api] veoExtend failed", { httpStatus, body: text.slice(0, 500) });
-    throw new VeoApiError(`VEO extend (${httpStatus}): ${text.slice(0, 400)}`, "api_error", httpStatus >= 500, httpStatus);
+
+    // ── generateAudio 미지원 모델 → 자동 재시도 (오디오 없이) ──
+    if (httpStatus === 400 && text.includes("generateAudio") && parameters.generateAudio) {
+      console.warn("[_veo-api] veoExtend: generateAudio not supported — retrying without audio");
+      delete parameters.generateAudio;
+      const retryBody = { instances: body.instances, parameters };
+      const retryRes = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(retryBody),
+      });
+      text = await retryRes.text();
+      if (!retryRes.ok) {
+        const retryStatus = retryRes.status;
+        console.error("[_veo-api] veoExtend retry (no audio) failed", { retryStatus, body: text.slice(0, 500) });
+        throw new VeoApiError(`VEO extend (${retryStatus}): ${text.slice(0, 400)}`, "api_error", retryStatus >= 500, retryStatus);
+      }
+    } else {
+      throw new VeoApiError(`VEO extend (${httpStatus}): ${text.slice(0, 400)}`, "api_error", httpStatus >= 500, httpStatus);
+    }
   }
 
   let data: { name?: string; error?: { message?: string } };

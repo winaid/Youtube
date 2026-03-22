@@ -10,6 +10,7 @@ import {
   clearVideoHistory,
   VideoRecord,
 } from "@/lib/video-history";
+import { getVideoFilterStyle } from "@/lib/style-postprocess";
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -137,7 +138,7 @@ export default function MyVideosPanel() {
                     controls
                     autoPlay
                     className="w-full rounded-md"
-                    style={{ maxHeight: "200px" }}
+                    style={{ maxHeight: "200px", ...getVideoFilterStyle(rec.animationMode || "") }}
                     onEnded={() => setPlayingId(null)}
                   />
                 ) : (

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ShotVariant, ShotRegenerateStatus } from "@/types";
+import { getVideoFilterStyle } from "@/lib/style-postprocess";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -17,6 +18,7 @@ interface ShotVariantPanelProps {
   activeVariantId: string | null;
   onAcceptVariant: (variantId: string) => void;
   onRegenerate: () => void;
+  styleId?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -41,6 +43,7 @@ export default function ShotVariantPanel({
   activeVariantId,
   onAcceptVariant,
   onRegenerate,
+  styleId,
 }: ShotVariantPanelProps) {
   const statusCfg = STATUS_CONFIG[status];
 
@@ -125,6 +128,7 @@ export default function ShotVariantPanel({
                       <video
                         src={variant.videoUrl}
                         className="w-full h-full object-cover"
+                        style={getVideoFilterStyle(styleId || "")}
                         muted
                         loop
                         playsInline

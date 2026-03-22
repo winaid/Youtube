@@ -7,6 +7,7 @@ import { inferShotRole } from "@/lib/multishot-validation";
 import { generateSummariesFromNormalizedMultiPrompt } from "@/lib/shot-summary-ko";
 
 import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
+import { getVideoFilterStyle } from "@/lib/style-postprocess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -767,7 +768,7 @@ export default function VideoGenerationPanel({
                       src={clip.videoUri}
                       controls
                       className="w-full rounded-lg"
-                      style={{ maxHeight: "200px" }}
+                      style={{ maxHeight: "200px", ...getVideoFilterStyle(styleId || "") }}
                     />
                     <div className="flex gap-1.5">
                       <a
@@ -823,7 +824,7 @@ export default function VideoGenerationPanel({
                           <video
                             src={variant.videoUri}
                             className="w-full"
-                            style={{ height: "80px", objectFit: "cover" }}
+                            style={{ height: "80px", objectFit: "cover", ...getVideoFilterStyle(styleId || "") }}
                             muted
                             onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
                             onMouseLeave={(e) => {

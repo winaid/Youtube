@@ -51,6 +51,8 @@ interface SequenceTimelineEditorProps {
   onRegenerateShotNarration?: (cutNumber: number) => void;
   /** 배치 처리 중인 cutNumber */
   batchActiveCutNumber?: number | null;
+  /** 스타일 ID — 후처리 CSS 필터 적용용 */
+  styleId?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -67,6 +69,7 @@ export default function SequenceTimelineEditor({
   onMarkNarrationDirty,
   onRegenerateShotNarration,
   batchActiveCutNumber,
+  styleId,
 }: SequenceTimelineEditorProps) {
   // ── State: original vs editable ──────────────────────────────
   const [editable, setEditable] = useState<EditableSequence>(() =>
@@ -309,6 +312,7 @@ export default function SequenceTimelineEditor({
           activeVariantId={selectedShotActiveVariantId}
           onAcceptVariant={handleAcceptVariant}
           onRegenerate={() => handleRegenerate(selectedShotId)}
+          styleId={styleId}
         />
       )}
     </div>
