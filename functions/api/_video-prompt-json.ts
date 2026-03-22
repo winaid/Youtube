@@ -136,7 +136,9 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
 
 export function renderPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
-  parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
+  const shotSize = json.shotSize || "MS";
+  const cameraAngle = json.cameraAngle || "eye-level";
+  parts.push(`${shotSize} shot, ${cameraAngle}`);
   if (json.cameraMovement && json.cameraMovement !== "static") {
     let movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
     // "static" 단독을 최소한의 시네마틱 움직임으로 대체
@@ -184,7 +186,9 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   }
 
   // ── 3. 새 샷 프레이밍 ──
-  parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
+  const newShotSize = json.newShot.shotSize || "MS";
+  const newCameraAngle = json.newShot.cameraAngle || "eye-level";
+  parts.push(`${newShotSize} shot, ${newCameraAngle}`);
   if (json.newShot.cameraMovement) {
     const cm = /^static$/i.test(json.newShot.cameraMovement) ? "slow push-in" : json.newShot.cameraMovement;
     parts.push(cm);
@@ -214,10 +218,24 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   if (json.timingBeat) parts.push(json.timingBeat);
 
   // ── 10. 스타일 접미사 ──
-  const cleanSuffix = json.styleSuffix
+  const cleanSuffix = (json.styleSuffix || "")
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();
-  parts.push(cleanSuffix);
+  if (cleanSuffix) parts.push(cleanSuffix);
+
+  // ── Cinematic realism 3D/CGI drift 방지 (extend에서도 적용) ──
+  const fullText = parts.join(" ") + " " + (json.styleSuffix || "");
+  const isCinematicRealism = /cinematic\s*realism/i.test(fullText);
+  const isMapTerrain = /\b(map|terrain|topograph|relief|globe|continent)\b/i.test(fullText);
+  if (isCinematicRealism && isMapTerrain) {
+    for (let i = 0; i < parts.length; i++) {
+      parts[i] = parts[i]
+        .replace(/\b3D\s+(?:topograph(?:ic)?\s+)?map\b/gi, "physical relief map surface")
+        .replace(/\b3D\s+(?:terrain|render(?:ed)?)\b/gi, "cinematic physical surface")
+        .replace(/\bCGI\s+(?:render|terrain|landscape)\b/gi, "cinematic physical surface");
+    }
+    parts.push("The image remains a physical map surface, not a real landscape and not a CGI render");
+  }
 
   return stripDialogueAndKorean(parts.filter(Boolean).join(". "));
 }

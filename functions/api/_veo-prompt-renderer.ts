@@ -186,14 +186,22 @@ export function convertMultiShotToTimestamp(
     currentSec += dur;
   }
 
-  // 합이 8초가 아니면 마지막 샷 조정
+  // 합이 8초가 아니면 비례 스케일링 (마지막 샷만 조정하면 endSec < startSec 가능)
   if (currentSec !== 8 && entries.length > 0) {
-    const last = entries[entries.length - 1];
-    const diff = 8 - currentSec;
-    last.endSec = last.endSec + diff;
-    if (last.endSec <= last.startSec) {
-      last.endSec = last.startSec + 1;
+    const ratio = 8 / currentSec;
+    let runningStart = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const origDur = e.endSec - e.startSec;
+      const scaledDur = i === entries.length - 1
+        ? 8 - runningStart  // 마지막 샷: 나머지 전부
+        : Math.max(1, Math.round(origDur * ratio));
+      e.startSec = runningStart;
+      e.endSec = runningStart + Math.max(1, scaledDur);
+      runningStart = e.endSec;
     }
+    // 마지막 샷 endSec 강제 8초
+    entries[entries.length - 1].endSec = 8;
   }
 
   return entries;

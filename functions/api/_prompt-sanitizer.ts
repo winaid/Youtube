@@ -272,6 +272,7 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
 
     // Replacements first
     for (const { pattern, replacement } of rule.replacements) {
+      pattern.lastIndex = 0;
       const matches = prompt.match(pattern);
       if (matches) {
         prompt = prompt.replace(pattern, replacement);
@@ -281,6 +282,7 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
 
     // Then banned terms
     for (const banned of rule.banned) {
+      banned.lastIndex = 0;
       const matches = prompt.match(banned);
       if (matches) {
         prompt = prompt.replace(banned, "");
@@ -458,7 +460,9 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
         { pattern: /\brippl(?:ing|es?)\s+(?:in\s+)?(?:the\s+)?(?:wind|breeze|air)\b/gi, fix: "motionless" },
       ];
       for (const { pattern, fix } of windFixes) {
+        pattern.lastIndex = 0;
         if (pattern.test(prompt)) {
+          pattern.lastIndex = 0; // .test() advances lastIndex — reset before .replace()
           prompt = prompt.replace(pattern, fix);
           issues.push({ rule: "physics_flag_wind_conflict", severity: "error", message: `Wind-dependent motion in no-wind env: replaced with "${fix}"`, autoFixed: true });
           log.push(`[physics] Wind motion → "${fix}"`);
@@ -626,10 +630,12 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
   // Env banned vocab
   if (sceneType === "environment") {
     for (const pattern of (SCENE_RULES.environment.banned || [])) {
-      if (pattern.test(prompt)) {
+      // global regex lastIndex 리셋 — .test() 후 .match()에서 누락 방지
+      pattern.lastIndex = 0;
+      const match = prompt.match(pattern);
+      if (match) {
         valid = false;
-        const match = prompt.match(pattern);
-        log.push(`[FAIL] Env banned term still present: "${match?.[0]}"`);
+        log.push(`[FAIL] Env banned term still present: "${match[0]}"`);
       }
     }
     if (["CU", "ECU", "MCU"].includes(framing.toUpperCase())) {

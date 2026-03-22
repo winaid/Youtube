@@ -115,8 +115,21 @@ interface ServerCut {
 
 function normalizeFraming(raw?: string): string {
   const valid = ["ECU", "CU", "MCU", "MS", "MLS", "LS", "WS", "OTS", "POV"];
-  const up = raw?.toUpperCase() || "MS";
-  return valid.includes(up) ? up : "MS";
+  const up = raw?.toUpperCase().trim() || "MS";
+  if (valid.includes(up)) return up;
+  // descriptive name → abbreviation (Gemini가 "Wide shot" 등 반환할 때)
+  const descMap: Record<string, string> = {
+    "EXTREME CLOSE-UP": "ECU", "EXTREME CLOSEUP": "ECU", "EXTREME CU": "ECU",
+    "CLOSE-UP": "CU", "CLOSEUP": "CU", "CLOSE UP": "CU",
+    "MEDIUM CLOSE-UP": "MCU", "MEDIUM CLOSEUP": "MCU", "MEDIUM CU": "MCU",
+    "MEDIUM SHOT": "MS", "MEDIUM": "MS", "MID SHOT": "MS",
+    "MEDIUM LONG SHOT": "MLS", "MEDIUM LONG": "MLS",
+    "LONG SHOT": "LS", "LONG": "LS",
+    "WIDE SHOT": "WS", "WIDE": "WS", "ESTABLISHING": "WS", "ESTABLISHING SHOT": "WS",
+    "OVER-THE-SHOULDER": "OTS", "OVER THE SHOULDER": "OTS",
+    "POINT-OF-VIEW": "POV", "POINT OF VIEW": "POV",
+  };
+  return descMap[up] || "MS";
 }
 
 function normalizeAngle(raw?: string): string {
@@ -125,6 +138,9 @@ function normalizeAngle(raw?: string): string {
     eye_level: "eye_level", low_angle: "low_angle", high_angle: "high_angle",
     dutch: "dutch", overhead: "overhead", pov: "POV",
     slightly_low: "low_angle", slightly_high: "high_angle",
+    bird_s_eye: "overhead", birds_eye: "overhead", top_down: "overhead",
+    worm_s_eye: "low_angle", worms_eye: "low_angle",
+    canted: "dutch", tilted: "dutch", level: "eye_level",
   };
   return map[n] || "eye_level";
 }
@@ -343,8 +359,15 @@ export function validateSequencePlan(plan: SequencePlan): SequenceValidationResu
   // R8: camera motion in action text (카메라 동작이 action 필드에 묻혀있으면 경고)
   for (const shot of plan.shots) {
     const actionText = (shot.subject.primary || "") + " " + (shot.action || "");
-    if (/\b(pan|tilt|dolly|crane|zoom|push.?in|pull.?back|tracking)\b/i.test(actionText) && !shot.camera.motion) {
+    if (/\b(pan|tilt|dolly|crane|zoom|push.?in|pull.?back|tracking)\b/i.test(actionText) && (!shot.camera.motion || shot.camera.motion === "static")) {
       issues.push({ rule: "camera_in_action_text", severity: "warning", message: `${shot.shotId}: 카메라 동작이 action 필드에 포함 — camera.motion으로 분리 필요`, shotId: shot.shotId });
+    }
+  }
+
+  // R9a: zero-duration shot 검출
+  for (const shot of plan.shots) {
+    if (shot.endSec <= shot.startSec) {
+      issues.push({ rule: "timing_zero_duration", severity: "error", message: `${shot.shotId}: duration ≤ 0 (${shot.startSec}s→${shot.endSec}s)`, shotId: shot.shotId });
     }
   }
 
