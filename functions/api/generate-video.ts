@@ -83,17 +83,41 @@ function stripInternalTags(text: string): string {
 
 function deduplicatePromptClauses(text: string): string {
   const sentences = text.split(/\.\s+/).filter(s => s.trim().length > 3);
-  const seen = new Set<string>();
+  const seen: string[] = [];
   const unique: string[] = [];
   for (const s of sentences) {
     const norm = s.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
     if (norm.length < 10) { unique.push(s.trim()); continue; }
     let isDupe = false;
-    for (const prev of seen) {
-      if (prev === norm || prev.includes(norm) || norm.includes(prev)) { isDupe = true; break; }
+    let replacedIdx = -1;
+    for (let i = 0; i < seen.length; i++) {
+      const prev = seen[i];
+      if (prev === norm) { isDupe = true; break; }
+      // substring 중복: 더 긴(구체적인) 버전을 보존
+      if (prev.includes(norm)) {
+        // 기존이 더 길다 → 새 문장은 중복
+        isDupe = true; break;
+      }
+      if (norm.includes(prev) && norm.length > prev.length + 15) {
+        // 새 문장이 훨씬 더 길다(+15자 이상) → 기존을 새 것으로 교체
+        replacedIdx = i;
+        break;
+      }
     }
-    if (!isDupe) {
-      seen.add(norm);
+    if (replacedIdx >= 0) {
+      seen[replacedIdx] = norm;
+      // unique에서 기존 짧은 버전을 새 긴 버전으로 교체
+      const prevNorm = seen[replacedIdx];
+      for (let j = 0; j < unique.length; j++) {
+        const uNorm = unique[j].trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+        if (uNorm === prevNorm || prevNorm.includes(uNorm)) {
+          unique[j] = s.trim();
+          break;
+        }
+      }
+      seen[replacedIdx] = norm;
+    } else if (!isDupe) {
+      seen.push(norm);
       unique.push(s.trim());
     }
   }
@@ -177,12 +201,24 @@ function serializeSequenceToPrompt(
   const provider = "veo" as const;
 
   if (seq.videoPromptJson) {
+    // videoPromptJson 경로도 sanitization 적용 (물리 위반, scene-type 부적합 어휘 수정)
+    const vpjPrompt = renderPromptFromJson(seq.videoPromptJson);
+    const vpjSanitized = serverSanitizeAndValidate({
+      prompt: vpjPrompt,
+      negatives: ["text overlay", "watermark"],
+      framing: seq.videoPromptJson.shotSize || "MS",
+      shotCategory: seq.shotCategory,
+      physicsRules: seq.physicsRules,
+      sceneType: seq.sceneType,
+      durationSec: 8,
+    });
     return {
-      prompt: renderPromptFromJson(seq.videoPromptJson),
-      negativePrompt: "",
-      valid: true,
-      blocked: false,
-      payloadSnapshot: JSON.stringify({ prompt: renderPromptFromJson(seq.videoPromptJson), negativePrompt: "", provider }),
+      prompt: vpjSanitized.blocked ? vpjPrompt : vpjSanitized.prompt,  // blocked이면 원본 유지 (sanitizer 오류 방지)
+      negativePrompt: vpjSanitized.negativePrompt || "",
+      valid: !vpjSanitized.blocked,
+      blocked: vpjSanitized.blocked,
+      blockReason: vpjSanitized.blockReason,
+      payloadSnapshot: JSON.stringify({ prompt: vpjSanitized.prompt || vpjPrompt, negativePrompt: vpjSanitized.negativePrompt || "", provider }),
     };
   }
 
@@ -222,8 +258,15 @@ function serializeSequenceToPrompt(
   if (shot.subject.characterRef) parts.push(shot.subject.characterRef);
   if (shot.emotionalAnchor) parts.push(shot.emotionalAnchor);
   if (shot.action) parts.push(shot.action);
+  // actionBeat/bodySignal: Gemini Step2/3가 생성한 상세 물리 동작 (videoPromptJson에서 가져옴)
+  const vpj = seq.videoPromptJson;
+  if (vpj?.actionBeat && vpj.actionBeat !== shot.action) parts.push(vpj.actionBeat);
+  if (vpj?.bodySignal) parts.push(vpj.bodySignal);
   if (seq.naturalMotion && seq.naturalMotion.length > 0) parts.push(seq.naturalMotion.join(", "));
   if (shot.moodLighting) parts.push(shot.moodLighting);
+  // Director visual DNA (videoPromptJson에서 가져옴 — shotPlan에는 없는 필드)
+  if (vpj?.directorColorHint) parts.push(vpj.directorColorHint);
+  if (vpj?.directorCameraHint) parts.push(vpj.directorCameraHint);
 
   if (seq.temporalBeats && seq.temporalBeats.length > 0) {
     const beatStr = seq.temporalBeats.map(b => `${b.startSec}s-${b.endSec}s: ${b.focus}`).join(". ");

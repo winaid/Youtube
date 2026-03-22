@@ -102,17 +102,30 @@ function stripInternalTags(text: string): string {
 
 function deduplicatePromptClauses(text: string): string {
   const sentences = text.split(/\.\s+/).filter(s => s.trim().length > 3);
-  const seen = new Set<string>();
+  const seen: string[] = [];
   const unique: string[] = [];
   for (const s of sentences) {
     const norm = s.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
     if (norm.length < 10) { unique.push(s.trim()); continue; }
     let isDupe = false;
-    for (const prev of seen) {
-      if (prev === norm || prev.includes(norm) || norm.includes(prev)) { isDupe = true; break; }
+    for (let i = 0; i < seen.length; i++) {
+      const prev = seen[i];
+      if (prev === norm) { isDupe = true; break; }
+      if (prev.includes(norm)) { isDupe = true; break; }
+      // 새 문장이 더 구체적이면(+15자) 기존 짧은 버전을 교체
+      if (norm.includes(prev) && norm.length > prev.length + 15) {
+        seen[i] = norm;
+        isDupe = true; // 교체했으므로 추가로 push하지 않음
+        // unique에서도 교체
+        for (let j = 0; j < unique.length; j++) {
+          const uNorm = unique[j].trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+          if (prev.includes(uNorm) || uNorm === prev) { unique[j] = s.trim(); break; }
+        }
+        break;
+      }
     }
     if (!isDupe) {
-      seen.add(norm);
+      seen.push(norm);
       unique.push(s.trim());
     }
   }
