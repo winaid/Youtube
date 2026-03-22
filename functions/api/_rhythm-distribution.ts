@@ -151,7 +151,7 @@ export function distributeRhythm(
       if (diff === 0) break;
       const step = diff > 0 ? 1 : -1;
       const newVal = clampedDurations[idx] + step;
-      if (newVal >= clamps.min && newVal <= clamps.max) {
+      if (newVal >= effectiveClamps.min && newVal <= effectiveClamps.max) {
         clampedDurations[idx] = newVal;
         diff -= step;
       }
@@ -165,7 +165,7 @@ export function distributeRhythm(
     for (let i = 0; i < clampedDurations.length && diff !== 0; i++) {
       const step = diff > 0 ? 1 : -1;
       const newVal = clampedDurations[i] + step;
-      if (newVal >= clamps.min && newVal <= clamps.max) {
+      if (newVal >= effectiveClamps.min && newVal <= effectiveClamps.max) {
         clampedDurations[i] = newVal;
         diff -= step;
         adjusted = true;

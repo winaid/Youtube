@@ -179,10 +179,16 @@ function analyzeGenerationRisk(text: string, totalSec: number, cuts: number, cha
 // ═══════════════════════════════════════════════════════════════════
 
 const REALISM_MAP: Record<string, number> = {
-  "live-action": 90, "cinematic": 85, "photorealistic": 95,
-  "tv-anime": 20, "anime-movie": 25, "ghibli": 30,
-  "disney-3d": 35, "pixar": 35, "stop-motion": 40,
-  "pixel-art": 10, "rotoscoping": 55,
+  "live-action": 90, "cinematic": 85, "photorealistic": 95, "cinematic-realism": 90,
+  "docu-handheld": 85, "commercial-ad": 80, "vintage-film": 75, "vhs-retro": 50,
+  "tv-anime": 20, "anime-movie": 25, "ghibli": 30, "theatrical-anime": 25,
+  "disney-3d": 35, "pixar": 35, "pixar-style": 35, "dreamworks-style": 35,
+  "stop-motion": 40, "claymation": 35, "miniature-diorama": 40,
+  "pixel-art": 10, "16bit-jrpg": 10, "8bit-arcade": 5,
+  "rotoscoping": 55, "docu-illustrated": 70, "live-paint-overlay": 50,
+  "mixed-media-collage": 30, "2d-3d-hybrid": 45, "surreal-composite": 25,
+  "ink-wash": 15, "east-asian-painting": 15, "watercolor": 20, "oil-painting": 25,
+  "painted-2d": 20, "watercolor-animation": 20,
 };
 
 function analyzeVisualStrategy(text: string, totalSec: number, cuts: number, animMode?: string, dirStyle?: string): VisualStrategyLite {
@@ -226,8 +232,9 @@ function buildPromptBrief(intent: StoryIntentAnalysis, risk: GenerationRiskAnaly
   if (intent.tone !== "neutral") parts.push(intent.tone);
   if (intent.genre !== "general") parts.push(intent.genre);
   if (intent.pacing === "fast" || intent.pacing === "accelerating") parts.push("quick-paced");
-  else if (intent.pacing === "slow") parts.push("contemplative pacing");
+  else if (intent.pacing === "slow" || intent.pacing === "decelerating") parts.push("contemplative pacing");
   if (intent.protagonistFocus === "high") parts.push("protagonist-driven");
+  else if (intent.protagonistFocus === "low") parts.push("environment-driven");
   if (visual.realismLevel >= 75) parts.push("realistic");
   else if (visual.stylizationLevel >= 75) parts.push("highly stylized");
   const creativeBrief = parts.join(", ");
@@ -258,6 +265,7 @@ function buildPromptBrief(intent: StoryIntentAnalysis, risk: GenerationRiskAnaly
   if (risk.visualAmbiguityRisk !== "low") avoids.push("abstract metaphorical visuals without concrete anchors");
   if (risk.promptOverloadRisk === "high") avoids.push("overloaded prompts — keep each cut focused on one action");
   if (risk.sceneSwitchRisk === "high") avoids.push("abrupt scene resets without transition cues");
+  if (visual.realismLevel >= 40 && visual.realismLevel <= 60) avoids.push("ambiguous realism-stylization mix — commit to either photorealistic or stylized");
 
   return { creativeBrief, continuityHint, shotDiscipline, subjectLockHint, environmentLockHint, avoidList: avoids.slice(0, 5) };
 }

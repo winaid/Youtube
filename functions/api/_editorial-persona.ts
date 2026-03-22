@@ -215,6 +215,13 @@ export function buildDurationAwareBeatTemplate(
   secPerCut: number,
   _ep?: EditorialPersona,
 ): { beatTemplate: string; extendBeatTemplate: string } {
+  // 가드: 0 이하/NaN 방지
+  if (!secPerCut || secPerCut <= 0 || !Number.isFinite(secPerCut)) {
+    return {
+      beatTemplate: "0s-3s:[single visual focus — fallback]",
+      extendBeatTemplate: "0s-3s:[continue from previous — fallback]",
+    };
+  }
   if (secPerCut <= 3) {
     return {
       beatTemplate: `0s-${secPerCut}s:[single visual focus — one subject, one action, one framing]`,

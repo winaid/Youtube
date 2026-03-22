@@ -315,6 +315,21 @@ export function validateSequencePlan(plan: SequencePlan): SequenceValidationResu
     }
   }
 
+  // R5: timing gap (shots 사이 빈 구간)
+  for (let i = 1; i < plan.shots.length; i++) {
+    const gap = plan.shots[i].startSec - plan.shots[i - 1].endSec;
+    if (gap > 0.1) {
+      issues.push({ rule: "timing_gap", severity: "warning", message: `${plan.shots[i - 1].shotId}~${plan.shots[i].shotId} 사이 ${gap.toFixed(1)}s 빈 구간`, shotId: plan.shots[i].shotId });
+    }
+  }
+
+  // R6: negative directives missing (hallucination 위험)
+  for (const shot of plan.shots) {
+    if (!shot.negativeDirectives || shot.negativeDirectives.length === 0) {
+      issues.push({ rule: "negative_missing", severity: "warning", message: `${shot.shotId}: negative directives 없음 (hallucination 위험)`, shotId: shot.shotId });
+    }
+  }
+
   // R7: abrupt transition (WS→ECU 등 4단계 이상 점프)
   const ORDER = ["WS", "LS", "MLS", "MS", "MCU", "CU", "ECU"];
   for (let i = 1; i < plan.shots.length; i++) {
@@ -322,6 +337,24 @@ export function validateSequencePlan(plan: SequencePlan): SequenceValidationResu
     const ci = ORDER.indexOf(plan.shots[i].camera.framing);
     if (pi >= 0 && ci >= 0 && Math.abs(ci - pi) >= 4) {
       issues.push({ rule: "abrupt_transition", severity: "warning", message: `${plan.shots[i - 1].camera.framing}→${plan.shots[i].camera.framing} 급격`, shotId: plan.shots[i].shotId });
+    }
+  }
+
+  // R8: camera motion in action text (카메라 동작이 action 필드에 묻혀있으면 경고)
+  for (const shot of plan.shots) {
+    const actionText = (shot.subject.primary || "") + " " + (shot.action || "");
+    if (/\b(pan|tilt|dolly|crane|zoom|push.?in|pull.?back|tracking)\b/i.test(actionText) && !shot.camera.motion) {
+      issues.push({ rule: "camera_in_action_text", severity: "warning", message: `${shot.shotId}: 카메라 동작이 action 필드에 포함 — camera.motion으로 분리 필요`, shotId: shot.shotId });
+    }
+  }
+
+  // R9: moodLighting / action 필드 누락
+  for (const shot of plan.shots) {
+    if (!shot.moodLighting || shot.moodLighting.trim().length < 5) {
+      issues.push({ rule: "payload_field_missing", severity: "warning", message: `${shot.shotId}: moodLighting 누락/불충분`, shotId: shot.shotId });
+    }
+    if (!shot.environment || shot.environment.trim().length < 3) {
+      issues.push({ rule: "payload_field_missing", severity: "info", message: `${shot.shotId}: environment 누락`, shotId: shot.shotId });
     }
   }
 

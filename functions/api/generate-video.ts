@@ -476,12 +476,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     try {
       if (videoMode === "extend" && sourceVideo) {
         // ── VEO Extension (Cut 2+) ────────────────────────────────────
+        // extendPromptJson이 있으면 구조화된 렌더링 사용 (directorStyleHint, behavioralShift 등 보존)
+        const extendPromptText = req.extendPromptJson
+          ? renderExtendPromptFromJson(req.extendPromptJson)
+          : rendered.timestampPrompt;
         console.log("[VEO] EXTEND mode", {
           sourceVideoUri: sourceVideo.slice(0, 80),
           model: modelUsed,
+          usedStructuredExtend: !!req.extendPromptJson,
         });
         const result = await veoExtend(context.env, {
-          prompt: rendered.timestampPrompt,
+          prompt: extendPromptText,
           sourceVideoUri: sourceVideo,
           model: modelUsed,
           aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),

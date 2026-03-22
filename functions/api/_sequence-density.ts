@@ -58,7 +58,10 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
   for (const preset of RANGE_PRESETS) {
     if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
   }
-  return { min: 1, max: 2 };
+  // 15초+ segment: 마지막 preset 기준으로 비례 확장 (1-2 fallback은 과소 추정)
+  const lastPreset = RANGE_PRESETS[RANGE_PRESETS.length - 1];
+  const scale = Math.ceil(segDur / lastPreset.maxSec);
+  return { min: lastPreset.min * scale, max: lastPreset.max * scale };
 }
 
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
@@ -99,10 +102,13 @@ export function densityPresetToRange(
 export function personaCutCountBias(
   ep: { motionBias: string; preferredCutPace: [number, number]; insertBias: string },
 ): "lower" | "upper" | "neutral" {
-  if (ep.motionBias === "frenetic" || (ep.motionBias === "dynamic" && ep.preferredCutPace[1] <= 4)) {
+  const pace = Array.isArray(ep.preferredCutPace) && ep.preferredCutPace.length >= 2
+    ? ep.preferredCutPace
+    : [4, 6]; // safe default
+  if (ep.motionBias === "frenetic" || (ep.motionBias === "dynamic" && pace[1] <= 4)) {
     return "upper";
   }
-  if (ep.motionBias === "static" || (ep.motionBias === "minimal" && ep.preferredCutPace[0] >= 5)) {
+  if (ep.motionBias === "static" || (ep.motionBias === "minimal" && pace[0] >= 5)) {
     return "lower";
   }
   return "neutral";

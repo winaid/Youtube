@@ -51,9 +51,9 @@ export function resolveShortformBandPolicy(totalDurationSec: number): ShortformB
     return { band: "micro", minCuts: 1, preferredCuts: 1, maxSecPerCut: 5, minShotsPerCut: 1, isShortformBand: true, is13to15Special: false };
   }
 
-  // 6~9초: 숏 클립 — 최소 3컷
+  // 6~9초: 숏 클립 — 최소 3컷, maxSecPerCut은 총 duration/minCuts (고정값, totalDuration 의존 아님)
   if (totalDurationSec <= 9) {
-    return { band: "short", minCuts: 3, preferredCuts: 3, maxSecPerCut: totalDurationSec, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
+    return { band: "short", minCuts: 3, preferredCuts: 3, maxSecPerCut: 3, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
   }
 
   // 10~15초: 숏폼 핵심 구간 — 4~6컷 필수
@@ -125,12 +125,12 @@ export function reconcileShortformPlan(opts: {
   if (bandPolicy.band === "over-limit") {
     const effectiveCuts = exactCutCount && exactCutCount > 0
       ? exactCutCount
-      : Math.max(densityTargetCuts, Math.ceil(totalDurationSec / 15));
-    const effectiveSecPerCut = Math.round(totalDurationSec / effectiveCuts);
+      : Math.max(densityTargetCuts, Math.ceil(totalDurationSec / DURATION_MAX));
+    const effectiveSecPerCut = Math.floor(totalDurationSec / effectiveCuts);
     notes.push(`totalDuration(${totalDurationSec}s) > 15s — multi-segment mode, shortform rhythm 비적용`);
     return {
       cutCount: effectiveCuts,
-      secPerCut: Math.min(effectiveSecPerCut, 15),
+      secPerCut: Math.min(effectiveSecPerCut, DURATION_MAX),
       totalDurationSec,
       bandPolicy,
       personaWantedSecPerCut: personaSecPerCut,
@@ -178,7 +178,7 @@ export function reconcileShortformPlan(opts: {
   // Step 2: secPerCut 결정 — totalDuration / cutCount 기반
   let secPerCut: number;
   if (totalDurationSec > 0 && cutCount > 0) {
-    const naturalPerCut = Math.round(totalDurationSec / cutCount);
+    const naturalPerCut = Math.floor(totalDurationSec / cutCount);
     secPerCut = Math.max(DURATION_MIN, Math.min(DURATION_MAX, naturalPerCut));
   } else {
     secPerCut = personaSecPerCut;
@@ -199,8 +199,15 @@ export function reconcileShortformPlan(opts: {
     }
   }
 
+  // Step 3b: 밴드 minimum 재검증 (Step 3 clamp → cutCount 재조정 후에도 밴드 minimum 준수)
+  if (cutCount < bandPolicy.minCuts) {
+    notes.push(`cutCount(${cutCount}) < band minimum(${bandPolicy.minCuts}), raised`);
+    cutCount = bandPolicy.minCuts;
+    reconciled = true;
+  }
+
   // Step 4: persona가 원한 secPerCut과 비교 — 차이가 크면 downweight 표시
-  if (personaSecPerCut > secPerCut + 1) {
+  if (personaSecPerCut > secPerCut) {
     directorPaceDownweighted = true;
     notes.push(`director wanted ${personaSecPerCut}s/cut, reconciled to ${secPerCut}s/cut (shortform rhythm > director pace)`);
     reconciled = true;
@@ -208,8 +215,8 @@ export function reconcileShortformPlan(opts: {
 
   // Step 5: 총합 정합성 최종 검증
   const totalImplied = secPerCut * cutCount;
-  if (totalDurationSec > 0 && totalImplied > totalDurationSec * 1.2) {
-    // 20% 이상 초과하면 secPerCut 재조정
+  if (totalDurationSec > 0 && totalImplied > totalDurationSec * 1.05) {
+    // 5% 이상 초과하면 secPerCut 재조정 (숏폼은 타이트한 타이밍 필수)
     const corrected = Math.max(DURATION_MIN, Math.floor(totalDurationSec / cutCount));
     notes.push(`total mismatch: ${totalImplied}s implied > ${totalDurationSec}s actual, secPerCut ${secPerCut}→${corrected}`);
     secPerCut = corrected;

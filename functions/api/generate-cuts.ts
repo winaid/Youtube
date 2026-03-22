@@ -2844,6 +2844,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
+    // ═══ durationClass 재분류 — VEO 클램핑으로 durationSec 변경 시 stale 방지 ═══
+    for (const fc of finalizedCuts) {
+      // durationClass 삭제 후 classifyCuts가 재계산하도록 강제
+      delete (fc as Record<string, unknown>).durationClass;
+    }
+    const reclassifiedCuts = classifyCuts(finalizedCuts);
+    // reclassifiedCuts를 finalizedCuts에 반영 (in-place mutation)
+    for (let i = 0; i < finalizedCuts.length; i++) {
+      (finalizedCuts[i] as Record<string, unknown>).durationClass = reclassifiedCuts[i].durationClass;
+    }
+
     // ═══ 멀티샷 사후 검증 — Gemini가 최소 샷 수 미달 시 자동 복구 ═══
     repairMultiShotMinimums(finalizedCuts);
 
