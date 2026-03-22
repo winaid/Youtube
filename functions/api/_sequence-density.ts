@@ -363,7 +363,7 @@ export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;
   if (totalDurationSec <= 5) return 1;
   if (totalDurationSec <= 9) return 3;
-  if (totalDurationSec <= VEO_SEGMENT_CAP) return 4;
+  if (totalDurationSec <= 15) return 4;  // 10~15초: shortform-critical
   // segment-aware: 총 런타임을 8초 segment로 분할, 최소 4
   return Math.max(4, Math.ceil(totalDurationSec / VEO_SEGMENT_CAP));
 }
@@ -408,7 +408,8 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
     scoredIndices.sort((a, b) => b.priority - a.priority);
     const target = scoredIndices[0];
 
-    if (target.duration <= 2) break;
+    // 최소 2초: split 후 1초 미만 컷이 나오면 VEO 생성 실패 가능
+    if (target.duration <= 3) break;
 
     const original = working[target.index];
     const halfDuration = Math.round(target.duration / 2);

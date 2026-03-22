@@ -198,8 +198,18 @@ function analyzeVisualStrategy(text: string, totalSec: number, cuts: number, ani
   let realism = 60;
   if (animMode) {
     const key = animMode.toLowerCase();
-    for (const [k, v] of Object.entries(REALISM_MAP)) {
-      if (key.includes(k) || k.includes(key)) { realism = v; break; }
+    // exact match first, then substring match (prevents "live" → "live-action" before "live-paint-overlay")
+    if (REALISM_MAP[key] !== undefined) {
+      realism = REALISM_MAP[key];
+    } else {
+      // longest key match wins (prevents short substrings from shadowing longer, more specific keys)
+      let bestMatch = "";
+      for (const [k, v] of Object.entries(REALISM_MAP)) {
+        if ((key.includes(k) || k.includes(key)) && k.length > bestMatch.length) {
+          bestMatch = k;
+          realism = v;
+        }
+      }
     }
   }
   if (dirStyle && realism === 60) {
