@@ -973,7 +973,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text, no subtitle, no caption, no watermark, no title card, no on-screen text, no written words, purely visual`;
+  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text overlay, no watermark, purely visual`;
 
   // 전체 시퀀스 컨텍스트 (배치 외 컷은 간략화하여 토큰 절약)
   const batchCutNums = new Set(batchOutlines.map(o => o.cutNumber));
@@ -1016,6 +1016,7 @@ async function step23DetailBatch(
 - 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
 - 상징/분위기 샷은 서사 보조용만 허용.
 캐릭터 외형(verbatim): "${charRef}" — shotCategory별 사용 규칙은 아래 참조
+[noTextSuffix] = "${noTextSuffix}" — 모든 프롬프트 끝에 이 문자열을 그대로 붙여라
 
 ## 연출 엔진 (서사 기능 종속 — 감독 스타일과 충돌 시 서사 기능 우선)
 ${directorEngine}
@@ -1070,7 +1071,7 @@ moodLighting (≤55 chars, source+direction+intensity+quality 4요소 필수):
   BANNED: dramatic lighting/moody atmosphere/cinematic light, sign 오브젝트
 
 ## 대사/텍스트 규칙
-- 대사 텍스트 videoPrompt/imagePrompt 포함 절대 금지 → narrationText에만 저장. 말하는 행동만 묘사("lips move urgently" ✅ / "says '...'" ❌)
+- 대사 텍스트는 별도 처리됨. videoPrompt/imagePrompt에 대사 절대 포함 금지. 말하는 행동만 묘사("lips move urgently" ✅ / "says '...'" ❌)
 - 한국어 텍스트 videoPrompt/imagePrompt 금지 (VEO가 자막 렌더링). sign/signboard/billboard 금지 → wooden panel/metal plate 대체
 - 환경 오브젝트 2개+ 필수. 메타 정보 대신 화면 디테일(cracked tile, rusted pipe 등).
 
@@ -1230,7 +1231,7 @@ function buildDeterministicCuts(
   const fallbackStyleFP = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, ${aspectRatio} aspect ratio, no text, no watermark, no captions${editorialTag}`;
+  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, ${aspectRatio} aspect ratio, no text overlay, no watermark, purely visual${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
