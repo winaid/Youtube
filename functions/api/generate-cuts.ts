@@ -489,6 +489,7 @@ interface CutOutline {
   cutNumber: number;
   sceneKo: string;         // 한국어 장면 요약 ≤35자
   narrativeFunction?: string;  // English ≤8 words — 이 시퀀스의 서사 역할 (e.g. "reveal cause of failure")
+  newInformation?: string;     // English ≤12 words — 이 컷이 새로 전달하는 정보 (이전 컷에 없던 것)
   emotion: string;         // English emotion keyword
   emotionalDelta: string;  // "prev→this" e.g. "calm→tense" (CUT1: "opening→[emotion]")
   purpose: string;         // establish | develop | climax | resolve
@@ -716,18 +717,19 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ed
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
 ## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
-장면 설계 순서: 의미 분석 → 장면 기능 결정 → 시각화
-절대로 "명사/배경/소품 키워드"에서 시작하지 마라. "이 텍스트가 무슨 이야기를 하는가"에서 시작하라.
+시나리오를 바로 이미지 프롬프트로 변환하지 마라. 반드시 아래 5단계를 먼저 수행하라.
 
-### 1단계: 입력 텍스트의 서사 구조 파악
-먼저 이야기를 읽고 아래를 판별하라:
-- 이 텍스트의 유형: 사건 서사 / 설명·논지 / 역사·인과 / 감정·회상 / 정보 전달 / 추상 에세이
-- 핵심 주장 또는 핵심 변화가 무엇인가
-- 인과 관계: 무엇 때문에 무엇이 일어나는가
-- 전환점: 어디서 상황/관점/감정이 바뀌는가
+### 1단계: 핵심 주장 1문장 요약
+이 시나리오가 전달하려는 핵심 주장/변화/메시지를 1문장으로 요약하라.
+→ _narrativeCore 필드에 기록 (한국어 ≤30자)
 
-### 2단계: 각 시퀀스의 서사 기능 결정
-각 시퀀스가 전체 이야기에서 맡는 기능을 먼저 결정하라:
+### 2단계: 핵심 감정 추출
+시청자가 이 영상을 보고 받아야 할 핵심 감정 1~2개를 추출하라.
+→ _targetEmotions 필드에 기록 (영어 키워드 1~2개)
+
+### 3단계: 서사 비트 분해
+장면을 ${cutCount}개의 서사 비트로 분해하라. 서사 기능 단위로 분할 — 사물/장소 단위 분할 금지.
+각 비트에 아래 서사 기능 중 하나를 부여:
 - 배경 설정 (어떤 세계/상황인가)
 - 문제 제기 (무엇이 잘못되었거나 부족한가)
 - 원인 제시 (왜 이런 일이 일어나는가)
@@ -736,15 +738,26 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ed
 - 결과/귀결 (어떤 결과가 나타나는가)
 - 반전 (기대와 다른 결과)
 - 결론/의미 (이 이야기가 남기는 것)
-시퀀스는 이 서사 기능 단위로 분할하라. 사물/장소 단위로 분할하지 마라.
 
-### 3단계: 서사 기능을 시각적으로 표현
-서사 기능이 결정된 후에 시각화하라:
+### 4단계: 각 컷의 신규 정보 정의
+각 비트마다 '이 컷이 새로 전달하는 정보'를 정의하라.
+→ newInformation 필드에 기록 (영어 ≤12 words)
+⚠️ 이전 컷과 겹치는 정보만으로 구성된 컷은 금지. 반드시 새로운 시각 정보가 있어야 한다.
+
+### 5단계: 컷 프롬프트 작성 (4단계 완료 후에만)
+서사 비트와 신규 정보가 확정된 후에야 시각화하라:
 - "문제 제기" → 문제의 결과가 보이는 구체적 장면 (빈 가게, 쌓인 서류, 닫힌 문)
 - "원인 제시" → 원인이 작동하는 장면 (경쟁자의 행동, 정책 변화, 자연재해)
 - "변화 발생" → 이전과 이후의 대비가 보이는 장면
 - "결과/귀결" → 결과의 증거가 보이는 장면
 상징/분위기 샷은 서사 기능을 보조할 때만 사용. 서사를 대체하지 마라.
+
+## ⚠️ 컷 간 차별화 규칙 (필수)
+- 인접 컷은 정보, 구도, 액션, 감정 중 최소 2개 이상 달라야 한다.
+- 쇼트 사이즈만 wide→medium→close로 바꾸는 식의 기계적 변화 금지.
+- 모든 컷은 '왜 이 컷이 필요한지' 설명 가능해야 한다 — narrativeFunction으로 증명.
+- 예쁜 그림보다 서사 전달이 우선 — 서사 기능이 없는 장면은 생성 금지.
+- 프롬프트에 장면의 기능(이 컷이 이야기에서 무슨 역할을 하는지)이 반드시 드러나야 한다.
 
 ## 시나리오
 ${storyExcerpt}
@@ -757,6 +770,9 @@ characterSeeds (최대 3명):
 - appearance: 영어 ≤40 words (성별/나이대/헤어 color+style/의상/피부톤 필수 — 예: "mid-30s woman, black shoulder-length hair, warm beige skin, dark blue hanbok with white collar")
 - appearanceKo: ≤25자
 ⚠️ appearance에 skin tone(예: warm beige, deep brown, pale ivory)과 hair color(예: black, dark brown, silver-grey) 반드시 포함. 누락 시 비디오 모델이 일관성 없는 외형 생성.
+
+_narrativeCore: 시나리오 핵심 주장 1문장 (한국어 ≤30자)
+_targetEmotions: 시청자가 받아야 할 핵심 감정 (영어 키워드 1~2개, 예: ["awe","sorrow"])
 
 outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시퀀스):
 
@@ -777,6 +793,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 - cutNumber: 순번
 - sceneKo: ≤30자
 - narrativeFunction: 영어 ≤8 words — 이 시퀀스가 전체 이야기에서 맡는 서사 역할 (예: "reveal cause of decline", "show turning point decision", "contrast before and after")
+- newInformation: 영어 ≤12 words — 이 컷이 이전 컷에 없던 새로 전달하는 정보 (예: "reveal the empty factory floor that caused the decline"). 이전 컷과 겹치면 안 됨.
 - emotion: 영어 키워드
 - emotionalDelta: "이전→현재" (CUT1: "opening→[emotion]")
 - purpose: establish | develop | climax | resolve (편집상 위치)
@@ -865,8 +882,12 @@ ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/�
 
 시나리오: ${storyExcerpt}
 
+먼저: 핵심 주장 1문장 + 핵심 감정 1~2개 추출 → _narrativeCore, _targetEmotions에 기록.
+그 후 각 컷마다 newInformation(이전 컷에 없던 새 정보)을 정의한 후에 시각화.
+인접 컷은 정보/구도/액션/감정 중 최소 2개 이상 달라야 함.
+
 characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
-outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w)}]
+outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),narrativeFunction(≤8w),newInformation(≤12w),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w)}]
 ⚠️ 총 런타임 12초 초과면 1시퀀스 금지, 최소 2시퀀스로 분할. 각 시퀀스 ${secPerCut}초.
 ⚠️ 숏폼 리듬 > 감독 스타일: 감독이 롱테이크 성향이어도 반드시 ${cutCount}개 시퀀스를 생성하라. 컷 수를 줄이지 마라.
 
@@ -1062,11 +1083,14 @@ async function step23DetailBatch(
     const revealHint = isFirst
       ? "reveal=space+atmosphere only, withhold=face+conflict"
       : `reveal=new layer(${prevOutline?.shotType ?? "?"}→${o.shotType}), withhold=1 element`;
+    const newInfo = (o as CutOutline & { newInformation?: string }).newInformation || "";
     return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}):
   ${o.purpose}|${o.shotType}|${o.shotCategory}|charRole=${o.characterRole}|emotionDelta=${o.emotionalDelta}
   camera=${o.cameraMovement} | action=${o.subjectAction}
   summary=${o.sceneKo}
   STORY_ROLE=${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose}
+  NEW_INFO=${newInfo || "(define what new information this cut reveals)"}
+  WHY_THIS_CUT=${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose} — 이 컷 없이는 서사 전달 불가
   WHERE=${o.locationCue} | WHAT=${o.situationCue} | EMOTION=${o.emotionalAnchor}
   beats(${beatTimings(secPerCut).b1}/${beatTimings(secPerCut).b2}/${beatTimings(secPerCut).b3}): ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3}
   endHook=${o.endHook} | ${prevDesc} | ${nextHint} | ${revealHint} | transition=${o.transitionHint}`;
@@ -1080,6 +1104,13 @@ async function step23DetailBatch(
 - 최우선: STORY ROLE → 시각적 번역. 서사 기능이 보이는 장면 > 멋있는 비주얼.
 - 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
 - 상징/분위기 샷은 서사 보조용만 허용.
+
+## ⚠️ 컷 간 차별화 (필수 — 위반 시 실패)
+- 인접 컷은 정보/구도/액션/감정 중 최소 2개 이상 달라야 한다.
+- 쇼트 사이즈만 바꾸는 기계적 변화 금지 (wide→medium→close 순서 단순 반복 ✗).
+- 각 컷은 NEW_INFO에 명시된 신규 정보를 반드시 시각적으로 전달해야 한다.
+- 모든 컷은 WHY_THIS_CUT 필드의 서사 역할이 프롬프트에 드러나야 한다.
+- 예쁜 그림보다 서사 전달 우선 — 서사 기능 없는 장면 생성 금지.
 캐릭터 외형(verbatim): "${charRef}" — shotCategory별 사용 규칙은 아래 참조
 [noTextSuffix] = "${noTextSuffix}" — 모든 프롬프트 끝에 이 문자열을 그대로 붙여라
 
