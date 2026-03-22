@@ -2253,13 +2253,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.log("[generate-cuts] fast path candidate rejected:", fastPathEval.reason, fastPathEval.checks);
     }
 
-    // ── STEP 2 & 3: 상세 프롬프트 생성 (병렬) ────────────────────────────────
-    const mid    = Math.ceil(targetCuts / 2);
-    const batch1 = outlines.slice(0, mid);
-    const batch2 = outlines.slice(mid);
+    // ── STEP 2 & 3: 상세 프롬프트 생성 (병렬, 소배치) ─────────────────────────
+    // Pro timeout 방지: 배치당 최대 3컷으로 분할하여 병렬 실행
+    const STEP23_MAX_BATCH_SIZE = 3;
+    const step23Batches: CutOutline[][] = [];
+    for (let i = 0; i < outlines.length; i += STEP23_MAX_BATCH_SIZE) {
+      step23Batches.push(outlines.slice(i, i + STEP23_MAX_BATCH_SIZE));
+    }
+    console.log(`[generate-cuts] step2/3 batching: ${outlines.length} cuts → ${step23Batches.length} batches (max ${STEP23_MAX_BATCH_SIZE}/batch)`);
 
-    let details1: CutDetail[] = [];
-    let details2: CutDetail[] = [];
+    let allDetails: CutDetail[] = [];
 
     const detailArgs = [
       outlines,              // allOutlines — 전체 시퀀스 컨텍스트
@@ -2279,6 +2282,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // editorial summary for step2/3 reinforcement
     const editorialSummary = buildCompactEditorialSummary(editorial);
 
+    /** 모든 배치를 병렬 실행하는 헬퍼 */
+    const runAllBatches = (modelOverride?: string) =>
+      Promise.all(step23Batches.map((batch, idx) =>
+        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride)
+      ));
+
     t0_step23 = Date.now();
 
     if (shouldUseFastPath) {
@@ -2287,12 +2296,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       t1_step23 = Date.now();
     } else {
     try {
-      [details1, details2] = await Promise.all([
-        step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary),
-        batch2.length > 0
-          ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary)
-          : Promise.resolve([]),
-      ]);
+      const batchResults = await runAllBatches();
+      allDetails = batchResults.flat();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const isProviderError = msg.startsWith("PROVIDER_ERROR:");
@@ -2310,12 +2315,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           console.log(`[generate-cuts] step2/3 429 retry ${attempt}/2 — waiting ${backoffMs}ms`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
           try {
-            [details1, details2] = await Promise.all([
-              step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary),
-              batch2.length > 0
-                ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary)
-                : Promise.resolve([]),
-            ]);
+            const retryResults = await runAllBatches();
+            allDetails = retryResults.flat();
             retrySuccess = true;
             console.log(`[generate-cuts] step2/3 429 retry ${attempt} succeeded`);
             break;
@@ -2329,12 +2330,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           console.warn("[generate-cuts] step2/3 Pro 429 exhausted — trying Flash model");
           try {
             await new Promise(resolve => setTimeout(resolve, 2000));
-            [details1, details2] = await Promise.all([
-              step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH),
-              batch2.length > 0
-                ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH)
-                : Promise.resolve([]),
-            ]);
+            const flashResults = await runAllBatches(GEMINI_MODEL_FLASH);
+            allDetails = flashResults.flat();
             retrySuccess = true;
             step1Degraded = true;
             step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + "step2/3 Pro 429 → Flash fallback 성공";
@@ -2356,12 +2353,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // ── Step 2/3 타임아웃 → Flash 모델로 한 번 시도 ──
         console.warn("[generate-cuts] step2/3 timeout — trying Flash model (faster)");
         try {
-          [details1, details2] = await Promise.all([
-            step23DetailBatch(context.env, ...detailArgs, batch1, "step2", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH),
-            batch2.length > 0
-              ? step23DetailBatch(context.env, ...detailArgs, batch2, "step3", generationPersonaBlock, characterPersonaBlock, editorialSummary, GEMINI_MODEL_FLASH)
-              : Promise.resolve([]),
-          ]);
+          const flashResults = await runAllBatches(GEMINI_MODEL_FLASH);
+          allDetails = flashResults.flat();
           step1Degraded = true;
           step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + "step2/3 Pro timeout → Flash fallback 성공";
           step1Warnings.push("step2/3: Flash model fallback (Pro 타임아웃)");
@@ -2382,7 +2375,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         step1Warnings.push(`step2/3 provider ${providerStatus}: ${nonRetryReason}`);
         step1Degraded = true;
         step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + nonRetryReason;
-        // details1, details2 remain empty → cuts will use outline-based fallback prompts
       } else if (isTruncation && !isTimeout) {
         return Response.json({
           ok: false,
@@ -2401,18 +2393,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         step1Warnings.push("proceeding with outline-only cuts (no detailed prompts)");
         step1Degraded = true;
         step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + `step2/3 failed: ${msg.slice(0, 100)}`;
-        // details1, details2 remain empty → cuts will use fallback prompts
       }
     }
     t1_step23 = Date.now();
-    console.log(`[generate-cuts] step2/3 완료: ${t1_step23 - t0_step23}ms, details=${details1.length + details2.length}`);
+    console.log(`[generate-cuts] step2/3 완료: ${t1_step23 - t0_step23}ms, details=${allDetails.length}, batches=${step23Batches.length}`);
     } // end of else (non-fast-path)
 
     t0_postprocess = Date.now();
 
     // ── 병합 ──────────────────────────────────────────────────────────────────
     const detailMap = new Map<number, CutDetail>();
-    for (const d of [...details1, ...details2]) {
+    for (const d of allDetails) {
       const det = d as CutDetail;
       if (det && typeof det.cutNumber === "number") detailMap.set(det.cutNumber, det);
     }
@@ -2421,7 +2412,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const finalStyleFingerprint = String(directorStyle ?? "")
       ? String(directorStyle).split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
       : String(directorName);
-    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, ${String(aspectRatio ?? "16:9")} aspect ratio, no text, no subtitle, no caption, no watermark, no title card, no on-screen text, no written words, purely visual`;
+    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, ${String(aspectRatio ?? "16:9")} aspect ratio, no text overlay, no watermark, purely visual`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);
