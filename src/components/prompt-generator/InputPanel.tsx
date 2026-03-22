@@ -259,7 +259,11 @@ const shortformDurations: { value: Duration; label: string; band: string }[] = [
   { value: 12, label: "12초", band: "base" },
   { value: 13, label: "13초", band: "critical" },
   { value: 15, label: "15초", band: "critical" },
-  { value: 30, label: "30초", band: "medium" },
+  { value: 30, label: "30초", band: "mid-form" },
+  { value: 60, label: "1분", band: "mid-form" },
+  { value: 80, label: "1분 20초", band: "long-form" },
+  { value: 90, label: "1분 30초", band: "long-form" },
+  { value: 120, label: "2분", band: "long-form" },
 ];
 
 const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
@@ -2175,14 +2179,14 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
             </div>
             {/* 숏폼 검증 프리셋 */}
             <div className="flex items-center gap-1.5 mt-1.5">
-              <span className="text-[10px] font-medium shrink-0" style={{ color: "#94a3b8" }}>숏폼</span>
+              <span className="text-[10px] font-medium shrink-0" style={{ color: "#94a3b8" }}>프리셋</span>
               {shortformDurations.map((d) => (
                 <button
                   key={String(d.value)}
                   className="h-6 px-2 rounded text-[10px] font-medium transition-all"
                   style={
                     duration === d.value
-                      ? { background: d.band === "critical" ? "#ef4444" : "#787fff", color: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
+                      ? { background: d.band === "critical" ? "#ef4444" : d.band === "long-form" ? "#f59e0b" : d.band === "mid-form" ? "#10b981" : "#787fff", color: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
                       : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
                   }
                   onClick={() => setDuration(d.value)}

@@ -871,6 +871,11 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
     parts.push(json.behavioralShift);
   }
 
+  // Director Visual DNA — 감독의 색감/조명/무드를 extend에서도 유지
+  if (json.directorStyleHint) {
+    parts.push(json.directorStyleHint);
+  }
+
   // Style
   const cleanSuffix2 = (json.styleSuffix || "")
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")

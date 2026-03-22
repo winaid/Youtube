@@ -52,6 +52,8 @@ export interface ExtendPromptJson {
   stillWithheld: string;  // internal planning only
   timingBeat: string;
   styleSuffix: string;
+  /** 감독 시각 DNA — extend 프롬프트에서 스타일 일관성 유지용 */
+  directorStyleHint?: string;
 }
 
 // ─── Dialogue / Quoted Text Stripping ─────────────────────────────────────────
@@ -137,9 +139,12 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
   parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
+  if (json.newShot.cameraMovement) parts.push(json.newShot.cameraMovement);
   if (json.characterRef) parts.push(json.characterRef);
   parts.push(json.newAction);
   if (json.behavioralShift) parts.push(json.behavioralShift);
+  // Director Visual DNA — 감독의 색감/조명/무드를 extend에서도 유지
+  if (json.directorStyleHint) parts.push(json.directorStyleHint);
   const cleanSuffix = json.styleSuffix
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();

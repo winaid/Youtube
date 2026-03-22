@@ -126,14 +126,27 @@ describe("getSequenceBandRule", () => {
     expect(rule.maxCuts).toBe(6);
   });
 
-  it("16초 → over-limit (생성 불가)", () => {
+  it("16초 → mid-form (extend 체인)", () => {
     const rule = getSequenceBandRule(16);
-    expect(rule.band).toBe("over-limit");
-    expect(rule.supported).toBe(false);
+    expect(rule.band).toBe("mid-form");
+    expect(rule.supported).toBe(true);
   });
 
-  it("30초 → over-limit (생성 불가)", () => {
+  it("30초 → mid-form (extend 체인)", () => {
     const rule = getSequenceBandRule(30);
+    expect(rule.band).toBe("mid-form");
+    expect(rule.supported).toBe(true);
+  });
+
+  it("80초 → long-form-shorts (extend 체인)", () => {
+    const rule = getSequenceBandRule(80);
+    expect(rule.band).toBe("long-form-shorts");
+    expect(rule.supported).toBe(true);
+    expect(rule.minCuts).toBe(10);
+  });
+
+  it("121초 → over-limit (VEO 상한 초과)", () => {
+    const rule = getSequenceBandRule(121);
     expect(rule.band).toBe("over-limit");
     expect(rule.supported).toBe(false);
   });
@@ -304,8 +317,12 @@ describe("프론트/서버 정책 일치", () => {
     { dur: 10, band: "shortform-critical", minCuts: 4, supported: true },
     { dur: 12, band: "shortform-critical", minCuts: 4, supported: true },
     { dur: 15, band: "shortform-critical", minCuts: 4, supported: true },
-    { dur: 16, band: "over-limit", minCuts: 0, supported: false },
-    { dur: 30, band: "over-limit", minCuts: 0, supported: false },
+    { dur: 16, band: "mid-form", minCuts: 2, supported: true },
+    { dur: 30, band: "mid-form", minCuts: 4, supported: true },
+    { dur: 60, band: "mid-form", minCuts: 8, supported: true },
+    { dur: 80, band: "long-form-shorts", minCuts: 10, supported: true },
+    { dur: 120, band: "long-form-shorts", minCuts: 15, supported: true },
+    { dur: 121, band: "over-limit", minCuts: 0, supported: false },
   ];
 
   for (const { dur, band, minCuts, supported } of expectedRules) {

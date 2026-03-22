@@ -2508,6 +2508,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           stillWithheld:   extractField(ep, "STILL WITHHELD") || "",
           timingBeat:      extendBeatTemplate,
           styleSuffix:     noTextSuffix,
+          // ── Director Visual DNA: extend 프롬프트에서도 감독 색감/조명/무드 유지 ──
+          directorStyleHint: techniques
+            ? [
+                techniques.colorPalette ? `Color: ${techniques.colorPalette}` : "",
+                techniques.lighting ? `Lighting: ${techniques.lighting}` : "",
+                techniques.moodKeywords ? `Mood: ${techniques.moodKeywords}` : "",
+              ].filter(Boolean).join(". ") || undefined
+            : undefined,
         };
       }
 
