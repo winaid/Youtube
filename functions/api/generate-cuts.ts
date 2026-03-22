@@ -868,18 +868,10 @@ JSON만 출력:
       parseMode = "partial_recovery";
       console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${(partial.outlines as unknown[]).length}/${cutCount} parseMode=${parseMode}`);
     } else {
-      // (1) maxOutputTokens를 STEP1_RETRY_MAX_TOKENS로 올려서 재시도
-      if (step1MaxTokens < STEP1_RETRY_MAX_TOKENS) {
-        console.warn(`[cuts:step1] RETRY with higher maxTokens=${STEP1_RETRY_MAX_TOKENS} (was ${step1MaxTokens}) timeoutMs=${STEP1_TIMEOUT_MS}`);
-        parseMode = "higher_tokens_retry";
-        result = await streamingGenerate(env, effectiveModel, {
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: STEP1_RETRY_MAX_TOKENS, responseMimeType: "application/json" },
-        }, { timeoutMs: STEP1_TIMEOUT_MS });
-        console.info(`[cuts:step1] higher_tokens_retry responseLen=${result.text.length} truncated=${result.truncated ?? false} timedOut=${result.timedOut ?? false}`);
-      }
+      // (1) higher_tokens_retry 제거: STEP1_MAX_TOKENS(65536) == Gemini max이므로 동일 토큰으로 재시도는 낭비
+      // 바로 compact prompt로 전환하여 Gemini 호출 1회 절약
 
-      // (2) 여전히 truncated이면 compact prompt로 재시도
+      // (2) compact prompt로 재시도 (토큰 절약 + 성공률 향상)
       if (result.truncated || !safeParseObj(result.text)) {
         console.warn(`[cuts:step1] COMPACT RETRY — stripping verbose instructions from prompt`);
         parseMode = "compact_retry";
@@ -1300,6 +1292,18 @@ ${(() => {
   const arr = safeParseArr(result.text);
   if (!arr || arr.length === 0) {
     console.warn(`[cuts:${stepLabel}] parse failed. responseLen=${result.text.length} tail=${result.text.slice(-300)}`);
+    // 부분 복구 시도: JSON 배열이 아니더라도 개별 JSON 객체 추출
+    const objMatches = result.text.match(/\{[^{}]*"videoPrompt"[^{}]*\}/g);
+    if (objMatches && objMatches.length > 0) {
+      const recovered: CutDetail[] = [];
+      for (const m of objMatches) {
+        try { recovered.push(JSON.parse(m) as CutDetail); } catch { /* skip */ }
+      }
+      if (recovered.length > 0) {
+        console.info(`[cuts:${stepLabel}] partial object recovery: ${recovered.length} cuts from broken JSON`);
+        return recovered;
+      }
+    }
     return [];
   }
 
@@ -2177,9 +2181,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
 
       // ── Timeout/API error → ultra-compact retry → deterministic fallback ──
-      if (isTimeout) {
+      // step1Outlines 내부에서 이미 ultra-compact retry를 시도했는지 확인
+      const alreadyTriedUltraCompact = msg.includes("ultra-compact retry failed");
+      if (isTimeout && alreadyTriedUltraCompact) {
+        // step1Outlines 내부에서 이미 ultra-compact 시도 → 중복 Gemini 호출 방지, 바로 deterministic
+        console.warn("[generate-cuts] step1 timeout + ultra-compact already tried → deterministic fallback (Gemini 호출 1회 절약)");
+        step1Warnings.push("step1 timeout + ultra-compact already failed → deterministic fallback");
+        const deterministicCuts = buildDeterministicCuts(String(storyText), String(directorName), targetCuts, secPerCut, videoStyle, regionFlavor, String(animationMode), editorial);
+        const defaultSeeds: CharacterSeed[] = [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing, natural look", appearanceKo: "캐주얼 의상의 젊은 인물" }];
+        const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
+        for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
+        repairMultiShotMinimums(finalizedCuts);
+        return Response.json({ ok: true, degraded: true, reason: `step1 timeout + ultra-compact already failed`, source: "deterministic-fallback", warnings: step1Warnings, characterSeeds: defaultSeeds, cuts: finalizedCuts, secPerCut });
+      } else if (isTimeout) {
         timedOutAtStep1 = true;
-        console.warn("[generate-cuts] step1 timeout — attempting ultra-compact retry");
+        console.warn("[generate-cuts] step1 timeout — attempting ultra-compact retry (outer)");
         step1Warnings.push(`step1 timed out: ${msg.slice(0, 200)}`);
 
         try {
@@ -2452,11 +2468,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? { core: narrativeCore, emotions: targetEmotions }
       : undefined;
 
-    /** 모든 배치를 병렬 실행하는 헬퍼 */
-    const runAllBatches = (modelOverride?: string) =>
-      Promise.all(step23Batches.map((batch, idx) =>
+    /** 모든 배치를 병렬 실행하는 헬퍼 — allSettled로 성공 배치 보존 (실패 배치만 재시도 가능) */
+    const runAllBatches = async (modelOverride?: string): Promise<unknown[][]> => {
+      const results = await Promise.allSettled(step23Batches.map((batch, idx) =>
         step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx, contentMode)
       ));
+      const fulfilled: unknown[][] = [];
+      let firstError: unknown = null;
+      let failedCount = 0;
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          fulfilled.push(r.value);
+        } else {
+          failedCount++;
+          if (!firstError) firstError = r.reason;
+          fulfilled.push([]); // 실패 배치는 빈 배열 → outline fallback
+        }
+      }
+      if (failedCount > 0 && failedCount === results.length) {
+        // 전체 실패 시에만 에러 throw (부분 실패는 성공 배치 보존)
+        throw firstError;
+      }
+      if (failedCount > 0) {
+        console.warn(`[generate-cuts] step2/3: ${failedCount}/${results.length} batches failed — using outline fallback for failed batches`);
+      }
+      return fulfilled;
+    };
 
     t0_step23 = Date.now();
 
