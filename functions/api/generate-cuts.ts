@@ -656,7 +656,7 @@ async function step1Outlines(
   continuityBlock?: string,
   deepAnalysisBriefBlock?: string,
   modelOverride?: string,
-): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
+): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[]; _narrativeCore?: string; _targetEmotions?: string[] }> {
 
   // ── 단일 호출 cutCount 상한: STEP1_SINGLE_CALL_MAX_CUTS ──
   // Gemini 출력 토큰 한도 내에서 안정적으로 JSON 완성 가능한 범위.
@@ -715,7 +715,7 @@ async function step1Outlines(
   const storyExcerpt = storyText.slice(0, 800);
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
-${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지.\n⚠️ 스크립트가 현대→과거 비교 구조이면 첫 장면은 반드시 현대 장면으로 시작하라. 스크립트의 서사 순서를 그대로 따르라." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
+${formatRules}
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
@@ -949,6 +949,13 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
   if (!parsed) throw new Error(`step1 parse failed. responseLen=${result.text.length} truncated=${result.truncated ?? false} parseMode=${parseMode} tail=${result.text.slice(-200)}`);
   console.info(`[cuts:step1] FINAL parseMode=${parseMode} characterSeeds=${Array.isArray(parsed.characterSeeds) ? (parsed.characterSeeds as unknown[]).length : 0} outlines=${Array.isArray(parsed.outlines) ? (parsed.outlines as unknown[]).length : 0}`);
 
+  // ── _narrativeCore / _targetEmotions 추출 ──
+  const _narrativeCore = typeof parsed._narrativeCore === "string" ? parsed._narrativeCore.slice(0, 60) : undefined;
+  const _targetEmotions = Array.isArray(parsed._targetEmotions)
+    ? (parsed._targetEmotions as unknown[]).map(e => String(e)).slice(0, 3)
+    : undefined;
+  if (_narrativeCore) console.info(`[cuts:step1] narrativeCore="${_narrativeCore}" targetEmotions=${JSON.stringify(_targetEmotions ?? [])}`);
+
   const characterSeeds: CharacterSeed[] = Array.isArray(parsed.characterSeeds)
     ? (parsed.characterSeeds as Array<Partial<CharacterSeed>>).map((s) => ({
         id: String(s.id ?? "char-1"),
@@ -986,6 +993,8 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
         return {
           cutNumber: Number(o.cutNumber ?? i + 1),
           sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
+          narrativeFunction: o.narrativeFunction ? String(o.narrativeFunction).slice(0, 80) : undefined,
+          newInformation: o.newInformation ? String(o.newInformation).slice(0, 120) : undefined,
           emotion: String(o.emotion ?? "neutral"),
           emotionalDelta: String(o.emotionalDelta ?? (i === 0 ? `opening→${o.emotion ?? "neutral"}` : "neutral→neutral")),
           purpose: String(o.purpose ?? "develop"),
@@ -1003,6 +1012,7 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
           sceneBeat2: String(o.sceneBeat2 ?? o.situationCue ?? "situation evidence becomes visible"),
           sceneBeat3: String(o.sceneBeat3 ?? o.emotionalAnchor ?? "emotional anchor enters or is revealed"),
           endHook: String(o.endHook ?? "visual tension toward next scene"),
+          dialogueText: o.dialogueText ? String(o.dialogueText).slice(0, 200) : undefined,
         };
       })
     : [];
@@ -1022,10 +1032,10 @@ JSON만: {"characterSeeds":[...],"outlines":[...]}`;
     const repairedOutlines = await repairMissingOutlines(
       env, outlines, cutCount, directorNameKo, secPerCut, storyExcerpt,
     );
-    return { characterSeeds, outlines: repairedOutlines };
+    return { characterSeeds, outlines: repairedOutlines, _narrativeCore, _targetEmotions };
   }
 
-  return { characterSeeds, outlines };
+  return { characterSeeds, outlines, _narrativeCore, _targetEmotions };
 }
 
 // ─── STEP 2/3: 배치 단위 시각 프롬프트 생성 (감독 연출 지시 방식) ────────────
@@ -1050,6 +1060,7 @@ async function step23DetailBatch(
   characterPersonaBlock: string,   // buildCharacterPersonaBlock() 결과
   editorialSummary: string,        // buildCompactEditorialSummary() 결과 — step2/3 재강조용
   modelOverride?: string,
+  narrativeContext?: { core?: string; emotions?: string[] },  // step1에서 추출한 서사 핵심
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -1121,7 +1132,7 @@ async function step23DetailBatch(
 ${directorEngine}
 ${editorialSummary ? `\n## ⚠️ EDITORIAL PERSONA REMINDER (step1에서 결정된 편집 기조 — 모든 컷에 적용)\n${editorialSummary}\n- complexity budget 유지: max 1 subject, 1 action, 1 camera motion per cut.` : ""}
 
-## 전체 시퀀스 컨텍스트 (반복 방지용 — 이 컷들의 흐름 파악에만 사용)
+${narrativeContext?.core ? `## 서사 핵심 (Step1 분석 결과 — 모든 컷이 이 방향을 따라야 함)\n핵심 주장: ${narrativeContext.core}\n핵심 감정: ${narrativeContext.emotions?.join(", ") ?? "N/A"}\n` : ""}## 전체 시퀀스 컨텍스트 (반복 방지용 — 이 컷들의 흐름 파악에만 사용)
 ${sequenceContext}
 
 ## 이번 배치: CUT${firstCutNum}~CUT${lastCutNum} 상세 연출 지시 생성
@@ -1966,6 +1977,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── STEP 1: 아웃라인 생성 ─────────────────────────────────────────────────
     let characterSeeds: CharacterSeed[];
     let outlines: CutOutline[];
+    let narrativeCore: string | undefined;
+    let targetEmotions: string[] | undefined;
 
     let step1Degraded = false;
     let step1DegradedReason = "";
@@ -1976,7 +1989,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // ── editorial planning block 빌드 ──
       const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
 
-      ({ characterSeeds, outlines } = await step1Outlines(
+      ({ characterSeeds, outlines, _narrativeCore: narrativeCore, _targetEmotions: targetEmotions } = await step1Outlines(
         context.env,
         String(storyText),
         String(directorNameKo || directorName),
@@ -2012,7 +2025,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
           try {
             const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
-            ({ characterSeeds, outlines } = await step1Outlines(
+            ({ characterSeeds, outlines, _narrativeCore: narrativeCore, _targetEmotions: targetEmotions } = await step1Outlines(
               context.env,
               String(storyText),
               String(directorNameKo || directorName),
@@ -2044,7 +2057,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           try {
             await new Promise(resolve => setTimeout(resolve, 2000));
             const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
-            ({ characterSeeds, outlines } = await step1Outlines(
+            ({ characterSeeds, outlines, _narrativeCore: narrativeCore, _targetEmotions: targetEmotions } = await step1Outlines(
               context.env,
               String(storyText),
               String(directorNameKo || directorName),
@@ -2113,6 +2126,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           );
           characterSeeds = retryResult.characterSeeds;
           outlines = retryResult.outlines;
+          narrativeCore = retryResult._narrativeCore;
+          targetEmotions = retryResult._targetEmotions;
           step1Degraded = true;
           step1DegradedReason = `토큰 초과 → 자동 감축 (${targetCuts}→${reducedCuts}컷)`;
           step1Warnings.push(step1DegradedReason);
@@ -2395,10 +2410,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // editorial summary for step2/3 reinforcement
     const editorialSummary = buildCompactEditorialSummary(editorial);
 
+    const narrativeCtx = narrativeCore || targetEmotions
+      ? { core: narrativeCore, emotions: targetEmotions }
+      : undefined;
+
     /** 모든 배치를 병렬 실행하는 헬퍼 */
     const runAllBatches = (modelOverride?: string) =>
       Promise.all(step23Batches.map((batch, idx) =>
-        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride)
+        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx)
       ));
 
     t0_step23 = Date.now();
