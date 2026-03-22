@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useAudiobookPipeline, type AudiobookSceneInput, type AudiobookConfig, type AudiobookVoice } from "@/hooks/useAudiobookPipeline";
 import { STYLE_CATALOG } from "@/data/style-catalog";
+import {
+  listAudiobookDrafts, saveAudiobookDraft, deleteAudiobookDraft,
+  buildAudiobookDraft, formatRelativeTime,
+  type AudiobookDraft,
+} from "@/lib/audiobook-draft-store";
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants
@@ -64,10 +69,113 @@ export default function AudiobookPanel() {
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [playingAudioIndex, setPlayingAudioIndex] = useState<number | null>(null);
 
+  // ── Draft state ──
+  const [drafts, setDrafts] = useState<AudiobookDraft[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [showDrafts, setShowDrafts] = useState(false);
+
+  // ── Font upload for subtitle burn-in ──
+  const [subtitleFontFile, setSubtitleFontFile] = useState<File | null>(null);
+
+  // ── Hybrid mode: send image to VEO ──
+  const [hybridSceneIndex, setHybridSceneIndex] = useState<number | null>(null);
+  const [isCreatingVeoVideo, setIsCreatingVeoVideo] = useState(false);
+
   const bgmInputRef = useRef<HTMLInputElement>(null);
+  const fontInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const { recommended, rest } = getAllStyles();
+
+  // ── Draft: load list on mount ──
+  useEffect(() => {
+    listAudiobookDrafts().then(setDrafts).catch(() => {});
+  }, []);
+
+  // ── Draft: save ──
+  const handleSaveDraft = useCallback(async () => {
+    const draft = buildAudiobookDraft(
+      scenes,
+      { voice, speed, imageStyle, resolution, fadeDuration, kenBurns, bgmVolume },
+      title,
+      activeDraftId || undefined,
+    );
+    if (activeDraftId) {
+      draft.id = activeDraftId;
+      draft.createdAt = drafts.find(d => d.id === activeDraftId)?.createdAt || Date.now();
+    }
+    // 생성된 이미지도 저장 (있으면)
+    if (state.sceneStatuses.some(s => s.imageReady)) {
+      draft.generatedImages = state.sceneStatuses
+        .filter(s => s.imageReady && s.imageBase64)
+        .map(s => ({ index: s.index, base64: s.imageBase64!, mimeType: s.imageMimeType || "image/png" }));
+    }
+    const ok = await saveAudiobookDraft(draft);
+    if (ok) {
+      setActiveDraftId(draft.id);
+      setDrafts(await listAudiobookDrafts());
+    }
+  }, [scenes, voice, speed, imageStyle, resolution, fadeDuration, kenBurns, bgmVolume, title, activeDraftId, drafts, state.sceneStatuses]);
+
+  // ── Draft: load ──
+  const handleLoadDraft = useCallback((draft: AudiobookDraft) => {
+    setTitle(draft.title);
+    setScenes(draft.scenes);
+    setVoice(draft.config.voice);
+    setSpeed(draft.config.speed);
+    setImageStyle(draft.config.imageStyle);
+    setResolution(draft.config.resolution);
+    setFadeDuration(draft.config.fadeDuration);
+    setKenBurns(draft.config.kenBurns);
+    setBgmVolume(draft.config.bgmVolume);
+    setActiveDraftId(draft.id);
+    setEditMode("individual");
+    setShowDrafts(false);
+    reset();
+  }, [reset]);
+
+  // ── Draft: delete ──
+  const handleDeleteDraft = useCallback(async (id: string) => {
+    await deleteAudiobookDraft(id);
+    setDrafts(await listAudiobookDrafts());
+    if (activeDraftId === id) setActiveDraftId(null);
+  }, [activeDraftId]);
+
+  // ── Hybrid: send image to VEO for image-to-video ──
+  const handleCreateVeoVideo = useCallback(async (sceneIndex: number) => {
+    const sceneStatus = state.sceneStatuses[sceneIndex];
+    if (!sceneStatus?.imageReady || !sceneStatus.imageBase64) return;
+
+    setIsCreatingVeoVideo(true);
+    setHybridSceneIndex(sceneIndex);
+    try {
+      const res = await fetch("/api/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: scenes[sceneIndex]?.imagePrompt || scenes[sceneIndex]?.narration || "Cinematic scene",
+          firstFrameBase64: sceneStatus.imageBase64,
+          workflowType: "image-to-video",
+          aspectRatio: resolution === "portrait" ? "9:16" : "16:9",
+          durationSeconds: 8,
+          generateAudio: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        alert(`VEO 영상 생성 실패: ${(err as { error?: string }).error || res.status}`);
+      } else {
+        const data = await res.json() as { operationName?: string; taskId?: string };
+        alert(`VEO 영상 생성 시작! Task: ${data.operationName || data.taskId}\n\n장면 설계 탭에서 진행 상태를 확인하세요.`);
+      }
+    } catch (err) {
+      alert(`VEO 요청 실패: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsCreatingVeoVideo(false);
+      setHybridSceneIndex(null);
+    }
+  }, [state.sceneStatuses, scenes, resolution]);
 
   // ── Bulk → scenes ──
   const handleParseScenes = useCallback(() => {
@@ -195,6 +303,38 @@ export default function AudiobookPanel() {
       <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6">
         {/* ═══ 좌측: 설정 패널 ═══ */}
         <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          {/* 드래프트 관리 */}
+          <div className="rounded-xl border bg-white p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <button onClick={() => setShowDrafts(!showDrafts)}
+                className="text-xs font-medium text-gray-500 hover:text-purple-600">
+                {showDrafts ? "닫기" : `저장된 프로젝트 (${drafts.length})`}
+              </button>
+              <button onClick={handleSaveDraft}
+                disabled={scenes.length === 0}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-white disabled:opacity-40"
+                style={{ background: "#787fff" }}>
+                {activeDraftId ? "저장" : "새로 저장"}
+              </button>
+            </div>
+            {showDrafts && (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {drafts.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-2 text-center">저장된 프로젝트 없음</p>
+                ) : drafts.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-gray-50"
+                    style={activeDraftId === d.id ? { background: "#787fff10", border: "1px solid #787fff40" } : {}}>
+                    <button onClick={() => handleLoadDraft(d)} className="flex-1 text-left min-w-0">
+                      <span className="text-xs font-medium text-gray-700 block truncate">{d.title}</span>
+                      <span className="text-[10px] text-gray-400">{d.sceneCount}개 씬 · {formatRelativeTime(d.updatedAt)}</span>
+                    </button>
+                    <button onClick={() => handleDeleteDraft(d.id)} className="text-[10px] text-red-400 hover:text-red-600 shrink-0">삭제</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* 프로젝트 설정 */}
           <div className="rounded-xl border bg-white p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-700">프로젝트 설정</h3>
@@ -349,6 +489,24 @@ export default function AudiobookPanel() {
               </div>
             )}
           </div>
+
+          {/* 자막 폰트 */}
+          <div className="rounded-xl border bg-white p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-700">자막 폰트 (선택)</h3>
+            <p className="text-xs text-gray-400">TTF/OTF 폰트를 업로드하면 자막이 영상에 번인됩니다.</p>
+            <input ref={fontInputRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden"
+              onChange={(e) => setSubtitleFontFile(e.target.files?.[0] || null)} />
+            <button
+              onClick={() => fontInputRef.current?.click()}
+              className="w-full px-3 py-2 rounded-lg border-2 border-dashed text-sm text-gray-500 hover:border-purple-300 hover:text-purple-600 transition-all"
+            >
+              {subtitleFontFile ? subtitleFontFile.name : "폰트 파일 업로드 (TTF, OTF)"}
+            </button>
+            {subtitleFontFile && (
+              <button onClick={() => { setSubtitleFontFile(null); if (fontInputRef.current) fontInputRef.current.value = ""; }}
+                className="text-xs text-red-400 hover:text-red-600">제거</button>
+            )}
+          </div>
         </div>
 
         {/* ═══ 우측: 씬 편집 + 결과 ═══ */}
@@ -496,15 +654,25 @@ export default function AudiobookPanel() {
                       <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
                         씬 {s.index}
                       </span>
-                      {/* 오디오 미리듣기 오버레이 */}
-                      {s.ttsReady && (
+                      {/* 오버레이 버튼들 */}
+                      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {s.ttsReady && (
+                          <button
+                            onClick={() => handlePreviewAudio(s.index - 1)}
+                            className="bg-black/50 text-white text-xs px-2 py-1 rounded"
+                          >
+                            {playingAudioIndex === s.index - 1 ? "||" : "&#9654;"}
+                          </button>
+                        )}
                         <button
-                          onClick={() => handlePreviewAudio(s.index - 1)}
-                          className="absolute top-1 right-1 bg-black/50 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleCreateVeoVideo(s.index - 1)}
+                          disabled={isCreatingVeoVideo}
+                          className="bg-purple-600/80 text-white text-xs px-2 py-1 rounded disabled:opacity-50"
+                          title="이 이미지로 VEO 영상 만들기"
                         >
-                          {playingAudioIndex === s.index - 1 ? "||" : "&#9654;"}
+                          {isCreatingVeoVideo && hybridSceneIndex === s.index - 1 ? "..." : "VEO"}
                         </button>
-                      )}
+                      </div>
                     </div>
                   ) : null
                 )}
