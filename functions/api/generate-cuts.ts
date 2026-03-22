@@ -1073,6 +1073,7 @@ async function step23DetailBatch(
   editorialSummary: string,        // buildCompactEditorialSummary() 결과 — step2/3 재강조용
   modelOverride?: string,
   narrativeContext?: { core?: string; emotions?: string[] },  // step1에서 추출한 서사 핵심
+  contentMode?: "dramatized_reenactment" | "general",         // 콘텐츠 모드별 규칙 적용
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -1150,7 +1151,13 @@ ${sequenceContext}
 
 ${batchDirectives}
 
-${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}## 드라마타이즈 규칙
+${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}${contentMode === "dramatized_reenactment" ? `## 콘텐츠 모드: 역사 재연 (dramatized_reenactment)
+- 강사/발표자/해설자/내레이터 캐릭터 생성 절대 금지
+- 카메라를 향해 설명하는 인물 금지
+- 스크립트가 현대→과거 비교 구조이면 시대 전환 장면을 시각적으로 구분하라
+- 서사 순서 엄수: Step1이 결정한 장면 순서를 변경하지 마라
+
+` : ""}## 드라마타이즈 규칙
 금지: 자막, 나레이션, 해설자/진행자, 강의형 대사. 필수: 대사는 한국어. 정보는 갈등·유머·공포·아이러니로 전달. 인물은 극 중 목적으로 행동. 교훈은 상황 결과로.
 
 ## SHOT CATEGORY × charRef 규칙
@@ -2447,7 +2454,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     /** 모든 배치를 병렬 실행하는 헬퍼 */
     const runAllBatches = (modelOverride?: string) =>
       Promise.all(step23Batches.map((batch, idx) =>
-        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx)
+        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx, contentMode)
       ));
 
     t0_step23 = Date.now();
@@ -2597,6 +2604,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         : "";
 
       // ── JSON 기반 프롬프트 구조 생성 ──────────────────────────────────────
+      // NOTE: extractField는 LLM이 메타태그(SHOT_SIZE:value.) 형식으로 출력한 경우에만 동작.
+      // Step2/3 프롬프트에서 메타태그를 금지하므로 대부분 빈 문자열을 반환 → || 뒤의 fallback(outline 데이터)이 사용됨.
       const extractField = (text: string | undefined, key: string): string => {
         if (!text) return "";
         const re = new RegExp(`${key}:([^.|]+)`, "i");
@@ -2711,6 +2720,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         durationSec:   secPerCut,
         purpose:       outline.purpose,
         narrativeFunction: outline.narrativeFunction || outline.purpose,
+        newInformation: outline.newInformation || undefined,
         sceneDescription: outline.sceneKo,
         shotType:      outline.shotType,
         subjectAction: outline.subjectAction,
@@ -2995,6 +3005,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         directorAppliedPace: secPerCut,
         directorPaceDownWeighted: directorPaceWasDownweighted || shortformPlan.directorPaceDownweighted,
         directorWeakenReason: directorWeakenReason || (shortformPlan.directorPaceDownweighted ? shortformPlan.reconciliationNotes.find(n => n.includes("director")) : undefined),
+        narrativeCore: narrativeCore || undefined,
+        targetEmotions: targetEmotions || undefined,
         narrativeFunctions: outlines.map(o => o.narrativeFunction || o.purpose).filter(Boolean),
         cutDurations: finalizedCuts.map(c => c.durationSec),
         cutShotCounts: finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 1),
