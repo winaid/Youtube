@@ -34,12 +34,13 @@ export interface StoryDurationEstimate {
  * 변경 이력:
  *   v1: 3.2 chars/sec (다큐멘터리/해설 기준 — 느린 편)
  *   v2: 4.5 chars/sec (유튜브 쇼츠/해설 기준)
+ *   v3: 5.8 chars/sec (쇼츠 내레이션 실측 기준)
  *
- * 근거: 한국어 유튜브 나레이션은 분당 270~300자(공백 제외).
- *   4.5 chars/sec = 270 chars/min → 캐주얼~보통 속도.
- *   기존 3.2는 다큐멘터리 느린 화자 기준으로 과대 추정의 주 원인.
+ * 근거: 유튜브 쇼츠 나레이션 실측 분당 330~360자(공백 제외).
+ *   5.8 chars/sec = 348 chars/min → 쇼츠 평균 속도.
+ *   v2의 4.5는 캐주얼/해설 기준으로 쇼츠 대비 과대 추정.
  */
-const CHARS_PER_SECOND_KO = 4.5;
+const CHARS_PER_SECOND_KO = 5.8;
 
 /** 영어 기준 1초당 약 2.5단어 나레이션 속도 */
 const WORDS_PER_SECOND_EN = 2.5;
@@ -50,11 +51,12 @@ const WORDS_PER_SECOND_EN = 2.5;
  * 변경 이력:
  *   v1: 1.35 (비주얼 여유 + 포즈)
  *   v2: 1.15 (유튜브 쇼츠에선 여백이 적음)
+ *   v3: 1.05 (쇼츠는 빈 화면이 거의 없음 — 나레이션 ≈ 영상 길이)
  *
- * 근거: 쇼츠/숏폼에서는 빈 화면 시간이 거의 없음.
- *   1.15 = 나레이션 대비 약 15% 비주얼 여유만 추가.
+ * 근거: 쇼츠/숏폼에서는 나레이션과 비주얼이 동시 진행.
+ *   1.05 = 인트로/아웃트로 최소 여유만 포함.
  */
-const VISUAL_MULTIPLIER = 1.15;
+const VISUAL_MULTIPLIER = 1.05;
 
 /** 최소 project total (쇼츠 최소 길이 16초 — VEO 2회 생성 기준) */
 const MIN_PROJECT_TOTAL_SEC = 16;
