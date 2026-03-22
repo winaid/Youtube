@@ -188,8 +188,26 @@ export async function veoGenerate(
     const httpStatus = res.status;
     console.error("[_veo-api] veoGenerate failed", { httpStatus, body: text.slice(0, 500) });
 
+    // ── inlineData 미지원 모델 → 이미지 제거 후 재시도 ──
+    if (httpStatus === 400 && text.includes("inlineData") && (instance.image || instance.lastFrame)) {
+      console.warn("[_veo-api] inlineData not supported by model — retrying without image/lastFrame");
+      const cleanInstance = { prompt: instance.prompt };
+      const retryBody = { instances: [cleanInstance], parameters };
+      const retryRes = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(retryBody),
+      });
+      text = await retryRes.text();
+      if (!retryRes.ok) {
+        const retryStatus = retryRes.status;
+        console.error("[_veo-api] veoGenerate retry (no image) failed", { retryStatus, body: text.slice(0, 500) });
+        throw new VeoApiError(`VEO generate (${retryStatus}): ${text.slice(0, 400)}`, "api_error", retryStatus >= 500, retryStatus);
+      }
+      // fall through to parse the retry response
+    }
     // ── generateAudio 미지원 모델 → 자동 재시도 (오디오 없이) ──
-    if (httpStatus === 400 && text.includes("generateAudio") && parameters.generateAudio) {
+    else if (httpStatus === 400 && text.includes("generateAudio") && parameters.generateAudio) {
       console.warn("[_veo-api] generateAudio not supported by model — retrying without audio");
       delete parameters.generateAudio;
       const retryBody = { instances: body.instances, parameters };

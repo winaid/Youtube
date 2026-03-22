@@ -44,6 +44,8 @@ export interface AudiobookConfig {
   resolution: "landscape" | "portrait";
   /** 씬 간 페이드 (초) */
   fadeDuration: number;
+  /** Ken Burns 효과 (줌/패닝) */
+  kenBurns?: boolean;
   /** BGM 파일 (File 객체) */
   bgmFile?: File;
   /** BGM 볼륨 (0-1) */
@@ -90,17 +92,37 @@ export interface SceneStatus {
 // API Calls
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * 프롬프트 복잡도 판단 — 어려운 프롬프트는 프로, 쉬운 건 나노바나나2
+ * 기준: 추상적/철학적/복잡한 감정 → pro, 구체적/단순 장면 → fast
+ */
+function classifyPromptComplexity(prompt: string): "pro" | "fast" {
+  const complexIndicators = [
+    /abstract|metaphor|symbolic|philosophical|ethereal|surreal|paradox/i,
+    /emotion|solitude|existential|consciousness|transcend|melancholy/i,
+    /multiple.*(?:figure|character|person|element)/i,
+    /intricate|detailed.*composition|complex.*scene/i,
+    /contrast.*between|juxtaposition|duality/i,
+  ];
+  const hits = complexIndicators.filter((re) => re.test(prompt)).length;
+  // 2개 이상의 복잡성 지표 → 프로
+  return hits >= 2 ? "pro" : "fast";
+}
+
 async function generateImage(
   prompt: string,
   style: string,
-): Promise<{ base64: string; mimeType: string }> {
+  resolution: "landscape" | "portrait" = "landscape",
+): Promise<{ base64: string; mimeType: string; source?: string }> {
+  const preferModel = classifyPromptComplexity(prompt);
   const res = await fetch("/api/generate-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt,
-      aspectRatio: "16:9",
+      aspectRatio: resolution === "portrait" ? "9:16" : "16:9",
       animationMode: style,
+      preferModel,
     }),
   });
 
@@ -109,12 +131,12 @@ async function generateImage(
     throw new Error((err as { error?: string }).error || `Image generation failed: ${res.status}`);
   }
 
-  const data = await res.json() as { images?: { base64: string; mimeType: string }[] };
+  const data = await res.json() as { images?: { base64: string; mimeType: string }[]; source?: string };
   if (!data.images?.length) {
     throw new Error("이미지가 생성되지 않았습니다.");
   }
 
-  return data.images[0];
+  return { ...data.images[0], source: data.source };
 }
 
 async function generateTTS(
@@ -202,7 +224,7 @@ export function useAudiobookPipeline() {
       }));
 
       try {
-        const img = await generateImage(scenes[i].imagePrompt, config.imageStyle);
+        const img = await generateImage(scenes[i].imagePrompt, config.imageStyle, config.resolution);
         sceneStatuses[i].imageReady = true;
         sceneStatuses[i].imageBase64 = img.base64;
         sceneStatuses[i].imageMimeType = img.mimeType;
@@ -289,6 +311,7 @@ export function useAudiobookPipeline() {
       const composeOptions: AudiobookComposeOptions = {
         resolution: config.resolution,
         fadeDuration: config.fadeDuration,
+        kenBurns: config.kenBurns ?? true,
         bgm: bgmData,
         projectTitle: config.title,
       };
