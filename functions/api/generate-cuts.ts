@@ -196,23 +196,34 @@ function buildDirectorEngine(
   ✗ "semi-realistic" as the only descriptor — must specify WHICH layer is real, WHICH is stylized
   ✗ Evenly stylized frame with no visible background/character contrast` : "";
 
-  // 스타일별 카메라/모션 기본값 — 스타일 렌더링 규칙을 컷 생성에 반영
+  // ── Director Visual DNA: 감독 기법이 스타일 기본값보다 우선 ──
+  const hasDirectorTech = tech.cameraWork || tech.colorPalette || tech.lighting || tech.moodKeywords;
   const styleRenderingHint = STYLE_RENDERING_HINTS[animationMode] || "";
+
+  const directorVisualDNA: string[] = [];
+  if (hasDirectorTech) {
+    directorVisualDNA.push("### Director Visual DNA (HIGHEST PRIORITY — overrides style defaults when conflict)");
+    if (tech.cameraWork) directorVisualDNA.push(`🎬 CAMERA (mandatory): ${tech.cameraWork}`);
+    if (tech.colorPalette) directorVisualDNA.push(`🎨 COLOR PALETTE (enforce in every cut): ${tech.colorPalette}`);
+    if (tech.lighting) directorVisualDNA.push(`💡 LIGHTING (enforce in every cut): ${tech.lighting}`);
+    if (tech.moodKeywords) directorVisualDNA.push(`🌊 MOOD ANCHORS (emotional texture for all cuts): ${tech.moodKeywords}`);
+    if (tech.editingStyle) directorVisualDNA.push(`✂️ EDITING RHYTHM: ${tech.editingStyle}`);
+    directorVisualDNA.push("↑ These director-specific visual rules MUST be visible in every generated cut prompt.");
+    directorVisualDNA.push("When style rendering rules below conflict with Director Visual DNA, the director's approach wins.");
+  }
 
   const lines: string[] = [
     "### Director Aesthetic Engine (operational rules — NOT style tags)",
     `Persona core: ${persona}`,
     style ? `Style principle: ${style}` : "",
-    tech.cameraWork    ? `Camera philosophy: ${tech.cameraWork}` : "",
-    tech.editingStyle  ? `Editing rhythm: ${tech.editingStyle}` : "",
-    tech.colorPalette  ? `Color/lighting: ${tech.colorPalette}` : "",
-    tech.lighting      ? `Lighting design: ${tech.lighting}` : "",
-    tech.moodKeywords  ? `Mood direction: ${tech.moodKeywords}` : "",
-    styleRenderingHint ? `### Style Rendering Rules (medium-specific constraints)\n${styleRenderingHint}` : "",
+    // Director Visual DNA block — placed BEFORE style rendering for priority
+    ...directorVisualDNA,
+    // Style rendering as secondary layer (medium-specific constraints)
+    styleRenderingHint ? `### Style Rendering Rules (medium-specific — defer to Director Visual DNA above when conflicting)\n${styleRenderingHint}` : "",
     stopMotionRules,
     hybridRules,
     editorialPersona ? buildEditorialPlanningRules(editorialPersona) : "",
-    "### Per-cut: character stylization, movement motivation, camera attitude, set=psychology, lighting pushes emotion. BANNED: generic/anonymous visuals.",
+    "### Per-cut enforcement: director color palette visible, director camera philosophy applied, director lighting design present, character stylization, movement motivation, set=psychology. BANNED: generic/anonymous visuals, ignoring director's visual signature.",
   ].filter(Boolean);
 
   return lines.join("\n");
@@ -1419,7 +1430,7 @@ function buildUltraCompactStep1Prompt(
   editorialSummary?: string,
 ): string {
   const storySnippet = storyText.slice(0, 400);
-  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 6~9초→최소3컷,10~15초→4~6컷,16초이상→생성불가,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 6~9초→최소3컷,10~15초→4~6컷,16~120초→extend체인모드,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
 시나리오: ${storySnippet}
 
 {"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],

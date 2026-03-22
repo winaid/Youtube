@@ -97,14 +97,16 @@ export interface PreflightInput {
 //   ≤5초: micro (1컷)
 //   6~9초: short (최소 3컷)
 //   10~15초: shortform-critical (4~6컷 필수)
-//   16초+: 생성 불가
+//   16~60초: mid-form (extend 체인, 컷당 8초)
+//   61~120초: long-form-shorts (extend 체인, 최대 ~15 세그먼트)
+//   121초+: 생성 불가
 // ═══════════════════════════════════════════════════════════════════
 
-/** 총 길이 상한 — 이 이상은 shortform 생성 불가 */
-export const SEQUENCE_MAX_TOTAL_DURATION = 15;
+/** 총 길이 상한 — VEO extend 기준 최대 ~120초 (8s initial + ~16 extends × 7s) */
+export const SEQUENCE_MAX_TOTAL_DURATION = 120;
 
 export interface SequenceBandRule {
-  band: "micro" | "short" | "shortform-critical" | "over-limit";
+  band: "micro" | "short" | "shortform-critical" | "mid-form" | "long-form-shorts" | "over-limit";
   minCuts: number;
   maxCuts: number;
   maxSecPerCut: number;
@@ -114,7 +116,6 @@ export interface SequenceBandRule {
 
 /**
  * 총 길이 기반 시퀀스 구조 규칙 반환.
- * _shortform-rhythm.ts의 resolveShortformBandPolicy()와 동일 정책.
  */
 export function getSequenceBandRule(totalDurationSec: number): SequenceBandRule {
   if (totalDurationSec <= 5)
@@ -123,7 +124,11 @@ export function getSequenceBandRule(totalDurationSec: number): SequenceBandRule 
     return { band: "short", minCuts: 3, maxCuts: 6, maxSecPerCut: totalDurationSec, supported: true };
   if (totalDurationSec <= 15)
     return { band: "shortform-critical", minCuts: 4, maxCuts: 6, maxSecPerCut: 4, supported: true };
-  // 16초+: shortform 범위 초과
+  if (totalDurationSec <= 60)
+    return { band: "mid-form", minCuts: Math.ceil(totalDurationSec / 8), maxCuts: Math.ceil(totalDurationSec / 6), maxSecPerCut: 8, supported: true };
+  if (totalDurationSec <= 120)
+    return { band: "long-form-shorts", minCuts: Math.ceil(totalDurationSec / 8), maxCuts: Math.ceil(totalDurationSec / 6), maxSecPerCut: 8, supported: true };
+  // 121초+: VEO extend 상한 초과
   return { band: "over-limit", minCuts: 0, maxCuts: 0, maxSecPerCut: 0, supported: false };
 }
 

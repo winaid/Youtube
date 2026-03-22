@@ -48,7 +48,7 @@ export const VEO_SEGMENT_CAP = 8;
  * 최대 허용 컷 수.
  * 데모 안정화: 30 → 10. generate-cuts 토큰 초과 방지.
  */
-export const CUT_COUNT_MAX = 10;
+export const CUT_COUNT_MAX = 20;
 
 /**
  * 시퀀스당 런타임 → 시퀀스 내부 내러티브 밀도 권장 범위.
