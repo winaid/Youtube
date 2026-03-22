@@ -316,6 +316,12 @@ export async function veoExtend(
         throw new VeoApiError(`VEO extend (${retryStatus}): ${text.slice(0, 400)}`, "api_error", retryStatus >= 500, retryStatus);
       }
     } else {
+      if (httpStatus === 403 || httpStatus === 401) {
+        throw new VeoApiError(`VEO extend 인증 실패 (${httpStatus}): ${text.slice(0, 300)}`, "auth_error", false, httpStatus);
+      }
+      if (httpStatus === 429) {
+        throw new VeoApiError(`VEO extend 속도 제한: ${text.slice(0, 300)}`, "rate_limited", true, httpStatus);
+      }
       throw new VeoApiError(`VEO extend (${httpStatus}): ${text.slice(0, 400)}`, "api_error", httpStatus >= 500, httpStatus);
     }
   }

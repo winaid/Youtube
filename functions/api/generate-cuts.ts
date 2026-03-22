@@ -1701,6 +1701,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       continuityIsLastSegment,
     } = await context.request.json() as Record<string, string | number | object>;
 
+    // ── 필수 입력 검증 (연산 전에 조기 반환) ──
+    if (!storyText || !directorName) {
+      return Response.json({ error: "storyText and directorName required" }, { status: 400 });
+    }
+
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. VEO: 8초 고정.
     const rawSecPerCut = Number(cutDuration) || 0;
     const rawCutCount = Number(cutCount) || 0;
@@ -1809,10 +1814,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       cutDecision, parsedRange,
       shortformPlan: { band: bandPolicy.band, reconciled: shortformPlan.reconciled, downweighted: shortformPlan.directorPaceDownweighted },
     });
-
-    if (!storyText || !directorName) {
-      return Response.json({ error: "storyText and directorName required" }, { status: 400 });
-    }
 
     const videoStyle = VIDEO_STYLE_MAP[String(animationMode)] ?? "photorealistic cinematic, subject-focused composition";
     const regionFlavor = REGION_FLAVOR_MAP[String(region)] ?? "cinematic atmosphere";
@@ -2976,6 +2977,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sequencePlan,
       sequenceValidation,
       secPerCut,
+      // VEO 실제 duration: Cut 1=8s, Cut 2+=7s (클라이언트 타임라인 동기화용)
+      veoActualDurations: { base: VEO_SEGMENT_CAP, extension: VEO_EXTENSION_DURATION },
       rhythmProfile: rhythmResult.profile,
       cutCountDecisionBasis: {
         finalCutCount: targetCuts,
@@ -3092,7 +3095,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       degraded: false,
       error: "Failed to generate cuts",
       detail: errMsg,
-      stack: errStack,
+      // stack trace는 서버 로그에만 출력 (클라이언트 노출 금지 — 보안)
       source: "gemini",
       warnings: [],
     }, { status: 500 });
