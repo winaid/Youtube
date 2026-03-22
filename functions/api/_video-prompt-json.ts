@@ -31,6 +31,9 @@ export interface VideoPromptJson {
   locationCue?: string;       // 장소 정체성 시각 단서
   situationCue?: string;      // 상황 증거 시각 단서
   emotionalAnchor?: string;   // 감정/갈등 앵커
+  // ── 감독 시각 DNA (VEO까지 직접 전달) ──
+  directorColorHint?: string;   // 감독 색감 팔레트 (예: "jewel tones emerald crimson gold")
+  directorCameraHint?: string;  // 감독 카메라 철학 (예: "symmetry compositions, slow lateral tracking")
 }
 
 export interface ExtendPromptJson {
@@ -125,6 +128,9 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
   if (json.subjectAction) parts.push(json.subjectAction);
   if (json.bodySignal) parts.push(json.bodySignal);
   if (json.moodLighting) parts.push(json.moodLighting);
+  // Director Visual DNA — 감독 색감/카메라가 VEO까지 직접 전달
+  if (json.directorColorHint) parts.push(json.directorColorHint);
+  if (json.directorCameraHint) parts.push(json.directorCameraHint);
   // Temporal beats
   if (json.timingBeat) parts.push(json.timingBeat);
   const cleanSuffix = json.styleSuffix

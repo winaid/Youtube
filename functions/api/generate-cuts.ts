@@ -2522,6 +2522,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         locationCue:     outline.locationCue || "",
         situationCue:    outline.situationCue || "",
         emotionalAnchor: outline.emotionalAnchor || "",
+        // ── 감독 시각 DNA → VEO 직접 전달 ──
+        directorColorHint: (() => {
+          if (!techniques?.colorPalette) return undefined;
+          const isInkWash = ["ink-wash", "inkwash-painting", "east-asian-painting", "잉크워시", "ink-drawing-anime"].includes(String(animationMode));
+          return isInkWash
+            ? `Ink density palette: ${techniques.colorPalette} — as monochrome wash tones`
+            : `Color palette: ${techniques.colorPalette}`;
+        })(),
+        directorCameraHint: techniques?.cameraWork
+          ? `Director camera: ${techniques.cameraWork}`
+          : undefined,
       };
 
       let extendPromptJson: ExtendPromptJson | undefined;

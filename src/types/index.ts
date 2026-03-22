@@ -293,6 +293,9 @@ export interface VideoPromptJson {
   locationCue?: string;       // 장소 정체성 시각 단서 (예: "dental chair and overhead lamp")
   situationCue?: string;      // 상황 증거 시각 단서 (예: "empty waiting room, no patients")
   emotionalAnchor?: string;   // 감정/갈등 앵커 (예: "doctor slumps alone at desk")
+  // ── 감독 시각 DNA (VEO까지 직접 전달) ──
+  directorColorHint?: string;   // 감독 색감 (예: "jewel tones emerald crimson gold")
+  directorCameraHint?: string;  // 감독 카메라 철학 (예: "symmetry compositions")
 }
 
 /** Scene Extension용 프롬프트 JSON */
