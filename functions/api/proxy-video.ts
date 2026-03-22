@@ -1,6 +1,8 @@
 interface ProxyEnv {
   VIDEO_BUCKET?: R2Bucket;
   VIDEO_BUCKET_DOMAIN?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_API_KEY_2?: string;
 }
 
 /**
@@ -96,12 +98,21 @@ export const onRequestGet: PagesFunction<ProxyEnv> = async (context) => {
       console.log(`[proxy-video] gs:// 변환: ${videoUri.slice(0, 60)}… → GCS API URL`);
     }
 
-    // GCS/VEO 결과는 인증 불필요 — fetchWithAuth 사용 금지 (API 키 유출 방지)
+    // generativelanguage.googleapis.com 파일 다운로드는 API 키 인증 필요
+    let authenticatedUri = fetchUri;
+    if (fetchUri.includes("generativelanguage.googleapis.com")) {
+      const apiKey = context.env.GEMINI_API_KEY || context.env.GEMINI_API_KEY_2;
+      if (apiKey) {
+        const separator = fetchUri.includes("?") ? "&" : "?";
+        authenticatedUri = `${fetchUri}${separator}key=${apiKey}`;
+      }
+    }
+
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 25_000);
     let res: Response;
     try {
-      res = await fetch(fetchUri, { method: "GET", signal: ac.signal });
+      res = await fetch(authenticatedUri, { method: "GET", signal: ac.signal });
     } finally {
       clearTimeout(timer);
     }

@@ -483,10 +483,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         });
       }
 
+      // ── Google API URL → 프록시 URL 변환 (브라우저 직접 접근 시 403 방지) ──
+      const toProxyUri = (uri: string | undefined): string | undefined => {
+        if (!uri) return uri;
+        if (uri.includes("generativelanguage.googleapis.com")) {
+          return `/api/proxy-video?uri=${encodeURIComponent(uri)}`;
+        }
+        return uri;
+      };
+
       // ── clipUpdate 구성 ──
       const clipUpdate: Partial<VideoClip> = {
         status: "completed",
-        videoUri: pollData.videoUri,
+        videoUri: toProxyUri(pollData.videoUri) || pollData.videoUri,
         rawVideoUri: pollData.rawVideoUri,
         seed: pollData.seed || undefined,
         completedAt: Date.now(),
@@ -504,7 +513,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           v.rawVideoUri && (v.rawVideoUri.startsWith("gs://") || v.rawVideoUri.startsWith("https://"))
         );
         const bestVariant = variantWithUri || newVariants[0];
-        clipUpdate.videoUri = bestVariant.videoUri;
+        clipUpdate.videoUri = toProxyUri(bestVariant.videoUri) || bestVariant.videoUri;
         clipUpdate.rawVideoUri = bestVariant.rawVideoUri;
         clipUpdate.seed = bestVariant.seed;
 
@@ -514,7 +523,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           });
         }
       } else if (variantsToPreserve && clipUpdate.videoUri) {
-        const newVariant: VideoVariant = { videoUri: clipUpdate.videoUri, rawVideoUri: clipUpdate.rawVideoUri, seed: clipUpdate.seed };
+        const newVariant: VideoVariant = { videoUri: toProxyUri(clipUpdate.videoUri) || clipUpdate.videoUri, rawVideoUri: clipUpdate.rawVideoUri, seed: clipUpdate.seed };
         clipUpdate.variants = [...variantsToPreserve, newVariant];
         clipUpdate.selectedVariant = clipUpdate.variants.length - 1;
       }
