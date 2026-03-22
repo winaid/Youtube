@@ -4,12 +4,17 @@ type Env = GeminiEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode, directorTechniques } = await context.request.json() as {
+    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode, stylePrompt, directorTechniques, preferModel } = await context.request.json() as {
       prompt: string;
       aspectRatio?: string;
       numberOfImages?: number;
+      /** "pro" = 나노바나나 프로 우선 (복잡한 프롬프트), "fast" = 나노바나나2 우선 (기본값) */
+      preferModel?: "pro" | "fast";
       sceneDescription?: string;
+      /** 레거시 한국어 키 또는 스타일 카탈로그 ID */
       animationMode?: string;
+      /** 스타일 카탈로그의 positivePrompt 직접 전달 (animationMode보다 우선) */
+      stylePrompt?: string;
       directorTechniques?: {
         cameraWork?: string;
         colorPalette?: string;
@@ -46,7 +51,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "네온 사이버펑크": "Neon cyberpunk style. Glowing neon lights, dark city, vivid pink/blue/purple palette.",
       "미니어처": "Tilt-shift miniature photography. Tiny diorama look, shallow depth of field.",
     };
-    const styleDirective = styleMap[animationMode || ""] || "Cinematic photography. Professional lighting.";
+    // 우선순위: stylePrompt(직접 전달) > styleMap(레거시 키) > 기본값
+    const styleDirective = stylePrompt
+      || styleMap[animationMode || ""]
+      || "Cinematic photography. Professional lighting.";
 
     // 감독 signatureTechniques → 이미지 스타일 지시
     const directorLines: string[] = [];
@@ -75,9 +83,15 @@ ${prompt}`;
       },
     };
 
-    // 1차: 나노바나나 2 (Gemini 3.1 Flash Image) — 7.5배 빠르고 4K 지원, 가성비 최고
+    // 모델 순서 결정: preferModel="pro"이면 프로 먼저, 아니면 나노바나나2 먼저
+    const primaryModel = preferModel === "pro" ? GEMINI_MODEL_IMAGE_FB : GEMINI_MODEL_IMAGE;
+    const fallbackModel = preferModel === "pro" ? GEMINI_MODEL_IMAGE : GEMINI_MODEL_IMAGE_FB;
+    const primaryName = preferModel === "pro" ? "nano-banana-pro" : "nano-banana-2";
+    const fallbackName = preferModel === "pro" ? "nano-banana-2" : "nano-banana-pro";
+
+    // 1차 시도
     try {
-      const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_IMAGE), {
+      const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, primaryModel), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -86,19 +100,19 @@ ${prompt}`;
       if (res.ok) {
         const images = extractImages(await res.json());
         if (images.length > 0) {
-          return Response.json({ images, source: "nano-banana-2" });
+          return Response.json({ images, source: primaryName });
         }
-        console.warn("Nano Banana 2 returned OK but no images, trying fallback");
+        console.warn(`${primaryName} returned OK but no images, trying fallback`);
       } else {
         const errText = await res.text();
-        console.warn("Nano Banana 2 error:", res.status, errText.slice(0, 300), "— trying fallback");
+        console.warn(`${primaryName} error:`, res.status, errText.slice(0, 300), "— trying fallback");
       }
     } catch (err) {
-      console.warn("Nano Banana 2 call failed:", err, "— trying fallback");
+      console.warn(`${primaryName} call failed:`, err, "— trying fallback");
     }
 
-    // 2차: 나노바나나 프로 (Gemini 3 Pro Image) — 고품질 폴백
-    const fallbackRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, GEMINI_MODEL_IMAGE_FB), {
+    // 2차 폴백
+    const fallbackRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, fallbackModel), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
@@ -106,7 +120,7 @@ ${prompt}`;
 
     if (!fallbackRes.ok) {
       const errText = await fallbackRes.text();
-      console.error("Nano Banana Pro fallback error:", fallbackRes.status, errText.slice(0, 500));
+      console.error(`${fallbackName} fallback error:`, fallbackRes.status, errText.slice(0, 500));
       return geminiErrorResponse(fallbackRes, errText, "generate-image");
     }
 
@@ -118,7 +132,7 @@ ${prompt}`;
       );
     }
 
-    return Response.json({ images, source: "nano-banana-pro" });
+    return Response.json({ images, source: fallbackName });
   } catch (error) {
     console.error("Image generation error:", error);
     return Response.json(

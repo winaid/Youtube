@@ -10,6 +10,7 @@ import {
   updateNodeStatus,
   getInputAssets,
 } from "@/lib/node-types";
+import { STYLE_CATALOG } from "@/data/style-catalog";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -92,7 +93,14 @@ async function executeGenerateImage(
     aspectRatio: node.data.aspectRatio ?? "16:9",
   };
   if (node.data.sceneDescription) body.sceneDescription = node.data.sceneDescription;
-  if (node.data.animationMode) body.animationMode = node.data.animationMode;
+  if (node.data.animationMode) {
+    body.animationMode = node.data.animationMode;
+    // 스타일 카탈로그에서 positivePrompt 조회해서 같이 전달
+    for (const cat of STYLE_CATALOG) {
+      const entry = cat.styles.find(s => s.id === node.data.animationMode || s.legacyMode === node.data.animationMode);
+      if (entry) { body.stylePrompt = entry.positivePrompt; break; }
+    }
+  }
 
   const res = await fetch("/api/generate-image", {
     method: "POST",

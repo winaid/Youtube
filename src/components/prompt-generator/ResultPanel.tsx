@@ -31,6 +31,17 @@ import VideoHistoryPanel, { saveToHistory } from "./VideoHistoryPanel";
 import VideoReviewPanel from "./VideoReviewPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 import { cutToViewModel, viewModelToExportSequence, type CutCardViewModel } from "@/lib/canonical-view-model";
+import { STYLE_CATALOG } from "@/data/style-catalog";
+
+/** animationMode(스타일 카탈로그 ID)에서 positivePrompt를 찾아 반환 */
+function resolveStylePrompt(animationMode?: string): string | undefined {
+  if (!animationMode) return undefined;
+  for (const cat of STYLE_CATALOG) {
+    const entry = cat.styles.find(s => s.id === animationMode || s.legacyMode === animationMode);
+    if (entry) return entry.positivePrompt;
+  }
+  return undefined;
+}
 
 interface ResultPanelProps {
   result: PromptOutput | null;
@@ -132,6 +143,9 @@ export default function ResultPanel({
   const [activeSection, setActiveSection] = useState<"prompts" | "generate" | "sequence" | "timeline">("prompts");
   const [ttsVoice] = useState("ko-KR-Wavenet-A");
   const [ttsRate] = useState(1.0);
+  /** Gemini TTS Pro 사용 여부 (true면 /api/tts-gemini, false면 /api/tts) */
+  const [useGeminiTts, setUseGeminiTts] = useState(false);
+  const [geminiVoice, setGeminiVoice] = useState("Enceladus");
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragItemRef = useRef<number | null>(null);
   // 스토리보드 이미지 (시작 프레임)
@@ -906,6 +920,29 @@ export default function ResultPanel({
             </CardContent>
           </Card>
 
+          {/* 나레이션 설정 */}
+          <div className="flex items-center gap-3 p-2 rounded-lg" style={{ background: "#f8f7ff", border: "1px solid #e5e3ff" }}>
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <input type="checkbox" checked={useGeminiTts} onChange={e => setUseGeminiTts(e.target.checked)} className="rounded border-gray-300" />
+              <span className="text-gray-700 font-medium">Gemini TTS Pro</span>
+            </label>
+            {useGeminiTts && (
+              <select value={geminiVoice} onChange={e => setGeminiVoice(e.target.value)}
+                className="text-xs px-2 py-1 rounded border focus:ring-1 focus:ring-purple-300 outline-none">
+                <option value="Enceladus">Enceladus (깊은 저음)</option>
+                <option value="Charon">Charon (진지한 톤)</option>
+                <option value="Kore">Kore (부드러운 여성)</option>
+                <option value="Fenrir">Fenrir (힘 있는 남성)</option>
+                <option value="Aoede">Aoede (서정적)</option>
+                <option value="Puck">Puck (경쾌한)</option>
+                <option value="Zephyr">Zephyr (자연스러운)</option>
+              </select>
+            )}
+            <span className="text-[10px] text-gray-400">
+              {useGeminiTts ? "고품질 보이스 · 오디오북/명상" : "Google Wavenet · 기본"}
+            </span>
+          </div>
+
           {/* 컷 리스트 */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -1029,7 +1066,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode, directorTechniques }),
+                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode, stylePrompt: resolveStylePrompt(animationMode), directorTechniques }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
@@ -1090,21 +1127,22 @@ export default function ResultPanel({
                   onGenerateSceneTts={async () => {
                     setSceneTtsLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
                     try {
-                      const res = await fetch("/api/tts", {
+                      const endpoint = useGeminiTts ? "/api/tts-gemini" : "/api/tts";
+                      const body = useGeminiTts
+                        ? { text: cut.sceneDescription, voice: geminiVoice, speed: "natural" }
+                        : { text: cut.sceneDescription, voiceName: ttsVoice, speakingRate: ttsRate };
+                      const res = await fetch(endpoint, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          text: cut.sceneDescription,
-                          voiceName: ttsVoice,
-                          speakingRate: ttsRate,
-                        }),
+                        body: JSON.stringify(body),
                       });
                       if (res.ok) {
-                        const data = await res.json();
+                        const data = await res.json() as { audioBase64?: string; mimeType?: string };
                         if (data.audioBase64) {
+                          const mime = data.mimeType || (useGeminiTts ? "audio/wav" : "audio/mp3");
                           const blob = new Blob(
                             [Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0))],
-                            { type: "audio/mp3" }
+                            { type: mime }
                           );
                           setSceneTtsUrls((prev) => ({ ...prev, [cut.cutNumber]: URL.createObjectURL(blob) }));
                         }

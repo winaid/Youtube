@@ -41,6 +41,8 @@ export interface AudiobookComposeOptions {
   resolution: "landscape" | "portrait";
   /** 씬 간 페이드 전환 시간 (초, 기본 0.5) */
   fadeDuration: number;
+  /** Ken Burns 효과 — 정지 이미지에 느린 줌/패닝 적용 */
+  kenBurns: boolean;
   /** BGM 파일 (선택) */
   bgm?: {
     data: Uint8Array;
@@ -104,8 +106,30 @@ function audioExtension(mimeType: string): string {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * Ken Burns 효과 방향 결정 — 씬 인덱스에 따라 교대
+ * 4가지 패턴: 줌인, 줌아웃, 좌→우 패닝, 우→좌 패닝
+ */
+function getKenBurnsFilter(sceneIndex: number, w: number, h: number): string {
+  // 이미지를 약간 확대(1.15x)해서 패닝 공간 확보
+  const ew = Math.round(w * 1.15);
+  const eh = Math.round(h * 1.15);
+  const patterns = [
+    // 줌인: 1.0x → 1.1x (중앙 고정)
+    `scale=${ew}:${eh},zoompan=z='min(zoom+0.0003,1.1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=30`,
+    // 줌아웃: 1.1x → 1.0x
+    `scale=${ew}:${eh},zoompan=z='if(eq(on,1),1.1,max(zoom-0.0003,1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=30`,
+    // 좌→우 패닝
+    `scale=${ew}:${eh},zoompan=z='1.05':x='if(eq(on,1),0,min(x+0.5,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=30`,
+    // 우→좌 패닝
+    `scale=${ew}:${eh},zoompan=z='1.05':x='if(eq(on,1),iw-iw/zoom,max(x-0.5,0))':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=30`,
+  ];
+  return patterns[sceneIndex % patterns.length];
+}
+
+/**
  * 단일 씬을 MP4 클립으로 변환.
- * 이미지를 오디오 길이만큼 루프하여 영상화 + fade-in/out.
+ * 이미지를 오디오 길이만큼 루프하여 영상화.
+ * 옵션: fade-in/out, Ken Burns(줌/패닝), 자막 burn-in.
  */
 async function composeSceneClip(
   ffmpeg: FFmpegInstance,
@@ -123,24 +147,44 @@ async function composeSceneClip(
   await ffmpeg.writeFile(imgFile, base64ToUint8Array(scene.imageBase64));
   await ffmpeg.writeFile(audFile, base64ToUint8Array(scene.audioBase64));
 
-  const fade = options.fadeDuration;
-
-  // FFmpeg: 이미지 + 오디오 → 영상 클립
-  // -loop 1: 이미지를 반복
-  // -shortest: 오디오가 끝나면 영상도 종료
-  // fade in/out 효과 적용
-  const filterParts = [
-    `[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=0x1a1a1a`,
-    `format=yuv420p`,
-  ];
-
-  // fade-in at start
-  if (fade > 0) {
-    filterParts.push(`fade=t=in:st=0:d=${fade}`);
+  // 자막 SRT 파일 (있으면)
+  const srtFile = `scene_${scene.index}_sub.srt`;
+  const hasSrt = !!scene.srt && !!options.subtitleFont;
+  if (hasSrt && scene.srt) {
+    await ffmpeg.writeFile(srtFile, new TextEncoder().encode(scene.srt));
   }
 
-  // fade-out은 오디오 길이를 모르므로 별도 패스 필요 — 여기선 in만 적용
-  const videoFilter = filterParts.join(",");
+  // 폰트 파일 쓰기 (한 번만 — 첫 씬에서)
+  if (options.subtitleFont && scene.index === 1) {
+    await ffmpeg.writeFile(options.subtitleFont.filename, options.subtitleFont.data);
+  }
+
+  const fade = options.fadeDuration;
+
+  // ── Video Filter Chain ──
+  let videoFilter: string;
+
+  if (options.kenBurns) {
+    // Ken Burns: zoompan 필터 사용 (이미지를 직접 입력)
+    const kbFilter = getKenBurnsFilter(scene.index - 1, w, h);
+    const parts = [kbFilter, `format=yuv420p`];
+    if (fade > 0) parts.push(`fade=t=in:st=0:d=${fade}`);
+    if (hasSrt && options.subtitleFont) {
+      parts.push(`subtitles=${srtFile}:force_style='FontName=${options.subtitleFont.filename.replace(/\.[^.]+$/, "")},FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Alignment=2,MarginV=40'`);
+    }
+    videoFilter = parts.join(",");
+  } else {
+    // 정적 이미지: scale + pad
+    const parts = [
+      `[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=0x1a1a1a`,
+      `format=yuv420p`,
+    ];
+    if (fade > 0) parts.push(`fade=t=in:st=0:d=${fade}`);
+    if (hasSrt && options.subtitleFont) {
+      parts.push(`subtitles=${srtFile}:force_style='FontName=${options.subtitleFont.filename.replace(/\.[^.]+$/, "")},FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Alignment=2,MarginV=40'`);
+    }
+    videoFilter = parts.join(",");
+  }
 
   const exitCode = await ffmpeg.exec([
     "-loop", "1",
@@ -164,6 +208,7 @@ async function composeSceneClip(
   // 임시 파일 정리
   await ffmpeg.deleteFile(imgFile).catch(() => {});
   await ffmpeg.deleteFile(audFile).catch(() => {});
+  if (hasSrt) await ffmpeg.deleteFile(srtFile).catch(() => {});
 
   if (exitCode !== 0) {
     throw new Error(`Scene ${scene.index} composition failed (exit: ${exitCode})`);
