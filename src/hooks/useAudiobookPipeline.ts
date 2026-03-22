@@ -15,6 +15,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import type { AudiobookScene, AudiobookComposeOptions, ComposeProgress } from "@/lib/audiobook-composer";
+import { STYLE_CATALOG } from "@/data/style-catalog";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -109,6 +110,15 @@ function classifyPromptComplexity(prompt: string): "pro" | "fast" {
   return hits >= 2 ? "pro" : "fast";
 }
 
+/** 스타일 카탈로그 ID에서 positivePrompt 조회 */
+function resolveStylePrompt(styleId: string): string | undefined {
+  for (const cat of STYLE_CATALOG) {
+    const entry = cat.styles.find(s => s.id === styleId || s.legacyMode === styleId);
+    if (entry) return entry.positivePrompt;
+  }
+  return undefined;
+}
+
 async function generateImage(
   prompt: string,
   style: string,
@@ -122,6 +132,7 @@ async function generateImage(
       prompt,
       aspectRatio: resolution === "portrait" ? "9:16" : "16:9",
       animationMode: style,
+      stylePrompt: resolveStylePrompt(style),
       preferModel,
     }),
   });

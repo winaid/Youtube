@@ -4,14 +4,17 @@ type Env = GeminiEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode, directorTechniques, preferModel } = await context.request.json() as {
+    const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode, stylePrompt, directorTechniques, preferModel } = await context.request.json() as {
       prompt: string;
       aspectRatio?: string;
       numberOfImages?: number;
       /** "pro" = 나노바나나 프로 우선 (복잡한 프롬프트), "fast" = 나노바나나2 우선 (기본값) */
       preferModel?: "pro" | "fast";
       sceneDescription?: string;
+      /** 레거시 한국어 키 또는 스타일 카탈로그 ID */
       animationMode?: string;
+      /** 스타일 카탈로그의 positivePrompt 직접 전달 (animationMode보다 우선) */
+      stylePrompt?: string;
       directorTechniques?: {
         cameraWork?: string;
         colorPalette?: string;
@@ -48,7 +51,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "네온 사이버펑크": "Neon cyberpunk style. Glowing neon lights, dark city, vivid pink/blue/purple palette.",
       "미니어처": "Tilt-shift miniature photography. Tiny diorama look, shallow depth of field.",
     };
-    const styleDirective = styleMap[animationMode || ""] || "Cinematic photography. Professional lighting.";
+    // 우선순위: stylePrompt(직접 전달) > styleMap(레거시 키) > 기본값
+    const styleDirective = stylePrompt
+      || styleMap[animationMode || ""]
+      || "Cinematic photography. Professional lighting.";
 
     // 감독 signatureTechniques → 이미지 스타일 지시
     const directorLines: string[] = [];
