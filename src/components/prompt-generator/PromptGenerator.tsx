@@ -15,12 +15,15 @@ import ProjectManager from "./ProjectManager";
 import QualityDebugPanel from "./QualityDebugPanel";
 import OwnerChecklist from "./OwnerChecklist";
 import SessionNotePanel from "./SessionNotePanel";
+import dynamic from "next/dynamic";
+
+const AudiobookPanel = dynamic(() => import("./AudiobookPanel"), { ssr: false });
 
 export default function PromptGenerator() {
   const [result, setResult] = useState<PromptOutput | null>(null);
   const [status, setStatus] = useState<GeneratorStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"prompt" | "story">("prompt");
+  const [activeTab, setActiveTab] = useState<"prompt" | "story" | "audiobook">("prompt");
   const [prefillScenario, setPrefillScenario] = useState<string>("");
   const [lastInput, setLastInput] = useState<PromptInput | null>(null);
   const [secondsPerScene, setSecondsPerScene] = useState<number>(8); // VEO 정책: 8초 고정
@@ -318,6 +321,17 @@ export default function PromptGenerator() {
           >
             시나리오 AI 생성
           </button>
+          <button
+            onClick={() => setActiveTab("audiobook")}
+            className="px-4 py-2 rounded-full text-sm font-medium transition-all"
+            style={
+              activeTab === "audiobook"
+                ? { background: "linear-gradient(135deg, #a855f7, #787fff)", color: "white", boxShadow: "0 2px 8px #a855f740" }
+                : { background: "#a855f715", color: "#7c3aed" }
+            }
+          >
+            오디오북 영상
+          </button>
         </div>
       </div>
 
@@ -370,6 +384,8 @@ export default function PromptGenerator() {
         </div>
       ) : activeTab === "story" ? (
         <StoryChat onUseAsScenario={handleUseAsScenario} />
+      ) : activeTab === "audiobook" ? (
+        <AudiobookPanel />
       ) : null}
     </div>
   );
