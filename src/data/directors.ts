@@ -6,6 +6,7 @@ export const workToDirectorMap: Record<string, string> = {
   "기생충": "kr-bong", "괴물": "kr-bong", "설국열차": "kr-bong", "마더": "kr-bong", "살인의 추억": "kr-bong", "옥자": "kr-bong",
   "올드보이": "kr-park", "아가씨": "kr-park", "친절한 금자씨": "kr-park", "헤어질 결심": "kr-park", "박쥐": "kr-park", "공동경비구역": "kr-park",
   "서편제": "kr-im", "취화선": "kr-im", "춘향뎐": "kr-im", "축제": "kr-im",
+  "왕의 남자": "kr-lee-joonik", "사도": "kr-lee-joonik", "동주": "kr-lee-joonik", "소리꾼": "kr-lee-joonik", "박열": "kr-lee-joonik", "자산어보": "kr-lee-joonik", "구르미 그린 달빛": "kr-lee-joonik",
   // 일본 애니
   "센과 치히로의 행방불명": "jp-miyazaki", "이웃집 토토로": "jp-miyazaki", "하울의 움직이는 성": "jp-miyazaki", "모노노케 히메": "jp-miyazaki", "원령공주": "jp-miyazaki", "바람이 분다": "jp-miyazaki", "벼랑 위의 포뇨": "jp-miyazaki", "천공의 성 라퓨타": "jp-miyazaki", "붉은 돼지": "jp-miyazaki", "나우시카": "jp-miyazaki",
   "너의 이름은": "jp-shinkai", "날씨의 아이": "jp-shinkai", "스즈메의 문단속": "jp-shinkai", "초속 5센티미터": "jp-shinkai", "언어의 정원": "jp-shinkai", "별의 목소리": "jp-shinkai",
@@ -99,6 +100,24 @@ export const directors: DirectorPersona[] = [
       lighting: "soft natural daylight through hanji paper, golden hour fields",
       editingStyle: "slow contemplative pacing with emotional crescendo at climax",
       moodKeywords: "han sentiment, Korean tradition, epic saga, lyrical melancholy",
+    },
+  },
+  {
+    id: "kr-lee-joonik",
+    name: "Lee Joon-ik Style",
+    nameKo: "이준익 스타일",
+    region: "한국",
+    style: "역사 속 인간 드라마, 격변기의 작은 사람들, 따뜻한 비극, 사극의 현대적 재해석",
+    description:
+      "한국 역사극의 새 지평을 연 감독. 왕이 아닌 광대, 영웅이 아닌 시인의 시선으로 역사를 다시 본다. 무겁지만 유머가 있고, 슬프지만 따뜻하다.",
+    persona:
+      "나는 이준익이다. 역사는 왕의 것이 아니야— 그 시대를 살아낸 보통 사람들의 것이지. 왕의 남자에서 광대 공길이가 왕 앞에서 웃길 때, 그건 웃음이 아니라 생존이야. 사도에서 뒤주에 갇힌 아들을 보는 아버지의 얼굴— 그게 권력의 진짜 얼굴이야. 나는 역사 속에서 감정을 발굴해. 거창한 전쟁이 아니라, 떨리는 손끝 하나가 더 무서운 거야.",
+    signatureTechniques: {
+      cameraWork: "steady mid-shots holding on faces during emotional peaks, slow reveals of historical spaces, handheld intimacy in private moments",
+      colorPalette: "desaturated earth tones with ink-wash undertones — aged paper whites, charcoal blacks, muted indigo, warm candlelight amber against cold stone gray",
+      lighting: "natural available light dominance — candlelit interiors, overcast diffused daylight, dawn/dusk rim light on silhouettes",
+      editingStyle: "patient build with sudden emotional rupture — long quiet takes broken by one devastating cut",
+      moodKeywords: "historical humanity, warm tragedy, quiet defiance, dignity under oppression, ink-wash melancholy",
     },
   },
 

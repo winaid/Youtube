@@ -205,16 +205,48 @@ function buildDirectorEngine(
   const hasDirectorTech = tech.cameraWork || tech.colorPalette || tech.lighting || tech.moodKeywords;
   const styleRenderingHint = STYLE_RENDERING_HINTS[animationMode] || "";
 
+  // ── 수묵화/동양화 계열: 감독 색감을 수묵화 언어로 자연스럽게 변환 ──
+  const isInkWashFamily = ["ink-wash", "inkwash-painting", "east-asian-painting", "잉크워시", "ink-drawing-anime"].includes(animationMode);
+  const inkWashHarmony = isInkWashFamily ? `
+### Ink-Wash × Director Harmony (MANDATORY — director palette adapts to medium)
+- Director's color intent must be expressed through INK DENSITY and WASH GRADATION, not literal hues
+- Warm tones → darker ink concentration, amber-tinted wash. Cool tones → diluted pale washes, blue-gray undertones
+- Director's "red/crimson" → deep black ink pooling. "Gold/amber" → warm sepia wash. "Green" → gray-green ink dilution
+- Color accents allowed ONLY as faint mineral pigment hints (淡彩) — never saturated, never dominant
+- Director's lighting philosophy translates to: white space = light, ink density = shadow
+- The medium (ink wash) is sacred. The director's EMOTION and COMPOSITION transfer fully, but COLOR becomes monochrome with tonal variation
+- BANNED: saturated colors destroying ink-wash aesthetic, photorealistic color grading, abandoning monochrome for director's palette` : "";
+
   const directorVisualDNA: string[] = [];
   if (hasDirectorTech) {
-    directorVisualDNA.push("### Director Visual DNA (HIGHEST PRIORITY — overrides style defaults when conflict)");
+    if (isInkWashFamily) {
+      directorVisualDNA.push("### Director Visual DNA (adapted for ink-wash medium — emotion/composition transfers, color becomes tonal)");
+    } else {
+      directorVisualDNA.push("### Director Visual DNA (HIGHEST PRIORITY — overrides style defaults when conflict)");
+    }
     if (tech.cameraWork) directorVisualDNA.push(`🎬 CAMERA (mandatory): ${tech.cameraWork}`);
-    if (tech.colorPalette) directorVisualDNA.push(`🎨 COLOR PALETTE (enforce in every cut): ${tech.colorPalette}`);
-    if (tech.lighting) directorVisualDNA.push(`💡 LIGHTING (enforce in every cut): ${tech.lighting}`);
+    if (tech.colorPalette) {
+      if (isInkWashFamily) {
+        directorVisualDNA.push(`🎨 COLOR INTENT (translate to ink density/wash tone): ${tech.colorPalette} → express as ink concentration, wash gradation, and white space balance`);
+      } else {
+        directorVisualDNA.push(`🎨 COLOR PALETTE (enforce in every cut): ${tech.colorPalette}`);
+      }
+    }
+    if (tech.lighting) {
+      if (isInkWashFamily) {
+        directorVisualDNA.push(`💡 LIGHTING (as ink-wash contrast): ${tech.lighting} → translate to white space vs ink density, brush stroke weight variation`);
+      } else {
+        directorVisualDNA.push(`💡 LIGHTING (enforce in every cut): ${tech.lighting}`);
+      }
+    }
     if (tech.moodKeywords) directorVisualDNA.push(`🌊 MOOD ANCHORS (emotional texture for all cuts): ${tech.moodKeywords}`);
     if (tech.editingStyle) directorVisualDNA.push(`✂️ EDITING RHYTHM: ${tech.editingStyle}`);
-    directorVisualDNA.push("↑ These director-specific visual rules MUST be visible in every generated cut prompt.");
-    directorVisualDNA.push("When style rendering rules below conflict with Director Visual DNA, the director's approach wins.");
+    if (!isInkWashFamily) {
+      directorVisualDNA.push("↑ These director-specific visual rules MUST be visible in every generated cut prompt.");
+      directorVisualDNA.push("When style rendering rules below conflict with Director Visual DNA, the director's approach wins.");
+    } else {
+      directorVisualDNA.push("↑ Director's emotional intent and composition philosophy apply fully. Color/lighting translate to ink-wash tonal language.");
+    }
   }
 
   const lines: string[] = [
@@ -225,6 +257,7 @@ function buildDirectorEngine(
     ...directorVisualDNA,
     // Style rendering as secondary layer (medium-specific constraints)
     styleRenderingHint ? `### Style Rendering Rules (medium-specific — defer to Director Visual DNA above when conflicting)\n${styleRenderingHint}` : "",
+    inkWashHarmony,
     stopMotionRules,
     hybridRules,
     editorialPersona ? buildEditorialPlanningRules(editorialPersona) : "",
@@ -2514,13 +2547,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           timingBeat:      extendBeatTemplate,
           styleSuffix:     noTextSuffix,
           // ── Director Visual DNA: extend 프롬프트에서도 감독 색감/조명/무드 유지 ──
-          directorStyleHint: techniques
-            ? [
-                techniques.colorPalette ? `Color: ${techniques.colorPalette}` : "",
-                techniques.lighting ? `Lighting: ${techniques.lighting}` : "",
-                techniques.moodKeywords ? `Mood: ${techniques.moodKeywords}` : "",
-              ].filter(Boolean).join(". ") || undefined
-            : undefined,
+          directorStyleHint: (() => {
+            if (!techniques) return undefined;
+            const isInkWash = ["ink-wash", "inkwash-painting", "east-asian-painting", "잉크워시", "ink-drawing-anime"].includes(String(animationMode));
+            const parts = isInkWash
+              ? [
+                  techniques.colorPalette ? `Ink-wash tonal intent (from director): ${techniques.colorPalette} — express as ink density and wash gradation, not literal color` : "",
+                  techniques.lighting ? `Light/shadow as ink contrast: ${techniques.lighting}` : "",
+                  techniques.moodKeywords ? `Mood: ${techniques.moodKeywords}` : "",
+                ]
+              : [
+                  techniques.colorPalette ? `Color: ${techniques.colorPalette}` : "",
+                  techniques.lighting ? `Lighting: ${techniques.lighting}` : "",
+                  techniques.moodKeywords ? `Mood: ${techniques.moodKeywords}` : "",
+                ];
+            return parts.filter(Boolean).join(". ") || undefined;
+          })(),
         };
       }
 
