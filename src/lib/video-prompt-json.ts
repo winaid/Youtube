@@ -70,6 +70,14 @@ export interface BuildExtendPromptJsonInput {
   stillWithheld?: string;
   timingBeat: string;
   styleSuffix: string;
+  // 스토리보드 정합성 필드
+  moodLighting?: string;
+  locationCue?: string;
+  situationCue?: string;
+  emotionalAnchor?: string;
+  bodySignal?: string;
+  directorColorHint?: string;
+  directorStyleHint?: string;
 }
 
 export function buildExtendPromptJson(input: BuildExtendPromptJsonInput): ExtendPromptJson {
@@ -92,6 +100,14 @@ export function buildExtendPromptJson(input: BuildExtendPromptJsonInput): Extend
     stillWithheld:   input.stillWithheld || "",
     timingBeat:      input.timingBeat,
     styleSuffix:     input.styleSuffix,
+    // 스토리보드 정합성 필드
+    moodLighting:    input.moodLighting,
+    locationCue:     input.locationCue,
+    situationCue:    input.situationCue,
+    emotionalAnchor: input.emotionalAnchor,
+    bodySignal:      input.bodySignal,
+    directorColorHint: input.directorColorHint,
+    directorStyleHint: input.directorStyleHint,
   };
 }
 
@@ -850,33 +866,53 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
 }
 
 /**
- * ExtendPromptJson → VEO extend 프롬프트 (간결 버전)
+ * ExtendPromptJson → VEO extend 프롬프트 (Cut 1과 동등한 시각 정보 보장)
  */
 export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
 
-  // 이전 씬 컨텍스트 (간결하게)
-  parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
+  // ── 1. 이전 컷 연결: 끝 상태 명시 ──
+  const prevParts = [`Continuing from ${json.prevSceneEnd.shotType} scene`];
+  if (json.prevSceneEnd.subjectAction) prevParts.push(`where ${json.prevSceneEnd.subjectAction}`);
+  if (json.prevSceneEnd.bodySignal) prevParts.push(`body ${json.prevSceneEnd.bodySignal}`);
+  parts.push(prevParts.join(", "));
 
-  // 새 씬
+  // ── 2. 전환 방식 ──
+  if (json.transition && json.transition !== "cut") {
+    parts.push(`Transition: ${json.transition}`);
+  }
+
+  // ── 3. 새 샷 프레이밍 ──
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
-
-  // Character (있을 때만) + scene action
-  if (json.characterRef) {
-    parts.push(json.characterRef);
+  if (json.newShot.cameraMovement) {
+    const cm = /^static$/i.test(json.newShot.cameraMovement) ? "slow push-in" : json.newShot.cameraMovement;
+    parts.push(cm);
   }
+
+  // ── 4. 즉시 인식 가능성 3-pillar (스토리보드 정합성 핵심) ──
+  if (json.locationCue) parts.push(json.locationCue);
+  if (json.situationCue) parts.push(json.situationCue);
+  if (json.emotionalAnchor) parts.push(json.emotionalAnchor);
+
+  // ── 5. 캐릭터 ──
+  if (json.characterRef) parts.push(json.characterRef);
+
+  // ── 6. 액션 + 신체언어 ──
   parts.push(json.newAction);
+  if (json.bodySignal) parts.push(json.bodySignal);
+  if (json.behavioralShift) parts.push(json.behavioralShift);
 
-  if (json.behavioralShift) {
-    parts.push(json.behavioralShift);
-  }
+  // ── 7. 조명/무드 ──
+  if (json.moodLighting) parts.push(json.moodLighting);
 
-  // Director Visual DNA — 감독의 색감/조명/무드를 extend에서도 유지
-  if (json.directorStyleHint) {
-    parts.push(json.directorStyleHint);
-  }
+  // ── 8. 감독 시각 DNA ──
+  if (json.directorColorHint) parts.push(json.directorColorHint);
+  if (json.directorStyleHint) parts.push(json.directorStyleHint);
 
-  // Style
+  // ── 9. 타이밍 비트 ──
+  if (json.timingBeat) parts.push(json.timingBeat);
+
+  // ── 10. 스타일 접미사 ──
   const cleanSuffix2 = (json.styleSuffix || "")
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();

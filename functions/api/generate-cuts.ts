@@ -2675,6 +2675,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           stillWithheld:   extractField(ep, "STILL WITHHELD") || "",
           timingBeat:      extendBeatTemplate,
           styleSuffix:     noTextSuffix,
+          // ── 스토리보드 정합성: Cut 1과 동등한 시각 정보 보장 ──
+          moodLighting:    moodLighting,
+          locationCue:     outline.locationCue || "",
+          situationCue:    outline.situationCue || "",
+          emotionalAnchor: outline.emotionalAnchor || "",
+          bodySignal:      needsCharacter ? (extractField(ep, "BODY_SIGNAL") || videoPromptJson.bodySignal || "") : "",
+          directorColorHint: videoPromptJson.directorColorHint,
           // ── Director Visual DNA: extend 프롬프트에서도 감독 색감/조명/무드 유지 ──
           directorStyleHint: (() => {
             if (!techniques) return undefined;

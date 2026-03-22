@@ -57,6 +57,19 @@ export interface ExtendPromptJson {
   styleSuffix: string;
   /** 감독 시각 DNA — extend 프롬프트에서 스타일 일관성 유지용 */
   directorStyleHint?: string;
+  // ── 스토리보드 정합성 필드 (Cut 1과 동등한 시각 정보 보장) ──
+  /** 조명/무드 — Cut 1의 moodLighting에 대응 */
+  moodLighting?: string;
+  /** 장소 정체성 시각 단서 (WHERE) */
+  locationCue?: string;
+  /** 상황 증거 시각 단서 (WHAT) */
+  situationCue?: string;
+  /** 감정/갈등 앵커 (WHY) */
+  emotionalAnchor?: string;
+  /** 새 컷의 신체 언어 */
+  bodySignal?: string;
+  /** 감독 색감 팔레트 — extend에서도 유지 */
+  directorColorHint?: string;
 }
 
 // ─── Dialogue / Quoted Text Stripping ─────────────────────────────────────────
@@ -158,20 +171,53 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
 
 export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
-  parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
+
+  // ── 1. 이전 컷 연결: 끝 상태 명시 (VEO가 이전 영상에서 이어가는 맥락) ──
+  const prevParts = [`Continuing from ${json.prevSceneEnd.shotType} scene`];
+  if (json.prevSceneEnd.subjectAction) prevParts.push(`where ${json.prevSceneEnd.subjectAction}`);
+  if (json.prevSceneEnd.bodySignal) prevParts.push(`body ${json.prevSceneEnd.bodySignal}`);
+  parts.push(prevParts.join(", "));
+
+  // ── 2. 전환 방식 ──
+  if (json.transition && json.transition !== "cut") {
+    parts.push(`Transition: ${json.transition}`);
+  }
+
+  // ── 3. 새 샷 프레이밍 ──
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
   if (json.newShot.cameraMovement) {
     const cm = /^static$/i.test(json.newShot.cameraMovement) ? "slow push-in" : json.newShot.cameraMovement;
     parts.push(cm);
   }
+
+  // ── 4. 즉시 인식 가능성 3-pillar (스토리보드 정합성 핵심) ──
+  if (json.locationCue) parts.push(json.locationCue);      // WHERE
+  if (json.situationCue) parts.push(json.situationCue);    // WHAT
+  if (json.emotionalAnchor) parts.push(json.emotionalAnchor); // WHY
+
+  // ── 5. 캐릭터 ──
   if (json.characterRef) parts.push(json.characterRef);
+
+  // ── 6. 액션 + 신체언어 ──
   parts.push(json.newAction);
+  if (json.bodySignal) parts.push(json.bodySignal);
   if (json.behavioralShift) parts.push(json.behavioralShift);
-  // Director Visual DNA — 감독의 색감/조명/무드를 extend에서도 유지
+
+  // ── 7. 조명/무드 (스토리보드의 moodLighting 그대로 반영) ──
+  if (json.moodLighting) parts.push(json.moodLighting);
+
+  // ── 8. 감독 시각 DNA ──
+  if (json.directorColorHint) parts.push(json.directorColorHint);
   if (json.directorStyleHint) parts.push(json.directorStyleHint);
+
+  // ── 9. 타이밍 비트 (VEO 멀티샷 대응) ──
+  if (json.timingBeat) parts.push(json.timingBeat);
+
+  // ── 10. 스타일 접미사 ──
   const cleanSuffix = json.styleSuffix
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
     .trim();
   parts.push(cleanSuffix);
+
   return stripDialogueAndKorean(parts.filter(Boolean).join(". "));
 }

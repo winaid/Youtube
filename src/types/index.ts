@@ -320,6 +320,19 @@ export interface ExtendPromptJson {
   styleSuffix: string;
   /** 감독 시각 DNA — extend 프롬프트에서 스타일 일관성 유지용 */
   directorStyleHint?: string;
+  // ── 스토리보드 정합성 필드 (Cut 1과 동등한 시각 정보 보장) ──
+  /** 조명/무드 — Cut 1의 moodLighting에 대응 */
+  moodLighting?: string;
+  /** 장소 정체성 시각 단서 (WHERE) */
+  locationCue?: string;
+  /** 상황 증거 시각 단서 (WHAT) */
+  situationCue?: string;
+  /** 감정/갈등 앵커 (WHY) */
+  emotionalAnchor?: string;
+  /** 새 컷의 신체 언어 */
+  bodySignal?: string;
+  /** 감독 색감 팔레트 — extend에서도 유지 */
+  directorColorHint?: string;
 }
 
 /** 씬 타입 분류 (품질 평가 기준 선택에 사용) */
