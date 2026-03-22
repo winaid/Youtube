@@ -1678,7 +1678,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       totalDurationSec: effectiveTotalForDensity,
       personaBias: pBias,
     });
-    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), CUT_COUNT_MAX);
+    // 단일 호출 상한: STEP1_SINGLE_CALL_MAX_CUTS. 이 이상은 multi-chain 필요.
+    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), STEP1_SINGLE_CALL_MAX_CUTS);
 
     // ── secPerCut ↔ targetCuts 정합성 보정 ──
     // 핵심 문제: secPerCut은 감독 persona에서, targetCuts는 density에서 독립 계산.
