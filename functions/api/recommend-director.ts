@@ -785,7 +785,7 @@ ${localList}
 
     console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=pro→flash-lite fallback, pool=${directorPoolSize})`);
 
-    const { response: res } = await fetchWithModelFallback(context.env, {
+    const { response: res, meta: fallbackMeta } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(localRequestBody),
@@ -799,7 +799,8 @@ ${localList}
       return geminiErrorResponse(res, errText, "recommend-director");
     }
 
-    const modelUsed = res.url?.includes("flash") ? "flash" : res.url?.includes("pro") ? "pro" : "unknown";
+    // meta.finalModel에서 정확한 모델명 추출 (URL 기반 추측 대신)
+    const modelUsed = fallbackMeta.finalModel.includes("flash") ? "flash" : fallbackMeta.finalModel.includes("pro") ? "pro" : fallbackMeta.finalModel;
 
     const data = await res.json() as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -1047,6 +1048,48 @@ Each director object must have:
       };
 
       /**
+       * signatureTechniques 필드 검증/보정.
+       * 웹 감독의 기법 데이터는 Gemini 자체 생성이므로 할루시네이션 방지가 필요:
+       * - 빈/누락 필드를 안전한 기본값으로 채움
+       * - 너무 짧거나 의미없는 값 필터링
+       * - 한국어 혼입 방지 (영문 전용 필드)
+       */
+      const sanitizeSignatureTechniques = (
+        tech: Record<string, string> | undefined,
+        directorName: string,
+      ): Record<string, string> | undefined => {
+        if (!tech || typeof tech !== "object") return undefined;
+
+        const REQUIRED_KEYS = ["cameraWork", "colorPalette", "lighting", "editingStyle", "moodKeywords"] as const;
+        const sanitized: Record<string, string> = {};
+        let hasAnyValid = false;
+
+        for (const key of REQUIRED_KEYS) {
+          const val = tech[key];
+          if (typeof val === "string" && val.trim().length >= 3) {
+            // 한국어 전용 값 거부 (영문 필드인데 한글만 있는 경우)
+            const koreanOnlyRatio = (val.match(/[가-힣]/g)?.length ?? 0) / val.length;
+            if (koreanOnlyRatio > 0.7) {
+              // 한글 비율 70% 이상이면 의미없는 값으로 간주
+              sanitized[key] = "";
+              continue;
+            }
+            sanitized[key] = val.trim();
+            hasAnyValid = true;
+          } else {
+            sanitized[key] = "";
+          }
+        }
+
+        if (!hasAnyValid) {
+          console.warn(`[recommend-director] signatureTechniques 전체 비어있음 for "${directorName}" — 제거`);
+          return undefined;
+        }
+
+        return sanitized;
+      };
+
+      /**
        * 웹 검색 결과를 파싱하고 중복 제거하는 내부 함수.
        * 재시도 시에도 동일 로직 사용.
        */
@@ -1102,6 +1145,33 @@ Each director object must have:
             rawWebDirs = parsed as Array<Record<string, unknown>>;
           }
         }
+        // ── 이름/설명에서 지역 추론 (자연어 파싱 폴백용) ──
+        const inferRegionFromName = (name: string, nameKo: string, desc: string): string => {
+          const combined = `${name} ${nameKo} ${desc}`.toLowerCase();
+          // 한글 이름이 있으면 한국 감독일 가능성 높음
+          if (/[가-힣]{2,}/.test(nameKo) && nameKo !== name) return "한국";
+          // 일본식 이름 패턴
+          if (/\b(?:hayao|makoto|satoshi|akira|hirokazu|takeshi|kenji|isao|mamoru|hideaki|hiroshi|takahata|oshii|kitano)\b/i.test(name)) return "일본";
+          if (/\b(?:miyazaki|kurosawa|ozu|shinkai|kon|koreeda|hosoda|anno|otomo|takahata|kitano)\b/i.test(name)) return "일본";
+          // 중국/홍콩/대만식 이름 패턴
+          if (/\b(?:zhang|wong|ang|chen|tsai|hou|jia|feng|lou|wang)\b/i.test(name) && /\b(?:yimou|kar-wai|lee|kaige|ming-liang|hsiao-hsien|zhangke|xiaogang|ye|xiaoshuai)\b/i.test(name)) return "중국";
+          // 한국 성씨 + 영문 이름
+          if (/\b(?:bong|park|kim|lee|im|hong|yeon|shin|choi|jang|ryu|kwak)\b/i.test(name) && /joon|chan|wook|sang|min|dae|hyun|ki|ho|jun|woo/i.test(name)) return "한국";
+          // 인도 이름 패턴
+          if (/\b(?:ray|rajamouli|bhansali|kashyap|ghosh|nair|ratnam|gowariker|hirani|mehra)\b/i.test(name)) return "인도";
+          // 유럽 패턴 (불어/독어/이탈리아/스칸디나비아 성씨)
+          if (/\b(?:godard|truffaut|bergman|tarkovsky|fellini|von trier|haneke|almodovar|refn|villeneuve|nolan|kubrick|lynch|coppola|herzog)\b/i.test(name)) return "유럽";
+          // 중남미
+          if (/\b(?:cuaron|del toro|inarritu|guerra|babenco|salles)\b/i.test(name)) return "중남미";
+          // 설명에서 국가 힌트
+          if (/(?:korean|한국|korea)/i.test(combined)) return "한국";
+          if (/(?:japanese|일본|japan)/i.test(combined)) return "일본";
+          if (/(?:chinese|중국|china|hong kong|taiwan)/i.test(combined)) return "중국";
+          if (/(?:indian|인도|india|bollywood)/i.test(combined)) return "인도";
+          if (/(?:french|german|italian|scandinavian|british|유럽|europe)/i.test(combined)) return "유럽";
+          return "미국"; // 최종 기본값
+        };
+
         // ── 자연어 목록 파싱 폴백: "1. Name - Description" 패턴 ──
         if (rawWebDirs.length === 0 && cleanText.length > 50) {
           const naturalListPattern = /(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)([A-Z][a-zA-Zà-ž\s\-.']+?)(?:\s*[\(（]([가-힣\s]+)[\)）])?\s*[-–:]\s*(.+)/gm;
@@ -1112,7 +1182,9 @@ Each director object must have:
             const nameKo = match[2]?.trim() || "";
             const desc = match[3]?.trim() || "";
             if (name.length >= 3 && name.length <= 50) {
-              naturalDirs.push({ name, nameKo: nameKo || name, description: desc, region: "미국", style: "", fitScore: 65, reason: desc.slice(0, 100) });
+              // 이름/설명에서 지역 힌트 추론 (하드코딩 "미국" 방지)
+              const inferredRegion = inferRegionFromName(name, nameKo, desc);
+              naturalDirs.push({ name, nameKo: nameKo || name, description: desc, region: inferredRegion, style: "", fitScore: 65, reason: desc.slice(0, 100) });
             }
           }
           if (naturalDirs.length > 0) {
@@ -1178,6 +1250,13 @@ Each director object must have:
             ...(Array.isArray(d.notableWorks) ? d.notableWorks.map(String) : []),
           ];
           const groundingQuality = computeGroundingQuality(sources, relevanceKeywords, false);
+
+          // ── signatureTechniques 검증/보정: 할루시네이션 방지 ──
+          const rawTech = d.signatureTechniques as Record<string, string> | undefined;
+          const sanitizedTech = sanitizeSignatureTechniques(rawTech, String(d.name));
+          if (sanitizedTech !== rawTech) {
+            d.signatureTechniques = sanitizedTech;
+          }
 
           accepted.push({
             ...d,
@@ -1387,14 +1466,14 @@ Each director object must have:
           const stage1HadNoSources = stage1Log && !stage1Log.grounded;
 
           if (stage1HadNoSources) {
-            // Stage 1에서 grounding 자체가 안 됐으면 → 바로 JSON 모델 지식 폴백 (grounding 재시도 무의미)
-            const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
-            stageLabel = "stage2_json_fallback";
+            // Stage 1에서 grounding 자체가 안 됐으면 → Flash로 grounding 한 번 더 시도
+            // (네트워크 일시 장애 or 모델 문제일 수 있으므로 다른 모델로 재시도)
+            stageLabel = "stage2_grounding_retry";
             model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt({ retryNote });
-            useGrounding = false;
-            forceMimeType = true;
-            triggerReason = `stage1 grounding empty: ${prevReasons.join(",")}`;
+            prompt = buildWebPrompt();
+            useGrounding = true;
+            forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
+            triggerReason = `stage1 grounding empty → retry with ${GEMINI_MODEL_FLASH}: ${prevReasons.join(",")}`;
           } else {
             // 파싱 실패 등 → JSON 강제로 재시도
             const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";

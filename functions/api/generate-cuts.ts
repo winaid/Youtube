@@ -754,8 +754,9 @@ ${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 �
 characterSeeds (최대 3명):
 - id: "char-1" 등
 - label: 한국어 역할명
-- appearance: 영어 ≤40 words (성별/나이/헤어/의상/피부톤만)
+- appearance: 영어 ≤40 words (성별/나이대/헤어 color+style/의상/피부톤 필수 — 예: "mid-30s woman, black shoulder-length hair, warm beige skin, dark blue hanbok with white collar")
 - appearanceKo: ≤25자
+⚠️ appearance에 skin tone(예: warm beige, deep brown, pale ivory)과 hair color(예: black, dark brown, silver-grey) 반드시 포함. 누락 시 비디오 모델이 일관성 없는 외형 생성.
 
 outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시퀀스):
 
@@ -1104,9 +1105,14 @@ ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPerso
 charRef 수위: protagonist=전체 | partial=부분(손,뒷모습) | silhouette=실루엣만 | background=최소힌트 | absent=생략
 행동 없는 캐릭터 금지 — stands/motionless/faces camera 금지. 반드시 동사 포함.
 
+## 캐릭터 묘사 필수 요소 (character-driven 씬에서)
+charRef 사용 시 반드시 포함: skin tone(예: warm beige, deep brown, pale ivory), hair color+style(예: black shoulder-length hair).
+charRef에 이미 포함된 경우 그대로 사용. 누락 시 videoPrompt에서 보충 — "a figure" "the character" 등 모호한 표현 금지.
+
 ## CINEMATIC SHOT PROGRESSION
 - SCENE1=WS/LS(공간만, 얼굴CU 금지), 이후 MS→CU→ECU 점진 축소, 중반 LS/WS 삽입, 같은 shot size 2연속 금지
-- 카메라: 반드시 이유 명시. push-in(긴장), dolly(심리변화), pan(발견), static(억압). 장식용 움직임 금지. Format: MOVEMENT + "(reason: [why])"
+- 카메라: 반드시 이유 명시. push-in(긴장), dolly(심리변화), pan(발견), slow push-in(관찰), crane-up(해방). 장식용 움직임 금지. Format: MOVEMENT + "(reason: [why])"
+- "static" 단독 사용 금지 → 최소한 "locked-off static, subtle drift" 또는 "slow push-in"으로 대체. 순수 정지 카메라는 의도적 억압 연출일 때만 "locked-off static (reason: oppressive stillness)" 형태로 허용.
 - Reveal/Withhold: 매 장면 새 정보 1개 공개 + 미공개 1개 보류. 순서: 공간→위치→표정→소품→정점→결과
 
 ## 감독 연출 원칙
@@ -1123,16 +1129,24 @@ imagePrompt (≤80 words EN): "[shot type], [angle]. [charRef if protagonist/par
 endImagePrompt (≤65 words EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
 
 videoPrompt (≤180 words EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
-  Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+]").replace("[develop]", "[BEAT2: WHAT 상황 증거(빈 의자, 꺼진 조명 등)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동]")}. [charRef if not absent]. [noTextSuffix]"
+  Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+ 구체적 오브젝트/질감(cracked tile, rusted pipe, wilted flower, stacked books)]").replace("[develop]", "[BEAT2: WHAT 상황 증거(empty chair, closed shutters, overflowing ashtray, half-eaten meal)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동(fingers grip armrest, shoulders slump forward, gaze drops to floor)]")}. [charRef if not absent]. [noTextSuffix]"
+  환경 디테일: 최소 2개 구체적 오브젝트/질감/현상 필수 (cracked, rusted, damp, torn 등 형용사+명사)
+  상황 증거: 현재 상황을 보여주는 시각 단서 필수 (empty/crowded/broken/closed/overflowing 등)
+  감정 앵커: 추상 감정어 금지 → 신체 행동으로만 (slump/grip/sigh/stare/clench/tremble)
   BANNED: continues/still/same as before/standing/motionless, sign/signboard, emotion labels(anxious/sad/angry 등)
+  BANNED: 한국어 테마 문구(인본주의적 시선, 시대극의 현대적 해석, 인물 심리 묘사 등) — 비디오 모델이 렌더링 불가. 영문 시각 묘사로만 기술
 
 extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤120 words EN):
   "Continuing from previous — [endHook]. [Beat1 다른 앵글]. [Beat2 상황 증거]. [Beat3 감정 행동]. [charRef if applicable]. [noTextSuffix]"
 
 cameraDirection (≤55 chars): "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
-moodLighting (≤55 chars, source+direction+intensity+quality 4요소 필수):
-  예: "cold daylight from upper right, weak diffused glow, blue-grey cast"
-  BANNED: dramatic lighting/moody atmosphere/cinematic light, sign 오브젝트
+moodLighting (≤55 chars, source+direction+quality 3요소 필수 — 하나라도 누락 시 규칙 위반):
+  source: 구체적 광원 (window, candle, sun, fluorescent tube, neon sign, fire)
+  direction: 광원 방향 (from upper left, from behind, overhead, low angle)
+  quality: 광질 (diffused, harsh, warm, cold, dappled, flickering)
+  예: "cold fluorescent from overhead, harsh flat wash, green-white cast"
+  예: "candlelight from low right, warm flickering glow, amber tone"
+  BANNED: dramatic lighting/moody atmosphere/cinematic light/sun-drenched(방향없음), sign 오브젝트
 
 ## 대사/텍스트 규칙
 - 대사 텍스트는 별도 처리됨. videoPrompt/imagePrompt에 대사 절대 포함 금지. 말하는 행동만 묘사("lips move urgently" ✅ / "says '...'" ❌)
@@ -2479,7 +2493,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const d = detailMap.get(outline.cutNumber);
       const prevOutline = i > 0 ? outlines[i - 1] : null;
 
-      const moodLighting = d?.moodLighting ?? "Golden hour warm light. Teal and orange grade.";
+      const moodLighting = d?.moodLighting ?? "warm sunlight from upper left window, soft diffused glow, golden-amber cast";
 
       // ── 캐릭터 역할에 따른 characterRef 결정 ────────────────────────────
       const needsCharacter = outline.characterRole !== "absent";

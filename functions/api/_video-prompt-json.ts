@@ -74,6 +74,17 @@ function stripDialogueAndKorean(text: string): string {
   cleaned = cleaned.replace(/\b(says?|whispers?|shouts?|yells?|murmurs?|mutters?|exclaims?)\s*["'""'「『][^"'""'」』]*["'""'」』]/gi, "speaks");
   // 3. 한글 텍스트 제거 (VEO가 자막으로 렌더링함)
   cleaned = cleaned.replace(/[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+/g, "");
+  // 3.5. 비시각적 추상 테마 문구 제거 (비디오 모델이 렌더링 불가 → 할루시네이션 유발)
+  const abstractPatterns = [
+    /\b(?:humanistic|humanist)\s+(?:perspective|gaze|vision|view)\b/gi,
+    /\b(?:modern|contemporary)\s+(?:interpretation|reinterpretation)\s+of\s+(?:period|historical|classic)\s+(?:drama|film|genre)\b/gi,
+    /\b(?:character|psychological)\s+(?:depth|interiority|inner\s+world|psychology|psyche)\b/gi,
+    /\b(?:thematic|philosophical|existential)\s+(?:undertone|overtone|resonance|exploration)\b/gi,
+    /\b(?:narrative|storytelling)\s+(?:sensibility|nuance|subtlety|complexity)\b/gi,
+  ];
+  for (const pattern of abstractPatterns) {
+    cleaned = cleaned.replace(pattern, "");
+  }
   // 4. 정리: 중복 공백/구두점
   cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/[,.]\s*[,.]/g, ",").replace(/\.\s*\./g, ".").trim();
   return cleaned;
@@ -114,7 +125,11 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
   parts.push(`${json.shotSize} shot, ${json.cameraAngle}`);
   if (json.cameraMovement && json.cameraMovement !== "static") {
-    const movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
+    let movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
+    // "static" 단독을 최소한의 시네마틱 움직임으로 대체
+    if (/^static$/i.test(movement)) {
+      movement = "slow push-in";
+    }
     parts.push(movement);
   }
   // Location establishing — 장소 정체성 즉시 인식
@@ -145,7 +160,10 @@ export function renderExtendPromptFromJson(json: ExtendPromptJson): string {
   const parts: string[] = [];
   parts.push(`Continuing from ${json.prevSceneEnd.shotType} scene`);
   parts.push(`${json.newShot.shotSize} shot, ${json.newShot.cameraAngle}`);
-  if (json.newShot.cameraMovement) parts.push(json.newShot.cameraMovement);
+  if (json.newShot.cameraMovement) {
+    const cm = /^static$/i.test(json.newShot.cameraMovement) ? "slow push-in" : json.newShot.cameraMovement;
+    parts.push(cm);
+  }
   if (json.characterRef) parts.push(json.characterRef);
   parts.push(json.newAction);
   if (json.behavioralShift) parts.push(json.behavioralShift);
