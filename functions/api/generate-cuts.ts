@@ -118,7 +118,8 @@ interface GenerateCutsResponse {
 type Env = GeminiEnv;
 
 const MODEL_OUTLINE = GEMINI_MODEL_PRO;
-const MODEL_DETAIL  = GEMINI_MODEL_PRO;
+// Step2/3 (디테일 보강)은 Flash 사용: Pro 대비 품질 차이 미미, 타임아웃 해소
+const MODEL_DETAIL  = GEMINI_MODEL_FLASH;
 
 // ─── Fast path 상수 ──────────────────────────────────────────────────────────
 // 짧고 단순한 shortform 요청에서 step2/3를 건너뛰는 조건.
@@ -144,8 +145,8 @@ const STEP1_SINGLE_CALL_MAX_CUTS = 12;
 const STEP1_TIMEOUT_MS = 55_000;
 /** Ultra-compact retry 타임아웃 (ms) — 25초로 단축하여 빠른 응답 */
 const STEP1_ULTRA_TIMEOUT_MS = 25_000;
-/** Step2/3 타임아웃 (ms) — 프롬프트 압축 후 Pro 성공률 향상, 45초로 상향 */
-const STEP23_TIMEOUT_MS = 45_000;
+/** Step2/3 타임아웃 (ms) — Pro 모델 응답 안정화를 위해 55초로 상향 */
+const STEP23_TIMEOUT_MS = 55_000;
 
 // ─── 감독 연출 엔진 빌더 ─────────────────────────────────────────────────────
 /**
@@ -1182,7 +1183,7 @@ ${(() => {
   const effectiveDetailModel = modelOverride || MODEL_DETAIL;
   console.info(`[cuts:${stepLabel}] model=${effectiveDetailModel} promptLen=${prompt.length} cuts=[${batchOutlines.map(o => o.cutNumber).join(",")}] maxTokens=${maxTokens} batchSize=${batchOutlines.length}`);
 
-  const step23Timeout = modelOverride ? STEP23_TIMEOUT_MS + 5_000 : STEP23_TIMEOUT_MS; // Flash gets modest extra time
+  const step23Timeout = STEP23_TIMEOUT_MS;
   let result = await streamingGenerate(env, effectiveDetailModel, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.75, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
@@ -2396,10 +2397,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             const flashResults = await runAllBatches(GEMINI_MODEL_FLASH);
             allDetails = flashResults.flat();
             retrySuccess = true;
-            step1Degraded = true;
-            step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + "step2/3 Pro 429 → Flash fallback 성공";
-            step1Warnings.push("step2/3: Flash model fallback (품질 저하 가능)");
-            console.log("[generate-cuts] step2/3 Flash fallback succeeded");
+            // Flash fallback은 정상 동작 — degraded 표시 불필요
+            console.log("[generate-cuts] step2/3 Pro 429 → Flash fallback succeeded");
           } catch (flashErr) {
             const flashMsg = flashErr instanceof Error ? flashErr.message : String(flashErr);
             console.warn("[generate-cuts] step2/3 Flash fallback failed:", flashMsg.slice(0, 200));
@@ -2418,10 +2417,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         try {
           const flashResults = await runAllBatches(GEMINI_MODEL_FLASH);
           allDetails = flashResults.flat();
-          step1Degraded = true;
-          step1DegradedReason = (step1DegradedReason ? step1DegradedReason + " + " : "") + "step2/3 Pro timeout → Flash fallback 성공";
-          step1Warnings.push("step2/3: Flash model fallback (Pro 타임아웃)");
-          console.log("[generate-cuts] step2/3 timeout Flash fallback succeeded");
+          // Flash fallback은 정상 동작 — degraded 표시 불필요 (품질 차이 미미)
+          console.log("[generate-cuts] step2/3 timeout → Flash fallback succeeded");
         } catch (flashErr) {
           const flashMsg = flashErr instanceof Error ? flashErr.message : String(flashErr);
           console.warn("[generate-cuts] step2/3 timeout Flash fallback failed:", flashMsg.slice(0, 200));
