@@ -838,7 +838,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 - ${cutCount}개 미만의 outlines를 생성하면 실패로 간주한다.
 
 JSON만 출력:
-{"characterSeeds":[...],"outlines":[...]}`;
+{"_narrativeCore":"핵심 주장 ≤30자","_targetEmotions":["emotion1","emotion2"],"characterSeeds":[...],"outlines":[...]}`;
 
   // ── Token budget: 컷 수에 비례하여 maxOutputTokens 산정 ──
   // 경량화된 outline ≈ 350-400 tokens (14개 필드, sceneBeat1/2/3+endHook 제거)
@@ -887,11 +887,15 @@ JSON만 출력:
         const compactEditorial = editorialPlanningBlock
           ? editorialPlanningBlock.split("\n").filter(l => l.startsWith("- ")).map(l => l.replace(/^-\s*/, "").split(":")[0]).slice(0, 3).join(", ")
           : "";
+        // compact retry용 축소 발췌: 앞 400자 + 뒤 200자 (토큰 절약)
+        const compactExcerpt = storyText.length <= 600
+          ? storyText
+          : storyText.slice(0, 400) + "\n…[중략]…\n" + storyText.slice(-200);
         const compactPrompt = `당신은 시나리오 분석가입니다. JSON만 출력하세요.
 ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/해설자 금지. 스크립트가 현대→과거 비교 구조이면 첫 장면은 현대로 시작. 서사 순서 엄수." : "일반 영상."}
 감독: ${directorNameKo}. 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스.${compactEditorial ? `\n편집 기조: ${compactEditorial}` : ""}
 
-시나리오: ${storyExcerpt}
+시나리오: ${compactExcerpt}
 
 먼저: 핵심 주장 1문장 + 핵심 감정 1~2개 추출 → _narrativeCore, _targetEmotions에 기록.
 그 후 각 컷마다 newInformation(이전 컷에 없던 새 정보)을 정의한 후에 시각화.
@@ -902,7 +906,7 @@ outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),narrativeFunc
 ⚠️ 총 런타임 12초 초과면 1시퀀스 금지, 최소 2시퀀스로 분할. 각 시퀀스 ${secPerCut}초.
 ⚠️ 숏폼 리듬 > 감독 스타일: 감독이 롱테이크 성향이어도 반드시 ${cutCount}개 시퀀스를 생성하라. 컷 수를 줄이지 마라.
 
-JSON만: {"characterSeeds":[...],"outlines":[...]}`;
+JSON만: {"_narrativeCore":"≤30자","_targetEmotions":["emotion"],"characterSeeds":[...],"outlines":[...]}`;
 
         result = await streamingGenerate(env, effectiveModel, {
           contents: [{ role: "user", parts: [{ text: compactPrompt }] }],
@@ -1162,7 +1166,9 @@ charRef 사용 시 반드시 포함: skin tone(예: warm beige, deep brown, pale
 charRef에 이미 포함된 경우 그대로 사용. 누락 시 videoPrompt에서 보충 — "a figure" "the character" 등 모호한 표현 금지.
 
 ## CINEMATIC SHOT PROGRESSION
-- SCENE1=WS/LS(공간만, 얼굴CU 금지), 이후 MS→CU→ECU 점진 축소, 중반 LS/WS 삽입, 같은 shot size 2연속 금지
+- 각 컷의 shotType은 Step1에서 서사 기능에 맞게 결정됨 — Step2/3는 이를 존중하고 시각적으로 구현하라
+- SCENE1은 WS/LS(공간 확인) 권장하되, Step1이 다른 shotType을 지정했으면 그것을 따라라
+- 인접 컷 같은 shot size 2연속 금지. 중반에 LS/WS 삽입하여 시각적 호흡 확보
 - 카메라: 반드시 이유 명시. push-in(긴장), dolly(심리변화), pan(발견), slow push-in(관찰), crane-up(해방). 장식용 움직임 금지. Format: MOVEMENT + "(reason: [why])"
 - "static" 단독 사용 금지 → 최소한 "locked-off static, subtle drift" 또는 "slow push-in"으로 대체. 순수 정지 카메라는 의도적 억압 연출일 때만 "locked-off static (reason: oppressive stillness)" 형태로 허용.
 - Reveal/Withhold: 매 장면 새 정보 1개 공개 + 미공개 1개 보류. 순서: 공간→위치→표정→소품→정점→결과
@@ -2199,10 +2205,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                     appearanceKo: String(s.appearanceKo ?? "캐주얼 의상의 젊은 인물").slice(0, 50),
                   }))
                 : [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing", appearanceKo: "캐주얼 의상의 젊은 인물" }];
+              // _narrativeCore / _targetEmotions 추출 (ultra-compact 경로)
+              narrativeCore = typeof parsed._narrativeCore === "string" ? parsed._narrativeCore.slice(0, 60) : undefined;
+              targetEmotions = Array.isArray(parsed._targetEmotions)
+                ? (parsed._targetEmotions as unknown[]).map(e => String(e)).slice(0, 3)
+                : undefined;
               const shotCycleF = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
               outlines = (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => ({
                 cutNumber: Number(o.cutNumber ?? i + 1),
                 sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
+                narrativeFunction: o.narrativeFunction ? String(o.narrativeFunction).slice(0, 80) : undefined,
+                newInformation: o.newInformation ? String(o.newInformation).slice(0, 120) : undefined,
                 emotion: String(o.emotion ?? "neutral"),
                 emotionalDelta: String(o.emotionalDelta ?? "neutral→neutral"),
                 purpose: String(o.purpose ?? "develop"),
@@ -2215,11 +2228,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                 locationCue: String(o.locationCue ?? "location elements"),
                 situationCue: String(o.situationCue ?? "situation evidence"),
                 emotionalAnchor: String(o.emotionalAnchor ?? "emotional point"),
-                // sceneBeat/endHook: cue 기반 자동 합성 (ultra-compact에서는 대부분 생략됨)
                 sceneBeat1: String(o.sceneBeat1 ?? o.locationCue ?? "location establishing"),
                 sceneBeat2: String(o.sceneBeat2 ?? o.situationCue ?? "situation visible"),
                 sceneBeat3: String(o.sceneBeat3 ?? o.emotionalAnchor ?? "emotion revealed"),
                 endHook: String(o.endHook ?? "visual tension"),
+                dialogueText: o.dialogueText ? String(o.dialogueText).slice(0, 200) : undefined,
               }));
               // Jump to post-step1 processing (outlines already set)
             } else {
@@ -2342,6 +2355,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       outlines.push({
         cutNumber: n,
         sceneKo: `장면 ${n}`,
+        narrativeFunction: n === targetCuts ? "resolve narrative" : "develop story",
+        newInformation: `new visual element for scene ${n}`,
         emotion: "neutral",
         emotionalDelta: "neutral→neutral",
         purpose: n === targetCuts ? "resolve" : "develop",
