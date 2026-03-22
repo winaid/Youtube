@@ -290,9 +290,14 @@ export function resolveSegmentPlan(opts: {
     };
   }
 
+  // preferredRange가 전체 시퀀스 범위이면 세그먼트 수로 나눈다
+  const scaledPreferredRange = preferredRange && segmentCount > 1
+    ? { min: Math.max(1, Math.round(preferredRange.min / segmentCount)), max: Math.max(1, Math.round(preferredRange.max / segmentCount)) }
+    : preferredRange;
+
   const segments: SegmentCutBudget[] = segmentDurations.map((dur, i) => {
-    const segRange = preferredRange
-      ? preferredRange
+    const segRange = scaledPreferredRange
+      ? scaledPreferredRange
       : singleSegmentRange(dur);
     const densMin = recommendMinimumCutCount(dur);
     const effectiveMin = Math.max(segRange.min, densMin);
@@ -316,14 +321,15 @@ export function resolveSegmentPlan(opts: {
     };
   });
 
-  const totalTargetCuts = segments.reduce((s, seg) => s + seg.preferredCutTarget, 0);
+  const rawTotalTargetCuts = segments.reduce((s, seg) => s + seg.preferredCutTarget, 0);
+  const totalTargetCuts = Math.min(rawTotalTargetCuts, CUT_COUNT_MAX);
   const currentSeg = segments[Math.min(currentSegmentIndex, segments.length - 1)];
 
   if (isMultiSegment) {
     notes.push(`${segmentCount} segments, ~${currentSeg.preferredCutTarget} cuts for segment ${currentSegmentIndex}`);
   }
-  if (preferredRange) {
-    notes.push(`preferredRange per segment: ${preferredRange.min}~${preferredRange.max}`);
+  if (scaledPreferredRange) {
+    notes.push(`preferredRange per segment: ${scaledPreferredRange.min}~${scaledPreferredRange.max}${preferredRange && segmentCount > 1 ? ` (scaled from total ${preferredRange.min}~${preferredRange.max})` : ""}`);
   }
   notes.push(`persona bias: ${personaBias}`);
 
@@ -335,7 +341,7 @@ export function resolveSegmentPlan(opts: {
     totalTargetCuts,
     currentSegmentTargetCuts: currentSeg.preferredCutTarget,
     totalCutRange,
-    perSegmentCutRange: preferredRange ?? perSegRange,
+    perSegmentCutRange: scaledPreferredRange ?? perSegRange,
     segments,
     planningBasis: preferredRange ? "preferred_range" : "density_policy",
     personaBias,
@@ -383,7 +389,13 @@ export function densifyCuts<T extends { durationSec: number; structureType?: str
 
   if (cuts.length >= minCuts) return cuts;
 
+  // 0-duration 컷 필터: split 불가능하므로 densify 대상에서 제외 방지 (남겨두되 split 우선순위에서 0점)
   let working = cuts.map(c => ({ ...c }));
+  // duration 0 컷이 있으면 경고 (빈 컷은 비디오 생성 실패의 원인)
+  const zeroDurCount = working.filter(c => !c.durationSec || c.durationSec <= 0).length;
+  if (zeroDurCount > 0) {
+    console.warn(`[densifyCuts] ${zeroDurCount} cut(s) with zero/negative duration — cannot split`);
+  }
   let needed = minCuts - working.length;
 
   while (needed > 0) {

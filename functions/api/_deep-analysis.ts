@@ -68,10 +68,11 @@ export interface DeepAnalysisResult {
 // Safe Defaults
 // ═══════════════════════════════════════════════════════════════════
 
-const SAFE_INTENT: StoryIntentAnalysis = { tone: "neutral", pacing: "moderate", genre: "general", emotionalArc: "steady", protagonistFocus: "medium", keyMotifs: [] };
-const SAFE_RISK: GenerationRiskAnalysis = { continuityRisk: "medium", subjectCountRisk: "low", sceneSwitchRisk: "medium", motionComplexityRisk: "low", promptOverloadRisk: "low", visualAmbiguityRisk: "low", mitigationNotes: [] };
-const SAFE_VISUAL: VisualStrategyLite = { visualDensity: "moderate", cameraEnergy: "moderate", realismLevel: 60, stylizationLevel: 40, characterPriority: "medium", environmentPriority: "medium" };
-const SAFE_BRIEF: PromptBrief = { creativeBrief: "", continuityHint: "", shotDiscipline: "", subjectLockHint: "", environmentLockHint: "", avoidList: [] };
+// Deep-frozen safe defaults — 하류 코드가 실수로 mutate하면 TypeError (잠재적 배열 오염 방지)
+const SAFE_INTENT: StoryIntentAnalysis = Object.freeze({ tone: "neutral", pacing: "moderate", genre: "general", emotionalArc: "steady", protagonistFocus: "medium", keyMotifs: Object.freeze([]) as unknown as string[] });
+const SAFE_RISK: GenerationRiskAnalysis = Object.freeze({ continuityRisk: "medium", subjectCountRisk: "low", sceneSwitchRisk: "medium", motionComplexityRisk: "low", promptOverloadRisk: "low", visualAmbiguityRisk: "low", mitigationNotes: Object.freeze([]) as unknown as string[] });
+const SAFE_VISUAL: VisualStrategyLite = Object.freeze({ visualDensity: "moderate", cameraEnergy: "moderate", realismLevel: 60, stylizationLevel: 40, characterPriority: "medium", environmentPriority: "medium" });
+const SAFE_BRIEF: PromptBrief = Object.freeze({ creativeBrief: "", continuityHint: "", shotDiscipline: "", subjectLockHint: "", environmentLockHint: "", avoidList: Object.freeze([]) as unknown as string[] });
 
 // ═══════════════════════════════════════════════════════════════════
 // Story Intent
@@ -275,7 +276,7 @@ function buildPromptBrief(intent: StoryIntentAnalysis, risk: GenerationRiskAnaly
 // ═══════════════════════════════════════════════════════════════════
 
 export function serializePromptBrief(brief: PromptBrief): string {
-  if (!brief.creativeBrief && !brief.continuityHint && !brief.shotDiscipline && brief.avoidList.length === 0) return "";
+  if (!brief.creativeBrief && !brief.continuityHint && !brief.shotDiscipline && !brief.subjectLockHint && !brief.environmentLockHint && brief.avoidList.length === 0) return "";
 
   const lines: string[] = ["## DEEP ANALYSIS BRIEF (이 분석 결과를 컷 설계에 반영하라)"];
   if (brief.creativeBrief) lines.push(`Direction: ${brief.creativeBrief}`);
