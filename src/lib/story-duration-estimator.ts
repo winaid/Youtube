@@ -56,8 +56,8 @@ const WORDS_PER_SECOND_EN = 2.5;
  */
 const VISUAL_MULTIPLIER = 1.15;
 
-/** 최소 project total (너무 짧은 글이라도 최소 30초) */
-const MIN_PROJECT_TOTAL_SEC = 30;
+/** 최소 project total (쇼츠 최소 길이 16초 — VEO 2회 생성 기준) */
+const MIN_PROJECT_TOTAL_SEC = 16;
 
 /** 최대 project total (현실적 상한) */
 const MAX_PROJECT_TOTAL_SEC = 300;
@@ -67,13 +67,14 @@ const MAX_PROJECT_TOTAL_SEC = 300;
  *
  * 변경 이력:
  *   v1: 8초/문장 (장문 중심 가정)
- *   v2: 5초/문장 (한국어 구어체/쇼츠 기준 — 문장이 짧음)
+ *   v2: 5초/문장 (한국어 구어체/쇼츠 기준)
+ *   v3: 3.5초/문장 (쇼츠 대본 실측 — 문장이 매우 짧음)
  *
- * 근거: 한국어 유튜브 대본의 문장은 평균 30~40자 → 나레이션 7~9초.
- *   하지만 구어체 종결('~임', '~음')로 끝나는 짧은 문장이 많아
- *   실질 평균은 4~6초. 5초가 보수적 중앙값.
+ * 근거: 쇼츠 대본은 한 줄에 10~25자 문장이 대부분.
+ *   실측 결과 문장당 나레이션 2.5~4초, 비주얼 포함 3~4초.
+ *   v2의 5초는 과대 추정 → 113초 계산되어야 할 것이 70초로 수정.
  */
-const SEC_PER_SENTENCE = 5;
+const SEC_PER_SENTENCE = 3.5;
 
 // ── 유틸 ────────────────────────────────────────────────────────────────────────
 
@@ -127,7 +128,8 @@ export function estimateProjectDuration(storyText: string): StoryDurationEstimat
   }
   const charBased = narrationSec * VISUAL_MULTIPLIER;
 
-  // 더 큰 값 채택 (under-estimation 방지)
+  // 가중 평균 (글자 기반 70% + 문장 기반 30%) — 한쪽 과대 추정 완화
+  // 글자 기반이 더 정확 (실제 나레이션 시간 반영), 문장 기반은 보조.
   let estimatedTotalSec: number;
   let basis: StoryDurationEstimate["basis"];
 
@@ -135,12 +137,9 @@ export function estimateProjectDuration(storyText: string): StoryDurationEstimat
     // 너무 짧은 텍스트 — 최소값 사용
     estimatedTotalSec = MIN_PROJECT_TOTAL_SEC;
     basis = "minimum";
-  } else if (sentenceBased >= charBased) {
-    estimatedTotalSec = sentenceBased;
-    basis = "sentence_count";
   } else {
-    estimatedTotalSec = charBased;
-    basis = "char_length";
+    estimatedTotalSec = Math.round(charBased * 0.7 + sentenceBased * 0.3);
+    basis = charBased >= sentenceBased ? "char_length" : "sentence_count";
   }
 
   // 클램프
