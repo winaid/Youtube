@@ -477,9 +477,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (videoMode === "extend" && sourceVideo) {
         // ── VEO Extension (Cut 2+) ────────────────────────────────────
         // extendPromptJson이 있으면 구조화된 렌더링 사용 (directorStyleHint, behavioralShift 등 보존)
-        const extendPromptText = req.extendPromptJson
+        let extendPromptText = req.extendPromptJson
           ? renderExtendPromptFromJson(req.extendPromptJson)
           : rendered.timestampPrompt;
+        // extend 프롬프트에도 동일한 정화 파이프라인 적용 (내부 태그 제거, 중복 제거, VEO 텍스트 정리)
+        extendPromptText = stripTextForVeo(stripInternalTags(deduplicatePromptClauses(extendPromptText)));
         console.log("[VEO] EXTEND mode", {
           sourceVideoUri: sourceVideo.slice(0, 80),
           model: modelUsed,
