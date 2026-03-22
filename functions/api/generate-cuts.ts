@@ -169,7 +169,10 @@ function buildDirectorEngine(
   const tech    = directorTechniques ?? {};
 
   // 스톱모션 전용 확장: 스타일이 "스톱모션" 계열이면 추가 제약
-  const isStopMotion = animationMode === "스톱모션" || animationMode === "클레이";
+  const isStopMotion = animationMode === "스톱모션" || animationMode === "클레이"
+    || animationMode === "claymation" || animationMode === "felt-craft"
+    || animationMode === "wooden-puppet" || animationMode === "paper-puppet"
+    || animationMode === "miniature-diorama" || animationMode === "paper-collage";
   const stopMotionRules = isStopMotion ? `
 ### Stop-Motion Aesthetic Rules (MANDATORY — prevents generic puppet look)
 - Characters MUST have elongated, fragile, or theatrically exaggerated proportions — NOT cute/toy-like
@@ -182,7 +185,9 @@ function buildDirectorEngine(
 - BANNED: generic puppet animation, plastic toy look, flat cute style, meaningless gothic aesthetic without emotional core` : "";
 
   // 하이브리드 전용 규칙: 배경/캐릭터 레이어 분리 강제 + anti-collapse
-  const isHybrid = animationMode === "하이브리드";
+  const isHybrid = animationMode === "하이브리드"
+    || animationMode === "2d-3d-hybrid" || animationMode === "mixed-media-collage"
+    || animationMode === "surreal-composite";
   const hybridRules = isHybrid ? `
 ### Hybrid Composite Aesthetic Rules (MANDATORY — prevents full-frame animation collapse)
 - BACKGROUND LAYER: photorealistic live-action cinematic environment — real physical textures, volumetric depth, physical set lighting. Background MUST NOT become cel-shaded, animated, or illustrated.
