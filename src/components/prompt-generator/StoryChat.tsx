@@ -47,6 +47,17 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
         borderColor: "#8b5cf660",
         bgGradient: "linear-gradient(135deg, #8b5cf620, #3b82f610)",
       }
+    : personaId === "short-film"
+    ? {
+        headerTitle: "단편영화 시나리오",
+        headerDesc: "감독 스타일 AI 영상에 최적화된 1~2분 드라마 시나리오를 생성합니다",
+        placeholder: "예: 죽은 아내의 편지가 1년 뒤에 도착하는 이야기, 매일 같은 꿈을 꾸는 남자...",
+        helperText: "비주얼 중심, 대사 최소화. 생성된 시나리오를 바로 영상 제작에 사용할 수 있습니다",
+        emptyChat: "아래 시나리오 아이디어를 선택하거나 직접 입력하세요",
+        headerColor: "#dc2626",
+        borderColor: "#ef444460",
+        bgGradient: "linear-gradient(135deg, #ef444420, #f59e0b10)",
+      }
     : {
         headerTitle: "시나리오 AI 생성",
         headerDesc: "역사 마케팅 사례 발굴 또는 팩트 기반 대체역사 쇼츠를 생성합니다",
