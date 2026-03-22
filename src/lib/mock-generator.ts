@@ -7,6 +7,7 @@ import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconc
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import { distributeRhythm } from "@/lib/rhythm-distribution";
 import type { PacingMode } from "@/lib/rhythm-distribution";
+import { buildMultiChainPlan, SINGLE_CHAIN_MAX_SEC } from "@/lib/multi-chain-orchestrator";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -189,6 +190,71 @@ async function fetchGeminiCuts(
   }
 }
 
+/**
+ * 멀티 체인 분할 호출: 체인별로 generate-cuts를 순차 호출하고 결과를 합침.
+ * Gemini 토큰 한도 때문에 한 번에 75+컷을 생성할 수 없으므로,
+ * 체인 단위(~20컷)로 나눠서 호출한다.
+ */
+async function fetchGeminiCutsInChains(
+  input: PromptInput,
+  director: DirectorPersona,
+  directorPersonaText: string,
+  plan: { chains: Array<{ cutCount: number; targetDurationSec: number; chainIndex: number }> },
+  cutDuration: number,
+): Promise<Awaited<ReturnType<typeof fetchGeminiCuts>>> {
+  const allCuts: Cut[] = [];
+  let allCharacterSeeds: CharacterSeed[] = [];
+  let globalCutOffset = 0;
+
+  console.info(`[multi-chain] 체인별 배치 생성 시작: ${plan.chains.length}체인`);
+
+  for (const chain of plan.chains) {
+    console.info(`[multi-chain] 체인 ${chain.chainIndex + 1}/${plan.chains.length}: ${chain.cutCount}컷, ${chain.targetDurationSec}초`);
+
+    try {
+      const chainResult = await fetchGeminiCuts(
+        input,
+        director,
+        directorPersonaText,
+        chain.cutCount,
+        cutDuration,
+        chain.targetDurationSec,
+      );
+
+      // cutNumber를 글로벌 오프셋으로 조정
+      const adjustedCuts = chainResult.cuts.map((cut, i) => ({
+        ...cut,
+        cutNumber: globalCutOffset + i + 1,
+      }));
+
+      allCuts.push(...adjustedCuts);
+      if (chain.chainIndex === 0 && chainResult.characterSeeds.length > 0) {
+        allCharacterSeeds = chainResult.characterSeeds;
+      }
+
+      globalCutOffset += chainResult.cuts.length;
+    } catch (error) {
+      console.error(`[multi-chain] 체인 ${chain.chainIndex + 1} 실패:`, error);
+      // 실패한 체인은 fallback으로 채움
+      const fallback = generateFallbackCuts(input, director, chain.cutCount, cutDuration);
+      const adjustedCuts = fallback.cuts.map((cut, i) => ({
+        ...cut,
+        cutNumber: globalCutOffset + i + 1,
+      }));
+      allCuts.push(...adjustedCuts);
+      globalCutOffset += fallback.cuts.length;
+      if (allCharacterSeeds.length === 0) allCharacterSeeds = fallback.characterSeeds;
+    }
+  }
+
+  console.info(`[multi-chain] 완료: 총 ${allCuts.length}컷 생성`);
+
+  return {
+    characterSeeds: allCharacterSeeds,
+    cuts: allCuts,
+  };
+}
+
 function generateFallbackCuts(
   input: PromptInput,
   director: DirectorPersona,
@@ -323,21 +389,30 @@ export async function generatePrompt(
   let directorPersonaText: string;
   let cutsResult: Awaited<ReturnType<typeof fetchGeminiCuts>>;
 
+  // ── 멀티 체인 분할: 141초 초과 시 체인별 배치 호출 ──
+  // Gemini 토큰 한도 때문에 한 번에 75컷을 생성할 수 없음.
+  // 체인별로 나눠서 호출하고 결과를 합침.
+  const multiChainPlan = effectiveDuration > SINGLE_CHAIN_MAX_SEC
+    ? buildMultiChainPlan(effectiveDuration)
+    : null;
+
   if (!director) {
     directorPersonaText = "";
     cutsResult = { ...generateFallbackCuts(input, { id: "", name: "Unknown", nameKo: "알 수 없음", region: "한국", style: "", description: "", persona: "" }, cutCount, cutDuration), usedFallback: true, fallbackReason: "감독 정보 없음" };
   } else if (needsPersonaFetch) {
-    // 커스텀 감독: persona + cuts 병렬 호출
-    const [personaResult, cutsParallel] = await Promise.all([
-      fetchGeminiPersona(director, input.storyText, input.animationMode),
-      fetchGeminiCuts(input, director, existingPersona, cutCount, cutDuration, effectiveDuration),
-    ]);
-    directorPersonaText = personaResult;
-    cutsResult = cutsParallel;
+    directorPersonaText = await fetchGeminiPersona(director, input.storyText, input.animationMode);
+    if (multiChainPlan && multiChainPlan.isMultiChain) {
+      cutsResult = await fetchGeminiCutsInChains(input, director, directorPersonaText, multiChainPlan, cutDuration);
+    } else {
+      cutsResult = await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration);
+    }
   } else {
-    // 내장 감독: persona 이미 있음 → cuts만 호출
     directorPersonaText = existingPersona;
-    cutsResult = await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration);
+    if (multiChainPlan && multiChainPlan.isMultiChain) {
+      cutsResult = await fetchGeminiCutsInChains(input, director, directorPersonaText, multiChainPlan, cutDuration);
+    } else {
+      cutsResult = await fetchGeminiCuts(input, director, directorPersonaText, cutCount, cutDuration, effectiveDuration);
+    }
   }
   const { characterSeeds, cuts: rawCuts, usedFallback, fallbackReason, fallbackCause, degraded, degradedReason, sequencePlan, sequenceValidation, generationMeta: serverMeta } = cutsResult;
 
