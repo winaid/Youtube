@@ -378,8 +378,10 @@ export async function pollVideoTask(
       return makeTimeoutResult(attempt, startTime, "폴링이 취소되었습니다");
     }
 
-    // wait before polling (skip first attempt)
-    if (attempt > 0) {
+    // wait before polling (첫 시도도 3초 대기 — VEO가 시작할 시간 확보, 즉시 폴링 낭비 방지)
+    if (attempt === 0) {
+      await sleep(3000);
+    } else if (attempt > 0) {
       const waitMs = consecutiveErrors > 0
         ? POLL_ERROR_BACKOFF[Math.min(consecutiveErrors - 1, POLL_ERROR_BACKOFF.length - 1)]
         : useAdaptive
@@ -440,8 +442,16 @@ export async function pollVideoTask(
       data = await res.json() as RawCheckVideoResponse;
     } catch {
       consecutiveErrors++;
-      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        return makeFailedResult(attempt, startTime, "서버 응답 파싱 실패");
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS + 2) {
+        // JSON parse 연속 실패: VEO 작업이 아직 진행 중일 수 있으므로 recoverable 반환
+        // (hard fail 대신 — 사용자가 수동 재확인 가능, 새 VEO 호출 방지)
+        return {
+          status: "timeout_recoverable" as const,
+          engine: "veo" as const,
+          needsUpload: false,
+          completedAt: Date.now(),
+          pollMeta: { totalAttempts: attempt, totalDurationMs: Date.now() - startTime },
+        };
       }
       continue;
     }

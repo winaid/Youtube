@@ -266,8 +266,17 @@ export async function veoExtend(
     sourceVideoUri: req.sourceVideoUri.slice(0, 80),
   });
 
+  // empty prompt 방지 — 빈 프롬프트로 API 호출하면 $0.15+ 낭비
+  if (!req.prompt || req.prompt.trim().length < 10) {
+    throw new VeoApiError(
+      `VEO extend: prompt too short (${req.prompt?.length ?? 0} chars) — refusing to waste API call`,
+      "invalid_prompt",
+      false,
+    );
+  }
+
   const instance: Record<string, unknown> = {
-    prompt: req.prompt || "continue the scene naturally",
+    prompt: req.prompt,
     video: {
       uri: req.sourceVideoUri,
     },

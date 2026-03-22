@@ -380,6 +380,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── 한글/인용문 최종 제거 (VEO가 자막으로 렌더링하는 것 방지) ──────────
     finalPromptForProvider = stripTextForVeo(finalPromptForProvider);
 
+    // ── strip 후 프롬프트 길이 검증 (빈 프롬프트로 VEO API 낭비 방지) ───────
+    if (!finalPromptForProvider || finalPromptForProvider.trim().length < 20) {
+      console.error("[generate-video] Prompt too short after sanitization:", finalPromptForProvider?.length, "chars");
+      return Response.json({
+        error: "Prompt too short after sanitization — cannot generate video",
+        promptLength: finalPromptForProvider?.trim().length ?? 0,
+        usedPath,
+      }, { status: 422 });
+    }
+
     // ── Continuity Mode 주입 ─────────────────────────────────────────────────
     if (req.continuityMeta) {
       const cm = req.continuityMeta;
@@ -472,6 +482,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let operationName: string;
     let modeUsed: "generate" | "extend";
     let sentDuration: number = 8;
+    let extendDowngradedToGenerate = false;
 
     try {
       if (videoMode === "extend" && sourceVideo) {
@@ -507,6 +518,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // ── VEO Generate (Cut 1 또는 extend 불가 시) ─────────────────
         if (videoMode === "extend" && !sourceVideo) {
           console.warn("[VEO] extend 요청이지만 sourceVideo 없음 → generate로 fallback");
+          extendDowngradedToGenerate = true;
         }
 
         console.log("[VEO] GENERATE mode", {
@@ -571,11 +583,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       modelUsed,
       sourceVideo: sourceVideo || undefined,
       status: "RUNNING",
+      // extend→generate downgrade를 클라이언트에 명시 (API 낭비 방지 — 클라이언트가 sourceVideo 수정 가능)
+      ...(extendDowngradedToGenerate ? { warning: "extend requested but sourceVideo missing — fell back to generate" } : {}),
       durationMeta: {
         requestedSecondsPerScene: 8,
         normalizedSecondsPerScene: 8,
         sentSecondsPerScene: sentDuration,
-        warnings: [],
+        warnings: extendDowngradedToGenerate ? ["extend_downgraded_to_generate"] : [],
       },
     });
   } catch (error) {

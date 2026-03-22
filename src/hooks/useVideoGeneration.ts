@@ -1542,7 +1542,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         ? buildMultiChainPlan(cutsRef.current.reduce((sum, c) => sum + (c.durationSec ?? 8), 0))
         : null;
       const isChainStart = multiChainPlan?.isMultiChain && isChainFirstCut(multiChainPlan, cutNumber);
-      const videoMode = (cutNumber === 1 || isChainStart) ? "generate" : (cfg.videoMode ?? "extend");
+      let videoMode: "generate" | "extend" = (cutNumber === 1 || isChainStart) ? "generate" : (cfg.videoMode ?? "extend") as "generate" | "extend";
 
       console.log(`[CUT ${cutNumber}] videoMode 결정`, {
         cutNumber,
@@ -1563,7 +1563,9 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       let continuityDegradation: string | undefined;
       if (videoMode === "extend" && cutNumber > 1 && !sourceVideo) {
         continuityDegradation = "sourceVideo_missing";
-        console.warn(`[CUT ${cutNumber}] ⚠️ CONTINUITY DEGRADED: extend 모드이나 sourceVideo 없음 (이전 컷 rawVideoUri 부재). text-to-video fallback 예상.`, {
+        // 클라이언트에서 바로 generate로 전환 (서버까지 extend 보내고 fallback 받는 왕복 낭비 방지)
+        videoMode = "generate";
+        console.warn(`[CUT ${cutNumber}] ⚠️ CONTINUITY DEGRADED: extend→generate 클라이언트 전환 (sourceVideo 없음)`, {
           prevClipStatus: prevClip?.status,
           prevClipRawVideoUri: prevClip?.rawVideoUri ? "있음" : "없음",
           prevClipCanonicalUri: prevClip?.canonicalVideoUri ? "있음" : "없음",
