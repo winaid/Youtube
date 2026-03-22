@@ -691,12 +691,15 @@ async function step1Outlines(
 ✅ 역사적 실존 인물 또는 역할 기반 캐릭터 (왕, 장군, 의사, 학자, 상인, 군중, 병사 등)
 ✅ 내레이션이 언급하는 인물의 행동/상황을 시각화하는 캐릭터
 ✅ 대체역사 가정의 경우: 실제 역사적 맥락의 인물을 시각화
+✅ 스크립트가 현대↔과거를 비교하는 경우: 현대 장면에 등장하는 역할 캐릭터도 허용 (예: 현대 의사, 인스타 유저, 블로거 등)
 ❌ 강사, 발표자, 해설자, 내레이터, 진행자
 
 ### 장면 설계 방향
 - 내레이션 텍스트의 팩트를 시각적 행동으로 변환
 - 대화극이 아닌, 행동과 상황으로 정보를 보여주기
 - 교훈적 메시지 또는 대체역사 가정은 상황 아이러니로 드러내기
+- ⚠️ 서사 순서 엄수: 스크립트가 "현대 → 과거" 또는 "과거 → 현대"로 시작하면, 첫 장면은 스크립트의 도입부 시대를 그대로 따라야 한다. 역사 콘텐츠라고 무조건 과거부터 시작하지 마라.
+- 현대↔과거 비교 구조의 스크립트에서는 시대 전환 장면이 반드시 포함되어야 한다
 ` : `
 ## 콘텐츠 형식: 일반 영상 장면
 
@@ -712,7 +715,7 @@ async function step1Outlines(
   const storyExcerpt = storyText.slice(0, 800);
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
-${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지. 역사적 인물/역할 기반 캐릭터만." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
+${contentMode === "dramatized_reenactment" ? "콘텐츠: 역사/대체역사 쇼츠 내레이션 시각화. 강사/해설자 캐릭터 생성 금지.\n⚠️ 스크립트가 현대→과거 비교 구조이면 첫 장면은 반드시 현대 장면으로 시작하라. 스크립트의 서사 순서를 그대로 따르라." : "콘텐츠: 일반 영상. 강사/해설자 금지."}
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
@@ -877,7 +880,7 @@ JSON만 출력:
           ? editorialPlanningBlock.split("\n").filter(l => l.startsWith("- ")).map(l => l.replace(/^-\s*/, "").split(":")[0]).slice(0, 3).join(", ")
           : "";
         const compactPrompt = `당신은 시나리오 분석가입니다. JSON만 출력하세요.
-${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/해설자 금지." : "일반 영상."}
+${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/해설자 금지. 스크립트가 현대→과거 비교 구조이면 첫 장면은 현대로 시작. 서사 순서 엄수." : "일반 영상."}
 감독: ${directorNameKo}. 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스.${compactEditorial ? `\n편집 기조: ${compactEditorial}` : ""}
 
 시나리오: ${storyExcerpt}
