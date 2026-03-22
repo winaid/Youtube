@@ -264,6 +264,10 @@ const shortformDurations: { value: Duration; label: string; band: string }[] = [
   { value: 80, label: "1분 20초", band: "long-form" },
   { value: 90, label: "1분 30초", band: "long-form" },
   { value: 120, label: "2분", band: "long-form" },
+  { value: 141, label: "2분 21초", band: "long-form" },
+  { value: 300, label: "5분", band: "multi-chain" },
+  { value: 420, label: "7분", band: "multi-chain" },
+  { value: 600, label: "10분", band: "multi-chain" },
 ];
 
 const CUSTOM_DIRECTORS_KEY = "veo-custom-directors";
@@ -2186,7 +2190,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                   className="h-6 px-2 rounded text-[10px] font-medium transition-all"
                   style={
                     duration === d.value
-                      ? { background: d.band === "critical" ? "#ef4444" : d.band === "long-form" ? "#f59e0b" : d.band === "mid-form" ? "#10b981" : "#787fff", color: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
+                      ? { background: d.band === "critical" ? "#ef4444" : d.band === "multi-chain" ? "#8b5cf6" : d.band === "long-form" ? "#f59e0b" : d.band === "mid-form" ? "#10b981" : "#787fff", color: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
                       : { background: "white", color: "#94a3b8", border: "1px solid #e2e8f0" }
                   }
                   onClick={() => setDuration(d.value)}

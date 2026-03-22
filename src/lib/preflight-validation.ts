@@ -102,8 +102,8 @@ export interface PreflightInput {
 //   121초+: 생성 불가
 // ═══════════════════════════════════════════════════════════════════
 
-/** 총 길이 상한 — VEO extend 기준 최대 ~120초 (8s initial + ~16 extends × 7s) */
-export const SEQUENCE_MAX_TOTAL_DURATION = 120;
+/** 총 길이 상한 — 멀티 체인으로 10분까지 지원. 단일 체인 최대 ~141초. */
+export const SEQUENCE_MAX_TOTAL_DURATION = 600;
 
 export interface SequenceBandRule {
   band: "micro" | "short" | "shortform-critical" | "mid-form" | "long-form-shorts" | "over-limit";
@@ -126,9 +126,9 @@ export function getSequenceBandRule(totalDurationSec: number): SequenceBandRule 
     return { band: "shortform-critical", minCuts: 4, maxCuts: 6, maxSecPerCut: 4, supported: true };
   if (totalDurationSec <= 60)
     return { band: "mid-form", minCuts: Math.ceil(totalDurationSec / 8), maxCuts: Math.ceil(totalDurationSec / 6), maxSecPerCut: 8, supported: true };
-  if (totalDurationSec <= 120)
+  if (totalDurationSec <= 600)
     return { band: "long-form-shorts", minCuts: Math.ceil(totalDurationSec / 8), maxCuts: Math.ceil(totalDurationSec / 6), maxSecPerCut: 8, supported: true };
-  // 121초+: VEO extend 상한 초과
+  // 601초+: 10분 초과
   return { band: "over-limit", minCuts: 0, maxCuts: 0, maxSecPerCut: 0, supported: false };
 }
 

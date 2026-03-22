@@ -30,10 +30,9 @@ export const VEO_SEGMENT_CAP = 8;
 
 /**
  * Maximum allowed cut count.
- * 데모 안정화: 30 → 10. generate-cuts 토큰 초과 방지 + 시연 안정성 확보.
- * 쇼츠~2분 영상 기준 10컷이면 충분. 장편 지원은 추후 복원.
+ * 멀티 체인 지원: 10분(600초) = ~85컷. generate-cuts는 체인별 배치 호출.
  */
-export const CUT_COUNT_MAX = 20;
+export const CUT_COUNT_MAX = 90;
 
 // ═══════════════════════════════════════════════════════════════════
 // Duration → Recommended Cut Count Range Presets

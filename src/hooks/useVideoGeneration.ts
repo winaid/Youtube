@@ -17,6 +17,13 @@ import {
 } from "@/lib/scene-extension-readiness";
 import { DURATION_FALLBACK, safeDuration } from "@/lib/duration-reconciliation";
 import {
+  buildMultiChainPlan,
+  isChainFirstCut,
+  isChainLastCut,
+  getChainForCut,
+  type MultiChainPlan,
+} from "@/lib/multi-chain-orchestrator";
+import {
   Cut,
   VideoClip,
   VideoGenStatus,
@@ -1520,13 +1527,20 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         hasImage: !!firstFrameBase64 || !!(storyboardImages?.[cutNumber]),
       });
 
-      // CUT 1은 이전 영상/프레임이 존재하지 않으므로 extend 절대 금지
-      const videoMode = cutNumber === 1 ? "generate" : (cfg.videoMode ?? "extend");
+      // ── 멀티 체인 인식: 체인 첫 컷은 extend 대신 generate (image-to-video) ──
+      // CUT 1 또는 체인 첫 컷 → generate, 그 외 → extend
+      const multiChainPlan = cutsRef.current.length > 0
+        ? buildMultiChainPlan(cutsRef.current.reduce((sum, c) => sum + (c.durationSec ?? 8), 0))
+        : null;
+      const isChainStart = multiChainPlan?.isMultiChain && isChainFirstCut(multiChainPlan, cutNumber);
+      const videoMode = (cutNumber === 1 || isChainStart) ? "generate" : (cfg.videoMode ?? "extend");
 
       console.log(`[CUT ${cutNumber}] videoMode 결정`, {
         cutNumber,
         selectedMode: videoMode,
-        reason: cutNumber === 1 ? "cut1_force_generate" : "normal",
+        reason: cutNumber === 1 ? "cut1_force_generate" : isChainStart ? "chain_first_cut_bridge" : "normal",
+        isMultiChain: multiChainPlan?.isMultiChain ?? false,
+        chainIndex: multiChainPlan ? getChainForCut(multiChainPlan, cutNumber)?.chainIndex : null,
         durationSec: safeDuration(cfg.durationSeconds),
         engine,
       });

@@ -3,7 +3,7 @@ export type Region = "한국" | "일본" | "중국" | "유럽" | "미국" | "인
 /** 영상 스타일 ID — style-catalog.ts의 StyleEntry.id 참조 (string으로 확장) */
 export type AnimationMode = string;
 export type StyleFamily = "all" | "live_action" | "animation_2d" | "animation_3d" | "painting" | "stop_motion" | "retro_game" | "experimental";
-export type Duration = 10 | 12 | 13 | 15 | 30 | 60 | 80 | 90 | 120 | 180 | 240 | 300 | "auto";
+export type Duration = 10 | 12 | 13 | 15 | 30 | 60 | 80 | 90 | 120 | 141 | 180 | 240 | 300 | 420 | 600 | "auto";
 export type AspectRatio = "9:16" | "16:9";
 /** 영상 해상도 (VEO 기준) */
 export type VideoResolution = "720p" | "1080p" | "4k";

@@ -145,8 +145,8 @@ describe("getSequenceBandRule", () => {
     expect(rule.minCuts).toBe(10);
   });
 
-  it("121초 → over-limit (VEO 상한 초과)", () => {
-    const rule = getSequenceBandRule(121);
+  it("601초 → over-limit (10분 초과)", () => {
+    const rule = getSequenceBandRule(601);
     expect(rule.band).toBe("over-limit");
     expect(rule.supported).toBe(false);
   });
@@ -322,7 +322,9 @@ describe("프론트/서버 정책 일치", () => {
     { dur: 60, band: "mid-form", minCuts: 8, supported: true },
     { dur: 80, band: "long-form-shorts", minCuts: 10, supported: true },
     { dur: 120, band: "long-form-shorts", minCuts: 15, supported: true },
-    { dur: 121, band: "over-limit", minCuts: 0, supported: false },
+    { dur: 300, band: "long-form-shorts", minCuts: 38, supported: true },
+    { dur: 600, band: "long-form-shorts", minCuts: 75, supported: true },
+    { dur: 601, band: "over-limit", minCuts: 0, supported: false },
   ];
 
   for (const { dur, band, minCuts, supported } of expectedRules) {
