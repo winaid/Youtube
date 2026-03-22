@@ -9,7 +9,7 @@
  *   Step2: maxTokens=8192~16384  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192~16384  (컷 N/2+1~N 상세) — Step2와 병렬
  */
-import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, parseFirstJsonObject, parseFirstJsonArray } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, parseFirstJsonObject, parseFirstJsonArray, repairTruncatedJson } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
@@ -138,6 +138,8 @@ const STEP1_RETRY_MAX_TOKENS = 65536;
 const STEP1_ULTRA_MAX_TOKENS = 32768;
 /** Step1 per-outline 토큰 추정 (14개 필드 경량 스키마) */
 const STEP1_TOKENS_PER_OUTLINE = 400;
+/** step1 단일 호출 최대 컷 수 — 이 이상은 multi-chain으로 분할 필요 */
+const STEP1_SINGLE_CALL_MAX_CUTS = 12;
 /** Step1 초기 요청 타임아웃 (ms) — 55초로 단축하여 빠른 fallback 전환 */
 const STEP1_TIMEOUT_MS = 55_000;
 /** Ultra-compact retry 타임아웃 (ms) — 25초로 단축하여 빠른 응답 */
@@ -597,7 +599,11 @@ function inferMultiShotRole(index: number, total: number): ShotRoleServer {
 function safeParseObj(text: string): Record<string, unknown> | null {
   const t = text.trim();
   try { return JSON.parse(t) as Record<string, unknown>; } catch { /* */ }
-  return parseFirstJsonObject(t);
+  // 완전한 JSON 객체 추출 시도
+  const obj = parseFirstJsonObject(t);
+  if (obj) return obj;
+  // 잘린 JSON 복구 시도 (truncated output에서 outlines 배열 일부 살리기)
+  return repairTruncatedJson(t);
 }
 
 function safeParseArr(text: string): unknown[] | null {
@@ -649,6 +655,14 @@ async function step1Outlines(
   deepAnalysisBriefBlock?: string,
   modelOverride?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[] }> {
+
+  // ── 단일 호출 cutCount 상한: STEP1_SINGLE_CALL_MAX_CUTS ──
+  // Gemini 출력 토큰 한도 내에서 안정적으로 JSON 완성 가능한 범위.
+  // 이 이상은 multi-chain에서 분할 호출해야 함.
+  if (cutCount > STEP1_SINGLE_CALL_MAX_CUTS) {
+    console.warn(`[cuts:step1] cutCount ${cutCount} exceeds single-call max ${STEP1_SINGLE_CALL_MAX_CUTS} — clamping`);
+    cutCount = STEP1_SINGLE_CALL_MAX_CUTS;
+  }
 
   // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
   const shotGuide = cutCount <= 5
@@ -819,8 +833,8 @@ JSON만 출력:
   if (result.truncated && result.text) {
     console.warn(`[cuts:step1] TRUNCATED — attempting partial recovery. partialLen=${result.text.length}`);
     const partial = safeParseObj(result.text);
-    if (partial && Array.isArray(partial.outlines) && (partial.outlines as unknown[]).length >= Math.floor(cutCount * 0.7)) {
-      // 부분 복구 성공 — outlines가 70% 이상 있으면 downstream에서 채움
+    if (partial && Array.isArray(partial.outlines) && (partial.outlines as unknown[]).length >= Math.floor(cutCount * 0.5)) {
+      // 부분 복구 성공 — outlines가 50% 이상 있으면 downstream에서 채움
       parseMode = "partial_recovery";
       console.info(`[cuts:step1] partial recovery OK. characterSeeds=${Array.isArray(partial.characterSeeds) ? (partial.characterSeeds as unknown[]).length : 0} outlines=${(partial.outlines as unknown[]).length}/${cutCount} parseMode=${parseMode}`);
     } else {
