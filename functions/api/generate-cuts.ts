@@ -454,21 +454,30 @@ const REGION_FLAVOR_MAP: Record<string, string> = {
  * 기준: 역사 신호가 하나라도 있으면 극영화 재연 모드.
  */
 function detectContentMode(storyText: string): "dramatized_reenactment" | "general" {
-  const historicalSignals = [
+  // 강한 역사 신호: 이것만으로 dramatized_reenactment 확정
+  const strongHistoricalSignals = [
     /역사[적]?|역사[적]?\s*인물|역사[적]?\s*사건/,
     /\d{3,4}년[대]?|세기|왕조|시대/,
-    /실제\s*(사례|인물|사건)|실화|재연/,
-    /마케팅\s*(사례|역사|전략)|광고\s*역사/,
-    /의사|치과|병원|의원|클리닉|surgeon|dentist/i,
-    /Painless|Parker|Blackwell|Joshi|Kellogg|patent medicine/i,
-    // 대체역사 / 만약에 역사 감지
-    /만약[에]?\s|대체\s*역사|가정[형]?\s*역사|if\s.*had\s/i,
+    /실제\s*(인물|사건)|실화|재연/,
+    /대체\s*역사|가정[형]?\s*역사/,
     /제국|왕조|멸망|전쟁|혁명|독립|통일|분단|식민/,
     /로마|몽골|나폴레옹|오스만|조선|고구려|메이지|냉전/,
+    /Painless|Parker|Blackwell|Joshi|Kellogg|patent medicine/i,
   ];
-  return historicalSignals.some(r => r.test(storyText))
-    ? "dramatized_reenactment"
-    : "general";
+  if (strongHistoricalSignals.some(r => r.test(storyText))) return "dramatized_reenactment";
+
+  // 약한 신호: 2개 이상 조합될 때만 dramatized_reenactment
+  // (단독으로는 현대 콘텐츠일 수 있음: "병원 마케팅", "의사 브이로그" 등)
+  const weakSignals = [
+    /의사|치과|병원|의원|클리닉|surgeon|dentist/i,
+    /마케팅\s*(사례|역사|전략)|광고\s*역사/,
+    /실제\s*사례/,
+    /만약[에]?\s|if\s.*had\s/i,
+  ];
+  const weakCount = weakSignals.filter(r => r.test(storyText)).length;
+  if (weakCount >= 2) return "dramatized_reenactment";
+
+  return "general";
 }
 
 // ─── 내부 타입 ────────────────────────────────────────────────────────────────
@@ -666,12 +675,10 @@ async function step1Outlines(
     cutCount = STEP1_SINGLE_CALL_MAX_CUTS;
   }
 
-  // 영화적 샷 진행 — 첫 장면은 반드시 공간/분위기 설정 (WS 또는 LS), 이후 점진적 클로즈업
-  const shotGuide = cutCount <= 5
-    ? "SCENE1=WS(establishing:open-space+atmosphere) → SCENE2=MS(approach:who-is-here) → SCENE3=CU(focus:emotional-peak) → SCENE4=OTS(reaction:other-pov) → SCENE5=MCU(intimate-close)"
-    : cutCount <= 8
-      ? "SCENE1=WS(establishing) → SCENE2=MS(approach) → SCENE3=CU(focus) → SCENE4=OTS(reaction) → SCENE5=MCU(close) → SCENE6=ECU(extreme-detail) → SCENE7=LS(breathing-room:contrast) → SCENE8=CU(final-focus)"
-      : "SCENE1=WS(establishing) → SCENE2=MS(approach) → SCENE3=CU(focus) → SCENE4=OTS(reaction) → SCENE5=MCU(close) → SCENE6=ECU(extreme-detail) → SCENE7=LS(contrast:breathe) → SCENE8=POV(subjective) → SCENE9=CU(reveal) → SCENE10=MS(resolution)";
+  // 영화적 샷 가이드 — 서사 기능에 따라 샷 타입을 선택하도록 유도 (고정 순서 아님)
+  const shotGuide = `서사 기능에 맞는 샷 타입 선택 (아래는 참고용 매핑이지, 순서 강제가 아님):
+  배경설정→WS/LS | 문제제기→MS/CU | 원인제시→MCU/OTS | 변화발생→MS↔CU대비 | 갈등→CU/ECU | 결과→WS/LS(변화된 공간) | 반전→POV/ECU | 결론→WS(정리)
+  ⚠️ 인접 컷 동일 샷 타입 금지. SCENE1은 WS/LS(establishing) 권장하되 서사상 이유가 있으면 예외 허용`;
 
   // 콘텐츠 모드별 형식 규칙 블록
   const formatRules = contentMode === "dramatized_reenactment" ? `
@@ -711,12 +718,16 @@ async function step1Outlines(
   // ── Step1 프롬프트: 경량 아웃라인 전용 ────────────────────────────────────
   // 목적: characterSeeds + outlines JSON만 빠르게 생성
   // 무거운 규칙(SCENE_TERM_PRECISION, 감정→행동 상세 예시)은 step2/3에서 적용
-  // storyText는 800자로 제한 (토큰 예산 절약)
-  const storyExcerpt = storyText.slice(0, 800);
+  // storyText: 서사 분석에 도입부+결론부 모두 필요하므로, 1200자 이하는 전체 사용.
+  // 초과 시 앞 700자 + "…[중략]…" + 뒤 400자 (결론/핵심 주장이 뒷부분에 있음)
+  const STORY_LIMIT = 1200;
+  const storyExcerpt = storyText.length <= STORY_LIMIT
+    ? storyText
+    : storyText.slice(0, 700) + "\n…[중략]…\n" + storyText.slice(-400);
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 ${formatRules}
-${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
+${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${characterPersonaBlock ? characterPersonaBlock.slice(0, 400) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
 ## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
@@ -766,6 +777,10 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ed
 ${storyExcerpt}
 ${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}${continuityBlock ? `\n${continuityBlock}\n` : ""}${deepAnalysisBriefBlock ? `\n${deepAnalysisBriefBlock}\n` : ""}
 ## 출력 JSON 스키마
+⚠️ JSON 최상단에 아래 2개 필드를 먼저 출력 (5단계 분석의 1~2단계 결과):
+
+_narrativeCore: 시나리오 핵심 주장 1문장 (한국어 ≤30자) — 5단계 중 1단계 결과
+_targetEmotions: 시청자가 받아야 할 핵심 감정 (영어 키워드 1~2개, 예: ["awe","sorrow"]) — 5단계 중 2단계 결과
 
 characterSeeds (최대 3명):
 - id: "char-1" 등
@@ -773,9 +788,6 @@ characterSeeds (최대 3명):
 - appearance: 영어 ≤40 words (성별/나이대/헤어 color+style/의상/피부톤 필수 — 예: "mid-30s woman, black shoulder-length hair, warm beige skin, dark blue hanbok with white collar")
 - appearanceKo: ≤25자
 ⚠️ appearance에 skin tone(예: warm beige, deep brown, pale ivory)과 hair color(예: black, dark brown, silver-grey) 반드시 포함. 누락 시 비디오 모델이 일관성 없는 외형 생성.
-
-_narrativeCore: 시나리오 핵심 주장 1문장 (한국어 ≤30자)
-_targetEmotions: 시청자가 받아야 할 핵심 감정 (영어 키워드 1~2개, 예: ["awe","sorrow"])
 
 outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시퀀스):
 
@@ -787,11 +799,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 단, 이 세 가지는 서사 기능을 시각으로 번역한 결과여야 한다.
 "서사와 무관한 멋있는 비주얼"은 금지.
 
-각 씬 설계 시 반드시 아래를 먼저 정의하세요:
-1. narrativeFunction: 이 시퀀스가 전체 이야기에서 맡는 역할 (영어 ≤8 words — 예: "reveal cause of failure", "show consequence of decision", "establish world before change")
-2. locationCue: 서사 기능을 뒷받침하는 장소 단서 (영어 ≤8 words)
-3. situationCue: 서사 기능을 뒷받침하는 상황 증거 (영어 ≤8 words)
-4. emotionalAnchor: 감정이 집약되는 시각 포인트 (영어 ≤8 words)
+각 outline은 아래 필드 순서대로 작성 (narrativeFunction → newInformation을 먼저 결정한 후 시각 필드 작성):
 
 - cutNumber: 순번
 - sceneKo: ≤30자
@@ -1097,14 +1105,13 @@ async function step23DetailBatch(
     const revealHint = isFirst
       ? "reveal=space+atmosphere only, withhold=face+conflict"
       : `reveal=new layer(${prevOutline?.shotType ?? "?"}→${o.shotType}), withhold=1 element`;
-    const newInfo = (o as CutOutline & { newInformation?: string }).newInformation || "";
     return `SCENE${o.cutNumber} (${i + 1}/${batchOutlines.length}):
   ${o.purpose}|${o.shotType}|${o.shotCategory}|charRole=${o.characterRole}|emotionDelta=${o.emotionalDelta}
   camera=${o.cameraMovement} | action=${o.subjectAction}
   summary=${o.sceneKo}
-  STORY_ROLE=${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose}
-  NEW_INFO=${newInfo || "(define what new information this cut reveals)"}
-  WHY_THIS_CUT=${(o as CutOutline & { narrativeFunction?: string }).narrativeFunction || o.purpose} — 이 컷 없이는 서사 전달 불가
+  STORY_ROLE=${o.narrativeFunction || o.purpose}
+  NEW_INFO=${o.newInformation || "(define what new information this cut reveals)"}
+  WHY_THIS_CUT=${o.narrativeFunction || o.purpose} — 이 컷 없이는 서사 전달 불가${o.dialogueText ? `\n  DIALOGUE="${o.dialogueText}" — ⚠️ 대사 텍스트는 videoPrompt에 포함 금지. 말하는 행동만 묘사 (lips move, speaks with...)` : ""}
   WHERE=${o.locationCue} | WHAT=${o.situationCue} | EMOTION=${o.emotionalAnchor}
   beats(${beatTimings(secPerCut).b1}/${beatTimings(secPerCut).b2}/${beatTimings(secPerCut).b3}): ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3}
   endHook=${o.endHook} | ${prevDesc} | ${nextHint} | ${revealHint} | transition=${o.transitionHint}`;
@@ -1464,7 +1471,7 @@ async function repairMissingOutlines(
 시나리오: ${storyExcerpt.slice(0, 300)}
 
 누락된 컷 번호 [${missingNums.join(",")}]의 outlines만 생성:
-[{"cutNumber":${missingNums[0]},"sceneKo":"≤25자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤8w","subjectAction":"≤10w","transitionHint":"≤8자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤6w","situationCue":"≤6w","emotionalAnchor":"≤6w"}]`;
+[{"cutNumber":${missingNums[0]},"sceneKo":"≤25자","narrativeFunction":"≤8w 서사 역할","newInformation":"≤12w 이전 컷에 없는 새 정보","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤8w","subjectAction":"≤10w","transitionHint":"≤8자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤6w","situationCue":"≤6w","emotionalAnchor":"≤6w"}]`;
 
   const maxTokens = Math.min(8192, Math.max(2048, missingNums.length * 400));
   const result = await streamingGenerate(env, MODEL_OUTLINE, {
@@ -1496,6 +1503,8 @@ async function repairMissingOutlines(
     return {
       cutNumber: Number(o.cutNumber ?? missingNums[i] ?? existingOutlines.length + i + 1),
       sceneKo: String(o.sceneKo ?? `장면 ${o.cutNumber ?? i + 1}`).slice(0, 40),
+      narrativeFunction: o.narrativeFunction ? String(o.narrativeFunction).slice(0, 80) : undefined,
+      newInformation: o.newInformation ? String(o.newInformation).slice(0, 120) : undefined,
       emotion: String(o.emotion ?? "neutral"),
       emotionalDelta: String(o.emotionalDelta ?? "neutral→neutral"),
       purpose: String(o.purpose ?? "develop"),
@@ -1512,6 +1521,7 @@ async function repairMissingOutlines(
       sceneBeat2: String(o.sceneBeat2 ?? o.situationCue ?? "situation evidence visible"),
       sceneBeat3: String(o.sceneBeat3 ?? o.emotionalAnchor ?? "emotional anchor revealed"),
       endHook: String(o.endHook ?? "visual tension toward next scene"),
+      dialogueText: o.dialogueText ? String(o.dialogueText).slice(0, 200) : undefined,
     };
   });
 
@@ -1542,11 +1552,16 @@ function buildUltraCompactStep1Prompt(
   editorialSummary?: string,
 ): string {
   const storySnippet = storyText.slice(0, 400);
-  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 6~9초→최소3컷,10~15초→4~6컷,16~120초→extend체인모드,반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
+  return `JSON만 출력. 감독: ${directorNameKo}. ${secPerCut}초/시퀀스 × ${cutCount}컷. 반드시${cutCount}개outlines작성.${editorialSummary ? `\n${editorialSummary}` : ""}
+먼저: 핵심 주장 1문장(_narrativeCore) + 핵심 감정 1~2개(_targetEmotions) 추출.
+각 컷마다 narrativeFunction(서사 역할) + newInformation(새 정보) 정의 후 시각화.
+스크립트가 현대→과거 비교 구조이면 첫 장면은 현대로 시작.
+
 시나리오: ${storySnippet}
 
-{"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
-"outlines":[{"cutNumber":1,"sceneKo":"≤20자","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w"}]}`;
+{"_narrativeCore":"핵심주장≤25자","_targetEmotions":["emotion1"],
+"characterSeeds":[{"id":"char-1","label":"주인공","appearance":"...≤20w","appearanceKo":"...≤15자"}],
+"outlines":[{"cutNumber":1,"sceneKo":"≤20자","narrativeFunction":"≤8w","newInformation":"≤10w","emotion":"영어","emotionalDelta":"prev→cur","purpose":"establish|develop|climax|resolve","shotType":"WS|MS|CU|OTS|MCU|LS|ECU|POV","cameraMovement":"≤6w","subjectAction":"≤8w","transitionHint":"≤6자","shotCategory":"character-driven|environment|object-detail|map-graphic|transition-atmosphere","characterRole":"protagonist|background|silhouette|partial|absent","locationCue":"≤5w","situationCue":"≤5w","emotionalAnchor":"≤5w"}]}`;
 }
 
 // ─── Fast path eligibility evaluator ──────────────────────────────────────────
