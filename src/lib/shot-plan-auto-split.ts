@@ -140,7 +140,7 @@ function pickDiverseCamera(
 
   // Angle variation
   const angleSeq = ["eye-level", "low-angle", "eye-level", "high-angle", "dutch-angle", "overhead"];
-  let angle = angleSeq[index % angleSeq.length];
+  const angle = angleSeq[index % angleSeq.length];
 
   // Motion variation — no two adjacent shots same motion
   const motionSeq = ["slow pan", "static", "push-in", "tracking", "pull-back", "handheld"];
