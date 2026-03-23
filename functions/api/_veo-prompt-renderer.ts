@@ -266,6 +266,13 @@ export interface VeoPromptRendererInput {
   styleAnchor?: string;
   /** 샷 구조 타입 (기본: FOUR) */
   structureType?: ShotStructureType;
+  /** Historical grounding — 역사적 맥락 구체화 결과 (있으면 프롬프트에 주입) */
+  historicalGrounding?: {
+    visualAnchors?: Array<{ category: string; description: string }>;
+    avoid?: string[];
+    region?: string | null;
+    period?: string | null;
+  };
 }
 
 /**
@@ -315,9 +322,31 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
   const TEXT_FREE_DIRECTIVE = "This video must contain absolutely no text, no subtitles, no captions, no title cards, no written words, no on-screen typography of any kind. Purely visual storytelling only.";
   finalPrompt = TEXT_FREE_DIRECTIVE + "\n\n" + finalPrompt;
 
+  // ── Historical grounding injection — 역사적 시각 앵커를 프롬프트에 주입 ──
+  if (input.historicalGrounding) {
+    const hg = input.historicalGrounding;
+    if (hg.visualAnchors && hg.visualAnchors.length > 0) {
+      const anchorDirective = hg.visualAnchors
+        .map(va => `${va.description}`)
+        .join(". ");
+      const settingLine = (hg.region && hg.period)
+        ? `Historical setting: ${hg.region}, ${hg.period}. `
+        : "";
+      finalPrompt = `${settingLine}Visual references: ${anchorDirective}.\n\n${finalPrompt}`;
+      cleanupLog.push(`[veo-renderer] Historical grounding injected: ${hg.region} ${hg.period}`);
+    }
+  }
+
+  // ── Historical grounding negative prompt — avoid 요소 추가 ──
+  let finalNegative = input.negativePrompt || "text overlay, watermark, logo, blurry, distorted face";
+  if (input.historicalGrounding?.avoid && input.historicalGrounding.avoid.length > 0) {
+    finalNegative += ", " + input.historicalGrounding.avoid.join(", ");
+    cleanupLog.push(`[veo-renderer] Historical avoid items added to negative prompt`);
+  }
+
   return {
     timestampPrompt: finalPrompt,
-    negativePrompt: input.negativePrompt || "text overlay, watermark, logo, blurry, distorted face",
+    negativePrompt: finalNegative,
     globalAnchor,
     shotCount: shots.length,
     totalDurationSec: 8,
