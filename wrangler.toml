@@ -16,6 +16,10 @@ compatibility_date = "2024-09-23"
 # Pages 빌드 출력 디렉토리 (next export → out/)
 pages_build_output_dir = "out"
 
+# Static assets 디렉토리 (wrangler versions upload 용)
+[assets]
+directory = "./out"
+
 # Pages Functions에서 R2 접근용 바인딩
 [[r2_buckets]]
 binding = "VIDEO_BUCKET"
