@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
 /** Fixed max shots (VEO supports up to 4 internal shots) */
@@ -10,7 +10,9 @@ import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles, planRecomme
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
 import { detectShotProgression, splitSingleShotSequence, type ShotBeatHint } from "@/lib/shot-splitting";
 import { autoSplitForUI, isFragmentedEditRequested, shotsToMultiShotPrompts, type AutoSplitResult } from "@/lib/shot-plan-auto-split";
+import { analyzeSketch, sketchToShotPlan, formatShotPlanSummary, type SketchAnalysisResult } from "@/lib/sketch-to-shot-plan";
 import type { CutCardViewModel } from "@/lib/canonical-view-model";
+const StoryboardSketchCanvas = lazy(() => import("./StoryboardSketchCanvas"));
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -347,6 +349,41 @@ export default function CutCard({
   const [englishRefining, setEnglishRefining] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [autoSplitResult, setAutoSplitResult] = useState<AutoSplitResult | null>(null);
+  const [showSketchCanvas, setShowSketchCanvas] = useState(false);
+  const [sketchAnalyzing, setSketchAnalyzing] = useState(false);
+  const [sketchAnalysis, setSketchAnalysis] = useState<SketchAnalysisResult | null>(null);
+  const [sketchShotPlan, setSketchShotPlan] = useState<ReturnType<typeof sketchToShotPlan> | null>(null);
+
+  // ── 스케치 구도 분석 핸들러 ──
+  const handleSketchAnalyze = async (base64: string) => {
+    setSketchAnalyzing(true);
+    setSketchAnalysis(null);
+    setSketchShotPlan(null);
+    try {
+      const result = await analyzeSketch(base64);
+      if (result.ok && result.analysis) {
+        setSketchAnalysis(result.analysis);
+        const plan = sketchToShotPlan(result.analysis);
+        setSketchShotPlan(plan);
+        // 분석 결과를 Cut에 자동 반영
+        if (onUpdate) {
+          onUpdate({
+            ...cut,
+            cameraDirection: plan.cameraDirection,
+          });
+        }
+      }
+    } finally {
+      setSketchAnalyzing(false);
+    }
+  };
+
+  // ── 스케치를 firstFrame으로 사용 ──
+  const handleSketchAsFirstFrame = (base64: string) => {
+    if (onSelectCandidate) {
+      onSelectCandidate(base64);
+    }
+  };
 
   // 분절 편집 감지 — 원본 storyText를 우선 사용 (전체 시나리오 기준 판단)
   const storyTextForDetection = storyTextProp || cut.sceneDescription || effectiveVideoPrompt || "";
@@ -634,6 +671,58 @@ export default function CutCard({
                   <img src={`data:image/png;base64,${b64}`} alt={`후보 ${i + 1}`} className="w-full h-full object-cover" />
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* 스케치 구도 그리기 — 직접 구도를 그려서 카메라 설정 자동 추출 */}
+        <div className="space-y-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            style={{ borderColor: "#6366f1", color: "#6366f1" }}
+            onClick={() => setShowSketchCanvas(!showSketchCanvas)}
+          >
+            {showSketchCanvas ? "✏️ 구도 스케치 닫기" : "✏️ 구도 직접 그리기"}
+          </Button>
+
+          {showSketchCanvas && (
+            <Suspense fallback={<div className="text-xs text-zinc-500 p-2">캔버스 로딩 중...</div>}>
+              <StoryboardSketchCanvas
+                aspectRatio={cut.durationSec > 0 ? "16:9" : "16:9"}
+                onAnalyze={handleSketchAnalyze}
+                onUseAsFirstFrame={handleSketchAsFirstFrame}
+                analyzing={sketchAnalyzing}
+                backgroundImage={storyboardImage}
+              />
+            </Suspense>
+          )}
+
+          {/* 구도 분석 결과 표시 */}
+          {sketchShotPlan && (
+            <div className="rounded border border-indigo-500/30 bg-indigo-500/5 p-2 space-y-1">
+              <div className="text-[10px] font-medium text-indigo-400">구도 분석 결과</div>
+              <pre className="text-[9px] text-zinc-400 whitespace-pre-wrap leading-relaxed">
+                {formatShotPlanSummary(sketchShotPlan)}
+              </pre>
+              {onUpdate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] mt-1"
+                  style={{ borderColor: "#6366f1", color: "#6366f1" }}
+                  onClick={() => {
+                    if (!sketchShotPlan) return;
+                    onUpdate({
+                      ...cut,
+                      cameraDirection: sketchShotPlan.cameraDirection,
+                    });
+                  }}
+                >
+                  카메라 설정에 반영
+                </Button>
+              )}
             </div>
           )}
         </div>
