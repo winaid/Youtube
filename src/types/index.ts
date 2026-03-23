@@ -272,14 +272,23 @@ export interface MultiShotPrompt {
   role?: ShotRole;
 }
 
+/** structured shot subject — subject.primary를 표준 접근자로 사용 */
+export interface StructuredShotSubject {
+  primary: string;
+  secondary?: string[];
+}
+
+/** subject 입력 타입: string (legacy) 또는 { primary } (canonical) */
+export type StructuredShotSubjectInput = string | StructuredShotSubject;
+
 /** structured shot — auto-split 결과의 source of truth */
 export interface StructuredShot {
   shotId: string;
   startSec: number;
   endSec: number;
   camera: { framing: string; angle: string; motion: string };
-  /** subject는 string이 기본. subject.primary 접근을 위해 내부적으로 StructuredShotSubject도 지원 */
-  subject: string;
+  /** subject — { primary: string } 구조가 canonical. string도 backward compat으로 허용 */
+  subject: StructuredShotSubjectInput;
   action: string;
   environment: string;
   moodLighting: string;

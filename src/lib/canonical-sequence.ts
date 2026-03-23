@@ -45,6 +45,7 @@ import { safeDuration } from "@/lib/duration-reconciliation";
 const VEO_MIN_SHOTS = 3;
 import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
+import { structuredShotToSequenceShot } from "@/lib/structured-shot-normalize";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Adapter: Legacy → Canonical
@@ -82,6 +83,9 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
   const adapterConversions: string[] = [];
 
   // Track what legacy paths were used
+  if (input.cut.structuredShots?.length) {
+    adapterConversions.push(`adapter: consumed Cut.structuredShots (${input.cut.structuredShots.length} shots) — SOURCE OF TRUTH`);
+  }
   if (input.cut.videoPromptJson) {
     adapterConversions.push("adapter: consumed Cut.videoPromptJson");
   }
@@ -100,17 +104,33 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
     prevCut: input.prevCut,
   });
 
-  // Resolve multi-shot: prefer suggested (content-aware) over existing
-  let multiShot: MultiShotPrompt[] =
-    result.suggestedMultiShot ??
-    input.cut.multiShot ??
-    canonicalShotsToMultiShot(result.structuredSequence);
+  // ── structuredShots가 있으면 canonical sequence.shots[]를 덮어씀 ──
+  // structuredShots는 auto-split의 source of truth.
+  // assembleFromJSON이 생성한 shots보다 우선.
+  if (input.cut.structuredShots && input.cut.structuredShots.length >= 2) {
+    result.structuredSequence.shots = input.cut.structuredShots.map(structuredShotToSequenceShot);
+    adapterConversions.push(`adapter: overwrote sequence.shots[] with structuredShots (${input.cut.structuredShots.length} shots)`);
+  }
 
-  if (result.suggestedMultiShot) {
+  // Resolve multi-shot priority:
+  // 1. structuredShots → derived multiShot (highest)
+  // 2. suggestedMultiShot (content-aware split)
+  // 3. existing Cut.multiShot
+  // 4. canonical sequence shots → derived multiShot (fallback)
+  let multiShot: MultiShotPrompt[];
+
+  if (input.cut.structuredShots && input.cut.structuredShots.length >= 2) {
+    // structuredShots가 source of truth → multiShot은 derived view
+    multiShot = canonicalShotsToMultiShot(result.structuredSequence);
+    adapterConversions.push("adapter: derived multiShot from structuredShots (source of truth)");
+  } else if (result.suggestedMultiShot) {
+    multiShot = result.suggestedMultiShot;
     adapterConversions.push("adapter: used content-aware suggestedMultiShot");
   } else if (input.cut.multiShot?.length) {
+    multiShot = input.cut.multiShot;
     adapterConversions.push("adapter: preserved existing Cut.multiShot");
   } else {
+    multiShot = canonicalShotsToMultiShot(result.structuredSequence);
     adapterConversions.push("adapter: derived multiShot from canonical shots[]");
   }
 

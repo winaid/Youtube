@@ -12,6 +12,8 @@ import { resolveSceneType, getSceneTypeRule } from "@/lib/scene-type-rules";
 import { checkShotDensity } from "@/lib/multishot-validation";
 import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
 import type { GenerationMode } from "@/lib/multi-shot-planner";
+import type { StructuredShot } from "@/types";
+import { validateAllStructuredShotFields } from "@/lib/structured-shot-normalize";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Validation Rules
@@ -57,6 +59,8 @@ export interface ValidatePayloadInput {
   mode?: GenerationMode;
   /** 의도적 원테이크 여부 */
   intentionalOneTake?: boolean;
+  /** structured shots — source of truth (있으면 필수 필드 검사 수행) */
+  structuredShots?: StructuredShot[];
   /** 분절 편집 요청 컨텍스트 */
   fragmentedEditContext?: {
     isFragmented: boolean;
@@ -551,6 +555,19 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
           message: `Fragmented edit prompts contain more abstract terms (${abstractCount}) than concrete visual elements (${concreteCount}) — add specific actions and subjects.`,
         });
       }
+    }
+  }
+
+  // ── Rule 19: Structured shot required field validation ──────
+  if (input.structuredShots && input.structuredShots.length >= 2) {
+    const missingFields = validateAllStructuredShotFields(input.structuredShots);
+    if (missingFields.length > 0) {
+      const summary = missingFields.slice(0, 5).map(m => `${m.shotId}:${m.field}`).join(", ");
+      issues.push({
+        rule: "structured_shot_missing_required_field",
+        severity: "error",
+        message: `Structured shots missing required fields: ${summary}${missingFields.length > 5 ? ` (+${missingFields.length - 5} more)` : ""}`,
+      });
     }
   }
 

@@ -437,7 +437,7 @@ export default function CutCard({
           startSec: s.startSec,
           endSec: s.endSec,
           camera: s.camera,
-          subject: s.subject,
+          subject: { primary: s.subject },
           action: s.action,
           environment: s.environment,
           moodLighting: s.moodLighting,

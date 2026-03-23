@@ -327,10 +327,31 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
     cleanupLog.push(`[veo-renderer] Prompt truncated: ${timestampPrompt.length} → ${finalPrompt.length} chars (limit=${maxPromptLen})`);
   }
 
-  // 분절 편집 모드: final hard clamp 보장
+  // 분절 편집 모드: final hard clamp — shot progression 유지하면서 500자 보장
   if (input.fragmentedEditMode && finalPrompt.length > FRAGMENTED_CHAR_LIMIT) {
-    finalPrompt = finalPrompt.slice(0, FRAGMENTED_CHAR_LIMIT - 1) + "…";
-    cleanupLog.push(`[veo-renderer] Fragmented edit hard clamp applied: ${FRAGMENTED_CHAR_LIMIT} chars`);
+    // shot boundary-aware truncation: 각 shot line을 균등 축소
+    const lines = finalPrompt.split("\n");
+    const shotLines = lines.filter(l => l.startsWith("["));
+    const nonShotLines = lines.filter(l => !l.startsWith("["));
+    const nonShotLen = nonShotLines.join("\n").length + 1;
+    const availableForShots = FRAGMENTED_CHAR_LIMIT - nonShotLen;
+
+    if (shotLines.length > 0 && availableForShots > shotLines.length * 20) {
+      const perShot = Math.floor(availableForShots / shotLines.length) - 1;
+      const truncatedShotLines = shotLines.map(line => {
+        if (line.length <= perShot) return line;
+        // Keep timestamp bracket intact, truncate content after it
+        const bracketEnd = line.indexOf("]");
+        if (bracketEnd >= 0 && bracketEnd < perShot - 5) {
+          return line.slice(0, perShot - 1) + "…";
+        }
+        return line.slice(0, perShot - 1) + "…";
+      });
+      finalPrompt = [...nonShotLines.filter(l => l.trim()), ...truncatedShotLines].join("\n");
+    } else {
+      finalPrompt = finalPrompt.slice(0, FRAGMENTED_CHAR_LIMIT - 1) + "…";
+    }
+    cleanupLog.push(`[veo-renderer] Fragmented edit hard clamp applied: ${finalPrompt.length}/${FRAGMENTED_CHAR_LIMIT} chars, ${shotLines.length} shot boundaries preserved`);
   }
 
   // ── 자막/텍스트 방지 강화: VEO는 negative prompt 미지원 → positive에서 강제 ──
