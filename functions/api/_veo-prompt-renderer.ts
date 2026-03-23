@@ -230,11 +230,13 @@ function buildDefaultMultiShot(
   const cleaned = stripInternalTags(basePrompt);
   const sentences = cleaned.split(/\.\s+/).filter(s => s.trim().length > 10);
 
+  // VEO에 구체적 시각 지시 — "developing the scene" 같은 추상어 대신
+  // 실제 카메라 동작/구도로 기술
   const roleFramings: Record<string, string> = {
-    establish: "Wide establishing shot,",
-    develop: "Medium shot developing the scene,",
-    peak: "Close-up at peak intensity,",
-    resolve: "Wide resolving shot,",
+    establish: "Wide shot, slow pan revealing full space,",
+    develop: "Medium shot, lateral tracking following subject,",
+    peak: "Close-up, slow push-in on key detail,",
+    resolve: "Wide shot, slow pull-back showing full scene,",
   };
 
   return structure.map((slot, i) => {
@@ -286,9 +288,8 @@ export interface VeoPromptRendererInput {
 export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPrompt {
   const cleanupLog: string[] = [];
 
-  // 프롬프트 정리
+  // 프롬프트 정리 — 중복 제거는 generate-video.ts에서 최종 1회만 수행
   let cleanedPrompt = stripInternalTags(input.prompt);
-  cleanedPrompt = deduplicatePromptClauses(cleanedPrompt);
 
   // 멀티샷 변환 (항상 멀티샷 강제)
   const shots = convertMultiShotToTimestamp(
@@ -354,12 +355,11 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
     cleanupLog.push(`[veo-renderer] Fragmented edit hard clamp applied: ${finalPrompt.length}/${FRAGMENTED_CHAR_LIMIT} chars, ${shotLines.length} shot boundaries preserved`);
   }
 
-  // ── 자막/텍스트 방지 강화: VEO는 negative prompt 미지원 → positive에서 강제 ──
-  // NOTE: TEXT_FREE_DIRECTIVE와 historical grounding은 VEO 시스템 지시어이므로
-  // 500자 제한 대상이 아님. 500자 제한은 사용자 컨텐츠 프롬프트(shot descriptions)에만 적용.
-  // VEO API의 실제 토큰 상한(1024 tokens ≈ 3000 chars)은 별도로 maxPromptLen=3000으로 관리.
-  const TEXT_FREE_DIRECTIVE = "No text, no subtitles, no captions, no written words. Visual storytelling only.";
-  finalPrompt = TEXT_FREE_DIRECTIVE + "\n" + finalPrompt;
+  // ── 텍스트 방지: VEO에 보내는 프롬프트 토큰을 절약하기 위해
+  // 길고 반복적인 "no text" 지시어 대신 VEO API의 generate 요청에서 처리.
+  // VEO는 negative prompt를 지원하지 않으므로 프롬프트 안에서 "no text"를 반복하는 것은
+  // 토큰 낭비이며 VEO가 오히려 "text" 키워드에 반응할 수 있음.
+  // 대신: 각 shot prompt에서 텍스트 관련 단어가 이미 stripTextForVeo()로 제거됨.
 
   // ── Historical grounding injection — 역사적 시각 앵커를 프롬프트에 주입 ──
   if (input.historicalGrounding) {

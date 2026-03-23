@@ -439,8 +439,9 @@ export function serverSanitizeAndValidate(input: ServerSanitizeInput): ServerSan
         !fullText.includes(kw.toLowerCase()) && !negatives.some(n => n.toLowerCase() === kw.toLowerCase())
       );
       if (missingPositives.length > 0) {
-        prompt = prompt.trim() + ". " + missingPositives.join(", ");
-        log.push(`[positive] Added ${missingPositives.length} positive keywords: ${missingPositives.join(", ")}`);
+        // 키워드를 프롬프트 앞에 삽입 — VEO는 앞부분 토큰에 높은 가중치를 줌
+        prompt = missingPositives.join(", ") + ". " + prompt.trim();
+        log.push(`[positive] Prepended ${missingPositives.length} positive keywords: ${missingPositives.join(", ")}`);
       }
     }
   }

@@ -276,14 +276,17 @@ function serializeSequenceToPrompt(
   if (seq.physicsRules) {
     const pr = seq.physicsRules;
     const physParts: string[] = [];
-    if (!pr.hasAtmosphere) physParts.push("vacuum environment — no atmospheric effects");
-    if (!pr.hasWind) physParts.push("no wind");
-    if (pr.gravity === "low") physParts.push("low gravity — slow arcing trajectories");
-    else if (pr.gravity === "zero") physParts.push("zero gravity — objects float freely");
+    // VEO 물리 규칙 — 부정어("no X") 대신 긍정 표현으로 변환
+    // VEO는 "no wind"보다 "perfectly still air, motionless surfaces"를 더 잘 이해함
+    if (!pr.hasAtmosphere) physParts.push("vacuum environment, silent void, no particles");
+    if (!pr.hasWind) physParts.push("perfectly still air, motionless fabrics and surfaces");
+    if (pr.gravity === "low") physParts.push("low gravity, slow floating arcing trajectories");
+    else if (pr.gravity === "zero") physParts.push("zero gravity, objects float freely, weightless motion");
     if (pr.flagMotionSource) physParts.push(pr.flagMotionSource);
     if (pr.skyConstraint) physParts.push(pr.skyConstraint);
     if (pr.lightConstraint) physParts.push(pr.lightConstraint);
-    if (pr.bannedExpressions && pr.bannedExpressions.length > 0) physParts.push(`avoid: ${pr.bannedExpressions.join(", ")}`);
+    // bannedExpressions: "avoid: X" 형태는 VEO에서 역효과 → 제거
+    // (sanitizer가 이미 해당 단어를 프롬프트에서 삭제함)
     if (physParts.length > 0) parts.push(physParts.join(". "));
   }
 

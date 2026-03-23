@@ -136,32 +136,35 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
 
 export function renderPromptFromJson(json: VideoPromptJson): string {
   const parts: string[] = [];
+
+  // ── VEO 최적 순서: WHAT → WHERE → HOW → STYLE ──
+  // VEO는 프롬프트 앞부분에 높은 가중치를 줌.
+  // 핵심 시각 정보(행동/캐릭터)를 먼저, 카메라/조명은 뒤에.
+
+  // 1. WHAT: 핵심 행동 + 캐릭터 (VEO가 가장 먼저 봐야 할 것)
+  if (json.characterRef) parts.push(json.characterRef);
+  if (json.subjectAction) parts.push(json.subjectAction);
+  if (json.bodySignal) parts.push(json.bodySignal);
+
+  // 2. WHERE: 장소 + 상황 증거
+  if (json.locationCue) parts.push(json.locationCue);
+  if (json.situationCue) parts.push(json.situationCue);
+
+  // 3. HOW: 카메라 + 조명 (VEO가 구도/분위기 결정)
   const shotSize = json.shotSize || "MS";
   const cameraAngle = json.cameraAngle || "eye-level";
   parts.push(`${shotSize} shot, ${cameraAngle}`);
   if (json.cameraMovement && json.cameraMovement !== "static") {
     let movement = json.cameraMovement.replace(/\s*\([^)]*\)\s*/g, "").trim();
-    // "static" 단독을 최소한의 시네마틱 움직임으로 대체
-    if (/^static$/i.test(movement)) {
-      movement = "slow push-in";
-    }
+    if (/^static$/i.test(movement)) movement = "slow push-in";
     parts.push(movement);
   }
-  // Location establishing — 장소 정체성 즉시 인식
-  if (json.locationCue) parts.push(json.locationCue);
-  // Situation evidence — 상황 시각적 증거
-  if (json.situationCue) parts.push(json.situationCue);
-  // Character
-  if (json.characterRef) parts.push(json.characterRef);
-  // Emotional anchor
-  if (json.emotionalAnchor) parts.push(json.emotionalAnchor);
-  if (json.subjectAction) parts.push(json.subjectAction);
-  if (json.bodySignal) parts.push(json.bodySignal);
   if (json.moodLighting) parts.push(json.moodLighting);
-  // Director Visual DNA — 감독 색감/카메라가 VEO까지 직접 전달
+  if (json.emotionalAnchor) parts.push(json.emotionalAnchor);
+
+  // 4. STYLE: 감독 DNA + 스타일 접미사
   if (json.directorColorHint) parts.push(json.directorColorHint);
   if (json.directorCameraHint) parts.push(json.directorCameraHint);
-  // Temporal beats
   if (json.timingBeat) parts.push(json.timingBeat);
   const cleanSuffix = json.styleSuffix
     .replace(/,?\s*with natural diegetic sound and ambient audio/g, "")
