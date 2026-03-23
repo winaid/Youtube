@@ -8,7 +8,6 @@
 import type {
   HistoricalGroundingResult,
   HistoricalWarning,
-  HistoricalWarningCode,
 } from "@/types/historical-grounding";
 import type { Cut } from "@/types";
 import { resolveHistoricalGrounding } from "./historical-grounding-resolver";

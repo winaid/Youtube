@@ -9,14 +9,12 @@
  */
 import type {
   HistoricalGroundingResult,
-  HistoricalWarning,
   HistoricalVisualAnchor,
   ReferenceEvidence,
-  DetectedHistoricalTerm,
 } from "@/types/historical-grounding";
 import { emptyGroundingResult } from "@/types/historical-grounding";
 import { detectHistoricalTerms, hasMultipleRegions, hasMixedPeriods } from "./historical-term-detector";
-import { lookupByTerm, HISTORICAL_KNOWLEDGE_BASE } from "./historical-knowledge-base";
+import { lookupByTerm } from "./historical-knowledge-base";
 
 /**
  * 시나리오 텍스트를 분석하여 역사적 맥락을 구체화.
