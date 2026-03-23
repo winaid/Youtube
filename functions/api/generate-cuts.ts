@@ -1232,10 +1232,18 @@ establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]`;
   })()}
 
+## 한국어 표시용 필드 (UI에서 사용자에게 보여주는 용도 — VEO에는 전달 안 됨)
+- videoPromptKo: videoPrompt를 한국어로 요약 (≤60자). 사용자가 영상 내용을 한눈에 파악할 수 있게.
+  예: "어두운 방에서 여자가 폰을 떨어뜨리고, 화면 빛에 얼굴이 비침"
+- cameraDirectionKo: cameraDirection을 한국어로 변환 (≤30자).
+  예: "35mm 렌즈. 느린 접근 → 고정"
+- moodLightingKo: moodLighting을 한국어로 변환 (≤30자).
+  예: "왼쪽 촛불, 따뜻한 깜빡임, 호박색"
+
 JSON 배열로만 출력 (마크다운 없이):
 ${(() => {
     const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
-    const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","moodLighting":"..."`;
+    const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"..."`;
     if (maxShots <= 0) return `[${base}}]`;
     // 예시 multiShot: 반드시 4샷 균등 분배
     const shotDur = Math.max(2, Math.floor(secPerCut / 4));
@@ -2850,6 +2858,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         moodLighting,
         imagePrompt:      d?.imagePrompt      ?? defaultImagePrompt,
         endImagePrompt:   d?.endImagePrompt   ?? defaultEndImagePrompt,
+        // 한국어 표시용 필드 — UI에서 사용자에게 보여주는 한국어 설명
+        ...(d?.videoPromptKo ? { videoPromptKo: d.videoPromptKo } : {}),
+        ...(d?.cameraDirectionKo ? { cameraDirectionKo: d.cameraDirectionKo } : {}),
+        ...(d?.moodLightingKo ? { moodLightingKo: d.moodLightingKo } : {}),
         // 극 중 대사 → TTS 나레이션으로 출력 (영상 프롬프트에는 포함 안 됨)
         ...(dialogueAsNarration ? { narrationText: dialogueAsNarration } : {}),
         videoPrompt:      d?.videoPrompt      ?? defaultVideoPrompt,

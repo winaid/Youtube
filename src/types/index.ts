@@ -387,6 +387,10 @@ export interface Cut {
   videoPrompt: string;
   extendPrompt: string;
   transitionHint: string;
+  /** 한국어 표시용 필드 — UI에서 사용자에게 보여주는 한국어 설명. VEO에는 영어 필드만 전달. */
+  videoPromptKo?: string;
+  cameraDirectionKo?: string;
+  moodLightingKo?: string;
   characterConsistency: string;
   charactersInScene: string[];
   multiShot?: MultiShotPrompt[]; // VEO 멀티샷: 8초 타임스탬프 형식 (4샷 기본 — establish/develop/peak/resolve)

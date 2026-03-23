@@ -850,11 +850,17 @@ export default function CutCard({
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
             <span className="font-medium" style={{ color: "#787fff" }}>카메라: </span>
-            {cut.cameraDirection}
+            {cut.cameraDirectionKo || cut.cameraDirection}
+            {cut.cameraDirectionKo && cut.cameraDirection && (
+              <span className="text-[9px] text-zinc-500 block mt-0.5">{cut.cameraDirection}</span>
+            )}
           </div>
           <div>
             <span className="font-medium" style={{ color: "#c4b800" }}>조명: </span>
-            {cut.moodLighting}
+            {cut.moodLightingKo || cut.moodLighting}
+            {cut.moodLightingKo && cut.moodLighting && (
+              <span className="text-[9px] text-zinc-500 block mt-0.5">{cut.moodLighting}</span>
+            )}
           </div>
         </div>
 
@@ -1053,6 +1059,13 @@ export default function CutCard({
                 bgColor="#22c55e10"
                 onSave={(v) => handleFieldSave("endImagePrompt", v)}
               />
+              {/* 한국어 영상 프롬프트 요약 — 사용자가 장면 내용을 한눈에 파악 */}
+              {cut.videoPromptKo && (
+                <div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5">
+                  <span className="text-[10px] font-medium" style={{ color: "#c4b800" }}>장면 프롬프트 (한국어): </span>
+                  <span className="text-xs">{cut.videoPromptKo}</span>
+                </div>
+              )}
               {/* Video Prompt: JSON 뷰 (있으면) + raw string 토글 */}
               {/* Source: canonical view-model when available, fallback to Cut */}
               {effectiveVideoPromptJson ? (
