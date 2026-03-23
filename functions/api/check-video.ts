@@ -9,6 +9,7 @@ type Env = VeoEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const tCheckStart = Date.now();
+  console.info("[check-video] Request received");
   try {
     // ── 1. Request body 파싱
     let bodyText = "";
@@ -27,6 +28,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       isExtend  = parsed.isExtend  ?? false;
       cutNumber = typeof parsed.cutNumber === "number" ? parsed.cutNumber : null;
     } catch (parseErr) {
+      console.info(`[check-video] JSON parse error caught: ${String(parseErr)}, elapsed=${Date.now() - tCheckStart}ms`);
       console.error("[check-video] JSON parse failed. body:", bodyText.slice(0, 500), "err:", parseErr);
       return Response.json({ error: "Invalid JSON body", details: String(parseErr) }, { status: 400 });
     }
@@ -45,9 +47,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     let result;
     try {
+      console.info(`[check-video] Calling veoCheckStatus, operationName=${operationName.slice(0, 80)}, elapsed=${Date.now() - tCheckStart}ms`);
+      const veoCallStart = Date.now();
       result = await veoCheckStatus(context.env, operationName);
+      console.info(`[check-video] veoCheckStatus responded: done=${result.done}, status=${result.status}, elapsed=${Date.now() - veoCallStart}ms`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.info(`[check-video] VEO check error caught: ${msg}, elapsed=${Date.now() - tCheckStart}ms`);
       console.error("[check-video] VEO check error:", msg);
       return Response.json({ status: "FAILED", error: `VEO API 오류: ${msg}` }, { status: 502 });
     }

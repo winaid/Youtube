@@ -3319,7 +3319,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const errMsg   = error instanceof Error ? error.message  : String(error);
     const errStack = error instanceof Error ? (error.stack ?? "").slice(0, 800) : "";
     console.error("[generate-cuts] 예외:", errMsg, "\n", errStack);
-    console.info(`[generate-cuts] OUTER CATCH ERROR — msg=${errMsg.slice(0, 200)}, totalElapsed=${Date.now() - (t0_total || Date.now())}ms`);
+    console.info(`[generate-cuts] OUTER CATCH ERROR — msg=${errMsg.slice(0, 200)}`);
     return Response.json({
       ok: false,
       degraded: false,
