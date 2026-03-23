@@ -54,7 +54,9 @@ export type PreflightErrorCode =
   | "duration_band_not_supported"
   | "budget_exceeded"
   | "style_warning"
-  | "style_info";
+  | "style_info"
+  | "fragmented_edit_insufficient_shots"
+  | "fragmented_edit_single_shot";
 
 export interface PreflightIssue {
   severity: PreflightSeverity;
@@ -87,6 +89,13 @@ export interface PreflightInput {
   styleId: string;
   /** 사용 중인 모델 ID */
   modelId: string;
+  /** 분절 편집 요청 컨텍스트 */
+  fragmentedEditContext?: {
+    isFragmented: boolean;
+    triggerTerms: string[];
+    minShotCount: number;
+    editStyle: string;
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -219,6 +228,9 @@ export function runPreflightValidation(input: PreflightInput): PreflightResult {
 
   // ── 5. 배치 예산 검사 ──
   checkBudget(input, issues);
+
+  // ── 6. 분절 편집 검사 ──
+  checkFragmentedEdit(input, issues);
 
   const blockingCount = issues.filter(i => i.severity === "blocking").length;
   const warningCount = issues.filter(i => i.severity === "warning").length;
@@ -453,5 +465,39 @@ function checkBudget(input: PreflightInput, issues: PreflightIssue[]) {
       severity: "warning",
       messageKo: `총 ${budget.totalRuntimeSec}초 — 배치 예산 ${BATCH_BUDGET_SECONDS}초 초과 (+${budget.overBudgetSec}초). 생성 시간이 길어질 수 있습니다.`,
     });
+  }
+}
+
+function checkFragmentedEdit(input: PreflightInput, issues: PreflightIssue[]) {
+  if (!input.fragmentedEditContext?.isFragmented) return;
+
+  const fec = input.fragmentedEditContext;
+
+  // 각 컷에 대해 multiShot 배열 검사
+  for (const cut of input.cuts) {
+    const shots = input.canonicalMultiShots.get(cut.cutNumber) ?? cut.multiShot ?? [];
+
+    if (shots.length === 0) {
+      issues.push({
+        severity: "blocking",
+        code: "fragmented_edit_single_shot",
+        messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 요청(${fec.triggerTerms.join(", ")})이 감지되었으나 멀티샷이 없습니다. 최소 ${fec.minShotCount}개 이상의 독립 샷이 필요합니다.`,
+        cutNumber: cut.cutNumber,
+      });
+    } else if (shots.length === 1) {
+      issues.push({
+        severity: "blocking",
+        code: "fragmented_edit_single_shot",
+        messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 요청인데 샷이 1개뿐입니다. 분절 편집은 반드시 멀티샷(최소 3개) 출력이어야 합니다.`,
+        cutNumber: cut.cutNumber,
+      });
+    } else if (shots.length < fec.minShotCount) {
+      issues.push({
+        severity: "warning",
+        code: "fragmented_edit_insufficient_shots",
+        messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 스타일 "${fec.editStyle}"에 최소 ${fec.minShotCount}개 샷 권장, 현재 ${shots.length}개입니다.`,
+        cutNumber: cut.cutNumber,
+      });
+    }
   }
 }
