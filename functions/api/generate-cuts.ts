@@ -614,45 +614,12 @@ function inferMultiShotRole(index: number, total: number): ShotRoleServer {
   return "develop";
 }
 
-// ─── 스토리 기반 기본 캐릭터 추출 (deterministic fallback용) ───────────────────
+// ─── deterministic fallback 기본 캐릭터 (Step1 실패 시) ──────────────────────
+// 한국어 텍스트에서 regex로 인물 추출은 불가능 (동사/명사가 주어 패턴에 매칭됨)
+// → 안전한 기본값 사용. 실제 캐릭터 추출은 Gemini Step1에서만 수행.
 
-function extractDefaultSeeds(storyText: string): CharacterSeed[] {
-  const text = storyText || "";
-  // 한국어 인물 패턴: "이름은 ~", "~(이)라는 사람", 따옴표 안 대사 화자 등
-  const namePatterns = [
-    /([가-힣]{2,4})(?:은|는|이|가)\s/g,  // 주어 패턴
-    /([가-힣]{2,4})(?:씨|님|군|양)/g,    // 호칭 패턴
-  ];
-
-  const nameCounts = new Map<string, number>();
-  const stopWords = new Set(["그것","이것","저것","우리","나는","너는","여기","거기","오늘","내일","어제","그녀","그의","모든","하지","때문","이런","저런","그런","다른","같은","없는","있는","하는","되는","보는","가는","오는","주는","받는","만든","부터","까지","에서","으로","라고","에게","하고","이라","라는","라며","에는","도는","서는"]);
-
-  for (const pattern of namePatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const name = match[1];
-      if (name.length >= 2 && !stopWords.has(name)) {
-        nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
-      }
-    }
-  }
-
-  // 빈도순 정렬 후 상위 3개
-  const topNames = [...nameCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([name]) => name);
-
-  if (topNames.length === 0) {
-    return [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing, natural look", appearanceKo: "캐주얼 의상의 젊은 인물" }];
-  }
-
-  return topNames.map((name, i) => ({
-    id: `char-${i + 1}`,
-    label: name,
-    appearance: `A person in the story. casual modern clothing, natural look`,
-    appearanceKo: `${name} — 스토리 등장인물`,
-  }));
+function extractDefaultSeeds(_storyText: string): CharacterSeed[] {
+  return [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing, natural look", appearanceKo: "캐주얼 의상의 젊은 인물" }];
 }
 
 // ─── JSON 파싱 유틸 ───────────────────────────────────────────────────────────
@@ -1486,12 +1453,25 @@ function buildDeterministicCuts(
     return cleaned.replace(/\s{2,}/g, " ").trim();
   };
 
-  // 스토리 텍스트를 문장 단위로 분할하여 각 컷에 다른 내용 할당
+  // 스토리 텍스트를 문장 단위로 분할 (한국어 UI 표시용)
   const sentences = storyText
-    .split(/[.!?。]\s*/)
+    .split(/[.!?\n。]\s*/)
     .map(s => s.trim())
-    .filter(s => s.length > 5);
+    .filter(s => s.length > 3);
   const sentencesPerCut = Math.max(1, Math.floor(sentences.length / cutCount));
+
+  // 컷별 시각 장면 영어 템플릿 (한국어 스토리를 영어 프롬프트에 넣지 않음)
+  const sceneTemplates = [
+    { env: "dimly lit room, old wooden desk, scattered papers", action: "hand trembles, fingers clench the armrest", mood: "tension builds in confined space" },
+    { env: "crowded street, vintage storefronts, gaslight lamps", action: "figure pushes through the crowd, determined stride", mood: "chaos and energy of early commerce" },
+    { env: "open plaza, wooden stage, curious onlookers gathered", action: "performer gestures dramatically to the audience", mood: "spectacle draws attention" },
+    { env: "close on weathered hands holding metal instruments", action: "steady grip, deliberate precise movement", mood: "clinical focus meets showmanship" },
+    { env: "newspaper headline fills frame, bold black text", action: "hand points to key words, camera follows", mood: "reputation spreads through media" },
+    { env: "courthouse corridor, marble columns, formal atmosphere", action: "figure walks with confidence, chin raised", mood: "confrontation with authority" },
+    { env: "wide city panorama, signs and advertisements visible", action: "camera drifts across urban landscape", mood: "legacy embedded in modern world" },
+    { env: "intimate portrait, single subject against dark background", action: "subtle smile, knowing look directly at camera", mood: "quiet reflection on journey" },
+    { env: "busy workshop interior, tools on shelves, worn floor", action: "hands at work, practiced routine motions", mood: "craft and dedication" },
+  ];
 
   const cuts = Array.from({ length: cutCount }, (_, i) => {
     const cutNumber = i + 1;
@@ -1499,29 +1479,19 @@ function buildDeterministicCuts(
     const purpose = i === 0 ? "establish" : i === cutCount - 1 ? "resolve" : purposeCycle[Math.min(i, purposeCycle.length - 1)];
     const cameraMovement = movementCycle[i % movementCycle.length];
 
-    // 각 컷에 스토리의 다른 부분 할당
+    // 한국어 장면 설명 (UI 표시용)
     const cutSentences = sentences.slice(i * sentencesPerCut, (i + 1) * sentencesPerCut);
-    const sceneContext = cutSentences.join(". ").slice(0, 120) || storyExcerpt.slice(0, 80);
+    const sceneKo = cutSentences.join(". ").slice(0, 80) || `장면 ${cutNumber}`;
 
-    const subjectActions = [
-      "figure enters the frame, pausing to observe surroundings",
-      "character reaches forward, fingers brush against weathered surface",
-      "subject turns sharply, body tense with recognition",
-      "hands grip object tightly, knuckles whitening",
-      "character steps back, shoulders dropping with realization",
-      "figure leans closer, eyes narrowing at discovery",
-      "subject walks through space, each step deliberate",
-      "character's hand rises to shield face from light",
-      "figure stands at threshold, hesitating before crossing",
-    ];
-    const subjectAction = i === 0 ? "camera slowly reveals the environment, drifting across key details" : subjectActions[i % subjectActions.length];
+    // 영어 시각 장면 (VEO용 — 한국어 절대 포함 금지)
+    const template = sceneTemplates[i % sceneTemplates.length];
 
     const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
     const shotDesc = shotLabel[shotType] || shotType;
 
-    const imagePrompt = cleanText(`${shotDesc}, eye-level. ${sceneContext}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
-    const videoPrompt = cleanText(`${shotDesc}, eye-level. ${cameraMovement}. ${sceneContext}. ${subjectAction}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
-    const endImagePrompt = cleanText(`${sceneContext.slice(0, 60)} resolves. ${noTextSuffix}`).slice(0, 350);
+    const imagePrompt = cleanText(`${shotDesc}, eye-level. ${template.env}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
+    const videoPrompt = cleanText(`${shotDesc}, eye-level. ${cameraMovement}. ${template.env}. ${template.action}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
+    const endImagePrompt = cleanText(`${template.mood}. ${noTextSuffix}`).slice(0, 350);
 
     const videoPromptJson: VideoPromptJson = {
       shotSize: shotType,
@@ -1547,7 +1517,7 @@ function buildDeterministicCuts(
       cutNumber,
       durationSec: secPerCut,
       purpose,
-      sceneDescription: cutSentences[0]?.slice(0, 60) || `장면 ${cutNumber}`,
+      sceneDescription: sceneKo,
       shotType,
       subjectAction,
       emotionalDelta: i === 0 ? "opening→neutral" : "neutral→neutral",
