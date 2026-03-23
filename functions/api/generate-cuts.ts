@@ -719,19 +719,25 @@ async function step1Outlines(
   // ── Step1 프롬프트: 경량 아웃라인 전용 ────────────────────────────────────
   // 목적: characterSeeds + outlines JSON만 빠르게 생성
   // 무거운 규칙(SCENE_TERM_PRECISION, 감정→행동 상세 예시)은 step2/3에서 적용
-  // storyText: 서사 분석에 도입부+결론부 모두 필요하므로, 1200자 이하는 전체 사용.
-  // 초과 시 앞 700자 + "…[중략]…" + 뒤 400자 (결론/핵심 주장이 뒷부분에 있음)
-  const STORY_LIMIT = 1200;
+  // storyText: 서사 분석에 전체 맥락이 필요. 3000자까지 전체 사용.
+  // 초과 시 앞 1500자 + 뒤 1200자 (중간 생략 최소화 — 서사 연결 손실 방지)
+  const STORY_LIMIT = 3000;
   const storyExcerpt = storyText.length <= STORY_LIMIT
     ? storyText
-    : storyText.slice(0, 700) + "\n…[중략]…\n" + storyText.slice(-400);
+    : storyText.slice(0, 1500) + "\n…[중략: 원문 " + (storyText.length - 2700) + "자 생략]…\n" + storyText.slice(-1200);
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 ${formatRules}
 ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${characterPersonaBlock ? characterPersonaBlock.slice(0, 400) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}${fragmentedEditBlock ? fragmentedEditBlock + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
-## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
+## ⚠️ 최우선 원칙: 원본 시나리오의 톤과 서사를 존중하라
+- 시나리오가 일상적/담담한 톤이면 장면도 일상적/담담하게 표현하라. 과도한 드라마화 금지.
+- 시나리오가 정보 전달 목적(역사, 설명, 마케팅 분석 등)이면 장면도 정보 전달 중심으로 구성하라.
+- "극적 긴장감"이나 "감정 폭발"을 시나리오가 요구하지 않으면 인위적으로 추가하지 마라.
+- 시나리오 원문에 없는 사건, 갈등, 위기를 만들어내지 마라.
+- 시나리오의 핵심 주장과 정보 흐름을 빠짐없이 장면에 반영하라.
+
 시나리오를 바로 이미지 프롬프트로 변환하지 마라. 반드시 아래 5단계를 먼저 수행하라.
 
 ### 1단계: 핵심 주장 1문장 요약
@@ -803,7 +809,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 각 outline은 아래 필드 순서대로 작성 (narrativeFunction → newInformation을 먼저 결정한 후 시각 필드 작성):
 
 - cutNumber: 순번
-- sceneKo: ≤30자
+- sceneKo: ≤80자 — 이 장면이 시나리오에서 어떤 맥락/사건/변화를 보여주는지 구체적으로 서술. 단순 라벨("공장 장면") 금지 → 맥락 포함("경쟁 심화로 공장이 문을 닫고 노동자들이 마지막 짐을 싸는 장면")
 - narrativeFunction: 영어 ≤8 words — 이 시퀀스가 전체 이야기에서 맡는 서사 역할 (예: "reveal cause of decline", "show turning point decision", "contrast before and after")
 - newInformation: 영어 ≤12 words — 이 컷이 이전 컷에 없던 새로 전달하는 정보 (예: "reveal the empty factory floor that caused the decline"). 이전 컷과 겹치면 안 됨.
 - emotion: 영어 키워드
@@ -997,7 +1003,7 @@ JSON만: {"_narrativeCore":"≤30자","_targetEmotions":["emotion"],"characterSe
         const characterRole = validRoles.includes(rawRole as CharacterRole) ? rawRole as CharacterRole : "protagonist";
         return {
           cutNumber: Number(o.cutNumber ?? i + 1),
-          sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
+          sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 100),
           narrativeFunction: o.narrativeFunction ? String(o.narrativeFunction).slice(0, 80) : undefined,
           newInformation: o.newInformation ? String(o.newInformation).slice(0, 120) : undefined,
           emotion: String(o.emotion ?? "neutral"),
@@ -1069,6 +1075,7 @@ async function step23DetailBatch(
   contentMode?: "dramatized_reenactment" | "general",         // 콘텐츠 모드별 규칙 적용
   historicalGroundingBlock?: string,                          // Historical Grounding 프롬프트 블록
   koreanSubjectBlock?: string,                                // Contemporary Korean Subject Defaults 블록
+  storyTextExcerpt?: string,                                  // 원본 시나리오 (Step 2/3이 서사 맥락 참조용)
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -1125,6 +1132,7 @@ async function step23DetailBatch(
 - 최우선: STORY ROLE → 시각적 번역. 서사 기능이 보이는 장면 > 멋있는 비주얼.
 - 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
 - 상징/분위기 샷은 서사 보조용만 허용.
+- ⚠️ 원본 시나리오의 톤을 존중하라. 담담한 설명문이면 과도한 극적 표현 금지. 시나리오에 없는 갈등/위기/감정 폭발을 만들지 마라.
 
 ## ⚠️ 컷 간 차별화 (필수 — 위반 시 실패)
 - 인접 컷은 정보/구도/액션/감정 중 최소 2개 이상 달라야 한다.
@@ -1139,7 +1147,7 @@ async function step23DetailBatch(
 ${directorEngine}
 ${editorialSummary ? `\n## ⚠️ EDITORIAL PERSONA REMINDER (step1에서 결정된 편집 기조 — 모든 컷에 적용)\n${editorialSummary}\n- complexity budget 유지: max 1 subject, 1 action, 1 camera motion per cut.` : ""}
 
-${narrativeContext?.core ? `## 서사 핵심 (Step1 분석 결과 — 모든 컷이 이 방향을 따라야 함)\n핵심 주장: ${narrativeContext.core}\n핵심 감정: ${narrativeContext.emotions?.join(", ") ?? "N/A"}\n` : ""}## 전체 시퀀스 컨텍스트 (반복 방지용 — 이 컷들의 흐름 파악에만 사용)
+${narrativeContext?.core ? `## 서사 핵심 (Step1 분석 결과 — 모든 컷이 이 방향을 따라야 함)\n핵심 주장: ${narrativeContext.core}\n핵심 감정: ${narrativeContext.emotions?.join(", ") ?? "N/A"}\n` : ""}${storyTextExcerpt ? `## 원본 시나리오 (서사 맥락 참조 — 장면이 시나리오와 일치해야 함)\n${storyTextExcerpt.slice(0, 1500)}\n\n` : ""}## 전체 시퀀스 컨텍스트 (반복 방지용 — 이 컷들의 흐름 파악에만 사용)
 ${sequenceContext}
 
 ## 이번 배치: CUT${firstCutNum}~CUT${lastCutNum} 상세 연출 지시 생성
@@ -1530,7 +1538,7 @@ async function repairMissingOutlines(
     const rawRole = String(o.characterRole ?? "protagonist");
     return {
       cutNumber: Number(o.cutNumber ?? missingNums[i] ?? existingOutlines.length + i + 1),
-      sceneKo: String(o.sceneKo ?? `장면 ${o.cutNumber ?? i + 1}`).slice(0, 40),
+      sceneKo: String(o.sceneKo ?? `장면 ${o.cutNumber ?? i + 1}`).slice(0, 100),
       narrativeFunction: o.narrativeFunction ? String(o.narrativeFunction).slice(0, 80) : undefined,
       newInformation: o.newInformation ? String(o.newInformation).slice(0, 120) : undefined,
       emotion: String(o.emotion ?? "neutral"),
@@ -2224,7 +2232,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
           const retryResult = await step1Outlines(
             context.env,
-            String(storyText).slice(0, 600), // 스토리도 축약
+            String(storyText).slice(0, 1500), // 스토리 축약 (서사 맥락 유지)
             String(directorNameKo || directorName),
             String(directorPersona ?? ""),
             reducedCuts,
@@ -2319,7 +2327,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               const shotCycleF = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
               outlines = (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => ({
                 cutNumber: Number(o.cutNumber ?? i + 1),
-                sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 40),
+                sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 100),
                 narrativeFunction: o.narrativeFunction ? String(o.narrativeFunction).slice(0, 80) : undefined,
                 newInformation: o.newInformation ? String(o.newInformation).slice(0, 120) : undefined,
                 emotion: String(o.emotion ?? "neutral"),
@@ -2553,7 +2561,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     /** 모든 배치를 병렬 실행하는 헬퍼 — allSettled로 성공 배치 보존 (실패 배치만 재시도 가능) */
     const runAllBatches = async (modelOverride?: string): Promise<unknown[][]> => {
       const results = await Promise.allSettled(step23Batches.map((batch, idx) =>
-        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx, contentMode, historicalGroundingBlock, koreanSubjectBlock)
+        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx, contentMode, historicalGroundingBlock, koreanSubjectBlock, storyExcerpt)
       ));
       const fulfilled: unknown[][] = [];
       let firstError: unknown = null;
