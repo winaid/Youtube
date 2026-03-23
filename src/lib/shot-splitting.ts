@@ -564,9 +564,11 @@ export function computeShotSimilarity(a: ShotDescriptor, b: ShotDescriptor): num
   if (a.camera.motion === b.camera.motion) { score += 0.1; }
   factors += 0.1;
 
-  // Subject overlap — core subject words
-  const aSubjectWords = new Set(a.subject.toLowerCase().split(/\s+/).filter(w => w.length > 3));
-  const bSubjectWords = new Set(b.subject.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  // Subject overlap — core subject words (subject can be string or { primary })
+  const aSubj = typeof a.subject === "string" ? a.subject : (a.subject as { primary: string }).primary ?? "";
+  const bSubj = typeof b.subject === "string" ? b.subject : (b.subject as { primary: string }).primary ?? "";
+  const aSubjectWords = new Set(aSubj.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const bSubjectWords = new Set(bSubj.toLowerCase().split(/\s+/).filter(w => w.length > 3));
   const subjectOverlap = [...aSubjectWords].filter(w => bSubjectWords.has(w)).length;
   const subjectUnion = new Set([...aSubjectWords, ...bSubjectWords]).size;
   if (subjectUnion > 0) {

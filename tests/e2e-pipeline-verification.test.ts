@@ -472,7 +472,8 @@ describe("Sample 2: Steve Jobs biography — full pipeline verification", () => 
       expect(firstShot).toBeDefined();
       expect(firstShot.shotId).toBe("shot_1");
       // subject.primary should have content from the analysis
-      const hasContent = firstShot.subject.length > 0 || firstShot.focus.length > 0;
+      const subjStr = typeof firstShot.subject === "string" ? firstShot.subject : (firstShot.subject as { primary: string })?.primary ?? "";
+      const hasContent = subjStr.length > 0 || firstShot.focus.length > 0;
       expect(hasContent).toBe(true);
 
       // The multiShot from convertToCuts should already have content-aware prompts

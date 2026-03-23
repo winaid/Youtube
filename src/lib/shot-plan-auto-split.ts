@@ -635,7 +635,8 @@ export function compressAutoSplitPrompt(
   if (shots.length === 0) return "";
 
   // 환경 + 주체 + 조명을 context header로 (context 우선, 없으면 shots[0])
-  const subj = context?.subjectPrimary || shots[0].subject;
+  const rawSubj = shots[0].subject;
+  const subj = context?.subjectPrimary || (typeof rawSubj === "string" ? rawSubj : (rawSubj as { primary: string }).primary ?? "subject");
   const env = (context?.environment || shots[0].environment).slice(0, 50);
   const mood = (context?.moodLighting || shots[0].moodLighting).slice(0, 35);
   const header = `${subj}, ${env}. ${mood}.`;
