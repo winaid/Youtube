@@ -11,6 +11,7 @@
 
 # Pages 프로젝트 이름 (Cloudflare Pages 필수)
 name = "youtube"
+compatibility_date = "2024-09-23"
 
 # Pages 빌드 출력 디렉토리 (next export → out/)
 pages_build_output_dir = "out"
