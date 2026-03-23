@@ -545,8 +545,9 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
       locationCue: json?.locationCue,
       situationCue: json?.situationCue,
       emotionalAnchor: json?.emotionalAnchor,
-      // environment는 장소 묘사여야 한다. sceneDescription은 기획 라벨일 수 있으므로 fallback 제거.
-      environment: json?.locationCue || cut.moodLighting || "",
+      // environment는 장소/공간 묘사. moodLighting과 혼동하지 않는다.
+      // 우선: locationCue → sceneDescription(첫 80자) → 빈 문자열
+      environment: json?.locationCue || (cut.sceneDescription || "").slice(0, 80) || "",
       moodLighting: json?.moodLighting || cut.moodLighting || "",
     },
 

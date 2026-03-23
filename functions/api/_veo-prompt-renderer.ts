@@ -355,8 +355,11 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
   }
 
   // ── 자막/텍스트 방지 강화: VEO는 negative prompt 미지원 → positive에서 강제 ──
-  const TEXT_FREE_DIRECTIVE = "This video must contain absolutely no text, no subtitles, no captions, no title cards, no written words, no on-screen typography of any kind. Purely visual storytelling only.";
-  finalPrompt = TEXT_FREE_DIRECTIVE + "\n\n" + finalPrompt;
+  // NOTE: TEXT_FREE_DIRECTIVE와 historical grounding은 VEO 시스템 지시어이므로
+  // 500자 제한 대상이 아님. 500자 제한은 사용자 컨텐츠 프롬프트(shot descriptions)에만 적용.
+  // VEO API의 실제 토큰 상한(1024 tokens ≈ 3000 chars)은 별도로 maxPromptLen=3000으로 관리.
+  const TEXT_FREE_DIRECTIVE = "No text, no subtitles, no captions, no written words. Visual storytelling only.";
+  finalPrompt = TEXT_FREE_DIRECTIVE + "\n" + finalPrompt;
 
   // ── Historical grounding injection — 역사적 시각 앵커를 프롬프트에 주입 ──
   if (input.historicalGrounding) {

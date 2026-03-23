@@ -467,7 +467,7 @@ export async function generatePrompt(
           sceneDescription: cut.sceneDescription || "",
           subjectPrimary: cut.charactersInScene?.[0] || "subject",
           action: cut.videoPrompt || cut.sceneDescription || "",
-          environment: cut.moodLighting || "",
+          environment: (cut.sceneDescription || "").slice(0, 80) || "scene environment",
           moodLighting: cut.moodLighting || "",
           durationSec: cut.durationSec,
           camera: { framing: "MS", angle: "eye-level", motion: "steady" },
