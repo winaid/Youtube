@@ -117,7 +117,8 @@ interface GenerateCutsResponse {
 
 type Env = GeminiEnv;
 
-const MODEL_OUTLINE = GEMINI_MODEL_PRO;
+// Step1은 빠른 응답이 중요 — Pro가 55초 내 응답 실패 빈번 → Flash 사용
+const MODEL_OUTLINE = GEMINI_MODEL_FLASH;
 // Step2/3 (디테일 보강)은 Flash 사용: Pro 대비 품질 차이 미미, 타임아웃 해소
 const MODEL_DETAIL  = GEMINI_MODEL_FLASH;
 
@@ -611,6 +612,47 @@ function inferMultiShotRole(index: number, total: number): ShotRoleServer {
   const midPoint = Math.floor(total / 2);
   if (index === midPoint) return "peak";
   return "develop";
+}
+
+// ─── 스토리 기반 기본 캐릭터 추출 (deterministic fallback용) ───────────────────
+
+function extractDefaultSeeds(storyText: string): CharacterSeed[] {
+  const text = storyText || "";
+  // 한국어 인물 패턴: "이름은 ~", "~(이)라는 사람", 따옴표 안 대사 화자 등
+  const namePatterns = [
+    /([가-힣]{2,4})(?:은|는|이|가)\s/g,  // 주어 패턴
+    /([가-힣]{2,4})(?:씨|님|군|양)/g,    // 호칭 패턴
+  ];
+
+  const nameCounts = new Map<string, number>();
+  const stopWords = new Set(["그것","이것","저것","우리","나는","너는","여기","거기","오늘","내일","어제","그녀","그의","모든","하지","때문","이런","저런","그런","다른","같은","없는","있는","하는","되는","보는","가는","오는","주는","받는","만든","부터","까지","에서","으로","라고","에게","하고","이라","라는","라며","에는","도는","서는"]);
+
+  for (const pattern of namePatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const name = match[1];
+      if (name.length >= 2 && !stopWords.has(name)) {
+        nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
+      }
+    }
+  }
+
+  // 빈도순 정렬 후 상위 3개
+  const topNames = [...nameCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name]) => name);
+
+  if (topNames.length === 0) {
+    return [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing, natural look", appearanceKo: "캐주얼 의상의 젊은 인물" }];
+  }
+
+  return topNames.map((name, i) => ({
+    id: `char-${i + 1}`,
+    label: name,
+    appearance: `A person in the story. casual modern clothing, natural look`,
+    appearanceKo: `${name} — 스토리 등장인물`,
+  }));
 }
 
 // ─── JSON 파싱 유틸 ───────────────────────────────────────────────────────────
@@ -1444,19 +1486,42 @@ function buildDeterministicCuts(
     return cleaned.replace(/\s{2,}/g, " ").trim();
   };
 
+  // 스토리 텍스트를 문장 단위로 분할하여 각 컷에 다른 내용 할당
+  const sentences = storyText
+    .split(/[.!?。]\s*/)
+    .map(s => s.trim())
+    .filter(s => s.length > 5);
+  const sentencesPerCut = Math.max(1, Math.floor(sentences.length / cutCount));
+
   const cuts = Array.from({ length: cutCount }, (_, i) => {
     const cutNumber = i + 1;
     const shotType = shotCycle[i % shotCycle.length];
     const purpose = i === 0 ? "establish" : i === cutCount - 1 ? "resolve" : purposeCycle[Math.min(i, purposeCycle.length - 1)];
     const cameraMovement = movementCycle[i % movementCycle.length];
-    const subjectAction = i === 0 ? "camera reveals the space and atmosphere" : `subject moves through scene ${cutNumber}`;
+
+    // 각 컷에 스토리의 다른 부분 할당
+    const cutSentences = sentences.slice(i * sentencesPerCut, (i + 1) * sentencesPerCut);
+    const sceneContext = cutSentences.join(". ").slice(0, 120) || storyExcerpt.slice(0, 80);
+
+    const subjectActions = [
+      "figure enters the frame, pausing to observe surroundings",
+      "character reaches forward, fingers brush against weathered surface",
+      "subject turns sharply, body tense with recognition",
+      "hands grip object tightly, knuckles whitening",
+      "character steps back, shoulders dropping with realization",
+      "figure leans closer, eyes narrowing at discovery",
+      "subject walks through space, each step deliberate",
+      "character's hand rises to shield face from light",
+      "figure stands at threshold, hesitating before crossing",
+    ];
+    const subjectAction = i === 0 ? "camera slowly reveals the environment, drifting across key details" : subjectActions[i % subjectActions.length];
 
     const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
     const shotDesc = shotLabel[shotType] || shotType;
 
-    const imagePrompt = cleanText(`${shotDesc} shot, eye-level. Scene from: ${storyExcerpt.slice(0, 60)}. ${defaultLighting} ${noTextSuffix}`);
-    const videoPrompt = cleanText(`${shotDesc} shot, eye-level. ${cameraMovement}. Scene ${cutNumber}: ${storyExcerpt.slice(0, 80)}. ${defaultLighting} ${noTextSuffix}`);
-    const endImagePrompt = cleanText(`Scene ${cutNumber} concludes. ${noTextSuffix}`);
+    const imagePrompt = cleanText(`${shotDesc}, eye-level. ${sceneContext}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
+    const videoPrompt = cleanText(`${shotDesc}, eye-level. ${cameraMovement}. ${sceneContext}. ${subjectAction}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
+    const endImagePrompt = cleanText(`${sceneContext.slice(0, 60)} resolves. ${noTextSuffix}`).slice(0, 350);
 
     const videoPromptJson: VideoPromptJson = {
       shotSize: shotType,
@@ -1482,7 +1547,7 @@ function buildDeterministicCuts(
       cutNumber,
       durationSec: secPerCut,
       purpose,
-      sceneDescription: `장면 ${cutNumber}`,
+      sceneDescription: cutSentences[0]?.slice(0, 60) || `장면 ${cutNumber}`,
       shotType,
       subjectAction,
       emotionalDelta: i === 0 ? "opening→neutral" : "neutral→neutral",
@@ -2313,7 +2378,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         console.warn("[generate-cuts] step1 timeout + ultra-compact already tried → deterministic fallback (Gemini 호출 1회 절약)");
         step1Warnings.push("step1 timeout + ultra-compact already failed → deterministic fallback");
         const deterministicCuts = buildDeterministicCuts(String(storyText), String(directorName), targetCuts, secPerCut, videoStyle, regionFlavor, String(animationMode), editorial);
-        const defaultSeeds: CharacterSeed[] = [{ id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing, natural look", appearanceKo: "캐주얼 의상의 젊은 인물" }];
+        const defaultSeeds: CharacterSeed[] = extractDefaultSeeds(String(storyText));
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
         for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
         repairMultiShotMinimums(finalizedCuts);
@@ -2412,12 +2477,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             String(aspectRatio ?? "16:9"),
           );
 
-          const defaultSeeds: CharacterSeed[] = [{
-            id: "char-1",
-            label: "주인공",
-            appearance: "A young person, casual modern clothing, natural look",
-            appearanceKo: "캐주얼 의상의 젊은 인물",
-          }];
+          const defaultSeeds: CharacterSeed[] = extractDefaultSeeds(String(storyText));
 
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
           for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
@@ -2459,12 +2519,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           editorial,
         );
 
-        const defaultSeeds: CharacterSeed[] = [{
-          id: "char-1",
-          label: "주인공",
-          appearance: "A young person, casual modern clothing, natural look",
-          appearanceKo: "캐주얼 의상의 젊은 인물",
-        }];
+        const defaultSeeds: CharacterSeed[] = extractDefaultSeeds(String(storyText));
 
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
         for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
