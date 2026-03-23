@@ -6,9 +6,11 @@
  *   2. hard cuts 스타일 뷰티 광고 → 반드시 shot-by-shot output
  *   3. montage 요청 장면 → temporalBeats만이 아니라 shots 배열 필수
  *   4. insert shot 다수 포함 요청 → insert shot이 실제 별도 shot으로 분리
- *   5. Validator: 5가지 실패 코드 검증
+ *   5. Validator: 8가지 실패 코드 검증
  *   6. Prompt 500자 제한 검증
  *   7. UI integration: isFragmentedEditRequested 검증
+ *   8. Narrative clarity / scene meaning validation
+ *   9. compressedPrompt field in AutoSplitResult
  */
 
 import { describe, it, expect } from "vitest";
@@ -18,6 +20,9 @@ import {
   compressAutoSplitPrompt,
   detectFragmentedIntent,
   isFragmentedEditRequested,
+  validatePromptContent,
+  validateNarrativeClarity,
+  shotsToMultiShotPrompts,
   PROMPT_CHAR_LIMIT,
   type AutoSplitInput,
 } from "@/lib/shot-plan-auto-split";
@@ -128,6 +133,12 @@ describe("Test 1: 컷 분절 광고 장면 → 3개 이상 shot", () => {
       expect(allSame).toBe(false);
     }
   });
+
+  it("returns compressedPrompt within 500 chars", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    expect(result.compressedPrompt).toBeTruthy();
+    expect(result.compressedPrompt.length).toBeLessThanOrEqual(PROMPT_CHAR_LIMIT);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -206,7 +217,7 @@ describe("Test 4: insert shot 요청 → insert shot이 별도 shot으로 분리
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 5. Validator: 5 failure codes
+// 5. Validator: 8 failure codes
 // ═══════════════════════════════════════════════════════════════════
 
 describe("Validator failure codes", () => {
@@ -263,7 +274,6 @@ describe("Validator failure codes", () => {
   });
 
   it("insufficient_shot_variation — identical adjacent shots", () => {
-    // Create shots with identical visual properties
     const identicalShots: ShotDescriptor[] = [
       { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "MS", angle: "eye-level", motion: "steady" }, subject: "person walking", action: "person walking slowly", environment: "street", moodLighting: "day", focus: "medium" },
       { shotId: "shot_2", startSec: 3, endSec: 5, camera: { framing: "MS", angle: "eye-level", motion: "steady" }, subject: "person walking", action: "person walking slowly", environment: "street", moodLighting: "day", focus: "medium" },
@@ -272,6 +282,19 @@ describe("Validator failure codes", () => {
     const result = validateAutoSplitResult(identicalShots, fragmentedCtx);
     expect(result.passed).toBe(false);
     expect(result.issues.some(i => i.code === "insufficient_shot_variation")).toBe(true);
+  });
+
+  it("prompt_exceeds_500_chars — overly long prompt", () => {
+    const shots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "person", action: "walking", environment: "street", moodLighting: "day", focus: "wide" },
+      { shotId: "shot_2", startSec: 3, endSec: 5, camera: { framing: "MS", angle: "low-angle", motion: "tracking" }, subject: "person", action: "running", environment: "park", moodLighting: "sunset", focus: "medium" },
+      { shotId: "shot_3", startSec: 5, endSec: 8, camera: { framing: "CU", angle: "high-angle", motion: "push-in" }, subject: "face", action: "crying", environment: "indoor", moodLighting: "dim", focus: "close" },
+    ];
+    // Create a prompt that exceeds 500 chars
+    const longPrompt = "x".repeat(501);
+    const result = validateAutoSplitResult(shots, fragmentedCtx, longPrompt);
+    expect(result.passed).toBe(false);
+    expect(result.issues.some(i => i.code === "prompt_exceeds_500_chars")).toBe(true);
   });
 
   it("passes for non-fragmented context", () => {
@@ -288,13 +311,13 @@ describe("Validator failure codes", () => {
 describe("Prompt 500 character limit", () => {
   it("compresses prompt within 500 chars", () => {
     const result = planAutoSplitShots(BASE_INPUT);
-    const prompt = compressAutoSplitPrompt(result.shots);
+    const prompt = compressAutoSplitPrompt(result.shots, BASE_INPUT);
     expect(prompt.length).toBeLessThanOrEqual(PROMPT_CHAR_LIMIT);
   });
 
   it("maintains shot structure in compressed prompt", () => {
     const result = planAutoSplitShots(BASE_INPUT);
-    const prompt = compressAutoSplitPrompt(result.shots);
+    const prompt = compressAutoSplitPrompt(result.shots, BASE_INPUT);
     // Each shot should appear as a line with timing bracket
     const shotLines = prompt.split("\n").filter(l => l.startsWith("["));
     expect(shotLines.length).toBe(result.shots.length);
@@ -308,8 +331,14 @@ describe("Prompt 500 character limit", () => {
       moodLighting: "m".repeat(100),
     };
     const result = planAutoSplitShots(longInput);
-    const prompt = compressAutoSplitPrompt(result.shots);
+    const prompt = compressAutoSplitPrompt(result.shots, longInput);
     expect(prompt.length).toBeLessThanOrEqual(PROMPT_CHAR_LIMIT);
+  });
+
+  it("planAutoSplitShots result has compressedPrompt within limit", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    expect(result.compressedPrompt).toBeTruthy();
+    expect(result.compressedPrompt.length).toBeLessThanOrEqual(PROMPT_CHAR_LIMIT);
   });
 });
 
@@ -357,5 +386,103 @@ describe("validateKoreanDefaults with fragmented context", () => {
       { fragmentedContext: fCtx },
     );
     expect(warnings.some(w => w.code === "single_shot_fragmented")).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 10. Narrative clarity validation
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Narrative clarity", () => {
+  it("validates that prompt contains concrete actions/subjects", () => {
+    const goodShots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "young woman", action: "woman walks through door", environment: "dark room", moodLighting: "dim blue light", focus: "establish" },
+      { shotId: "shot_2", startSec: 3, endSec: 5, camera: { framing: "CU", angle: "low-angle", motion: "push-in" }, subject: "hands", action: "hands grab the phone from table", environment: "desk", moodLighting: "screen glow", focus: "detail" },
+      { shotId: "shot_3", startSec: 5, endSec: 8, camera: { framing: "MCU", angle: "high-angle", motion: "static" }, subject: "face", action: "face lit by screen, eyes widen", environment: "dark room", moodLighting: "blue glow", focus: "peak" },
+    ];
+    const prompt = compressAutoSplitPrompt(goodShots);
+    const issues = validateNarrativeClarity(prompt, goodShots);
+    // Good concrete prompt should not have critical clarity issues
+    const errors = issues.filter(i => i.severity === "error");
+    expect(errors.length).toBe(0);
+  });
+
+  it("warns about purely abstract/mood-only prompts", () => {
+    const abstractShots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "ethereal", action: "ethereal transcendent sublime ineffable liminal ephemeral", environment: "liminal space", moodLighting: "ethereal glow", focus: "abstract" },
+      { shotId: "shot_2", startSec: 3, endSec: 5, camera: { framing: "MS", angle: "low-angle", motion: "tracking" }, subject: "metaphysical", action: "metaphysical existential sublime transcendent", environment: "void", moodLighting: "ethereal", focus: "abstract" },
+      { shotId: "shot_3", startSec: 5, endSec: 8, camera: { framing: "CU", angle: "high-angle", motion: "push-in" }, subject: "ineffable", action: "ineffable liminal ephemeral transcendent sublime", environment: "nowhere", moodLighting: "ethereal", focus: "abstract" },
+    ];
+    const prompt = abstractShots.map(s => s.action).join(". ");
+    const issues = validateNarrativeClarity(prompt, abstractShots);
+    expect(issues.some(i => i.code === "unclear_context_without_script")).toBe(true);
+  });
+
+  it("detects when all shots have identical action (no narrative)", () => {
+    const sameActionShots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "person", action: "standing still", environment: "room", moodLighting: "warm", focus: "establish" },
+      { shotId: "shot_2", startSec: 3, endSec: 5, camera: { framing: "MS", angle: "low-angle", motion: "tracking" }, subject: "person", action: "standing still", environment: "room", moodLighting: "warm", focus: "develop" },
+      { shotId: "shot_3", startSec: 5, endSec: 8, camera: { framing: "CU", angle: "high-angle", motion: "push-in" }, subject: "person", action: "standing still", environment: "room", moodLighting: "warm", focus: "peak" },
+    ];
+    const prompt = compressAutoSplitPrompt(sameActionShots);
+    const issues = validateNarrativeClarity(prompt, sameActionShots);
+    expect(issues.some(i => i.code === "scene_not_narratively_clear")).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. Prompt content validation
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Prompt content validation", () => {
+  it("detects missing subject in compressed prompt", () => {
+    const shots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "young woman", action: "walks", environment: "street", moodLighting: "day", focus: "establish" },
+    ];
+    // Prompt that deliberately omits the subject
+    const missing = validatePromptContent("Wide shot, warm light, calm atmosphere", shots);
+    expect(missing).toContain("subject identity");
+  });
+
+  it("passes when all content present", () => {
+    const shots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "young woman", action: "walks through door", environment: "dark street", moodLighting: "neon glow", focus: "establish" },
+    ];
+    const prompt = "young woman, WS pan. dark street. neon glow. walks through door";
+    const missing = validatePromptContent(prompt, shots);
+    expect(missing.length).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 12. shotsToMultiShotPrompts conversion
+// ═══════════════════════════════════════════════════════════════════
+
+describe("shotsToMultiShotPrompts", () => {
+  it("converts ShotDescriptors to MultiShotPrompt format", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    const multiShots = shotsToMultiShotPrompts(result.shots);
+
+    expect(multiShots.length).toBe(result.shots.length);
+    for (const ms of multiShots) {
+      expect(ms.index).toBeGreaterThan(0);
+      expect(ms.prompt).toBeTruthy();
+      expect(ms.prompt.length).toBeGreaterThan(10);
+      expect(ms.duration).toBeTruthy();
+      expect(ms.role).toBeTruthy();
+    }
+  });
+
+  it("each shot prompt contains framing and action info", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    const multiShots = shotsToMultiShotPrompts(result.shots);
+
+    for (let i = 0; i < multiShots.length; i++) {
+      const prompt = multiShots[i].prompt.toLowerCase();
+      // Should contain some framing reference
+      expect(
+        prompt.includes("wide") || prompt.includes("close") || prompt.includes("medium") || prompt.includes("long") || prompt.includes("shot"),
+      ).toBe(true);
+    }
   });
 });

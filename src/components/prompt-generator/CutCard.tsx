@@ -9,6 +9,7 @@ import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/l
 import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles, planRecommendedShotCount } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
 import { detectShotProgression, splitSingleShotSequence, type ShotBeatHint } from "@/lib/shot-splitting";
+import { autoSplitForUI, isFragmentedEditRequested, shotsToMultiShotPrompts, type AutoSplitResult } from "@/lib/shot-plan-auto-split";
 import type { CutCardViewModel } from "@/lib/canonical-view-model";
 import ShotComparisonPanel from "./ShotComparisonPanel";
 import StructureMetaBadges from "@/components/shared/StructureMetaBadges";
@@ -342,6 +343,38 @@ export default function CutCard({
   const [refining, setRefining] = useState(false);
   const [englishRefining, setEnglishRefining] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [autoSplitResult, setAutoSplitResult] = useState<AutoSplitResult | null>(null);
+
+  // 분절 편집 감지 — storyText / sceneDescription에서 fragmented intent 확인
+  const storyTextForDetection = cut.sceneDescription || effectiveVideoPrompt || "";
+  const showAutoSplitButton = isFragmentedEditRequested(storyTextForDetection) && effectiveMultiShot.length < 3;
+
+  const handleAutoSplit = () => {
+    if (!modelId || !onUpdate) return;
+    const result = autoSplitForUI({
+      storyText: storyTextForDetection,
+      sceneDescription: cut.sceneDescription || "",
+      subjectPrimary: cut.characterConsistency || "subject",
+      action: effectiveVideoPrompt || cut.sceneDescription || "",
+      environment: cut.moodLighting || "",
+      moodLighting: cut.moodLighting || "",
+      durationSec: effectiveDurationSec,
+      camera: {
+        framing: cut.cameraDirection?.match(/\b(WS|MS|CU|MCU|ECU|LS)\b/i)?.[0] || "MS",
+        angle: "eye-level",
+        motion: cut.cameraDirection || "static",
+      },
+      sceneType: cut.shotCategory || "default",
+    });
+    setAutoSplitResult(result);
+
+    if (result.validation.passed && result.shots.length >= 3) {
+      const sceneType = (cut.shotCategory ?? "default") as PlannerSceneType;
+      const roles = planShotRoles(result.shots.length, sceneType);
+      const multiShotPrompts = shotsToMultiShotPrompts(result.shots, roles);
+      onUpdate({ ...cut, multiShot: multiShotPrompts });
+    }
+  };
 
   // 멀티샷 자동 초기화 — useEffect로 안전하게 처리
   // Priority: progression-aware split > generic role-based split
@@ -563,6 +596,31 @@ export default function CutCard({
             </div>
           )}
         </div>
+
+        {/* 자동 분할 버튼 — 분절 편집 감지 시 표시 */}
+        {showAutoSplitButton && modelId && onUpdate && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              style={{ borderColor: "#e85d04", color: "#e85d04" }}
+              onClick={handleAutoSplit}
+            >
+              자동 나누기 (컷 분절)
+            </Button>
+            {autoSplitResult && !autoSplitResult.validation.passed && (
+              <span className="text-[9px] text-red-500">
+                {autoSplitResult.validation.issues.map(i => i.message).join("; ")}
+              </span>
+            )}
+            {autoSplitResult && autoSplitResult.validation.passed && (
+              <span className="text-[9px] text-green-600">
+                {autoSplitResult.shots.length}개 샷 생성 완료
+              </span>
+            )}
+          </div>
+        )}
 
         {/* 멀티샷 기본 에디터 — eligible 클립은 자동 초기화 */}
         {modelId && onUpdate && (() => {

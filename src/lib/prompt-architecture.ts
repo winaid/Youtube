@@ -911,3 +911,66 @@ export function assemblePromptV2(
     wordCount: finalPrompt.split(/\s+/).length,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────
+// 7. Shot-by-Shot Prompt Builder (Fragmented Edit)
+// ─────────────────────────────────────────────────────────────────
+
+export interface ShotPromptInput {
+  shotId: string;
+  camera: { framing: string; angle: string; motion: string };
+  subject: string;
+  action: string;
+  environment: string;
+  moodLighting: string;
+  role?: string;
+  styleSuffix?: string;
+}
+
+/**
+ * 개별 shot에 대한 독립 프롬프트를 생성.
+ * 6계층 구조를 유지하되 shot 단위에 맞게 압축.
+ *
+ * 장면 명료성 규칙:
+ * - 시나리오 원문을 모르는 viewer도 장면 의미 이해 가능
+ * - 누가, 어디서, 무엇을, 왜 하고 있는지 드러남
+ * - 추상적 미장센만 나열하지 않음
+ *
+ * grep: buildShotPrompt
+ */
+export function buildShotPrompt(shot: ShotPromptInput): string {
+  const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
+    shot.camera.framing === "CU" ? "Close-up" :
+    shot.camera.framing === "ECU" ? "Extreme close-up" :
+    shot.camera.framing === "MCU" ? "Medium close-up" :
+    shot.camera.framing === "LS" ? "Long shot" :
+    `${shot.camera.framing} shot`;
+
+  const motionPart = shot.camera.motion && shot.camera.motion !== "static"
+    ? `, ${shot.camera.motion}` : "";
+  const anglePart = shot.camera.angle && shot.camera.angle !== "eye-level"
+    ? ` from ${shot.camera.angle}` : "";
+
+  // A. Subject anchor — who + what
+  const subjectAnchor = `${framingLabel}${anglePart}${motionPart} of ${shot.subject}`;
+
+  // B+C. Scene + Visual — where + mood
+  const sceneVisual = `${shot.environment}. ${shot.moodLighting}`;
+
+  // D. Action — what is happening
+  const action = shot.action;
+
+  // Style suffix (if any)
+  const style = shot.styleSuffix ? `. ${shot.styleSuffix}` : "";
+
+  return `${subjectAnchor}. ${action}. ${sceneVisual}${style}`.trim();
+}
+
+/**
+ * shot 배열 전체에 대한 개별 프롬프트를 배치 생성.
+ *
+ * grep: buildShotPrompts
+ */
+export function buildShotPrompts(shots: ShotPromptInput[]): string[] {
+  return shots.map(buildShotPrompt);
+}

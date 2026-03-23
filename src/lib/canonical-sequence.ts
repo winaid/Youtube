@@ -167,12 +167,29 @@ export function canonicalShotsToMultiShot(
     rawDurations[rawDurations.length - 1] += totalDuration - rawSum;
   }
 
-  return seq.shots.map((shot, i) => ({
-    index: i + 1,
-    prompt: `${shot.camera.framing} shot. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
-    duration: String(Math.max(1, rawDurations[i])),
-    role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length),
-  }));
+  return seq.shots.map((shot, i) => {
+    // Rich prompt: framing label + motion (if not static) + action + env + mood
+    const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
+      shot.camera.framing === "CU" ? "Close-up" :
+      shot.camera.framing === "ECU" ? "Extreme close-up" :
+      shot.camera.framing === "MCU" ? "Medium close-up" :
+      shot.camera.framing === "LS" ? "Long shot" :
+      `${shot.camera.framing} shot`;
+    const motionPart = shot.camera.motion && shot.camera.motion !== "static"
+      ? `, ${shot.camera.motion}` : "";
+    const parts = [
+      `${framingLabel}${motionPart}`,
+      shot.action,
+      shot.environment,
+      shot.moodLighting,
+    ].filter(Boolean);
+    return {
+      index: i + 1,
+      prompt: parts.join(". ").trim(),
+      duration: String(Math.max(1, rawDurations[i])),
+      role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length),
+    };
+  });
 }
 
 function inferRoleFromPosition(index: number, total: number): ShotRole {

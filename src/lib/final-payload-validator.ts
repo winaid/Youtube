@@ -514,6 +514,35 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
         });
       }
     }
+
+    // Rule 18f: 500자 초과 검사 (개별 shot prompt)
+    if (input.multiShots) {
+      for (const shot of input.multiShots) {
+        if (shot.prompt && shot.prompt.length > 500) {
+          issues.push({
+            rule: "prompt_exceeds_500_chars",
+            severity: "warning",
+            message: `Shot ${shot.index} prompt is ${shot.prompt.length} chars — exceeds 500 char limit for fragmented editing.`,
+          });
+        }
+      }
+    }
+
+    // Rule 18g: 서사 명료성 — 구체적 동작이나 피사체 없이 추상적 분위기만 나열
+    if (input.multiShots && input.multiShots.length >= 3) {
+      const ABSTRACT_RE = /\b(ethereal|transcendent|metaphysical|existential|ineffable|liminal|sublime|ephemeral)\b/gi;
+      const CONCRETE_RE = /\b(walk|run|hold|grab|sit|stand|drop|pour|cook|cut|scroll|type|turn|pick|reveal|emerge|person|woman|man|child|hand|face|eye|phone|screen|door|window|table|street|building|kitchen)\b/gi;
+      const allPrompts = input.multiShots.map(s => s.prompt).join(" ");
+      const abstractCount = (allPrompts.match(ABSTRACT_RE) || []).length;
+      const concreteCount = (allPrompts.match(CONCRETE_RE) || []).length;
+      if (abstractCount > concreteCount && abstractCount > 3) {
+        issues.push({
+          rule: "scene_not_narratively_clear",
+          severity: "warning",
+          message: `Fragmented edit prompts contain more abstract terms (${abstractCount}) than concrete visual elements (${concreteCount}) — add specific actions and subjects.`,
+        });
+      }
+    }
   }
 
   const errorCount = issues.filter(i => i.severity === "error").length;

@@ -70,6 +70,27 @@ export interface ViewportState {
   panY: number;
 }
 
+/**
+ * ShotPlanEntry — shot-by-shot plan의 개별 항목.
+ * auto-split / fragmented edit 결과로 생성되며,
+ * 각 shot의 독립된 시각 단위를 정의한다.
+ */
+export interface ShotPlanEntry {
+  shotId: string;
+  startSec: number;
+  endSec: number;
+  camera: {
+    framing: string;
+    angle: string;
+    motion: string;
+  };
+  subject: { primary: string };
+  action: string;
+  environment: string;
+  moodLighting: string;
+  role?: string;
+}
+
 /** Preserved cut data for roundtrip (non-editable fields stored on generate-video node) */
 export interface PreservedCutData {
   cameraDirection?: string;
@@ -81,6 +102,8 @@ export interface PreservedCutData {
   characterConsistency?: string;
   charactersInScene?: string[];
   multiShot?: unknown[];
+  /** Structured shot plan from auto-split (preserves full camera/action metadata) */
+  shotPlan?: ShotPlanEntry[];
   shotCategory?: string;
   characterRole?: string;
   structureType?: string;

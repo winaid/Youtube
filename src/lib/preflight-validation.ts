@@ -56,7 +56,9 @@ export type PreflightErrorCode =
   | "style_warning"
   | "style_info"
   | "fragmented_edit_insufficient_shots"
-  | "fragmented_edit_single_shot";
+  | "fragmented_edit_single_shot"
+  | "fragmented_edit_no_variation"
+  | "fragmented_prompt_too_long";
 
 export interface PreflightIssue {
   severity: PreflightSeverity;
@@ -498,6 +500,31 @@ function checkFragmentedEdit(input: PreflightInput, issues: PreflightIssue[]) {
         messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 스타일 "${fec.editStyle}"에 최소 ${fec.minShotCount}개 샷 권장, 현재 ${shots.length}개입니다.`,
         cutNumber: cut.cutNumber,
       });
+    }
+
+    // shot 간 variation 부족 검사 — 모든 prompt prefix가 동일하면 경고
+    if (shots.length >= 3) {
+      const prefixes = shots.map(s => s.prompt.slice(0, 40).toLowerCase());
+      if (new Set(prefixes).size <= 1) {
+        issues.push({
+          severity: "warning",
+          code: "fragmented_edit_no_variation",
+          messageKo: `시퀀스 ${cut.cutNumber}: 모든 샷의 시각적 설명이 동일합니다. 분절 편집은 각 샷이 독립된 시각 단위여야 합니다.`,
+          cutNumber: cut.cutNumber,
+        });
+      }
+    }
+
+    // 프롬프트 500자 초과 검사
+    for (const shot of shots) {
+      if (shot.prompt && shot.prompt.length > 500) {
+        issues.push({
+          severity: "warning",
+          code: "fragmented_prompt_too_long",
+          messageKo: `시퀀스 ${cut.cutNumber}, 샷 ${shot.index}: 프롬프트가 ${shot.prompt.length}자 — 500자 이내 권장`,
+          cutNumber: cut.cutNumber,
+        });
+      }
     }
   }
 }

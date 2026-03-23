@@ -13,9 +13,12 @@
  *   - 각 shot에 shotId / startSec / endSec / camera / subject / action / environment / moodLighting
  *   - shot 간 framing / angle / motion / action 변화 필수
  *   - single-shot output 또는 temporalBeats만 나열 금지
+ *   - 최종 프롬프트 500자 hard limit
+ *   - 프롬프트만 읽어도 시나리오 원문 없이 장면 의미 이해 가능해야 함
  *
  * grep: planAutoSplitShots, validateAutoSplitResult, AutoSplitResult,
- *       FRAGMENTED_EDIT_PATTERNS, detectFragmentedIntent
+ *       FRAGMENTED_EDIT_PATTERNS, detectFragmentedIntent,
+ *       validatePromptClarity, compressAutoSplitPrompt
  */
 
 import {
@@ -71,6 +74,8 @@ export interface AutoSplitInput {
 export interface AutoSplitResult {
   /** 분할된 shot 배열 — 최소 3개 */
   shots: ShotDescriptor[];
+  /** 500자 이내 압축 프롬프트 */
+  compressedPrompt: string;
   /** 분할 로그 */
   splitLog: string[];
   /** 분절 편집 컨텍스트 */
@@ -97,7 +102,11 @@ export type AutoSplitErrorCode =
   | "fragmented_edit_but_single_shot"
   | "fragmented_edit_without_shots_array"
   | "insufficient_shot_variation"
-  | "shots_below_minimum_count";
+  | "shots_below_minimum_count"
+  | "prompt_exceeds_500_chars"
+  | "compressed_prompt_missing_required_content"
+  | "scene_not_narratively_clear"
+  | "unclear_context_without_script";
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants
@@ -111,6 +120,9 @@ const FRAGMENTED_PREFERRED_SHOTS = 4;
 
 /** shot 간 최소 시각적 차이 임계값 (유사도 이 이하여야 통과) */
 const MAX_ADJACENT_SIMILARITY = 0.6;
+
+/** 최대 프롬프트 길이 (글자 수) — hard limit */
+export const PROMPT_CHAR_LIMIT = 500;
 
 // ═══════════════════════════════════════════════════════════════════
 // Camera variation pools — shot 간 다양성 보장
@@ -185,7 +197,9 @@ export function detectFragmentedIntent(storyText: string): FragmentedEditContext
  * 1. storyText에서 분절 편집 의도 감지
  * 2. 감지되면 최소 3개, 선호 4~6개 shot 자동 생성
  * 3. shot 간 framing/angle/motion/action 차이 보장
- * 4. 검증 수행
+ * 4. 500자 이내 고밀도 프롬프트 압축
+ * 5. 서사 명료성 검증
+ * 6. 검증 수행
  *
  * grep: planAutoSplitShots
  */
@@ -207,12 +221,14 @@ export function planAutoSplitShots(input: AutoSplitInput): AutoSplitResult {
       styleSuffix: input.styleSuffix,
     });
 
+    const compressedPrompt = compressAutoSplitPrompt(splitResult.shots, input);
     return {
       shots: splitResult.shots,
+      compressedPrompt,
       splitLog: splitResult.splitLog,
       fragmentedContext,
       fragmentedPromptBlock: "",
-      validation: validateAutoSplitResult(splitResult.shots, fragmentedContext),
+      validation: validateAutoSplitResult(splitResult.shots, fragmentedContext, compressedPrompt),
     };
   }
 
@@ -275,11 +291,15 @@ export function planAutoSplitShots(input: AutoSplitInput): AutoSplitResult {
   splitLog.push(`[auto-split] Edit style: ${fragmentedContext.editStyle}`);
   splitLog.push(`[auto-split] Roles: ${roles.join(" → ")}`);
 
+  // ── 프롬프트 압축 ──
+  const compressedPrompt = compressAutoSplitPrompt(shots, input);
+
   // ── 검증 ──
-  const validation = validateAutoSplitResult(shots, fragmentedContext);
+  const validation = validateAutoSplitResult(shots, fragmentedContext, compressedPrompt);
 
   return {
     shots,
+    compressedPrompt,
     splitLog,
     fragmentedContext,
     fragmentedPromptBlock,
@@ -369,18 +389,22 @@ function deriveInsertSubject(input: AutoSplitInput): string {
 /**
  * Auto-split 결과 검증.
  *
- * 5가지 실패 코드:
+ * 8가지 실패 코드:
  *   - missing_required_shots_for_fragmented_edit
  *   - fragmented_edit_but_single_shot
  *   - fragmented_edit_without_shots_array
  *   - insufficient_shot_variation
  *   - shots_below_minimum_count
+ *   - prompt_exceeds_500_chars
+ *   - compressed_prompt_missing_required_content
+ *   - scene_not_narratively_clear / unclear_context_without_script
  *
  * grep: validateAutoSplitResult
  */
 export function validateAutoSplitResult(
   shots: ShotDescriptor[],
   fragmentedContext: FragmentedEditContext,
+  compressedPrompt?: string,
 ): AutoSplitValidation {
   const issues: AutoSplitIssue[] = [];
 
@@ -444,40 +468,181 @@ export function validateAutoSplitResult(
     }
   }
 
+  // Rule 6: 프롬프트 500자 초과
+  if (compressedPrompt && compressedPrompt.length > PROMPT_CHAR_LIMIT) {
+    issues.push({
+      code: "prompt_exceeds_500_chars",
+      severity: "error",
+      message: `Compressed prompt is ${compressedPrompt.length} chars, exceeds ${PROMPT_CHAR_LIMIT} char hard limit.`,
+    });
+  }
+
+  // Rule 7: 압축 프롬프트에 핵심 정보 누락
+  if (compressedPrompt) {
+    const missingContent = validatePromptContent(compressedPrompt, shots);
+    if (missingContent.length > 0) {
+      issues.push({
+        code: "compressed_prompt_missing_required_content",
+        severity: "warning",
+        message: `Compressed prompt missing: ${missingContent.join(", ")}`,
+      });
+    }
+  }
+
+  // Rule 8: 서사 명료성 — 프롬프트만 읽고 장면 이해 가능한지
+  if (compressedPrompt) {
+    const clarityIssues = validateNarrativeClarity(compressedPrompt, shots);
+    issues.push(...clarityIssues);
+  }
+
   const hasErrors = issues.some(i => i.severity === "error");
   return { passed: !hasErrors, issues };
+}
+
+/**
+ * 압축 프롬프트에 핵심 정보가 포함되어 있는지 검증.
+ * 누락된 항목 리스트 반환.
+ */
+export function validatePromptContent(prompt: string, shots: ShotDescriptor[]): string[] {
+  const missing: string[] = [];
+  const lower = prompt.toLowerCase();
+
+  // 환경 정보 (shots[0]의 environment에서 핵심 단어 추출)
+  if (shots[0]?.environment) {
+    const envKeyWords = shots[0].environment.split(/[\s,]+/).filter(w => w.length > 4);
+    const envFound = envKeyWords.some(w => lower.includes(w.toLowerCase()));
+    if (!envFound && envKeyWords.length > 0) {
+      missing.push("environment context");
+    }
+  }
+
+  // 주체(subject) 정보
+  if (shots[0]?.subject) {
+    const subjectWords = shots[0].subject.split(/\s+/).filter(w => w.length > 3);
+    const subjectFound = subjectWords.some(w => lower.includes(w.toLowerCase()));
+    if (!subjectFound && subjectWords.length > 0) {
+      missing.push("subject identity");
+    }
+  }
+
+  // 카메라 정보 (최소 1개 shot의 framing이 언급되어야 함)
+  const hasCamera = shots.some(s =>
+    lower.includes(s.camera.framing.toLowerCase()) ||
+    lower.includes(s.camera.motion.toLowerCase()),
+  );
+  if (!hasCamera) {
+    missing.push("camera direction");
+  }
+
+  // 조명/분위기
+  if (shots[0]?.moodLighting) {
+    const moodWords = shots[0].moodLighting.split(/[\s,]+/).filter(w => w.length > 3);
+    const moodFound = moodWords.some(w => lower.includes(w.toLowerCase()));
+    if (!moodFound && moodWords.length > 0) {
+      missing.push("mood/lighting");
+    }
+  }
+
+  return missing;
+}
+
+/**
+ * 서사 명료성 검증.
+ *
+ * 프롬프트만 읽었을 때 시나리오 원문 없이도:
+ * - 누가(who), 어디서(where), 무엇을(what), 왜(why) 파악 가능
+ * - 추상적 미장센/분위기만 나열하지 않음
+ * - 시각적 사건과 맥락이 읽힘
+ *
+ * grep: validateNarrativeClarity
+ */
+export function validateNarrativeClarity(
+  prompt: string,
+  shots: ShotDescriptor[],
+): AutoSplitIssue[] {
+  const issues: AutoSplitIssue[] = [];
+  const lower = prompt.toLowerCase();
+  const words = lower.split(/\s+/);
+
+  // 검사 1: 동작 동사 존재 — 실제 시각적 사건이 기술되어야 함
+  const ACTION_VERBS = /\b(walk|run|sit|stand|hold|grab|reach|drop|open|close|pour|cook|cut|chop|scroll|type|turn|pick|place|lift|push|pull|reveal|emerge|glow|shine|rise|fall|sizzle|toss|tremble|stare|collapse|enter|exit|drive|fly|swim|dance|fight|eat|drink|throw|catch|wipe|paint|build|break|melt|freeze|burn|fade|appear|disappear|stretch|squeeze|snap)\b/i;
+  const hasActionVerbs = ACTION_VERBS.test(prompt);
+
+  // 검사 2: 구체적 명사 존재 — 추상적 묘사만이 아닌 실체가 있어야 함
+  const CONCRETE_NOUNS = /\b(hand|face|eye|phone|screen|light|shadow|door|window|table|chair|car|street|building|kitchen|studio|product|bottle|knife|cup|plate|camera|person|woman|man|child|crowd|city|room|sky|water|fire|tree|mountain|mirror|book|flower|rain|snow|smoke|steam)\b/i;
+  const hasConcreteNouns = CONCRETE_NOUNS.test(prompt);
+
+  // 검사 3: 분위기-전용 프롬프트 감지 (미장센만 나열)
+  const ABSTRACT_ONLY = /\b(ethereal|transcendent|metaphysical|existential|ineffable|liminal|sublime|ephemeral|melancholic|juxtaposition|dichotomy)\b/gi;
+  const abstractMatches = prompt.match(ABSTRACT_ONLY);
+  const abstractRatio = (abstractMatches?.length ?? 0) / Math.max(1, words.length);
+
+  if (!hasActionVerbs && !hasConcreteNouns) {
+    issues.push({
+      code: "scene_not_narratively_clear",
+      severity: "warning",
+      message: "Prompt lacks concrete actions or visible subjects — scene meaning unclear without script context.",
+    });
+  }
+
+  if (abstractRatio > 0.15) {
+    issues.push({
+      code: "unclear_context_without_script",
+      severity: "warning",
+      message: "Prompt is predominantly abstract descriptions — add concrete visual events and context.",
+    });
+  }
+
+  // 검사 4: shot이 3개 이상인데 모든 shot action이 동일하면 서사 없음
+  if (shots.length >= 3) {
+    const uniqueActions = new Set(shots.map(s => s.action.slice(0, 30).toLowerCase()));
+    if (uniqueActions.size === 1) {
+      issues.push({
+        code: "scene_not_narratively_clear",
+        severity: "warning",
+        message: "All shots have identical actions — no narrative progression visible.",
+      });
+    }
+  }
+
+  return issues;
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // 5. Prompt 500자 제한 압축기
 // ═══════════════════════════════════════════════════════════════════
 
-/** 최대 프롬프트 길이 (글자 수) — hard limit */
-export const PROMPT_CHAR_LIMIT = 500;
-
 /**
  * shot 배열을 500자 이내 프롬프트로 압축.
  * shot-by-shot 구조를 유지하면서 필수 정보를 보존.
  *
+ * 장면 명료성 규칙:
+ * - 시나리오 원문을 보지 않은 사람도 장면의 의미를 이해할 수 있게 작성
+ * - 누가, 어디서, 무엇을, 왜 하고 있는지 드러나야 함
+ * - 분위기, 감정, 미장센만 추상적으로 나열하지 않음
+ *
  * grep: compressAutoSplitPrompt
  */
-export function compressAutoSplitPrompt(shots: ShotDescriptor[]): string {
+export function compressAutoSplitPrompt(
+  shots: ShotDescriptor[],
+  context?: Pick<AutoSplitInput, "subjectPrimary" | "environment" | "moodLighting">,
+): string {
   if (shots.length === 0) return "";
+
+  // 환경 + 주체 + 조명을 context header로 (context 우선, 없으면 shots[0])
+  const subj = context?.subjectPrimary || shots[0].subject;
+  const env = (context?.environment || shots[0].environment).slice(0, 50);
+  const mood = (context?.moodLighting || shots[0].moodLighting).slice(0, 35);
+  const header = `${subj}, ${env}. ${mood}.`;
 
   // 각 shot을 compact format으로 압축
   const shotLines: string[] = [];
   for (const shot of shots) {
-    const cam = `${shot.camera.framing}/${shot.camera.angle}/${shot.camera.motion}`;
+    const cam = `${shot.camera.framing}/${shot.camera.motion}`;
     const time = `${shot.startSec}-${shot.endSec}s`;
-    // 핵심 정보만: timing + camera + action
     const line = `[${time} ${cam}] ${shot.action}`;
     shotLines.push(line);
   }
-
-  // 환경 + 조명 (첫 shot에서)
-  const env = shots[0].environment.slice(0, 60);
-  const mood = shots[0].moodLighting.slice(0, 40);
-  const header = `${env}. ${mood}.`;
 
   // 조합
   let result = `${header}\n${shotLines.join("\n")}`;
@@ -485,9 +650,9 @@ export function compressAutoSplitPrompt(shots: ShotDescriptor[]): string {
   // 500자 초과 시 action 부분 자르기 (shot 구조 유지)
   if (result.length > PROMPT_CHAR_LIMIT) {
     const headerLen = header.length + 1; // +1 for newline
-    const availablePerShot = Math.floor((PROMPT_CHAR_LIMIT - headerLen) / shots.length) - 2; // -2 for newline
+    const availablePerShot = Math.floor((PROMPT_CHAR_LIMIT - headerLen) / shots.length) - 2;
     const truncatedLines = shots.map(shot => {
-      const cam = `${shot.camera.framing}/${shot.camera.angle}/${shot.camera.motion}`;
+      const cam = `${shot.camera.framing}/${shot.camera.motion}`;
       const time = `${shot.startSec}-${shot.endSec}s`;
       const prefix = `[${time} ${cam}] `;
       const maxAction = Math.max(10, availablePerShot - prefix.length);
@@ -508,7 +673,52 @@ export function compressAutoSplitPrompt(shots: ShotDescriptor[]): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 6. Exports for UI integration
+// 6. ShotDescriptor → MultiShotPrompt conversion
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * ShotDescriptor 배열을 MultiShotPrompt 배열로 변환.
+ * 각 shot의 camera/action/environment 메타데이터를 rich prompt으로 조합.
+ *
+ * grep: shotsToMultiShotPrompts
+ */
+export function shotsToMultiShotPrompts(
+  shots: ShotDescriptor[],
+  roles?: ShotRole[],
+): Array<{ index: number; prompt: string; duration: string; role: ShotRole }> {
+  return shots.map((shot, i) => {
+    const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
+      shot.camera.framing === "CU" ? "Close-up" :
+      shot.camera.framing === "ECU" ? "Extreme close-up" :
+      shot.camera.framing === "MCU" ? "Medium close-up" :
+      shot.camera.framing === "LS" ? "Long shot" :
+      `${shot.camera.framing} shot`;
+
+    const parts = [
+      framingLabel,
+      shot.camera.motion !== "static" ? shot.camera.motion : null,
+      shot.action,
+      shot.environment,
+      shot.moodLighting,
+    ].filter(Boolean);
+
+    const prompt = parts.join(". ").trim();
+    const duration = String(Math.max(1, Math.round(shot.endSec - shot.startSec)));
+    const role = roles?.[i] ?? inferRoleFromPosition(i, shots.length);
+
+    return { index: i + 1, prompt, duration, role };
+  });
+}
+
+function inferRoleFromPosition(index: number, total: number): ShotRole {
+  if (index === 0) return "establish";
+  if (index === total - 1) return "resolve";
+  if (index === Math.floor(total / 2)) return "peak";
+  return "develop";
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Exports for UI integration
 // ═══════════════════════════════════════════════════════════════════
 
 /**
