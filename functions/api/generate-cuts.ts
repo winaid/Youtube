@@ -797,12 +797,17 @@ ${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 �
 _narrativeCore: 시나리오 핵심 주장 1문장 (한국어 ≤30자) — 5단계 중 1단계 결과
 _targetEmotions: 시청자가 받아야 할 핵심 감정 (영어 키워드 1~2개, 예: ["awe","sorrow"]) — 5단계 중 2단계 결과
 
-characterSeeds (최대 3명):
-- id: "char-1" 등
-- label: 한국어 역할명
+characterSeeds (최대 3명 — 스크립트에서 실제 등장/언급되는 인물 추출 필수):
+⚠️ "주인공"이라고 뭉뚱그리지 마라. 스크립트에 이름/역할이 나오면 그대로 사용.
+- 스크립트에 "홍길동"이 나오면 → label: "홍길동"
+- 스크립트에 "의사"와 "환자"가 나오면 → char-1: "의사", char-2: "환자"
+- 스크립트에 구체적 인물이 없으면(에세이/설명문) → 1명만 생성
+- id: "char-1", "char-2", "char-3"
+- label: 한국어 이름 또는 역할명 (스크립트에서 추출)
 - appearance: 영어 ≤40 words (성별/나이대/헤어 color+style/의상/피부톤 필수 — 예: "mid-30s woman, black shoulder-length hair, warm beige skin, dark blue hanbok with white collar")
 - appearanceKo: ≤25자
 ⚠️ appearance에 skin tone(예: warm beige, deep brown, pale ivory)과 hair color(예: black, dark brown, silver-grey) 반드시 포함. 누락 시 비디오 모델이 일관성 없는 외형 생성.
+⚠️ 인물이 2명 이상이면 반드시 각각 별도 characterSeed로 생성. 1명으로 합치지 마라.
 
 outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시퀀스):
 
@@ -984,13 +989,14 @@ JSON만: {"_narrativeCore":"≤30자","_targetEmotions":["emotion"],"characterSe
   const DEFAULT_SEED: CharacterSeed = { id: "char-1", label: "주인공", appearance: "A young person, casual modern clothing, natural look", appearanceKo: "캐주얼 의상의 젊은 인물" };
   const rawSeeds = Array.isArray(parsed.characterSeeds) ? parsed.characterSeeds as Array<Partial<CharacterSeed>> : [];
   const characterSeeds: CharacterSeed[] = rawSeeds.length > 0
-    ? rawSeeds.map((s) => ({
-        id: String(s.id ?? "char-1"),
-        label: String(s.label ?? "주인공"),
+    ? rawSeeds.map((s, idx) => ({
+        id: String(s.id ?? `char-${idx + 1}`),
+        label: String(s.label ?? `인물${idx + 1}`),
         appearance: String(s.appearance ?? DEFAULT_SEED.appearance).slice(0, 400),
         appearanceKo: String(s.appearanceKo ?? DEFAULT_SEED.appearanceKo).slice(0, 50),
       }))
     : [DEFAULT_SEED];
+  console.info(`[cuts:step1] characterSeeds: ${characterSeeds.map(s => `${s.id}=${s.label}`).join(", ")} (raw=${rawSeeds.length})`);
   if (rawSeeds.length === 0 && parseMode === "partial_recovery") {
     console.warn(`[cuts:step1] characterSeeds missing in partial recovery — using default character`);
   }
