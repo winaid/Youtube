@@ -60,6 +60,13 @@ export interface VideoSubmitParams {
     characterLock?: string;
     visualLock?: string;
   };
+  /** 분절 편집 컨텍스트 — UI에서 감지 후 server까지 전달 */
+  fragmentedEditContext?: {
+    isFragmented: boolean;
+    triggerTerms: string[];
+    minShotCount: number;
+    editStyle: string;
+  };
 }
 
 /** generate-video API 응답 */
@@ -291,6 +298,7 @@ export async function submitVideoGeneration(
   if (params.sourceVideo) body.sourceVideo = params.sourceVideo;
   if (params.continuityMeta) body.continuityMeta = params.continuityMeta;
   if (params.workflowType) body.workflowType = params.workflowType;
+  if (params.fragmentedEditContext?.isFragmented) body.fragmentedEditContext = params.fragmentedEditContext;
   // referenceImages: VEO API 미지원 — 전송하지 않음
 
   // hook-specific 추가 필드 passthrough

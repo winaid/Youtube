@@ -272,6 +272,29 @@ export interface MultiShotPrompt {
   role?: ShotRole;
 }
 
+/** structured shot — auto-split 결과의 source of truth */
+export interface StructuredShot {
+  shotId: string;
+  startSec: number;
+  endSec: number;
+  camera: { framing: string; angle: string; motion: string };
+  /** subject는 string이 기본. subject.primary 접근을 위해 내부적으로 StructuredShotSubject도 지원 */
+  subject: string;
+  action: string;
+  environment: string;
+  moodLighting: string;
+  focus: string;
+  styleSuffix?: string;
+}
+
+/** 분절 편집 감지 컨텍스트 */
+export interface FragmentedEditContextData {
+  isFragmented: boolean;
+  triggerTerms: string[];
+  minShotCount: number;
+  editStyle: string;
+}
+
 // ===== JSON 기반 영상 프롬프트 구조 =====
 /** 구조화된 영상 프롬프트 — 내부 source-of-truth */
 export interface VideoPromptJson {
@@ -358,6 +381,10 @@ export interface Cut {
   characterConsistency: string;
   charactersInScene: string[];
   multiShot?: MultiShotPrompt[]; // VEO 멀티샷: 8초 타임스탬프 형식 (4샷 기본 — establish/develop/peak/resolve)
+  /** structured shots — auto-split의 source of truth. multiShot는 이 데이터에서 파생 */
+  structuredShots?: StructuredShot[];
+  /** 분절 편집 감지 컨텍스트 — UI에서 감지 후 generation payload까지 전달 */
+  fragmentedEditContext?: FragmentedEditContextData;
   /** 의도적 원테이크 — true이면 강제 멀티샷 정책을 명시적으로 무시 */
   intentionalOneTake?: boolean;
   // 씬 타입 분류

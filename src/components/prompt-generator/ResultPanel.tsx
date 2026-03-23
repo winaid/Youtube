@@ -1050,6 +1050,7 @@ export default function ResultPanel({
                   canonicalViewModel={canonicalViewModels.get(cut.cutNumber)}
                   characterSeeds={result.characterSeeds}
                   onUpdate={handleCutUpdate}
+                  storyText={storyText}
                   userVideoMode={videoGen.config.mode}
                   modelId={resolveModelForWorkflow({
                     workflow: videoGen.config.workflowType,

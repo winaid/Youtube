@@ -273,6 +273,8 @@ export interface VeoPromptRendererInput {
     region?: string | null;
     period?: string | null;
   };
+  /** 분절 편집 모드 — true이면 최종 프롬프트 500자 hard limit 강제 */
+  fragmentedEditMode?: boolean;
 }
 
 /**
@@ -305,17 +307,30 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
   // 타임스탬프 프롬프트 생성
   const timestampPrompt = renderTimestampPrompt(shots, globalAnchor);
 
-  // 각 샷 프롬프트 길이 제한 (VEO는 전체 1024 토큰)
-  // 전체 프롬프트가 너무 길면 각 샷을 축소
-  const maxPromptLen = 3000; // chars
+  // 각 샷 프롬프트 길이 제한
+  // 분절 편집 모드: 500자 hard limit / 일반 모드: 3000자
+  const FRAGMENTED_CHAR_LIMIT = 500;
+  const maxPromptLen = input.fragmentedEditMode ? FRAGMENTED_CHAR_LIMIT : 3000;
   let finalPrompt = timestampPrompt;
   if (finalPrompt.length > maxPromptLen) {
+    // 분절 편집 모드에서는 정보 밀도를 높이는 방향으로 압축
+    // shot 구조(timestamp brackets)를 보존하면서 action 부분만 축소
+    const anchorLen = (globalAnchor?.length ?? 0) + 2;
+    const budgetPerShot = Math.floor((maxPromptLen - anchorLen) / shots.length) - 15; // timestamp bracket ~15 chars
     const shortenedShots = shots.map(s => ({
       ...s,
-      prompt: s.prompt.slice(0, Math.floor(maxPromptLen / shots.length) - 20),
+      prompt: s.prompt.length > budgetPerShot
+        ? s.prompt.slice(0, budgetPerShot - 1) + "…"
+        : s.prompt,
     }));
     finalPrompt = renderTimestampPrompt(shortenedShots, globalAnchor);
-    cleanupLog.push(`[veo-renderer] Prompt truncated: ${timestampPrompt.length} → ${finalPrompt.length} chars`);
+    cleanupLog.push(`[veo-renderer] Prompt truncated: ${timestampPrompt.length} → ${finalPrompt.length} chars (limit=${maxPromptLen})`);
+  }
+
+  // 분절 편집 모드: final hard clamp 보장
+  if (input.fragmentedEditMode && finalPrompt.length > FRAGMENTED_CHAR_LIMIT) {
+    finalPrompt = finalPrompt.slice(0, FRAGMENTED_CHAR_LIMIT - 1) + "…";
+    cleanupLog.push(`[veo-renderer] Fragmented edit hard clamp applied: ${FRAGMENTED_CHAR_LIMIT} chars`);
   }
 
   // ── 자막/텍스트 방지 강화: VEO는 negative prompt 미지원 → positive에서 강제 ──

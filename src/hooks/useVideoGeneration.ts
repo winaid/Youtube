@@ -1610,6 +1610,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         generationMode: cfg.generationMode ?? "batch",
         sceneType: cut.shotCategory,
         intentionalOneTake: cut.intentionalOneTake,
+        // 분절 편집 컨텍스트 — UI에서 감지한 context를 server까지 전달
+        ...(cut.fragmentedEditContext?.isFragmented ? { fragmentedEditContext: cut.fragmentedEditContext } : {}),
         // VideoPromptJson: canonical-derived preferred over legacy Cut field
         ...(canonicalVideoPromptJson ? { videoPromptJson: canonicalVideoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),

@@ -57,8 +57,17 @@ export type PreflightErrorCode =
   | "style_info"
   | "fragmented_edit_insufficient_shots"
   | "fragmented_edit_single_shot"
+  | "fragmented_edit_but_single_shot"
+  | "fragmented_edit_without_shots_array"
   | "fragmented_edit_no_variation"
-  | "fragmented_prompt_too_long";
+  | "insufficient_shot_variation"
+  | "missing_required_shots_for_fragmented_edit"
+  | "shots_below_minimum_count"
+  | "fragmented_prompt_too_long"
+  | "prompt_exceeds_500_chars"
+  | "scene_not_narratively_clear"
+  | "unclear_context_without_script"
+  | "compressed_prompt_missing_required_content";
 
 export interface PreflightIssue {
   severity: PreflightSeverity;
@@ -479,49 +488,62 @@ function checkFragmentedEdit(input: PreflightInput, issues: PreflightIssue[]) {
   for (const cut of input.cuts) {
     const shots = input.canonicalMultiShots.get(cut.cutNumber) ?? cut.multiShot ?? [];
 
+    // Rule: fragmented_edit_without_shots_array — shots 배열 없음
     if (shots.length === 0) {
       issues.push({
         severity: "blocking",
-        code: "fragmented_edit_single_shot",
+        code: "fragmented_edit_without_shots_array",
         messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 요청(${fec.triggerTerms.join(", ")})이 감지되었으나 멀티샷이 없습니다. 최소 ${fec.minShotCount}개 이상의 독립 샷이 필요합니다.`,
         cutNumber: cut.cutNumber,
       });
     } else if (shots.length === 1) {
+      // Rule: fragmented_edit_but_single_shot — single-shot output
       issues.push({
         severity: "blocking",
-        code: "fragmented_edit_single_shot",
+        code: "fragmented_edit_but_single_shot",
         messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 요청인데 샷이 1개뿐입니다. 분절 편집은 반드시 멀티샷(최소 3개) 출력이어야 합니다.`,
         cutNumber: cut.cutNumber,
       });
-    } else if (shots.length < fec.minShotCount) {
+    } else if (shots.length < 3) {
+      // Rule: shots_below_minimum_count — 최소 3개 hard floor
       issues.push({
-        severity: "warning",
-        code: "fragmented_edit_insufficient_shots",
-        messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 스타일 "${fec.editStyle}"에 최소 ${fec.minShotCount}개 샷 권장, 현재 ${shots.length}개입니다.`,
+        severity: "blocking",
+        code: "shots_below_minimum_count",
+        messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집은 최소 3개 샷 필수, 현재 ${shots.length}개입니다.`,
         cutNumber: cut.cutNumber,
       });
     }
 
-    // shot 간 variation 부족 검사 — 모든 prompt prefix가 동일하면 경고
+    // Rule: missing_required_shots_for_fragmented_edit — editStyle 대비 부족
+    if (shots.length > 0 && shots.length < fec.minShotCount) {
+      issues.push({
+        severity: "blocking",
+        code: "missing_required_shots_for_fragmented_edit",
+        messageKo: `시퀀스 ${cut.cutNumber}: 분절 편집 스타일 "${fec.editStyle}"에 최소 ${fec.minShotCount}개 샷 필수, 현재 ${shots.length}개입니다.`,
+        cutNumber: cut.cutNumber,
+      });
+    }
+
+    // Rule: insufficient_shot_variation — 모든 prompt prefix 동일
     if (shots.length >= 3) {
       const prefixes = shots.map(s => s.prompt.slice(0, 40).toLowerCase());
       if (new Set(prefixes).size <= 1) {
         issues.push({
-          severity: "warning",
-          code: "fragmented_edit_no_variation",
+          severity: "blocking",
+          code: "insufficient_shot_variation",
           messageKo: `시퀀스 ${cut.cutNumber}: 모든 샷의 시각적 설명이 동일합니다. 분절 편집은 각 샷이 독립된 시각 단위여야 합니다.`,
           cutNumber: cut.cutNumber,
         });
       }
     }
 
-    // 프롬프트 500자 초과 검사
+    // Rule: prompt_exceeds_500_chars — per-shot 500자 초과 (error)
     for (const shot of shots) {
       if (shot.prompt && shot.prompt.length > 500) {
         issues.push({
-          severity: "warning",
-          code: "fragmented_prompt_too_long",
-          messageKo: `시퀀스 ${cut.cutNumber}, 샷 ${shot.index}: 프롬프트가 ${shot.prompt.length}자 — 500자 이내 권장`,
+          severity: "blocking",
+          code: "prompt_exceeds_500_chars",
+          messageKo: `시퀀스 ${cut.cutNumber}, 샷 ${shot.index}: 프롬프트가 ${shot.prompt.length}자 — 분절 편집 모드에서는 500자 이하 필수`,
           cutNumber: cut.cutNumber,
         });
       }

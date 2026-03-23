@@ -486,3 +486,233 @@ describe("shotsToMultiShotPrompts", () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 13. Integration: End-to-end pipeline tests
+// ═══════════════════════════════════════════════════════════════════
+
+import { validateFinalProviderPayload, type ValidatePayloadInput } from "@/lib/final-payload-validator";
+import { runPreflightValidation, type PreflightInput } from "@/lib/preflight-validation";
+
+describe("Integration: end-to-end pipeline", () => {
+
+  // a) 컷 분절된 광고 중독 장면 → 3개 이상 shot → validator 통과
+  it("a) fragmented ad scene → 3+ shots → full pipeline pass", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    expect(result.shots.length).toBeGreaterThanOrEqual(3);
+    expect(result.fragmentedContext.isFragmented).toBe(true);
+    expect(result.validation.passed).toBe(true);
+
+    // multiShot conversion
+    const multiShots = shotsToMultiShotPrompts(result.shots);
+    expect(multiShots.length).toBe(result.shots.length);
+
+    // final-payload-validator
+    const payloadInput: ValidatePayloadInput = {
+      prompt: result.compressedPrompt,
+      negatives: ["text overlay", "watermark"],
+      framing: result.shots[0].camera.framing,
+      provider: "veo",
+      multiShots: multiShots,
+      durationSec: 8,
+      fragmentedEditContext: {
+        isFragmented: true,
+        triggerTerms: result.fragmentedContext.triggerTerms,
+        minShotCount: result.fragmentedContext.minShotCount,
+        editStyle: result.fragmentedContext.editStyle,
+      },
+    };
+    const validation = validateFinalProviderPayload(payloadInput);
+    // Should not have fragmented-specific errors (shots exist and are diverse)
+    const fragmentErrors = validation.issues.filter(i =>
+      i.rule.startsWith("fragmented_edit") || i.rule === "shots_below_minimum_count"
+    );
+    expect(fragmentErrors.length).toBe(0);
+  });
+
+  // b) hard cuts beauty ad → shot-by-shot output → validation pass
+  it("b) hard cuts beauty ad → shot-by-shot multi-shot output", () => {
+    const result = planAutoSplitShots(BEAUTY_AD_INPUT);
+    expect(result.shots.length).toBeGreaterThanOrEqual(3);
+    expect(result.fragmentedContext.isFragmented).toBe(true);
+
+    // Each shot must have distinct camera
+    for (let i = 0; i < result.shots.length - 1; i++) {
+      const a = result.shots[i];
+      const b = result.shots[i + 1];
+      expect(a.camera.framing === b.camera.framing && a.camera.motion === b.camera.motion).toBe(false);
+    }
+  });
+
+  // c) montage request → temporalBeats-only NOT acceptable
+  it("c) montage → shots array required, not just temporalBeats", () => {
+    const result = planAutoSplitShots(MONTAGE_INPUT);
+    expect(result.shots.length).toBeGreaterThanOrEqual(3);
+    // Each shot is a distinct visual unit (not just a beat)
+    for (const shot of result.shots) {
+      expect(shot.shotId).toBeTruthy();
+      expect(shot.camera).toBeTruthy();
+      expect(shot.action).toBeTruthy();
+    }
+  });
+
+  // d) insert shot request → separate shot entries
+  it("d) insert shot request → insert shots as separate entries", () => {
+    const result = planAutoSplitShots(INSERT_SHOT_INPUT);
+    expect(result.shots.length).toBeGreaterThanOrEqual(3);
+    // Verify distinct shots — not all same framing
+    const framings = new Set(result.shots.map(s => s.camera.framing));
+    expect(framings.size).toBeGreaterThanOrEqual(2);
+  });
+
+  // e) final prompt 500 chars hard guarantee
+  it("e) final prompt is 500 chars or less", () => {
+    const inputs = [BASE_INPUT, BEAUTY_AD_INPUT, MONTAGE_INPUT, INSERT_SHOT_INPUT];
+    for (const input of inputs) {
+      const result = planAutoSplitShots(input);
+      expect(result.compressedPrompt.length).toBeLessThanOrEqual(PROMPT_CHAR_LIMIT);
+    }
+  });
+
+  // f) 500 chars but missing required content = validation warning
+  it("f) 500 chars with missing content triggers content warning", () => {
+    const shots: ShotDescriptor[] = [
+      { shotId: "shot_1", startSec: 0, endSec: 3, camera: { framing: "WS", angle: "eye-level", motion: "pan" }, subject: "mysteriousEntity", action: "floats", environment: "void", moodLighting: "dim", focus: "establish" },
+      { shotId: "shot_2", startSec: 3, endSec: 5, camera: { framing: "MS", angle: "low-angle", motion: "tracking" }, subject: "mysteriousEntity", action: "drifts", environment: "void", moodLighting: "dim", focus: "develop" },
+      { shotId: "shot_3", startSec: 5, endSec: 8, camera: { framing: "CU", angle: "high-angle", motion: "push-in" }, subject: "mysteriousEntity", action: "vanishes", environment: "void", moodLighting: "dim", focus: "peak" },
+    ];
+    // Deliberately omit all content in prompt
+    const badPrompt = "Abstract movement in empty void, formless shapes drift";
+    const contentIssues = validatePromptContent(badPrompt, shots);
+    // Should flag missing subject or environment
+    expect(contentIssues.length).toBeGreaterThan(0);
+  });
+
+  // g) narrative readability — scene meaning understandable without script
+  it("g) narratively clear prompt passes clarity check", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    const issues = validateNarrativeClarity(result.compressedPrompt, result.shots);
+    // Good concrete prompt should pass
+    const errors = issues.filter(i => i.severity === "error");
+    expect(errors.length).toBe(0);
+  });
+
+  // h) fragmented cue only in storyText, not in sceneDescription → still detected
+  it("h) fragmented cue in storyText only → still detected", () => {
+    const input: AutoSplitInput = {
+      ...NON_FRAGMENTED_INPUT,
+      storyText: "컷 분절 편집으로 빠른 리듬의 광고를 만들어줘. 인서트 컷 활용.",
+      // sceneDescription has NO fragmented cue
+      sceneDescription: "peaceful sunset over the ocean",
+    };
+    const result = planAutoSplitShots(input);
+    expect(result.fragmentedContext.isFragmented).toBe(true);
+    expect(result.shots.length).toBeGreaterThanOrEqual(3);
+  });
+
+  // i) environment/moodLighting mapping — ensure they are not identical
+  it("i) environment and moodLighting are distinct in generated shots", () => {
+    const input: AutoSplitInput = {
+      ...BASE_INPUT,
+      environment: "dark bedroom with scattered coffee cups",
+      moodLighting: "cold blue screen light, deep shadows",
+    };
+    const result = planAutoSplitShots(input);
+    for (const shot of result.shots) {
+      // environment should contain the actual environment, not moodLighting
+      expect(shot.environment).toBe(input.environment);
+      expect(shot.moodLighting).toBe(input.moodLighting);
+      // They should not be identical unless input made them identical
+      if (input.environment !== input.moodLighting) {
+        expect(shot.environment).not.toBe(shot.moodLighting);
+      }
+    }
+  });
+
+  // j) fragmentedEditContext propagation to validation payload
+  it("j) fragmentedEditContext propagates through validation pipeline", () => {
+    const result = planAutoSplitShots(BASE_INPUT);
+    const multiShots = shotsToMultiShotPrompts(result.shots);
+
+    // Validate with fragmentedEditContext
+    const payloadInput: ValidatePayloadInput = {
+      prompt: result.compressedPrompt,
+      negatives: ["text overlay"],
+      framing: "MS",
+      provider: "veo",
+      multiShots,
+      durationSec: 8,
+      fragmentedEditContext: {
+        isFragmented: result.fragmentedContext.isFragmented,
+        triggerTerms: result.fragmentedContext.triggerTerms,
+        minShotCount: result.fragmentedContext.minShotCount,
+        editStyle: result.fragmentedContext.editStyle,
+      },
+    };
+    const validation = validateFinalProviderPayload(payloadInput);
+    // With proper shots, fragmented enforcement should pass
+    const fragmentErrors = validation.issues.filter(i =>
+      ["fragmented_edit_without_shots_array", "fragmented_edit_but_single_shot", "shots_below_minimum_count"].includes(i.rule)
+    );
+    expect(fragmentErrors.length).toBe(0);
+  });
+
+  // Additional: preflight with fragmentedEditContext
+  it("preflight blocks when fragmented edit has no shots", () => {
+    const mockCut = {
+      cutNumber: 1, durationSec: 8, sceneDescription: "test", cameraDirection: "MS",
+      moodLighting: "warm", imagePrompt: "", endImagePrompt: "", videoPrompt: "test",
+      extendPrompt: "", transitionHint: "", characterConsistency: "", charactersInScene: [],
+      multiShot: [] as any[],
+    };
+    const preflightInput: PreflightInput = {
+      cuts: [mockCut as any],
+      canonicalMultiShots: new Map(),
+      canonicalDurations: new Map([[1, 8]]),
+      styleId: "cinematic-realism",
+      modelId: "veo-2.0-generate-001",
+      fragmentedEditContext: {
+        isFragmented: true,
+        triggerTerms: ["컷 분절"],
+        minShotCount: 3,
+        editStyle: "fragmented",
+      },
+    };
+    const preflight = runPreflightValidation(preflightInput);
+    expect(preflight.canGenerate).toBe(false);
+    const codes = preflight.issues.map(i => i.code);
+    expect(codes).toContain("fragmented_edit_without_shots_array");
+  });
+
+  // Validator error code consistency
+  it("canonical error codes are consistent across validators", () => {
+    const canonicalCodes = [
+      "missing_required_shots_for_fragmented_edit",
+      "fragmented_edit_but_single_shot",
+      "fragmented_edit_without_shots_array",
+      "insufficient_shot_variation",
+      "shots_below_minimum_count",
+      "prompt_exceeds_500_chars",
+      "scene_not_narratively_clear",
+      "unclear_context_without_script",
+    ];
+    // auto-split validator uses these codes
+    const fragmentedCtx = { isFragmented: true, triggerTerms: ["test"], minShotCount: 3, editStyle: "test" };
+    const emptyResult = validateAutoSplitResult([], fragmentedCtx);
+    expect(emptyResult.issues[0].code).toBe("fragmented_edit_without_shots_array");
+
+    const singleShot: ShotDescriptor[] = [{
+      shotId: "s1", startSec: 0, endSec: 8,
+      camera: { framing: "MS", angle: "eye-level", motion: "steady" },
+      subject: "p", action: "a", environment: "e", moodLighting: "m", focus: "f",
+    }];
+    const singleResult = validateAutoSplitResult(singleShot, fragmentedCtx);
+    const codes = singleResult.issues.map(i => i.code);
+    expect(codes).toContain("fragmented_edit_but_single_shot");
+
+    // All codes should be from the canonical set
+    for (const issue of singleResult.issues) {
+      expect(canonicalCodes).toContain(issue.code);
+    }
+  });
+});

@@ -515,20 +515,29 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
       }
     }
 
-    // Rule 18f: 500자 초과 검사 (개별 shot prompt)
+    // Rule 18f: 500자 초과 검사 (개별 shot prompt) — fragmented edit에서는 error
     if (input.multiShots) {
       for (const shot of input.multiShots) {
         if (shot.prompt && shot.prompt.length > 500) {
           issues.push({
             rule: "prompt_exceeds_500_chars",
-            severity: "warning",
-            message: `Shot ${shot.index} prompt is ${shot.prompt.length} chars — exceeds 500 char limit for fragmented editing.`,
+            severity: "error",
+            message: `Shot ${shot.index} prompt is ${shot.prompt.length} chars — exceeds 500 char hard limit for fragmented editing.`,
           });
         }
       }
     }
 
-    // Rule 18g: 서사 명료성 — 구체적 동작이나 피사체 없이 추상적 분위기만 나열
+    // Rule 18f-final: 최종 사용자-facing prompt 전체 500자 초과 검사
+    if (input.prompt && input.prompt.length > 500) {
+      issues.push({
+        rule: "prompt_exceeds_500_chars",
+        severity: "error",
+        message: `Final user-facing prompt is ${input.prompt.length} chars — exceeds 500 char hard limit for fragmented editing.`,
+      });
+    }
+
+    // Rule 18g: 서사 명료성 — 품질 게이트 (error, not warning)
     if (input.multiShots && input.multiShots.length >= 3) {
       const ABSTRACT_RE = /\b(ethereal|transcendent|metaphysical|existential|ineffable|liminal|sublime|ephemeral)\b/gi;
       const CONCRETE_RE = /\b(walk|run|hold|grab|sit|stand|drop|pour|cook|cut|scroll|type|turn|pick|reveal|emerge|person|woman|man|child|hand|face|eye|phone|screen|door|window|table|street|building|kitchen)\b/gi;
@@ -538,7 +547,7 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
       if (abstractCount > concreteCount && abstractCount > 3) {
         issues.push({
           rule: "scene_not_narratively_clear",
-          severity: "warning",
+          severity: "error",
           message: `Fragmented edit prompts contain more abstract terms (${abstractCount}) than concrete visual elements (${concreteCount}) — add specific actions and subjects.`,
         });
       }

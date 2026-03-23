@@ -32,6 +32,8 @@ interface CutCardProps {
   canonicalViewModel?: CutCardViewModel;
   characterSeeds?: CharacterSeed[];
   onUpdate?: (updated: Cut) => void;
+  /** 원본 시나리오 텍스트 — 분절 편집 감지의 source of truth */
+  storyText?: string;
   storyboardImage?: string;
   storyboardCandidates?: string[];
   storyboardLoading?: boolean;
@@ -328,6 +330,7 @@ export default function CutCard({
   userVideoMode: _userVideoMode, modelId,
   shotSnapshots,
   narrationState,
+  storyText: storyTextProp,
 }: CutCardProps) {
   // ── Canonical-first data derivation ──
   // When canonicalViewModel is available, use it as the source of truth.
@@ -345,9 +348,25 @@ export default function CutCard({
   const [showPresets, setShowPresets] = useState(false);
   const [autoSplitResult, setAutoSplitResult] = useState<AutoSplitResult | null>(null);
 
-  // 분절 편집 감지 — storyText / sceneDescription에서 fragmented intent 확인
-  const storyTextForDetection = cut.sceneDescription || effectiveVideoPrompt || "";
+  // 분절 편집 감지 — 원본 storyText를 우선 사용 (전체 시나리오 기준 판단)
+  const storyTextForDetection = storyTextProp || cut.sceneDescription || effectiveVideoPrompt || "";
   const showAutoSplitButton = isFragmentedEditRequested(storyTextForDetection) && effectiveMultiShot.length < 3;
+
+  // environment 추출 — sceneDescription에서 배경/장소 정보 추출, moodLighting과 분리
+  const extractedEnvironment = (() => {
+    const desc = cut.sceneDescription || effectiveVideoPrompt || "";
+    // 전치사구(in/at/on) 뒤의 장소 설명 추출
+    const locMatch = desc.match(/\b(?:in|at|on|inside|within|outside)\s+(?:a\s+|the\s+)?([^,.]+)/i);
+    if (locMatch) return locMatch[1].trim().slice(0, 80);
+    // cameraDirection에서 장소 힌트
+    if (cut.cameraDirection && cut.cameraDirection.length > 10) {
+      const envPart = cut.cameraDirection.replace(/\b(WS|MS|CU|MCU|ECU|LS|pan|tilt|dolly|tracking|push-in|pull-back|static)\b/gi, "").trim();
+      if (envPart.length > 5) return envPart.slice(0, 80);
+    }
+    // fallback: sceneDescription 앞 80자 (moodLighting과 겹치지 않도록)
+    const fallback = desc.slice(0, 80);
+    return fallback !== cut.moodLighting ? fallback : "scene environment";
+  })();
 
   const handleAutoSplit = () => {
     if (!modelId || !onUpdate) return;
@@ -356,7 +375,7 @@ export default function CutCard({
       sceneDescription: cut.sceneDescription || "",
       subjectPrimary: cut.characterConsistency || "subject",
       action: effectiveVideoPrompt || cut.sceneDescription || "",
-      environment: cut.moodLighting || "",
+      environment: extractedEnvironment,
       moodLighting: cut.moodLighting || "",
       durationSec: effectiveDurationSec,
       camera: {
@@ -372,7 +391,29 @@ export default function CutCard({
       const sceneType = (cut.shotCategory ?? "default") as PlannerSceneType;
       const roles = planShotRoles(result.shots.length, sceneType);
       const multiShotPrompts = shotsToMultiShotPrompts(result.shots, roles);
-      onUpdate({ ...cut, multiShot: multiShotPrompts });
+      // structured shots를 source of truth로 보존 + derived multiShot + fragmentedEditContext
+      onUpdate({
+        ...cut,
+        multiShot: multiShotPrompts,
+        structuredShots: result.shots.map(s => ({
+          shotId: s.shotId,
+          startSec: s.startSec,
+          endSec: s.endSec,
+          camera: s.camera,
+          subject: s.subject,
+          action: s.action,
+          environment: s.environment,
+          moodLighting: s.moodLighting,
+          focus: s.focus,
+          ...(s.styleSuffix ? { styleSuffix: s.styleSuffix } : {}),
+        })),
+        fragmentedEditContext: result.fragmentedContext.isFragmented ? {
+          isFragmented: true,
+          triggerTerms: result.fragmentedContext.triggerTerms,
+          minShotCount: result.fragmentedContext.minShotCount,
+          editStyle: result.fragmentedContext.editStyle,
+        } : undefined,
+      });
     }
   };
 
@@ -404,7 +445,7 @@ export default function CutCard({
           sceneType,
           subjectPrimary: subject,
           action,
-          environment: cut.moodLighting || "",
+          environment: extractedEnvironment,
           moodLighting: cut.moodLighting || "",
           durationSec: effectiveDurationSec,
           camera: {

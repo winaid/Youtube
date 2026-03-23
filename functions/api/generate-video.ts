@@ -372,6 +372,13 @@ interface GenerateVideoRequest {
   seed?: number;
   sampleCount?: number;
   previousVideoUri?: string;
+  /** 분절 편집 컨텍스트 — UI에서 전달, 500자 hard limit 강제 */
+  fragmentedEditContext?: {
+    isFragmented: boolean;
+    triggerTerms: string[];
+    minShotCount: number;
+    editStyle: string;
+  };
 }
 
 function stripDataPrefix(b64: string): string {
@@ -493,12 +500,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     });
 
     // ── VEO 멀티샷 타임스탬프 프롬프트 생성 (8초 강제) ───────────────────────
+    const isFragmentedEdit = !!req.fragmentedEditContext?.isFragmented;
     const veoRendererInput: VeoPromptRendererInput = {
       prompt: finalPromptForProvider,
       negativePrompt: negativePrompt,
       multiShot: req.multiShot,
       styleAnchor: undefined,
       structureType: "FOUR",
+      fragmentedEditMode: isFragmentedEdit,
     };
     const rendered = renderVeoPrompt(veoRendererInput);
 

@@ -577,10 +577,14 @@ export function validateNarrativeClarity(
   const abstractMatches = prompt.match(ABSTRACT_ONLY);
   const abstractRatio = (abstractMatches?.length ?? 0) / Math.max(1, words.length);
 
+  // 서사 명료성은 fragmented edit 모드에서 품질 게이트(error)로 작동
+  // 비-fragmented 모드에서는 경고(warning)
+  const narrativeSeverity: "error" | "warning" = shots.length >= 3 ? "error" : "warning";
+
   if (!hasActionVerbs && !hasConcreteNouns) {
     issues.push({
       code: "scene_not_narratively_clear",
-      severity: "warning",
+      severity: narrativeSeverity,
       message: "Prompt lacks concrete actions or visible subjects — scene meaning unclear without script context.",
     });
   }
@@ -588,7 +592,7 @@ export function validateNarrativeClarity(
   if (abstractRatio > 0.15) {
     issues.push({
       code: "unclear_context_without_script",
-      severity: "warning",
+      severity: narrativeSeverity,
       message: "Prompt is predominantly abstract descriptions — add concrete visual events and context.",
     });
   }
@@ -599,7 +603,7 @@ export function validateNarrativeClarity(
     if (uniqueActions.size === 1) {
       issues.push({
         code: "scene_not_narratively_clear",
-        severity: "warning",
+        severity: "error",
         message: "All shots have identical actions — no narrative progression visible.",
       });
     }
