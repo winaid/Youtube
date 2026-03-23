@@ -580,13 +580,17 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
         resolve: "WS/CU, visual closure. Tension releases — the aftermath, result, or changed state of the scene",
       };
 
+      // basePrompt에서 3-beat 구조 추출 (beat별로 다른 서브샷에 분배)
+      const beats = basePrompt.split(/\.\s*/).filter(s => s.trim().length > 10);
       const repairedShots: MultiShotItem[] = roles.map((role, i) => {
         if (i < existingShots.length) {
-          return { index: i + 1, prompt: existingShots[i].prompt, duration: String(durations[i]), role };
+          return { index: i + 1, prompt: existingShots[i].prompt.slice(0, 350), duration: String(durations[i]), role };
         }
+        // 각 서브샷에 다른 beat를 할당 (반복 방지)
+        const beatSlice = beats[Math.min(i, beats.length - 1)]?.trim() || "";
         return {
           index: i + 1,
-          prompt: `[Shot ${i + 1}/${targetCount} — ${role}] ${roleDirective[role]}. ${basePrompt.slice(0, 120)}`,
+          prompt: `${roleDirective[role]}. ${beatSlice.slice(0, 200)}`.slice(0, 350),
           duration: String(durations[i]),
           role,
         };
@@ -1248,8 +1252,10 @@ establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
 - 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소
-- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤80 words/샷.
-- 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]`;
+- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤50 words/샷, ≤350 chars/샷.
+- 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
+- ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
+- ⚠️ 한국어 텍스트 금지 (장면/씬/컷 등 한국어 단어 삽입 금지 — 영어만 사용)`;
   })()}
 
 ## 한국어 표시용 필드 (UI에서 사용자에게 보여주는 용도 — VEO에는 전달 안 됨)
