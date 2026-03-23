@@ -524,6 +524,7 @@ interface CutOutline {
 interface MultiShotItem {
   index: number;
   prompt: string;
+  promptKo?: string;
   duration: string;
   role?: string;
 }
@@ -571,26 +572,28 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
       const durations = roles.map((_, i) => i < remainder ? baseDur + 1 : baseDur);
 
       const basePrompt = fc.videoPrompt || fc.sceneDescription || "";
-      const roleDirective: Record<ShotRoleServer, string> = {
-        establish: "WS establishing shot. Full environment visible — show the specific location and key objects that identify WHERE this is",
-        transition: "MS, camera shifts angle. New perspective revealing depth — different framing from previous shot",
-        develop: "MS/MCU, subject in action. Show specific movement or behavior — what the character DOES (verb required)",
-        insert: "ECU, extreme close-up on critical detail. Dramatic scale jump — texture, hands, object surface",
-        peak: "CU, most intense moment. Character's physical reaction at emotional peak — body language, not emotion labels",
-        resolve: "WS/CU, visual closure. Tension releases — the aftermath, result, or changed state of the scene",
+      const roleDirective: Record<ShotRoleServer, { en: string; ko: string }> = {
+        establish: { en: "WS establishing shot. Full environment visible — show the specific location and key objects that identify WHERE this is", ko: "전경 — 공간과 위치 확인" },
+        transition: { en: "MS, camera shifts angle. New perspective revealing depth — different framing from previous shot", ko: "전환 — 새로운 시점" },
+        develop: { en: "MS/MCU, subject in action. Show specific movement or behavior — what the character DOES (verb required)", ko: "전개 — 인물의 구체적 행동" },
+        insert: { en: "ECU, extreme close-up on critical detail. Dramatic scale jump — texture, hands, object surface", ko: "인서트 — 핵심 디테일 클로즈업" },
+        peak: { en: "CU, most intense moment. Character's physical reaction at emotional peak — body language, not emotion labels", ko: "절정 — 감정 최고조 순간" },
+        resolve: { en: "WS/CU, visual closure. Tension releases — the aftermath, result, or changed state of the scene", ko: "마무리 — 시각적 해소" },
       };
 
       // basePrompt에서 3-beat 구조 추출 (beat별로 다른 서브샷에 분배)
       const beats = basePrompt.split(/\.\s*/).filter(s => s.trim().length > 10);
       const repairedShots: MultiShotItem[] = roles.map((role, i) => {
         if (i < existingShots.length) {
-          return { index: i + 1, prompt: existingShots[i].prompt.slice(0, 350), duration: String(durations[i]), role };
+          return { index: i + 1, prompt: existingShots[i].prompt.slice(0, 350), promptKo: existingShots[i].promptKo, duration: String(durations[i]), role };
         }
         // 각 서브샷에 다른 beat를 할당 (반복 방지)
         const beatSlice = beats[Math.min(i, beats.length - 1)]?.trim() || "";
+        const directive = roleDirective[role];
         return {
           index: i + 1,
-          prompt: `${roleDirective[role]}. ${beatSlice.slice(0, 200)}`.slice(0, 350),
+          prompt: `${directive.en}. ${beatSlice.slice(0, 200)}`.slice(0, 350),
+          promptKo: directive.ko,
           duration: String(durations[i]),
           role,
         };
@@ -1254,8 +1257,10 @@ establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
 - 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소
 - duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤50 words/샷, ≤350 chars/샷.
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
+- ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
-- ⚠️ 한국어 텍스트 금지 (장면/씬/컷 등 한국어 단어 삽입 금지 — 영어만 사용)`;
+- ⚠️ prompt는 영어 (VEO용). 한국어 텍스트 금지 (장면/씬/컷 등 한국어 단어 삽입 금지).
+- ⚠️ promptKo 필수: 각 서브샷의 한국어 요약 (≤40자). 사용자가 한눈에 내용 파악용. 예: "폐허 전경, 돌담과 잡초" / "주인공이 문을 열고 안을 들여다봄"`;
   })()}
 
 ## 한국어 표시용 필드 (UI에서 사용자에게 보여주는 용도 — VEO에는 전달 안 됨)
@@ -1279,7 +1284,7 @@ ${(() => {
     const exampleCount = 4; // 반드시 4샷 예시
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
-      exampleShots.push(`{"index":${i},"prompt":"...","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
+      exampleShots.push(`{"index":${i},"prompt":"...","promptKo":"한국어 요약 ≤40자","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
       remaining -= shotDur;
     }
     return `[${base},"multiShot":[${exampleShots.join(",")}]}]`;

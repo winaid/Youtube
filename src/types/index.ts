@@ -267,6 +267,8 @@ export const SHOT_ROLES: ShotRole[] = ["establish", "develop", "peak", "resolve"
 export interface MultiShotPrompt {
   index: number;
   prompt: string;
+  /** 한국어 요약 — UI 표시용 (VEO에는 전달 안 됨) */
+  promptKo?: string;
   duration: string; // 초 단위 문자열 (예: "5")
   /** 샷 역할 — 미지정 시 position 기반 자동 추론 */
   role?: ShotRole;

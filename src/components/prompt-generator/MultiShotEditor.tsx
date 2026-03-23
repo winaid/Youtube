@@ -369,6 +369,9 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                     setEditDraft(shot.prompt);
                   }}
                 >
+                  {shot.promptKo && (
+                    <span className="block text-[12px] font-sans text-gray-900 mb-1 font-medium">{shot.promptKo}</span>
+                  )}
                   {shot.prompt || (
                     <span className="text-muted-foreground italic">프롬프트를 입력하세요...</span>
                   )}
