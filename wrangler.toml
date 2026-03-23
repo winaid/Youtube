@@ -13,6 +13,10 @@
 name = "youtube"
 compatibility_date = "2024-09-23"
 
+# Pages 빌드 설정
+[build]
+command = "npm run build"
+
 # Pages 빌드 출력 디렉토리 (next export → out/)
 pages_build_output_dir = "out"
 
