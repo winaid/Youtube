@@ -1456,13 +1456,15 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: Grounded 웹 검색 (Flash-Lite + google_search) ──
-          stageLabel = "stage1_grounded_web";
-          model = GEMINI_MODEL_SEARCH;
+          // ── STAGE 1: JSON 강제 (grounding 비활성화 — 감독 정보는 모델 지식으로 충분) ──
+          // grounding + responseMimeType 동시 사용 불가 → grounding 제거하고 JSON 강제로 파싱 안정성 확보
+          // 감독 이름/스타일/작품은 Gemini가 이미 잘 아는 지식 → 웹 검색 불필요
+          stageLabel = "stage1_model_json";
+          model = GEMINI_MODEL_PRO;
           prompt = buildWebPrompt();
-          useGrounding = true;
-          forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
-          triggerReason = "initial";
+          useGrounding = false;
+          forceMimeType = true;
+          triggerReason = "initial_direct_json";
         } else if (stageNum === 2) {
           // ── STAGE 2: grounding 실패 시 Flash-Lite JSON 폴백 (grounding 재시도 무의미) ──
           const prevReasons = allEmptyReasons;
@@ -1530,7 +1532,16 @@ Each director object must have:
           const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
           const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
 
-          prompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario.\nDo NOT recommend: ${excludeNames}.\nReturn JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean description","reason":"Korean reason","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]}]}`;
+          prompt = `You MUST recommend exactly 4 real film directors whose visual style fits a ${genreStr}, ${moodStr} video scenario.
+Exclude these directors: ${excludeNames}.
+Include directors from at least 2 different regions (Korea, Japan, Europe, US, India, etc.).
+Each director must be a real person with real filmography.
+
+Return ONLY valid JSON with exactly 4 directors:
+{"directors":[
+  {"name":"English name","nameKo":"한국어 이름","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean 1-2 sentence description","reason":"Korean reason why this director fits","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]},
+  ... (exactly 4 directors total)
+]}`;
           useGrounding = false;
           forceMimeType = true;
           triggerReason = `all prior stages failed: ${allEmptyReasons.join(",")}`;
