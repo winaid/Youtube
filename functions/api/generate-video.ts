@@ -89,34 +89,29 @@ function deduplicatePromptClauses(text: string): string {
     const norm = s.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
     if (norm.length < 10) { unique.push(s.trim()); continue; }
     let isDupe = false;
-    let replacedIdx = -1;
     for (let i = 0; i < seen.length; i++) {
       const prev = seen[i];
+      // 완전 동일만 중복 처리 (substring 포함 관계는 무시 — 디테일 손실 방지)
       if (prev === norm) { isDupe = true; break; }
-      // substring 중복: 더 긴(구체적인) 버전을 보존
-      if (prev.includes(norm)) {
-        // 기존이 더 길다 → 새 문장은 중복
-        isDupe = true; break;
-      }
-      if (norm.includes(prev) && norm.length > prev.length + 15) {
-        // 새 문장이 훨씬 더 길다(+15자 이상) → 기존을 새 것으로 교체
-        replacedIdx = i;
-        break;
-      }
-    }
-    if (replacedIdx >= 0) {
-      seen[replacedIdx] = norm;
-      // unique에서 기존 짧은 버전을 새 긴 버전으로 교체
-      const prevNorm = seen[replacedIdx];
-      for (let j = 0; j < unique.length; j++) {
-        const uNorm = unique[j].trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
-        if (uNorm === prevNorm || prevNorm.includes(uNorm)) {
-          unique[j] = s.trim();
+      // 80% 이상 겹치는 경우에만 중복 (짧은 쪽이 긴 쪽의 80% 이상 포함)
+      if (prev.length > 20 && norm.length > 20) {
+        const shorter = prev.length < norm.length ? prev : norm;
+        const longer = prev.length < norm.length ? norm : prev;
+        if (longer.includes(shorter) && shorter.length > longer.length * 0.8) {
+          // 거의 동일한 문장 — 더 긴 버전 보존
+          if (norm.length >= prev.length) {
+            seen[i] = norm;
+            for (let j = 0; j < unique.length; j++) {
+              const uNorm = unique[j].trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+              if (uNorm === prev) { unique[j] = s.trim(); break; }
+            }
+          }
+          isDupe = true;
           break;
         }
       }
-      seen[replacedIdx] = norm;
-    } else if (!isDupe) {
+    }
+    if (!isDupe) {
       seen.push(norm);
       unique.push(s.trim());
     }

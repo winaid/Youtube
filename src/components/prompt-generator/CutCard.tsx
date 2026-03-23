@@ -178,6 +178,27 @@ const JSON_FIELD_LABELS: Record<string, string> = {
   emotionalAnchor: "감정 앵커",
 };
 
+/** 각 필드 값에 대한 한국어 도움말 — 마우스 올리면 표시 */
+const JSON_FIELD_HELP: Record<string, string> = {
+  shotSize: "WS=전경, MS=중경, CU=클로즈업, ECU=극단적 클로즈업, MCU=중간 클로즈업, LS=원경",
+  cameraAngle: "eye-level=눈높이, low-angle=아래에서 위로, high-angle=위에서 아래로, overhead=바로 위에서, dutch=기울어진",
+  cameraMovement: "카메라가 어떻게 움직이는지. push-in=접근, pull-back=후퇴, pan=좌우 회전, tilt=상하, dolly=이동, static=고정",
+  subjectBlocking: "화면 안에서 피사체가 어디에 위치하는지 (예: 왼쪽 1/3, 중앙, 전경)",
+  subjectAction: "피사체가 구체적으로 무엇을 하는지 (영어). 수정하면 영상이 바뀝니다",
+  actionBeat: "동작의 리듬/흐름 (시작→전개→클라이맥스)",
+  bodySignal: "감정을 표현하는 신체 언어 (손 움직임, 시선, 자세 등)",
+  revealed: "이 장면에서 새로 공개되는 시각 정보",
+  withheld: "이 장면에서 의도적으로 보여주지 않는 정보",
+  timingBeat: "시간대별 장면 구성 (예: 0-2초: 시작, 2-5초: 전개, 5-8초: 클라이맥스)",
+  transitionFromPrev: "이전 장면에서 이 장면으로의 전환 방식",
+  characterRef: "캐릭터 외형 묘사 (수정하지 마세요 — 일관성 유지용)",
+  moodLighting: "조명과 분위기. 광원(source) + 방향(direction) + 광질(quality)",
+  styleSuffix: "영상 스타일 태그",
+  locationCue: "이 장면의 장소를 알려주는 시각 단서",
+  situationCue: "이 장면의 상황을 알려주는 시각 단서",
+  emotionalAnchor: "감정의 핵심이 집약되는 시각 포인트",
+};
+
 const JSON_FIELD_COLORS: Record<string, string> = {
   shotSize: "#787fff",
   cameraAngle: "#787fff",
@@ -309,10 +330,11 @@ function JsonPromptView({
               <span
                 className="text-[10px] font-semibold shrink-0 mt-0.5"
                 style={{ color: fieldColor, minWidth: 72 }}
+                title={JSON_FIELD_HELP[key] || ""}
               >
                 {fieldLabel}
               </span>
-              <span className="text-[11px] font-mono leading-relaxed text-gray-700 break-all">
+              <span className="text-[11px] font-mono leading-relaxed text-gray-700 break-all" title={JSON_FIELD_HELP[key] || ""}>
                 {value}
               </span>
             </div>
