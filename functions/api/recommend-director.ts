@@ -656,13 +656,17 @@ interface DirectorRecommendationDebug {
 // ═══════════════════════════════════════════════════════════════════
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const _rdStartMs = Date.now();
+  console.info("[recommend-director] Request received");
   try {
     const { storyText, localDirectors } = await context.request.json() as {
       storyText: string;
       localDirectors: LocalDirectorInfo[];
     };
+    console.info(`[recommend-director] Parsed request: storyTextLen=${storyText?.length ?? 0}, localDirectors=${localDirectors?.length ?? 0}`);
 
     if (!storyText || typeof storyText !== "string") {
+      console.info("[recommend-director] Validation failed: storyText is missing or not a string");
       return Response.json({ error: "storyText is required" }, { status: 400 });
     }
 
@@ -688,7 +692,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let invalidIdsRemoved: string[] = [];
 
     // ── 규칙 기반 사전 추출 (Gemini fallback) ──
+    console.info(`[recommend-director] Running preExtractSignals, elapsed=${Date.now() - _rdStartMs}ms`);
     const preSignals = preExtractSignals(storyText);
+    console.info(`[recommend-director] preExtractSignals done: genres=${preSignals.genres.length}, moods=${preSignals.moods.length}, contentType=${preSignals.contentType}, elapsed=${Date.now() - _rdStartMs}ms`);
 
     // Raw response snippets for debug
     let localMatchRawSnippet = "";
