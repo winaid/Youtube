@@ -2165,7 +2165,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
           {/* 영상 길이 */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold" style={{ color: "#5a5ecc" }}>영상 길이</Label>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
               {durations.map((d) => (
                 <button
                   key={String(d.value)}
@@ -2257,7 +2257,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
               </button>
             )}
 
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
               {([{ value: "auto" as const, label: "자동" }, ...([6, 10, 15, 20] as const).map(n => ({ value: n, label: String(n) }))]).map((item) => (
                 <button
                   key={String(item.value)}

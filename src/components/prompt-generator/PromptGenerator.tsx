@@ -278,7 +278,7 @@ export default function PromptGenerator() {
   }, [performSave]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-4 md:p-6 space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-3 py-3 sm:px-4 sm:py-4 md:p-6 space-y-3 sm:space-y-4">
       {/* ── Header: Project Manager + Tabs ── */}
       <div className="flex items-center gap-4 flex-wrap">
         <ProjectManager
@@ -322,8 +322,8 @@ export default function PromptGenerator() {
       </div>
 
       {activeTab === "prompt" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6">
-          <div className="lg:sticky lg:top-6 lg:self-start space-y-3">
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4 lg:gap-6">
+          <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
             <InputPanel
               onGenerate={handleGenerate}
               isLoading={status === "loading"}

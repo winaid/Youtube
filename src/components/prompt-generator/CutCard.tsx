@@ -869,7 +869,7 @@ export default function CutCard({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
           <div>
             <span className="font-medium" style={{ color: "#787fff" }}>카메라: </span>
             {cut.cameraDirectionKo || cut.cameraDirection}

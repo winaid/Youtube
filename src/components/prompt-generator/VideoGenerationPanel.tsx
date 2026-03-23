@@ -243,6 +243,66 @@ export default function VideoGenerationPanel({
           </div>
         )}
 
+        {/* 예상 품질 점수 — 로컬 휴리스틱 기반 빠른 피드백 */}
+        {cuts.length > 0 && (() => {
+          // 빠른 품질 점수 계산 (API 호출 없음)
+          let score = 50; // 기본 점수
+          const tips: string[] = [];
+
+          // 컷 수 적절성
+          const totalDur = cuts.reduce((s, c) => s + (canonicalDurations?.get(c.cutNumber) ?? c.durationSec), 0);
+          if (cuts.length >= 3 && cuts.length <= 8) score += 10;
+          else if (cuts.length < 3) { score -= 10; tips.push("컷 수가 적습니다 — 최소 3컷 이상 권장"); }
+
+          // 장면 설명 품질
+          const avgDescLen = cuts.reduce((s, c) => s + (c.sceneDescription?.length || 0), 0) / cuts.length;
+          if (avgDescLen > 30) score += 10;
+          else tips.push("장면 설명이 짧습니다 — 구체적으로 작성하면 품질이 올라갑니다");
+
+          // videoPrompt 존재
+          const hasPrompt = cuts.every(c => c.videoPrompt && c.videoPrompt.length > 20);
+          if (hasPrompt) score += 10;
+
+          // 멀티샷 여부
+          const hasMultiShot = cuts.every(c => {
+            const ms = canonicalMultiShots?.get(c.cutNumber) ?? c.multiShot ?? [];
+            return ms.length >= 2;
+          });
+          if (hasMultiShot) score += 10;
+          else tips.push("멀티샷이 설정되지 않은 컷이 있습니다");
+
+          // 캐릭터 일관성
+          const hasCharRef = cuts.some(c => c.characterConsistency && c.characterConsistency.length > 10);
+          if (hasCharRef) score += 5;
+
+          // 첫 컷 훅 강도 (짧고 강렬한 첫 장면)
+          const firstCut = cuts[0];
+          if (firstCut?.sceneDescription && /[!?]|훅|hook|반전|충격|의문/i.test(firstCut.sceneDescription)) score += 5;
+
+          score = Math.min(100, Math.max(0, score));
+          const color = score >= 70 ? "#16a34a" : score >= 50 ? "#d97706" : "#dc2626";
+          const label = score >= 70 ? "좋음" : score >= 50 ? "보통" : "개선 필요";
+
+          return (
+            <div className="rounded-lg p-2.5 flex items-center gap-3" style={{ background: `${color}08`, border: `1px solid ${color}30` }}>
+              <div className="text-center" style={{ minWidth: 48 }}>
+                <div className="text-lg font-bold" style={{ color }}>{score}</div>
+                <div className="text-[9px]" style={{ color }}>{label}</div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-medium text-zinc-600">예상 품질</div>
+                {tips.length > 0 ? (
+                  <div className="text-[9px] text-zinc-500 mt-0.5">
+                    {tips.slice(0, 2).map((t, i) => <div key={i}>💡 {t}</div>)}
+                  </div>
+                ) : (
+                  <div className="text-[9px] mt-0.5" style={{ color }}>모든 항목이 잘 설정되어 있습니다</div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* 전체 생성 / 중단 */}
         <div className="space-y-2">
           {!isAutoMode ? (
@@ -543,7 +603,7 @@ export default function VideoGenerationPanel({
                           };
                           return (
                             <div key={key} className="flex items-center gap-1.5">
-                              <span className="text-[9px] w-[85px] shrink-0">{labelMap[key] || key}</span>
+                              <span className="text-[9px] w-[60px] sm:w-[85px] shrink-0">{labelMap[key] || key}</span>
                               <div className="flex-1 h-[6px] bg-gray-200 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full"
@@ -575,7 +635,7 @@ export default function VideoGenerationPanel({
                           const pct = val * 10;
                           return (
                             <div key={key} className="flex items-center gap-1.5">
-                              <span className="text-[9px] w-[85px] shrink-0">{label}</span>
+                              <span className="text-[9px] w-[60px] sm:w-[85px] shrink-0">{label}</span>
                               <div className="flex-1 h-[6px] bg-gray-200 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full"

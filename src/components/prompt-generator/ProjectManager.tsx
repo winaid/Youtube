@@ -232,7 +232,7 @@ export default function ProjectManager({
 
       {/* ── Panel Dropdown ── */}
       {showPanel && (
-        <div className="absolute top-10 left-0 z-50 w-[420px] max-h-[500px] overflow-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl">
+        <div className="absolute top-10 left-0 right-0 sm:right-auto z-50 w-auto sm:w-[420px] max-h-[500px] overflow-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl">
           {/* Tabs: Drafts / Samples */}
           <div className="flex border-b border-zinc-700">
             <button
