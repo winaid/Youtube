@@ -36,10 +36,14 @@ function extractJson(text: string): unknown {
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const startMs = Date.now();
+  console.info("[generate-seo] Request received");
   try {
     const input = (await context.request.json()) as SeoInput;
+    console.info(`[generate-seo] Parsed request: projectTitle="${input.projectTitle?.slice(0, 50)}", scenesCount=${input.scenes?.length ?? 0}, region=${input.region ?? "(none)"}, animationMode=${input.animationMode ?? "(none)"}`);
 
     if (!input.projectTitle || !input.conceptSummary) {
+      console.info("[generate-seo] Validation failed: missing projectTitle or conceptSummary");
       return new Response(
         JSON.stringify({ error: "Missing required fields: projectTitle, conceptSummary" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -90,14 +94,19 @@ Optimize for the ${input.region || "Global"} audience. Consider trending formats
       },
     };
 
+    console.info(`[generate-seo] Calling Gemini API for SEO generation, elapsed=${Date.now() - startMs}ms`);
+    const apiCallStart = Date.now();
     const { response } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
 
+    console.info(`[generate-seo] Gemini API responded: status=${response.status}, elapsed=${Date.now() - apiCallStart}ms`);
+
     if (!response.ok) {
       const errorText = await response.text();
+      console.info(`[generate-seo] Gemini API error: status=${response.status}, body=${errorText.slice(0, 200)}, elapsed=${Date.now() - startMs}ms`);
       console.error("Gemini API error:", errorText);
       return geminiErrorResponse(response, errorText, "generate-seo");
     }
@@ -107,7 +116,9 @@ Optimize for the ${input.region || "Global"} audience. Consider trending formats
     };
 
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    console.info(`[generate-seo] Parsing response: rawTextLen=${rawText?.length ?? 0}`);
     if (!rawText) {
+      console.info(`[generate-seo] No text in Gemini response, elapsed=${Date.now() - startMs}ms`);
       console.error("No text in Gemini response:", JSON.stringify(data));
       return new Response(
         JSON.stringify({ error: "No text content in Gemini response" }),
@@ -115,13 +126,16 @@ Optimize for the ${input.region || "Global"} audience. Consider trending formats
       );
     }
 
+    console.info("[generate-seo] Extracting JSON from response");
     const result = extractJson(rawText) as YouTubeSEO;
 
+    console.info(`[generate-seo] Final response: titles=${result.titles?.length ?? 0}, tags=${result.tags?.length ?? 0}, hashtags=${result.hashtags?.length ?? 0}, elapsed=${Date.now() - startMs}ms`);
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.info(`[generate-seo] Unhandled error caught: ${error instanceof Error ? error.message : String(error)}, elapsed=${Date.now() - startMs}ms`);
     console.error("generate-seo error:", error);
     return new Response(
       JSON.stringify({

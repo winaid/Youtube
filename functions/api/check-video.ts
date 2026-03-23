@@ -68,11 +68,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // done=false → RUNNING
     if (!result.done) {
+      console.info(`[check-video] Result: RUNNING, elapsed=${Date.now() - tCheckStart}ms`);
       return Response.json({ status: "RUNNING" });
     }
 
     // done=true, failed
     if (result.status === "failed") {
+      console.info(`[check-video] Result: FAILED, error=${result.error ?? "VEO generation failed"}, elapsed=${Date.now() - tCheckStart}ms`);
       return Response.json({ status: "FAILED", error: result.error ?? "VEO generation failed" }, { status: 422 });
     }
 
@@ -101,9 +103,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // done=true but status is pending/processing (unexpected) — treat as running
+    console.info(`[check-video] Result: unexpected done=true with status=${result.status}, treating as RUNNING, elapsed=${Date.now() - tCheckStart}ms`);
     return Response.json({ status: "RUNNING" });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
+    console.info(`[check-video] Unhandled error caught: ${errMsg}, elapsed=${Date.now() - tCheckStart}ms`);
     console.error(`[check-video] UNHANDLED: ${errMsg}`);
     return Response.json({
       status: "FAILED",
