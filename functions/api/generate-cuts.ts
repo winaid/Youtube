@@ -776,7 +776,7 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ch
 
 ## 시나리오
 ${storyExcerpt}
-${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}${continuityBlock ? `\n${continuityBlock}\n` : ""}${deepAnalysisBriefBlock ? `\n${deepAnalysisBriefBlock}\n` : ""}
+${scriptAnalysisHint ? `\n## 대본 사전 분석 (참고용 — 이 구조를 기반으로 시퀀스를 설계하되, 감독 스타일을 적용)\n${scriptAnalysisHint.slice(0, 600)}\n` : ""}${continuityBlock ? `\n${continuityBlock}\n` : ""}${deepAnalysisBriefBlock ? `\n${deepAnalysisBriefBlock}\n` : ""}${historicalGroundingBlock ? `\n${historicalGroundingBlock}\n` : ""}
 ## 출력 JSON 스키마
 ⚠️ JSON 최상단에 아래 2개 필드를 먼저 출력 (5단계 분석의 1~2단계 결과):
 
@@ -1067,6 +1067,7 @@ async function step23DetailBatch(
   modelOverride?: string,
   narrativeContext?: { core?: string; emotions?: string[] },  // step1에서 추출한 서사 핵심
   contentMode?: "dramatized_reenactment" | "general",         // 콘텐츠 모드별 규칙 적용
+  historicalGroundingBlock?: string,                          // Historical Grounding 프롬프트 블록
 ): Promise<CutDetail[]> {
   if (batchOutlines.length === 0) return [];
 
@@ -1144,7 +1145,7 @@ ${sequenceContext}
 
 ${batchDirectives}
 
-${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}${contentMode === "dramatized_reenactment" ? `## 콘텐츠 모드: 역사 재연 (dramatized_reenactment)
+${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}${historicalGroundingBlock ? historicalGroundingBlock + "\n\n" : ""}${contentMode === "dramatized_reenactment" ? `## 콘텐츠 모드: 역사 재연 (dramatized_reenactment)
 - 강사/발표자/해설자/내레이터 캐릭터 생성 절대 금지
 - 카메라를 향해 설명하는 인물 금지
 - 스크립트가 현대→과거 비교 구조이면 시대 전환 장면을 시각적으로 구분하라
@@ -1849,6 +1850,34 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const contentMode = detectContentMode(String(storyText));
     console.info(`[generate-cuts] contentMode=${contentMode}`);
 
+    // ── Historical Grounding — 아시아 역사/전통 시나리오의 지역·시대 구체화 ──
+    let historicalGroundingBlock = "";
+    let historicalGroundingData: {
+      visualAnchors?: Array<{ category: string; description: string }>;
+      avoid?: string[];
+      region?: string | null;
+      period?: string | null;
+    } | undefined;
+    try {
+      const { resolveHistoricalGrounding, buildHistoricalPromptDirective } = await import("../../src/lib/historical-grounding-resolver");
+      const grounding = resolveHistoricalGrounding(String(storyText));
+      if (grounding.detected) {
+        historicalGroundingBlock = buildHistoricalPromptDirective(grounding);
+        historicalGroundingData = {
+          visualAnchors: grounding.visualAnchors,
+          avoid: grounding.avoid,
+          region: grounding.region,
+          period: grounding.period,
+        };
+        console.info(`[generate-cuts] Historical grounding: ${grounding.region} / ${grounding.period} (confidence: ${grounding.confidence})`);
+        if (grounding.warnings.length > 0) {
+          console.warn(`[generate-cuts] Historical warnings: ${grounding.warnings.map(w => w.code).join(", ")}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[generate-cuts] Historical grounding skipped:`, e);
+    }
+
     // ── 페르소나 블록 빌드 ─────────────────────────────────────────────────
     const gpRaw = generationPersona && typeof generationPersona === "object"
       ? generationPersona as Record<string, boolean>
@@ -2500,7 +2529,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     /** 모든 배치를 병렬 실행하는 헬퍼 — allSettled로 성공 배치 보존 (실패 배치만 재시도 가능) */
     const runAllBatches = async (modelOverride?: string): Promise<unknown[][]> => {
       const results = await Promise.allSettled(step23Batches.map((batch, idx) =>
-        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx, contentMode)
+        step23DetailBatch(context.env, ...detailArgs, batch, `step${idx + 2}`, generationPersonaBlock, characterPersonaBlock, editorialSummary, modelOverride, narrativeCtx, contentMode, historicalGroundingBlock)
       ));
       const fulfilled: unknown[][] = [];
       let firstError: unknown = null;

@@ -375,6 +375,8 @@ export interface Cut {
   groupId?: string;
   /** 극 중 인물 대사 — TTS 음성으로 재생 (videoPrompt에는 포함 안 됨) */
   narrationText?: string;
+  /** Historical Grounding 결과 — 역사적 맥락이 감지된 경우 시각 앵커 포함 */
+  historicalGrounding?: import("@/types/historical-grounding").HistoricalGroundingResult;
   /** continuity mode 세그먼트 메타 — 이어 만들기 시 세그먼트 경계 상태 추적 */
   continuitySegment?: {
     segmentIndex: number;
@@ -417,6 +419,8 @@ export interface PromptOutput {
   sequencePlan?: import("@/lib/sequence-plan").SequencePlan;
   /** 시퀀스 검증 결과 */
   sequenceValidation?: import("@/lib/sequence-plan").SequenceValidationResult;
+  /** Historical Grounding 결과 — 시나리오 전체의 역사적 맥락 분석 */
+  historicalGrounding?: import("@/types/historical-grounding").HistoricalGroundingResult;
   /** 엔진 생성 메타 — generate-cuts API의 실제 의사결정 결과 (QualityDebugPanel용) */
   serverGenerationMeta?: ServerGenerationMeta;
 }
