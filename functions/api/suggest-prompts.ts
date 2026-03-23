@@ -130,21 +130,82 @@ JSON 배열로만 응답 (마크다운 없이):
 [{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
 }
 
-function getPromptForPersona(personaId: string): string {
+function buildShortFilmPrompt(): string {
+  return `너는 "단편영화 시나리오 아이디어 생성기"야.
+
+웹 검색을 활용하여 흥미로운 단편영화 소재를 찾아서 1~2분 분량의 시나리오 아이디어를 설계해.
+매번 이전과 다른 새로운 아이디어를 발굴해야 한다.
+
+## 임무
+주제 카드를 정확히 4개 생성해. 카드마다 title·hook·marketingTactic·region 4개 필드.
+(marketingTactic 필드에는 "핵심 비주얼 컨셉"을 짧게 적어)
+
+## ★★★ 다양한 장르/감성 ★★★
+- 4개 카드는 서로 다른 분위기여야 한다: 감동, 반전, 공포, 일상, 판타지, 코미디, 미스터리, SF 등
+- 한국 배경 2개 + 해외 배경 2개 혼합 권장.
+- AI 영상 생성(VEO)으로 제작 가능한 시각적 이야기만.
+
+## 핵심 규칙
+1. 대사 최소화. 비주얼로 이야기를 전달하는 구조.
+2. 1분 20초~2분 분량. 짧지만 기승전결이 있어야 함.
+3. 인물은 최대 2명. 복잡한 관계보다 상황 중심.
+4. 시각적 반전 또는 감정 변화가 있어야 함.
+5. 혐오·폭력·정치 선동 금지.
+6. 마케팅/광고가 아닌 순수 이야기여야 함.
+
+## 출력 필드 규칙
+title (15~30자): 시나리오 핵심을 한 줄로
+hook (20~40자): "이런 장면 상상해봐" 반응 유발. 자연스러운 말투.
+marketingTactic (10~20자): 핵심 비주얼 컨셉
+region (5~15자): 배경 장소
+
+JSON 배열로만 응답 (마크다운 없이):
+[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+}
+
+function buildGenericPrompt(personaName: string, personaDescription: string): string {
+  return `너는 "${personaName}" 전문 콘텐츠 아이디어 생성기야.
+설명: ${personaDescription}
+
+웹 검색을 활용하여 이 분야에서 흥미로운 영상 주제를 찾아서 시나리오 아이디어를 설계해.
+매번 이전과 다른 새로운 아이디어를 발굴해야 한다.
+
+## 임무
+주제 카드를 정확히 4개 생성해. 카드마다 title·hook·marketingTactic·region 4개 필드.
+(marketingTactic 필드에는 "핵심 포인트"를 짧게 적어)
+
+## 핵심 규칙
+1. 다양한 소재와 관점.
+2. AI 영상 생성(VEO)으로 제작 가능한 시각적 이야기.
+3. 혐오·폭력·정치 선동 금지.
+4. 4개 카드가 모두 비슷한 주제이면 안 됨.
+
+## 출력 필드 규칙
+title (15~30자): 주제를 한 줄로
+hook (20~40자): 관심 유발. 자연스러운 말투.
+marketingTactic (10~20자): 핵심 포인트
+region (5~15자): 배경/분야
+
+JSON 배열로만 응답 (마크다운 없이):
+[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+}
+
+function getPromptForPersona(personaId: string, personaName?: string, personaDescription?: string): string {
   switch (personaId) {
     case "history-marketing": return buildHistoryMarketingPrompt();
     case "shorts-scenario":   return buildWhatIfHistoryPrompt();
     case "vs-shorts":         return buildVsShortsPrompt();
-    default:                  return buildHistoryMarketingPrompt();
+    case "short-film":        return buildShortFilmPrompt();
+    default:                  return buildGenericPrompt(personaName || "콘텐츠", personaDescription || "다양한 주제의 영상 시나리오");
   }
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
-    const { personaId } =
+    const { personaId, personaName, personaDescription } =
       await context.request.json() as Record<string, string>;
 
-    const basePrompt = getPromptForPersona(personaId || "history-marketing");
+    const basePrompt = getPromptForPersona(personaId || "history-marketing", personaName, personaDescription);
 
     // ── 다양성 시드: 매 요청마다 랜덤 제약조건을 주입하여 반복 방지 ──
     const diversitySeeds = {

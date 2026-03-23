@@ -58,15 +58,37 @@ export default function StoryChat({ onUseAsScenario }: StoryChatProps) {
         borderColor: "#ef444460",
         bgGradient: "linear-gradient(135deg, #ef444420, #f59e0b10)",
       }
-    : {
-        headerTitle: "시나리오 AI 생성",
-        headerDesc: "역사 마케팅 사례 발굴 또는 팩트 기반 대체역사 쇼츠를 생성합니다",
-        placeholder: "역사 마케팅 또는 '만약에 역사' 주제를 요청해보세요...",
+    : personaId === "history-marketing"
+    ? {
+        headerTitle: "역사 마케팅 마스터",
+        headerDesc: "실제 역사 속 병의원/의사들의 마케팅 사례를 발굴합니다",
+        placeholder: "역사 마케팅 주제를 요청해보세요...",
         helperText: "",
         emptyChat: "아래 예시를 클릭하거나 직접 질문해보세요!",
         headerColor: "#7a7000",
         borderColor: "#fff78760",
         bgGradient: "linear-gradient(135deg, #fff78720, #787fff10)",
+      }
+    : personaId === "shorts-scenario"
+    ? {
+        headerTitle: "만약에 역사",
+        headerDesc: "팩트 기반 대체역사 쇼츠 시나리오를 생성합니다",
+        placeholder: "역사의 갈림길 '만약에' 주제를 요청해보세요...",
+        helperText: "",
+        emptyChat: "아래 예시를 클릭하거나 직접 질문해보세요!",
+        headerColor: "#7a7000",
+        borderColor: "#fff78760",
+        bgGradient: "linear-gradient(135deg, #fff78720, #787fff10)",
+      }
+    : {
+        headerTitle: "시나리오 AI 생성",
+        headerDesc: "어떤 주제든 영상 시나리오로 만들어 드립니다",
+        placeholder: "만들고 싶은 영상의 주제나 이야기를 입력하세요...",
+        helperText: "",
+        emptyChat: "아래 예시를 클릭하거나 직접 질문해보세요!",
+        headerColor: "#787fff",
+        borderColor: "#787fff60",
+        bgGradient: "linear-gradient(135deg, #787fff20, #6366f110)",
       };
 
   // 히스토리 로드 + 마운트 시 웹검색으로 카드 자동 갱신
