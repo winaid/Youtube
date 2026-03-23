@@ -2215,8 +2215,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         undefined, // modelOverride
         fragmentedEditBlock || undefined,
       ));
-      t1_step1 = Date.now();
-      console.info(`[generate-cuts] STEP1 SUCCESS — characterSeeds=${characterSeeds.length}, outlines=${outlines.length}, narrativeCore=${narrativeCore?.slice(0, 30) ?? "none"}, elapsed=${t1_step1 - t0_step1}ms`);
+      console.info(`[generate-cuts] STEP1 API RETURNED — characterSeeds=${characterSeeds.length}, outlines=${outlines.length}, narrativeCore=${narrativeCore?.slice(0, 30) ?? "none"}, elapsed=${Date.now() - t0_step1}ms`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const isProviderError = msg.startsWith("PROVIDER_ERROR:");
@@ -3182,8 +3181,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const step23LatencyMs = t1_step23 - t0_step23;
     const postprocessLatencyMs = t1_postprocess - t0_postprocess;
 
-    console.info(`[generate-cuts] FINAL SUCCESS RESPONSE — source=gemini, cuts=${finalizedCuts.length}, seeds=${characterSeeds.length}, degraded=${step1Degraded}, fastPath=${fastPathUsed}, totalElapsed=${totalLatencyMs}ms`);
-    console.info("[generate-cuts] LATENCY BREAKDOWN", {
+    console.log("[generate-cuts] LATENCY BREAKDOWN", {
       totalLatencyMs,
       step1LatencyMs,
       step23LatencyMs,
