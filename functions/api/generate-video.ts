@@ -389,8 +389,37 @@ function stripDataPrefix(b64: string): string {
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const tServerStart = Date.now();
+  console.info("[generate-video] Request received", { timestamp: new Date().toISOString(), method: context.request.method, url: context.request.url });
   try {
     const req = await context.request.json() as GenerateVideoRequest;
+    console.info("[generate-video] Request parsed", {
+      elapsedMs: Date.now() - tServerStart,
+      hasPrompt: !!req.prompt,
+      promptLength: req.prompt?.length ?? 0,
+      engine: req.engine ?? "auto",
+      videoMode: req.videoMode ?? "generate",
+      workflowType: req.workflowType,
+      aspectRatio: req.aspectRatio ?? "16:9",
+      durationSeconds: req.durationSeconds,
+      cutNumber: req.cutNumber,
+      hasStructuredSequence: !!req.structuredSequence?.shotPlan,
+      hasVideoPromptJson: !!req.videoPromptJson,
+      hasExtendPromptJson: !!req.extendPromptJson,
+      hasFirstFrame: !!req.firstFrameBase64,
+      hasLastFrame: !!req.lastFrameBase64,
+      hasSourceVideo: !!req.sourceVideo,
+      hasPreviousVideoUri: !!req.previousVideoUri,
+      hasMultiShot: !!req.multiShot,
+      multiShotCount: req.multiShot?.length ?? 0,
+      generateAudio: req.generateAudio,
+      generationMode: req.generationMode,
+      personGeneration: req.personGeneration,
+      hasContinuityMeta: !!req.continuityMeta,
+      isFragmentedEdit: !!req.fragmentedEditContext?.isFragmented,
+      hasReferenceImages: !!req.referenceImages?.length,
+      seed: req.seed,
+      sampleCount: req.sampleCount,
+    });
 
     // ── JSON-first 프롬프트 해석 ─────────────────────────────────────────────
     let finalPromptForProvider: string | undefined;
@@ -400,37 +429,46 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let negativePrompt = req.negativePrompt || "";
 
     if (hasStructuredSequence) {
+      console.info("[generate-video] Using structuredSequence path", { elapsedMs: Date.now() - tServerStart, shotId: req.structuredSequence!.shotId, cutNumber: req.structuredSequence!.cutNumber });
       const serialized = serializeSequenceToPrompt(req.structuredSequence!);
       if (serialized.blocked) {
         console.error("[generate-video] BLOCKED by final validation:", serialized.blockReason);
+        console.info("[generate-video] Returning 422 blocked response", { elapsedMs: Date.now() - tServerStart, blockReason: serialized.blockReason });
         return Response.json({ error: `Generation blocked: ${serialized.blockReason}`, blocked: true }, { status: 422 });
       }
       finalPromptForProvider = serialized.prompt;
       negativePrompt = serialized.negativePrompt || negativePrompt;
       usedPath = "structuredSequence";
+      console.info("[generate-video] structuredSequence serialized", { elapsedMs: Date.now() - tServerStart, promptLen: finalPromptForProvider.length, negativeLen: negativePrompt.length });
     } else if (req.videoPromptJson && !req.prompt) {
+      console.info("[generate-video] Using videoPromptJson path (fallback)", { elapsedMs: Date.now() - tServerStart });
       finalPromptForProvider = renderPromptFromJson(req.videoPromptJson);
       usedPath = "videoPromptJson";
       fallbackReason = "no structuredSequence";
     } else if (req.prompt) {
+      console.info("[generate-video] Using prompt_legacy path (fallback)", { elapsedMs: Date.now() - tServerStart, promptLen: req.prompt.length });
       finalPromptForProvider = req.prompt;
       usedPath = "prompt_legacy";
       fallbackReason = "no structuredSequence, no videoPromptJson";
     }
 
     if (!finalPromptForProvider) {
+      console.info("[generate-video] No prompt provided, returning 400", { elapsedMs: Date.now() - tServerStart });
       return Response.json({ error: "structuredSequence, videoPromptJson, or prompt must be provided" }, { status: 400 });
     }
 
     // ── Tag cleanup & deduplication ──────────────────────────────────────────
+    const preCleanupLen = finalPromptForProvider.length;
     finalPromptForProvider = stripInternalTags(finalPromptForProvider);
     finalPromptForProvider = deduplicatePromptClauses(finalPromptForProvider);
     // ── 한글/인용문 최종 제거 (VEO가 자막으로 렌더링하는 것 방지) ──────────
     finalPromptForProvider = stripTextForVeo(finalPromptForProvider);
+    console.info("[generate-video] Prompt cleanup complete", { elapsedMs: Date.now() - tServerStart, preCleanupLen, postCleanupLen: finalPromptForProvider.length, charsRemoved: preCleanupLen - finalPromptForProvider.length });
 
     // ── strip 후 프롬프트 길이 검증 (빈 프롬프트로 VEO API 낭비 방지) ───────
     if (!finalPromptForProvider || finalPromptForProvider.trim().length < 20) {
       console.error("[generate-video] Prompt too short after sanitization:", finalPromptForProvider?.length, "chars");
+      console.info("[generate-video] Returning 422 prompt_too_short", { elapsedMs: Date.now() - tServerStart, promptLength: finalPromptForProvider?.trim().length ?? 0, usedPath });
       return Response.json({
         error: "Prompt too short after sanitization — cannot generate video",
         promptLength: finalPromptForProvider?.trim().length ?? 0,
@@ -440,6 +478,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ── Continuity Mode 주입 ─────────────────────────────────────────────────
     if (req.continuityMeta) {
+      console.info("[generate-video] Injecting continuity meta", { elapsedMs: Date.now() - tServerStart, segmentIndex: req.continuityMeta.segmentIndex, totalSegments: req.continuityMeta.totalSegments, isLastSegment: req.continuityMeta.isLastSegment, hasCharacterLock: !!req.continuityMeta.characterLock, hasVisualLock: !!req.continuityMeta.visualLock, hasPrevEndState: !!req.continuityMeta.prevEndState });
       const cm = req.continuityMeta;
       const continuityParts: string[] = [];
       if (cm.characterLock) continuityParts.push(`Maintain character: ${cm.characterLock}`);
@@ -464,7 +503,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
 
-    console.log("[generate-video] source-of-truth resolution:", {
+    console.info("[generate-video] Source-of-truth resolution", {
       usedPath,
       hasStructuredSequence,
       fallbackReason: fallbackReason || "none",
@@ -474,7 +513,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // ── API 키 검증 ──────────────────────────────────────────────────────────
     const hasKey = !!context.env.GEMINI_API_KEY || !!context.env.GEMINI_API_KEY_2;
+    console.info("[generate-video] API key check", { elapsedMs: Date.now() - tServerStart, hasKey, hasKey1: !!context.env.GEMINI_API_KEY, hasKey2: !!context.env.GEMINI_API_KEY_2 });
     if (!hasKey) {
+      console.info("[generate-video] Returning 400 no API key", { elapsedMs: Date.now() - tServerStart });
       return Response.json({ error: "GEMINI_API_KEY not configured. VEO requires a Gemini API key." }, { status: 400 });
     }
 
@@ -486,7 +527,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (req.videoMode === "extend" && cutNumberRaw === 1) {
       console.warn("[generate-video] CUT 1에 videoMode=extend 요청 → generate로 강제 전환");
+      console.info("[generate-video] Forced videoMode override: extend -> generate for cut 1", { elapsedMs: Date.now() - tServerStart });
     }
+    console.info("[generate-video] Cut and mode resolved", { elapsedMs: Date.now() - tServerStart, cutNumberRaw, videoMode, sourceVideoPresent: !!sourceVideo });
 
     const sourceVideo = req.sourceVideo || req.previousVideoUri || "";
 
@@ -496,6 +539,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       hasImage: !!req.firstFrameBase64,
       hasSourceVideo: !!sourceVideo,
     });
+    console.info("[generate-video] Model resolved", { elapsedMs: Date.now() - tServerStart, modelUsed, videoMode, cutNumber: cutNumberRaw, sourceVideoPresent: !!sourceVideo, extendDowngraded: (req.videoMode === "extend" && !sourceVideo) });
 
     // ── VEO 멀티샷 타임스탬프 프롬프트 생성 (8초 강제) ───────────────────────
     const isFragmentedEdit = !!req.fragmentedEditContext?.isFragmented;
@@ -509,7 +553,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     };
     const rendered = renderVeoPrompt(veoRendererInput);
 
-    console.log("[generate-video] VEO 멀티샷 타임스탬프 렌더링 완료:", {
+    console.info("[generate-video] VEO multishot timestamp rendering complete", {
+      elapsedMs: Date.now() - tServerStart,
       shotCount: rendered.shotCount,
       totalDuration: rendered.totalDurationSec,
       promptLen: rendered.timestampPrompt.length,
@@ -520,10 +565,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ── Audio: physics override (무대기 환경은 강제 off) ─────────────────────
     const physicsNoAtmo = req.structuredSequence?.physicsRules && !req.structuredSequence.physicsRules.hasAtmosphere;
     const generateAudio = physicsNoAtmo ? false : (req.generateAudio !== false);
+    console.info("[generate-video] Audio decision", { elapsedMs: Date.now() - tServerStart, generateAudio, physicsNoAtmo: !!physicsNoAtmo, requestedAudio: req.generateAudio });
 
     // ── base64 검증 ──────────────────────────────────────────────────────────
     const strippedFirst = req.firstFrameBase64 ? stripDataPrefix(req.firstFrameBase64) : "";
     const validFirst = strippedFirst.length > 100 ? strippedFirst : "";
+    console.info("[generate-video] Image validation", { elapsedMs: Date.now() - tServerStart, hasFirstFrameInput: !!req.firstFrameBase64, strippedLength: strippedFirst.length, validFirstFrame: !!validFirst });
 
     // ═══════════════════════════════════════════════════════════════════
     // VEO API 호출
@@ -547,11 +594,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         if (req.extendPromptJson && !extendPromptText.includes("no text")) {
           extendPromptText = "No text, no subtitles, no captions. Purely visual storytelling. " + extendPromptText;
         }
-        console.log("[VEO] EXTEND mode", {
+        console.info("[generate-video] VEO EXTEND mode selected", {
+          elapsedMs: Date.now() - tServerStart,
           sourceVideoUri: sourceVideo.slice(0, 80),
           model: modelUsed,
           usedStructuredExtend: !!req.extendPromptJson,
         });
+        console.info("[generate-video] Before VEO EXTEND API call", {
+          elapsedMs: Date.now() - tServerStart,
+          model: modelUsed,
+          aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),
+          generateAudio,
+          extendPromptLen: (req.extendPromptJson ? renderExtendPromptFromJson(req.extendPromptJson) : rendered.timestampPrompt).length,
+          sourceVideoUriPrefix: sourceVideo.slice(0, 80),
+          personGeneration: req.personGeneration || "allow_all",
+        });
+        const tVeoStart = Date.now();
         const result = await veoExtend(context.env, {
           prompt: extendPromptText,
           sourceVideoUri: sourceVideo,
@@ -564,18 +622,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         operationName = result.operationName;
         sentDuration = result.durationSent;
         modeUsed = "extend";
+        console.info("[generate-video] VEO EXTEND API response received", { elapsedMs: Date.now() - tServerStart, veoCallMs: Date.now() - tVeoStart, operationName, durationSent: sentDuration, modeUsed });
       } else {
         // ── VEO Generate (Cut 1 또는 extend 불가 시) ─────────────────
         if (videoMode === "extend" && !sourceVideo) {
           console.warn("[VEO] extend 요청이지만 sourceVideo 없음 → generate로 fallback");
+          console.info("[generate-video] Extend downgraded to generate (no sourceVideo)", { elapsedMs: Date.now() - tServerStart });
           extendDowngradedToGenerate = true;
         }
 
-        console.log("[VEO] GENERATE mode", {
+        console.info("[generate-video] VEO GENERATE mode selected", {
+          elapsedMs: Date.now() - tServerStart,
           hasImage: !!validFirst,
           model: modelUsed,
           duration: 8,
         });
+        console.info("[generate-video] Before VEO GENERATE API call", {
+          elapsedMs: Date.now() - tServerStart,
+          model: modelUsed,
+          durationSeconds: 8,
+          aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),
+          generateAudio,
+          hasImage: !!validFirst,
+          promptLen: rendered.timestampPrompt.length,
+          personGeneration: req.personGeneration || "allow_all",
+        });
+        const tVeoStart = Date.now();
         const result = await veoGenerate(context.env, {
           prompt: rendered.timestampPrompt,
           model: modelUsed,
@@ -589,6 +661,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         operationName = result.operationName;
         sentDuration = result.durationSent;
         modeUsed = "generate";
+        console.info("[generate-video] VEO GENERATE API response received", { elapsedMs: Date.now() - tServerStart, veoCallMs: Date.now() - tVeoStart, operationName, durationSent: sentDuration, modeUsed });
       }
     } catch (veoErr) {
       if (veoErr instanceof VeoApiError) {
@@ -603,6 +676,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           : veoErr.httpStatus === 429 ? 429
           : veoErr.httpStatus && veoErr.httpStatus >= 400 && veoErr.httpStatus < 500 ? 400
           : 502;
+        console.info("[generate-video] Returning VeoApiError response", { elapsedMs: Date.now() - tServerStart, status, code: veoErr.code, retryable: veoErr.retryable, httpStatus: veoErr.httpStatus, cutNumber: req.cutNumber });
         return Response.json({
           error: veoErr.message,
           code: veoErr.code,
@@ -612,17 +686,23 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const msg = veoErr instanceof Error ? veoErr.message : String(veoErr);
       console.error("[VEO] Unexpected error", { msg, cutNumber: req.cutNumber });
+      console.info("[generate-video] Returning unexpected VEO error response", { elapsedMs: Date.now() - tServerStart, status: 502, errorMessage: msg, cutNumber: req.cutNumber });
       return Response.json({ error: msg }, { status: 502 });
     }
 
     const serverTotalMs = Date.now() - tServerStart;
-    console.log("[generate-video] ⏱ timing", {
+    console.info("[generate-video] Final response ready", {
       serverTotalMs,
       promptChars: rendered.timestampPrompt.length,
       mode: modeUsed,
       cutNumber: cutNumberRaw,
       engine: "veo",
+      modelUsed,
       durationSent: sentDuration,
+      operationName,
+      extendDowngradedToGenerate,
+      usedPath,
+      status: "RUNNING",
     });
 
     return Response.json({
@@ -643,7 +723,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       },
     });
   } catch (error) {
+    const outerElapsed = Date.now() - tServerStart;
     console.error("[generate-video] 처리 오류:", error);
+    console.info("[generate-video] Returning outer catch error response", { elapsedMs: outerElapsed, status: 500, errorMessage: error instanceof Error ? error.message : String(error), errorName: error instanceof Error ? error.name : "unknown" });
     return Response.json(
       { error: `Failed to start video generation: ${error instanceof Error ? error.message : String(error)}` },
       { status: 500 },

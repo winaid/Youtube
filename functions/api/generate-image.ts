@@ -3,6 +3,8 @@ import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_IMAGE, GEMINI_MO
 type Env = GeminiEnv;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const requestStart = Date.now();
+  console.info("[generate-image] Request received", { method: context.request.method, url: context.request.url });
   try {
     const { prompt, aspectRatio, numberOfImages, sceneDescription, animationMode, stylePrompt, directorTechniques, preferModel } = await context.request.json() as {
       prompt: string;
@@ -24,7 +26,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       };
     };
 
+    console.info("[generate-image] Parsed params", {
+      promptLength: prompt?.length ?? 0,
+      aspectRatio,
+      numberOfImages,
+      animationMode,
+      hasStylePrompt: !!stylePrompt,
+      hasSceneDescription: !!sceneDescription,
+      hasDirectorTechniques: !!directorTechniques,
+      preferModel,
+    });
+
     if (!prompt?.trim()) {
+      console.info("[generate-image] Rejected: empty prompt");
       return Response.json({ error: "prompt is required" }, { status: 400 });
     }
 
@@ -89,51 +103,72 @@ ${prompt}`;
     const primaryName = preferModel === "pro" ? "nano-banana-pro" : "nano-banana-2";
     const fallbackName = preferModel === "pro" ? "nano-banana-2" : "nano-banana-pro";
 
+    console.info("[generate-image] Model selection", { primaryName, fallbackName, preferModel, imagePromptLength: imagePrompt.length });
+
     // 1차 시도
     try {
+      const primaryStart = Date.now();
+      console.info(`[generate-image] Primary API call starting`, { model: primaryName });
       const res = await fetchWithAuth(context.env, buildGeminiUrl(context.env, primaryModel), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
       });
+      const primaryElapsed = Date.now() - primaryStart;
 
       if (res.ok) {
+        console.info(`[generate-image] Primary API response OK`, { model: primaryName, status: res.status, elapsedMs: primaryElapsed });
         const images = extractImages(await res.json());
         if (images.length > 0) {
+          const totalElapsed = Date.now() - requestStart;
+          console.info(`[generate-image] Success via primary model`, { model: primaryName, imageCount: images.length, totalElapsedMs: totalElapsed });
           return Response.json({ images, source: primaryName });
         }
         console.warn(`${primaryName} returned OK but no images, trying fallback`);
       } else {
         const errText = await res.text();
+        console.info(`[generate-image] Primary API error response`, { model: primaryName, status: res.status, elapsedMs: primaryElapsed, error: errText.slice(0, 300) });
         console.warn(`${primaryName} error:`, res.status, errText.slice(0, 300), "— trying fallback");
       }
     } catch (err) {
+      console.info(`[generate-image] Primary API call exception`, { model: primaryName, error: err instanceof Error ? err.message : String(err) });
       console.warn(`${primaryName} call failed:`, err, "— trying fallback");
     }
 
     // 2차 폴백
+    const fallbackStart = Date.now();
+    console.info(`[generate-image] Fallback API call starting`, { model: fallbackName });
     const fallbackRes = await fetchWithAuth(context.env, buildGeminiUrl(context.env, fallbackModel), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
+    const fallbackElapsed = Date.now() - fallbackStart;
 
     if (!fallbackRes.ok) {
       const errText = await fallbackRes.text();
+      console.info(`[generate-image] Fallback API error response`, { model: fallbackName, status: fallbackRes.status, elapsedMs: fallbackElapsed, error: errText.slice(0, 500) });
       console.error(`${fallbackName} fallback error:`, fallbackRes.status, errText.slice(0, 500));
       return geminiErrorResponse(fallbackRes, errText, "generate-image");
     }
 
+    console.info(`[generate-image] Fallback API response OK`, { model: fallbackName, status: fallbackRes.status, elapsedMs: fallbackElapsed });
     const images = extractImages(await fallbackRes.json());
     if (images.length === 0) {
+      const totalElapsed = Date.now() - requestStart;
+      console.info(`[generate-image] No images extracted from fallback (safety filter?)`, { model: fallbackName, totalElapsedMs: totalElapsed });
       return Response.json(
         { error: "이미지가 생성되지 않았습니다. 안전 필터에 의해 차단되었을 수 있습니다. 프롬프트를 수정해보세요." },
         { status: 422 }
       );
     }
 
+    const totalElapsed = Date.now() - requestStart;
+    console.info(`[generate-image] Success via fallback model`, { model: fallbackName, imageCount: images.length, totalElapsedMs: totalElapsed });
     return Response.json({ images, source: fallbackName });
   } catch (error) {
+    const totalElapsed = Date.now() - requestStart;
+    console.info("[generate-image] Unhandled exception", { error: error instanceof Error ? error.message : String(error), totalElapsedMs: totalElapsed });
     console.error("Image generation error:", error);
     return Response.json(
       { error: `이미지 생성 실패: ${error instanceof Error ? error.message : String(error)}` },

@@ -119,15 +119,19 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const startMs = Date.now();
+  console.info("[generate-narration] Request received");
   const warnings: string[] = [];
 
   try {
     const req = await context.request.json() as NarrationRequest;
+    console.info(`[generate-narration] Parsed request: sessionId=${req.sessionId}, shots=${req.shots?.length ?? 0}, voiceName=${req.voiceName ?? "(default)"}, speakingRate=${req.speakingRate ?? "(default)"}`);
 
     if (!req.shots?.length) {
+      console.info("[generate-narration] Validation failed: shots array is empty");
       return Response.json({ error: "shots array is required" }, { status: 400 });
     }
     if (!req.sessionId) {
+      console.info("[generate-narration] Validation failed: sessionId is missing");
       return Response.json({ error: "sessionId is required" }, { status: 400 });
     }
 
@@ -144,6 +148,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const voiceName = req.voiceName || "ko-KR-Wavenet-A";
     const baseRate = req.speakingRate || 1.0;
     const hasR2 = !!context.env.VIDEO_BUCKET;
+    console.info(`[generate-narration] Config: voiceName=${voiceName}, baseRate=${baseRate}, hasR2=${hasR2}`);
 
     const tracks: NarrationTrackResult[] = [];
     const errors: Array<{ cutNumber: number; error: string }> = [];
@@ -166,9 +171,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const adjustedRate = calcSpeakingRate(text.length, shot.durationSec, baseRate);
         const adjustedRateRounded = Math.round(adjustedRate * 100) / 100;
 
+        console.info(`[generate-narration] Cut ${shot.cutNumber}: calling TTS API, textLen=${text.length}, adjustedRate=${adjustedRateRounded}`);
+        const ttsCallStart = Date.now();
         const { audioBase64, estimatedDuration } = await generateTTS(
           apiKey, text, voiceName, adjustedRateRounded,
         );
+        console.info(`[generate-narration] Cut ${shot.cutNumber}: TTS API responded, estimatedDuration=${estimatedDuration.toFixed(2)}s, elapsed=${Date.now() - ttsCallStart}ms`);
 
         // Sync 상태 판정
         let syncStatus: "exact" | "trimmed" | "padded" = "exact";
@@ -188,9 +196,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           r2Key = `audio/${req.sessionId}/cut-${shot.cutNumber}/${Date.now()}.mp3`;
           const buffer = base64ToArrayBuffer(audioBase64);
 
+          console.info(`[generate-narration] Cut ${shot.cutNumber}: uploading to R2, key=${r2Key}, bytes=${buffer.byteLength}`);
+          const r2Start = Date.now();
           await context.env.VIDEO_BUCKET.put(r2Key, buffer, {
             httpMetadata: { contentType: "audio/mpeg" },
           });
+          console.info(`[generate-narration] Cut ${shot.cutNumber}: R2 upload complete, elapsed=${Date.now() - r2Start}ms`);
 
           const domain = context.env.VIDEO_BUCKET_DOMAIN;
           const requestOrigin = new URL(context.request.url).origin;
@@ -214,6 +225,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        console.info(`[generate-narration] Cut ${shot.cutNumber}: TTS error caught: ${msg}, elapsed=${Date.now() - startMs}ms`);
         errors.push({ cutNumber: shot.cutNumber, error: msg });
         warnings.push(`Cut ${shot.cutNumber}: TTS failed — ${msg}`);
       }
@@ -223,6 +235,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const partialFailed = errors.length > 0 && tracks.length > 0;
 
     if (allFailed) {
+      console.info(`[generate-narration] All TTS generations failed: ${errors.length} errors, elapsed=${Date.now() - startMs}ms`);
       return Response.json({
         audioIncluded: false,
         audioTracks: [],
@@ -238,6 +251,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       warnings.push(`${errors.length} of ${req.shots.length} shots failed TTS — partial audio`);
     }
 
+    console.info(`[generate-narration] Final response: tracks=${tracks.length}, errors=${errors.length}, totalShots=${req.shots.length}, elapsed=${Date.now() - startMs}ms`);
     return Response.json({
       audioIncluded: true,
       audioTracks: tracks,
@@ -250,6 +264,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       durationMs: Date.now() - startMs,
     });
   } catch (error) {
+    console.info(`[generate-narration] Unhandled error caught: ${error instanceof Error ? error.message : String(error)}, elapsed=${Date.now() - startMs}ms`);
     console.error("[generate-narration] error:", error);
     return Response.json({
       error: `Narration generation failed: ${error instanceof Error ? error.message : String(error)}`,

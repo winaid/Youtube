@@ -38,10 +38,14 @@ const SPEED_MAP: Record<string, number> = {
 };
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const startMs = Date.now();
+  console.info("[tts-gemini] Request received");
   try {
     const { text, voice, speed } = await context.request.json() as TtsGeminiRequest;
+    console.info(`[tts-gemini] Parsed request: textLen=${text?.length ?? 0}, voice=${voice ?? "(default)"}, speed=${speed ?? "(default)"}`);
 
     if (!text?.trim()) {
+      console.info("[tts-gemini] Validation failed: text is empty");
       return Response.json({ error: "text is required" }, { status: 400 });
     }
 
@@ -49,9 +53,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const selectedVoice: GeminiVoice = VALID_VOICES.includes(voice as GeminiVoice)
       ? (voice as GeminiVoice)
       : "Enceladus";
+    console.info(`[tts-gemini] Selected voice: ${selectedVoice}`);
 
     const keys = getApiKeys(context.env);
     if (keys.length === 0) {
+      console.info("[tts-gemini] No API keys configured");
       return Response.json({
         error: "GEMINI_API_KEY not configured",
         help: "Cloudflare Pages 환경변수에 GEMINI_API_KEY를 설정하세요.",
@@ -79,18 +85,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // API 호출 (키 폴백)
     let lastError = "";
-    for (const key of keys) {
+    console.info(`[tts-gemini] Starting API calls with ${keys.length} key(s), model=${GEMINI_TTS_MODEL}`);
+    for (let keyIdx = 0; keyIdx < keys.length; keyIdx++) {
+      const key = keys[keyIdx];
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${key}`;
 
       try {
+        console.info(`[tts-gemini] Calling Gemini TTS API (key ${keyIdx + 1}/${keys.length}), elapsed=${Date.now() - startMs}ms`);
+        const apiCallStart = Date.now();
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
         });
 
+        console.info(`[tts-gemini] Gemini TTS API responded: status=${res.status}, elapsed=${Date.now() - apiCallStart}ms`);
+
         if (!res.ok) {
           const errText = await res.text();
+          console.info(`[tts-gemini] Key ${keyIdx + 1} failed: status=${res.status}, body=${errText.slice(0, 200)}, elapsed=${Date.now() - startMs}ms`);
           console.warn(`[tts-gemini] Key failed (${res.status}):`, errText.slice(0, 300));
           lastError = errText;
           // 429/503 → 다음 키 시도
@@ -111,16 +124,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         };
 
         // 오디오 데이터 추출
+        console.info(`[tts-gemini] Parsing response: candidates=${data?.candidates?.length ?? 0}`);
         const audioPart = data?.candidates?.[0]?.content?.parts?.find(
           (p) => p.inlineData?.data
         );
 
         if (!audioPart?.inlineData) {
+          console.info(`[tts-gemini] No audio in response, elapsed=${Date.now() - startMs}ms`);
           return Response.json({
             error: "No audio generated — Gemini가 오디오를 반환하지 않았습니다.",
           }, { status: 422 });
         }
 
+        console.info(`[tts-gemini] Final response: mimeType=${audioPart.inlineData.mimeType || "audio/wav"}, audioLen=${audioPart.inlineData.data.length}, elapsed=${Date.now() - startMs}ms`);
         return Response.json({
           audioBase64: audioPart.inlineData.data,
           mimeType: audioPart.inlineData.mimeType || "audio/wav",
@@ -130,17 +146,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         });
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
+        console.info(`[tts-gemini] Fetch error for key ${keyIdx + 1}: ${lastError}, elapsed=${Date.now() - startMs}ms`);
         console.warn("[tts-gemini] Fetch error:", lastError);
         continue;
       }
     }
 
     // 모든 키 실패
+    console.info(`[tts-gemini] All ${keys.length} API keys exhausted, elapsed=${Date.now() - startMs}ms`);
     return Response.json({
       error: "All API keys exhausted for Gemini TTS",
       detail: lastError.slice(0, 500),
     }, { status: 502 });
   } catch (error) {
+    console.info(`[tts-gemini] Unhandled error caught: ${error instanceof Error ? error.message : String(error)}, elapsed=${Date.now() - startMs}ms`);
     console.error("[tts-gemini] Unexpected error:", error);
     return Response.json({
       error: `TTS generation failed: ${error instanceof Error ? error.message : String(error)}`,

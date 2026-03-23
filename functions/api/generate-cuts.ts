@@ -1789,6 +1789,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       fragmentedEditContext,
     } = await context.request.json() as Record<string, string | number | object>;
 
+    const t0_request = Date.now();
+    console.info(`[generate-cuts] REQUEST RECEIVED`, {
+      storyTextLength: String(storyText ?? "").length,
+      cutCount,
+      directorName,
+      directorNameKo: directorNameKo || "(none)",
+      animationMode,
+      aspectRatio: aspectRatio || "16:9",
+      region: region || "(none)",
+      cutDuration: cutDuration || "auto",
+      totalDurationSeconds: rawTotalDuration || "(none)",
+      continuityMode: continuityMode || false,
+      continuitySegmentIndex: continuitySegmentIndex ?? "(none)",
+      hasGenerationPersona: !!generationPersona,
+      hasCharacterPersonas: Array.isArray(characterPersonas) && characterPersonas.length > 0,
+      hasScriptAnalysisHint: !!scriptAnalysisHint,
+      hasFragmentedEditContext: !!fragmentedEditContext,
+    });
+
     // ── 필수 입력 검증 (연산 전에 조기 반환) ──
     if (!storyText?.trim() || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });
@@ -2174,6 +2193,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const step1Warnings: string[] = [];
 
     t0_step1 = Date.now();
+    console.info(`[generate-cuts] STEP1 STARTING — model=${MODEL_OUTLINE}, targetCuts=${targetCuts}, secPerCut=${secPerCut}, storyLen=${String(storyText).length}, elapsed=${Date.now() - t0_request}ms`);
     try {
       // ── editorial planning block 빌드 ──
       const editorialPlanningBlock = buildEditorialPlanningRules(editorial);
@@ -2195,6 +2215,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         undefined, // modelOverride
         fragmentedEditBlock || undefined,
       ));
+      t1_step1 = Date.now();
+      console.info(`[generate-cuts] STEP1 SUCCESS — characterSeeds=${characterSeeds.length}, outlines=${outlines.length}, narrativeCore=${narrativeCore?.slice(0, 30) ?? "none"}, elapsed=${t1_step1 - t0_step1}ms`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const isProviderError = msg.startsWith("PROVIDER_ERROR:");
@@ -2346,12 +2368,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (isTimeout && alreadyTriedUltraCompact) {
         // step1Outlines 내부에서 이미 ultra-compact 시도 → 중복 Gemini 호출 방지, 바로 deterministic
         console.warn("[generate-cuts] step1 timeout + ultra-compact already tried → deterministic fallback (Gemini 호출 1회 절약)");
+        console.info(`[generate-cuts] ⚠️ DETERMINISTIC FALLBACK ACTIVATED — reason=timeout+ultra-compact-failed, step1Elapsed=${Date.now() - t0_step1}ms, totalElapsed=${Date.now() - t0_request}ms`);
         step1Warnings.push("step1 timeout + ultra-compact already failed → deterministic fallback");
         const deterministicCuts = buildDeterministicCuts(String(storyText), String(directorName), targetCuts, secPerCut, videoStyle, regionFlavor, String(animationMode), editorial);
         const defaultSeeds: CharacterSeed[] = extractDefaultSeeds(String(storyText));
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
         for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
         repairMultiShotMinimums(finalizedCuts);
+        console.info(`[generate-cuts] DETERMINISTIC FALLBACK RESPONSE — cuts=${finalizedCuts.length}, seeds=${defaultSeeds.length}, totalElapsed=${Date.now() - t0_request}ms`);
         return Response.json({ ok: true, degraded: true, reason: `step1 timeout + ultra-compact already failed`, source: "deterministic-fallback", warnings: step1Warnings, characterSeeds: defaultSeeds, cuts: finalizedCuts, secPerCut });
       } else if (isTimeout) {
         timedOutAtStep1 = true;
@@ -2430,6 +2454,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           // ── Both Gemini attempts failed → deterministic fallback ──
           const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
           console.warn("[generate-cuts] ultra-compact retry also failed:", retryMsg, "→ deterministic fallback");
+          console.info(`[generate-cuts] ⚠️ DETERMINISTIC FALLBACK ACTIVATED — reason=ultra-compact-failed, retryMsg=${retryMsg.slice(0, 100)}, step1Elapsed=${Date.now() - t0_step1}ms, totalElapsed=${Date.now() - t0_request}ms`);
           step1Warnings.push(`ultra-compact retry failed: ${retryMsg.slice(0, 200)}`);
           step1Warnings.push("falling back to deterministic cut generation (no Gemini)");
           timeoutPathUsed = "deterministic";
@@ -2459,6 +2484,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           });
           const sequenceValidation = validateSequencePlan(sequencePlan);
 
+          console.info(`[generate-cuts] DETERMINISTIC FALLBACK RESPONSE — cuts=${finalizedCuts.length}, seeds=${defaultSeeds.length}, totalElapsed=${Date.now() - t0_request}ms`);
           return Response.json({
             ok: true,
             degraded: true,
@@ -2475,6 +2501,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       } else {
         // Non-timeout, non-truncation error → still try deterministic fallback instead of 502
         console.warn("[generate-cuts] step1 API error (non-timeout) — deterministic fallback");
+        console.info(`[generate-cuts] ⚠️ DETERMINISTIC FALLBACK ACTIVATED — reason=api-error, msg=${msg.slice(0, 150)}, step1Elapsed=${Date.now() - t0_step1}ms, totalElapsed=${Date.now() - t0_request}ms`);
         step1Warnings.push(`step1 API error: ${msg.slice(0, 200)}`);
         step1Warnings.push("falling back to deterministic cut generation");
 
@@ -2501,6 +2528,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         });
         const sequenceValidation = validateSequencePlan(sequencePlan);
 
+        console.info(`[generate-cuts] DETERMINISTIC FALLBACK RESPONSE — cuts=${finalizedCuts.length}, seeds=${defaultSeeds.length}, totalElapsed=${Date.now() - t0_request}ms`);
         return Response.json({
           ok: true,
           degraded: true,
@@ -2560,6 +2588,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     t1_step1 = Date.now();
     console.log(`[generate-cuts] step1 완료: ${t1_step1 - t0_step1}ms, outlines=${outlines.length}`);
+    console.info(`[generate-cuts] STEP1 COMPLETE — success=true, characterSeeds=${characterSeeds.length}, outlines=${outlines.length}/${targetCuts}, narrativeCore=${narrativeCore ?? "(none)"}, targetEmotions=${JSON.stringify(targetEmotions ?? [])}, elapsed=${t1_step1 - t0_request}ms`);
 
     // ── Fast path 판정: evaluateFastPathEligibility로 구조적 판단 ──
     const fastPathEval = evaluateFastPathEligibility({
@@ -2646,15 +2675,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     };
 
     t0_step23 = Date.now();
+    console.info(`[generate-cuts] STEP2/3 PHASE — shouldUseFastPath=${shouldUseFastPath}, outlines=${outlines.length}, elapsed=${Date.now() - t0_request}ms`);
 
     if (shouldUseFastPath) {
       // Fast path: skip step2/3 entirely — use outline-based fallback prompts
+      console.info(`[generate-cuts] FAST PATH — step2/3 skipped, elapsed=${Date.now() - t0_request}ms`);
       console.log("[generate-cuts] fast path: step2/3 skipped");
       t1_step23 = Date.now();
     } else {
+    console.info(`[generate-cuts] STEP2/3 STARTING — model=${MODEL_DETAIL}, batches=${step23Batches.length}, cutsPerBatch=${step23Batches.map(b => b.length).join(",")}, timeoutMs=${STEP23_TIMEOUT_MS}, elapsed=${Date.now() - t0_request}ms`);
     try {
       const batchResults = await runAllBatches();
       allDetails = batchResults.flat();
+      console.info(`[generate-cuts] STEP2/3 COMPLETE — success=true, details=${allDetails.length}, batches=${batchResults.length}, elapsed=${Date.now() - t0_request}ms`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const isProviderError = msg.startsWith("PROVIDER_ERROR:");
@@ -3055,7 +3088,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // ═══ 멀티샷 사후 검증 — Gemini가 최소 샷 수 미달 시 자동 복구 ═══
+    const preShotCounts = finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 0);
+    console.info(`[generate-cuts] MULTISHOT REPAIR STARTING — preShotCounts=[${preShotCounts.join(",")}], elapsed=${Date.now() - t0_request}ms`);
     repairMultiShotMinimums(finalizedCuts);
+    const postShotCounts = finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 0);
+    console.info(`[generate-cuts] MULTISHOT REPAIR COMPLETE — postShotCounts=[${postShotCounts.join(",")}], repaired=${preShotCounts.some((v, i) => v !== postShotCounts[i])}, elapsed=${Date.now() - t0_request}ms`);
 
     // ═══ Continuity Segment 생성 (continuityMode ON일 때만) ═══════
     // 각 컷에 continuitySegment를 붙여서 클라이언트 → useVideoGeneration → generate-video까지 전달.
@@ -3145,7 +3182,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const step23LatencyMs = t1_step23 - t0_step23;
     const postprocessLatencyMs = t1_postprocess - t0_postprocess;
 
-    console.log("[generate-cuts] LATENCY BREAKDOWN", {
+    console.info(`[generate-cuts] FINAL SUCCESS RESPONSE — source=gemini, cuts=${finalizedCuts.length}, seeds=${characterSeeds.length}, degraded=${step1Degraded}, fastPath=${fastPathUsed}, totalElapsed=${totalLatencyMs}ms`);
+    console.info("[generate-cuts] LATENCY BREAKDOWN", {
       totalLatencyMs,
       step1LatencyMs,
       step23LatencyMs,
@@ -3153,6 +3191,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       fastPathUsed,
       skippedSteps,
     });
+
+    console.info(`[generate-cuts] FINAL RESPONSE — source=gemini, ok=true, degraded=${step1Degraded}, fastPath=${fastPathUsed}, cuts=${finalizedCuts.length}, totalShots=${finalizedCuts.reduce((s, c) => s + (Array.isArray(c.multiShot) ? c.multiShot.length : 1), 0)}, characterSeeds=${characterSeeds.length}, totalElapsed=${totalLatencyMs}ms, step1=${step1LatencyMs}ms, step23=${step23LatencyMs}ms, postprocess=${postprocessLatencyMs}ms`);
 
     return Response.json({
       ok: true,
@@ -3281,6 +3321,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const errMsg   = error instanceof Error ? error.message  : String(error);
     const errStack = error instanceof Error ? (error.stack ?? "").slice(0, 800) : "";
     console.error("[generate-cuts] 예외:", errMsg, "\n", errStack);
+    console.info(`[generate-cuts] OUTER CATCH ERROR — msg=${errMsg.slice(0, 200)}, totalElapsed=${Date.now() - (t0_total || Date.now())}ms`);
     return Response.json({
       ok: false,
       degraded: false,

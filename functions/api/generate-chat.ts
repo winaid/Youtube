@@ -94,11 +94,15 @@ EU가 아니라 진짜 "로마"로.
 내레이션 스크립트 + 출처만 출력. 다른 설명 없이.`;
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const t0 = Date.now();
   try {
     const { message, personaId, personaName, personaDescription, personaPrompt } =
       await context.request.json() as Record<string, string>;
 
+    console.info(`[generate-chat] Request received | personaId=${personaId ?? "none"} personaName=${personaName ?? "default"} messageLength=${message?.length ?? 0}`);
+
     if (!message) {
+      console.info("[generate-chat] Rejected: empty message");
       return Response.json({ error: "message is required" }, { status: 400 });
     }
 
@@ -107,6 +111,9 @@ ${personaPrompt || ""}
 
 사용자 요청: "${message}"`;
 
+    console.info(`[generate-chat] Preparing Gemini API call | model=${GEMINI_MODEL_SEARCH} promptLength=${userPrompt.length} systemInstructionLength=${SYSTEM_INSTRUCTION.length} maxOutputTokens=4096 temperature=1.0`);
+
+    const tApi = Date.now();
     const { response: res } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -118,12 +125,16 @@ ${personaPrompt || ""}
       }),
     }, { primaryModel: GEMINI_MODEL_SEARCH }); // google_search → SEARCH 모델 사용
 
+    const apiElapsed = Date.now() - tApi;
+    console.info(`[generate-chat] Gemini API responded | status=${res.status} elapsed=${apiElapsed}ms`);
+
     if (!res.ok) {
       const errText = await res.text();
-      console.error("generate-chat Gemini error:", res.status, errText.slice(0, 500));
+      console.error(`[generate-chat] Gemini error | status=${res.status} body=${errText.slice(0, 500)} elapsed=${apiElapsed}ms`);
       return geminiErrorResponse(res, errText, "generate-chat");
     }
 
+    console.info("[generate-chat] Parsing Gemini JSON response");
     const data = await res.json() as {
       candidates?: {
         content?: { parts?: { text?: string }[] };
@@ -135,12 +146,60 @@ ${personaPrompt || ""}
       }[];
     };
 
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+    const candidateCount = data?.candidates?.length ?? 0;
+    console.info(`[generate-chat] Parsed response | candidateCount=${candidateCount}`);
+
+    const candidate = data?.candidates?.[0];
+    const finishReason = (candidate as Record<string, unknown>)?.finishReason as string | undefined;
+    const safetyRatings = (candidate as Record<string, unknown>)?.safetyRatings;
+    const blockReason = (data as Record<string, unknown>)?.promptFeedback
+      ? ((data as Record<string, unknown>).promptFeedback as Record<string, unknown>)?.blockReason as string | undefined
+      : undefined;
+
+    const reply = candidate?.content?.parts?.[0]?.text?.trim() ?? "";
+
+    console.info(`[generate-chat] Extracted reply | replyLength=${reply.length} finishReason=${finishReason ?? "unknown"} blockReason=${blockReason ?? "none"}`);
+    if (!reply) {
+      console.warn(`[generate-chat] EMPTY REPLY | finishReason=${finishReason} blockReason=${blockReason} safetyRatings=${JSON.stringify(safetyRatings ?? null)} candidateCount=${candidateCount} rawCandidate=${JSON.stringify(candidate ?? null).slice(0, 500)}`);
+    }
 
     // 그라운딩 메타데이터에서 검색 소스 추출 (groundingChunks + groundingSupports 모두 탐색)
     const grounding = data?.candidates?.[0]?.groundingMetadata;
     const sources = extractGroundingSources(grounding as Parameters<typeof extractGroundingSources>[0]);
     const searchQueries = (grounding as Record<string, unknown>)?.webSearchQueries as string[] ?? [];
+
+    console.info(`[generate-chat] Grounding metadata | sourcesCount=${sources.length} searchQueriesCount=${searchQueries.length}`);
+
+    // 빈 reply 방어: 안전 필터/빈 응답 시 grounding 없이 재시도
+    if (!reply) {
+      console.warn(`[generate-chat] Empty reply — retrying WITHOUT grounding (google_search)`);
+      const tRetry = Date.now();
+      const { response: retryRes } = await fetchWithModelFallback(context.env, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          generationConfig: { temperature: 1.0, topP: 0.95, maxOutputTokens: 4096 },
+        }),
+      });
+      const retryElapsed = Date.now() - tRetry;
+      console.info(`[generate-chat] Retry response | status=${retryRes.status} elapsed=${retryElapsed}ms`);
+
+      if (retryRes.ok) {
+        const retryData = await retryRes.json() as typeof data;
+        const retryReply = retryData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+        console.info(`[generate-chat] Retry reply | replyLength=${retryReply.length}`);
+        if (retryReply) {
+          const totalElapsed = Date.now() - t0;
+          console.info(`[generate-chat] Returning retry response | replyLength=${retryReply.length} totalElapsed=${totalElapsed}ms`);
+          return Response.json({ reply: retryReply, sources: [], searchQueries: [] });
+        }
+      }
+    }
+
+    const totalElapsed = Date.now() - t0;
+    console.info(`[generate-chat] Returning response | replyLength=${reply.length} sourcesCount=${sources.length} totalElapsed=${totalElapsed}ms`);
 
     return Response.json({
       reply,
@@ -148,7 +207,8 @@ ${personaPrompt || ""}
       searchQueries,
     });
   } catch (error) {
-    console.error("Chat error:", error);
+    const totalElapsed = Date.now() - t0;
+    console.error(`[generate-chat] Unhandled error | elapsed=${totalElapsed}ms`, error);
     return Response.json({ error: "Failed to generate response" }, { status: 500 });
   }
 };

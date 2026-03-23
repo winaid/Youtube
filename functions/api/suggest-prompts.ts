@@ -183,9 +183,14 @@ function getPromptForPersona(personaId: string, personaName?: string, personaDes
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const startTime = Date.now();
   try {
+    console.info(`[suggest-prompts] ── Request received ── method=${context.request.method} url=${context.request.url}`);
+
     const { personaId, personaName, personaDescription } =
       await context.request.json() as Record<string, string>;
+
+    console.info(`[suggest-prompts] Params: personaId=${personaId} personaName=${personaName ?? "(none)"} personaDescription=${personaDescription ? personaDescription.substring(0, 80) + "..." : "(none)"}`);
 
     const basePrompt = getPromptForPersona(personaId || "history-marketing", personaName, personaDescription);
 
@@ -203,10 +208,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const prompt = basePrompt + diversitySuffix;
 
-    console.info(`[suggest-prompts] persona=${personaId} promptLen=${prompt.length}`);
+    console.info(`[suggest-prompts] Prompt built: persona=${personaId} baseLen=${basePrompt.length} totalLen=${prompt.length} diversitySeeds: era=${era} region=${region} angle=${angle}`);
 
     // grounded 웹 검색: GEMINI_MODEL_SEARCH 사용
     // 실패 시 모델 지식 폴백
+    console.info(`[suggest-prompts] Before API call: model=${GEMINI_MODEL_SEARCH} timeoutMs=25000 grounding=google_search elapsed=${Date.now() - startTime}ms`);
+    const apiCallStart = Date.now();
     let res = await fetchWithAuth(
       context.env,
       buildGeminiUrl(context.env, GEMINI_MODEL_SEARCH),
@@ -227,10 +234,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       { timeoutMs: 25_000 }, // Cloudflare edge 30s 제한 감안
     );
 
+    console.info(`[suggest-prompts] Primary API response: status=${res.status} ok=${res.ok} elapsed=${Date.now() - apiCallStart}ms totalElapsed=${Date.now() - startTime}ms`);
+
     // 실패 → 폴백 (grounding 없이)
     if (!res.ok) {
       const proStatus = res.status;
-      console.warn(`[suggest-prompts] primary 실패 (${proStatus}) → 폴백`);
+      console.warn(`[suggest-prompts] Primary failed (${proStatus}) → falling back to model fallback (no grounding)`);
       const { response: fallbackRes } = await fetchWithModelFallback(context.env, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -245,17 +254,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }),
       });
       res = fallbackRes;
+      console.info(`[suggest-prompts] Fallback API response: status=${res.status} ok=${res.ok} elapsed=${Date.now() - startTime}ms`);
     }
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini API error:", res.status, errText);
+      console.error(`[suggest-prompts] Gemini API error: status=${res.status} body=${errText} elapsed=${Date.now() - startTime}ms`);
       return geminiErrorResponse(res, errText, "suggest-prompts");
     }
 
     const data = await res.json() as {
       candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     };
+
+    console.info(`[suggest-prompts] Response JSON parsed, candidates count=${data?.candidates?.length ?? 0} elapsed=${Date.now() - startTime}ms`);
 
     const rawText = data?.candidates?.[0]?.content?.parts
       ?.map((p: { text?: string }) => p.text ?? "")
@@ -266,7 +278,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const finishReason = data?.candidates?.[0]?.finishReason;
     const truncated = finishReason === "MAX_TOKENS";
 
-    console.info(`[suggest-prompts] responseLen=${rawText.length} finishReason=${finishReason ?? "unknown"} truncated=${truncated}`);
+    console.info(`[suggest-prompts] Raw response: rawTextLen=${rawText.length} jsonMatchFound=${!!jsonMatch} extractedJsonLen=${text.length} finishReason=${finishReason ?? "unknown"} truncated=${truncated} elapsed=${Date.now() - startTime}ms`);
 
     let cards: { title: string; hook: string; marketingTactic?: string; region?: string }[];
     try {
@@ -275,34 +287,42 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         cards = parsed.filter((c: unknown) =>
           typeof c === "object" && c !== null && "title" in c && "hook" in c
         );
+        console.info(`[suggest-prompts] JSON parse success: parsedArrayLen=${parsed.length} validCards=${cards.length} elapsed=${Date.now() - startTime}ms`);
       } else {
         cards = [];
+        console.warn(`[suggest-prompts] JSON parse returned non-array type=${typeof parsed} elapsed=${Date.now() - startTime}ms`);
       }
-    } catch {
+    } catch (parseErr) {
+      console.warn(`[suggest-prompts] JSON parse failed: error=${parseErr instanceof Error ? parseErr.message : String(parseErr)} truncated=${truncated} elapsed=${Date.now() - startTime}ms`);
       if (truncated) {
-        console.warn(`[suggest-prompts] truncated response — attempting partial JSON recovery`);
+        console.info(`[suggest-prompts] Attempting partial JSON recovery (truncated response)`);
         const recovered = parseFirstJsonArray(rawText);
         cards = recovered
           ? (recovered as typeof cards).filter((c: unknown) =>
               typeof c === "object" && c !== null && "title" in c && "hook" in c
             )
           : [];
+        console.info(`[suggest-prompts] Truncated recovery result: recoveredCards=${cards.length} elapsed=${Date.now() - startTime}ms`);
       } else {
         // Try partial recovery even without truncation
+        console.info(`[suggest-prompts] Attempting partial JSON recovery (non-truncated)`);
         const recovered = parseFirstJsonArray(rawText);
         cards = recovered
           ? (recovered as typeof cards).filter((c: unknown) =>
               typeof c === "object" && c !== null && "title" in c && "hook" in c
             )
           : [];
+        console.info(`[suggest-prompts] Non-truncated recovery result: recoveredCards=${cards.length} elapsed=${Date.now() - startTime}ms`);
       }
     }
 
     const prompts = cards.map((c) => c.title);
 
+    console.info(`[suggest-prompts] ── Final response ── cardsReturned=${Math.min(cards.length, 4)} totalCards=${cards.length} success=true elapsed=${Date.now() - startTime}ms`);
     return Response.json({ cards: cards.slice(0, 4), prompts: prompts.slice(0, 4) });
   } catch (error) {
-    console.error("Suggest prompts error:", error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[suggest-prompts] ── Unhandled error ── name=${error instanceof Error ? error.name : "unknown"} message=${error instanceof Error ? error.message : String(error)} stack=${error instanceof Error ? error.stack : "N/A"} elapsed=${elapsed}ms`);
     return Response.json({
       error: "Failed to generate prompts",
     }, { status: 500 });
