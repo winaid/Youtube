@@ -665,6 +665,7 @@ async function step1Outlines(
   continuityBlock?: string,
   deepAnalysisBriefBlock?: string,
   modelOverride?: string,
+  fragmentedEditBlock?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[]; _narrativeCore?: string; _targetEmotions?: string[] }> {
 
   // ── 단일 호출 cutCount 상한: STEP1_SINGLE_CALL_MAX_CUTS ──
@@ -727,7 +728,7 @@ async function step1Outlines(
 
   const prompt = `당신은 ${directorNameKo} 감독 스타일로 장면을 구조화하는 시나리오 분석가입니다.
 ${formatRules}
-${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${characterPersonaBlock ? characterPersonaBlock.slice(0, 400) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
+${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${characterPersonaBlock ? characterPersonaBlock.slice(0, 400) + "\n" : ""}${editorialPlanningBlock ? editorialPlanningBlock.slice(0, 500) + "\n" : ""}${fragmentedEditBlock ? fragmentedEditBlock + "\n" : ""}감독 핵심: ${directorPersona ? directorPersona.slice(0, 300) : "강한 시각 개성"}
 조건: ${secPerCut}초/시퀀스, 총 ${cutCount}시퀀스. 각 시퀀스는 VEO 1회 생성 단위(8초). 시퀀스 내부 멀티샷은 별도 처리.
 
 ## ⚠️ 최우선 원칙: 서사 기능 우선 (Narrative Function First)
@@ -1703,6 +1704,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       continuityGlobalAnchors,
       continuitySegmentRole,
       continuityIsLastSegment,
+      fragmentedEditContext,
     } = await context.request.json() as Record<string, string | number | object>;
 
     // ── 필수 입력 검증 (연산 전에 조기 반환) ──
@@ -1980,6 +1982,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.warn("[generate-cuts] deep analysis failed, continuing without:", e instanceof Error ? e.message : String(e));
     }
 
+    // ── Fragmented Edit Block 빌드 ─────────────────────────────────────
+    let fragmentedEditBlock = "";
+    if (fragmentedEditContext && typeof fragmentedEditContext === "object") {
+      const fec = fragmentedEditContext as Record<string, unknown>;
+      if (fec.isFragmented === true) {
+        const minShots = Number(fec.minShotCount) || 3;
+        const editStyle = String(fec.editStyle || "fragmented");
+        const triggers = Array.isArray(fec.triggerTerms) ? (fec.triggerTerms as string[]).join(", ") : "";
+        fragmentedEditBlock = [
+          `## 편집 스타일: 분절 컷 (Fragmented Editing) [감지: ${triggers}]`,
+          `- 최소 ${minShots}개 이상의 독립 shot 생성 필수 (multiShot 배열)`,
+          `- 편집 리듬: ${editStyle}`,
+          "- 각 shot의 framing을 다양하게: WS, MS, CU, ECU, insert shot 혼합",
+          "- 동일 framing 연속 2회 이상 금지",
+          "- 각 shot의 카메라 앵글 변화: eye-level, low angle, high angle, overhead, dutch angle 혼합",
+          "- 각 shot의 subject/피사체를 다양하게: 인물 전체 → 손 디테일 → 공간 전경 → 사물 인서트 → 인물 표정",
+          "- shot_1 단독 + temporalBeats만으로 구성 금지 — 물리적으로 분리된 독립 shot 필수",
+          "- shot 간 시각적 대비가 뚜렷해야 함 (크기, 각도, 피사체 모두 변화)",
+        ].join("\n");
+        console.info(`[generate-cuts] fragmented edit block injected: minShots=${minShots}, style=${editStyle}`);
+      }
+    }
+
     // ── Latency tracking ──────────────────────────────────────────────────────
     const t0_total = Date.now();
     let t0_step1 = 0, t1_step1 = 0;
@@ -2036,6 +2061,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
         continuityPromptBlock || undefined,
         deepAnalysisBriefBlock || undefined,
+        undefined, // modelOverride
+        fragmentedEditBlock || undefined,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -2156,6 +2183,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             undefined, // scriptAnalysisHint
             continuityPromptBlock || undefined,
             deepAnalysisBriefBlock || undefined,
+            undefined, // modelOverride
+            fragmentedEditBlock || undefined,
           );
           characterSeeds = retryResult.characterSeeds;
           outlines = retryResult.outlines;

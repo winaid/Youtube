@@ -8,6 +8,8 @@ import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-durat
 import { distributeRhythm } from "@/lib/rhythm-distribution";
 import type { PacingMode } from "@/lib/rhythm-distribution";
 import { buildMultiChainPlan, SINGLE_CHAIN_MAX_SEC } from "@/lib/multi-chain-orchestrator";
+import { detectFragmentedIntent, planAutoSplitShots, type AutoSplitInput } from "@/lib/shot-plan-auto-split";
+import { buildFragmentedShotBlock } from "@/lib/korean-subject-defaults";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -73,6 +75,8 @@ async function fetchGeminiCuts(
         continuityMode: input.continuityMode ?? false,
         // ── 나레이션 속도 ──
         narrationSpeed: input.narrationSpeed ?? "natural",
+        // ── 분절 편집 컨텍스트 ──
+        fragmentedEditContext: detectFragmentedIntent(input.storyText),
       }),
     });
 
@@ -321,6 +325,23 @@ function generateFallbackCuts(
   return { characterSeeds, cuts };
 }
 
+/** shot index → role 추론 (auto-split 결과를 MultiShotPrompt로 변환 시) */
+function inferRoleFromShotId(
+  _shotId: string,
+  totalShots: number,
+): "establish" | "develop" | "peak" | "resolve" | "insert" | "transition" | undefined {
+  // planShotRoles에서 이미 결정됨 — 여기선 index 기반 간단 추론
+  const patterns: Record<number, Array<"establish" | "develop" | "peak" | "resolve" | "insert" | "transition">> = {
+    3: ["establish", "develop", "resolve"],
+    4: ["establish", "develop", "peak", "resolve"],
+    5: ["establish", "transition", "develop", "peak", "resolve"],
+    6: ["establish", "transition", "develop", "insert", "peak", "resolve"],
+  };
+  const idx = parseInt(_shotId.replace("shot_", ""), 10) - 1;
+  const pattern = patterns[totalShots] ?? patterns[4]!;
+  return pattern[idx % pattern.length];
+}
+
 export async function generatePrompt(
   input: PromptInput
 ): Promise<PromptOutput> {
@@ -433,6 +454,37 @@ export async function generatePrompt(
       ...c,
       durationSec: rhythmResult.cuts[i]?.durationSec ?? c.durationSec,
     }));
+  }
+
+  // ── 분절 편집 강제: 분절 편집 요청이 있으면 multiShot 보강 ──
+  const fragmentedCtx = detectFragmentedIntent(input.storyText);
+  if (fragmentedCtx.isFragmented) {
+    for (const cut of rhythmAppliedCuts) {
+      const existingShots = Array.isArray(cut.multiShot) ? cut.multiShot.length : 0;
+      if (existingShots < fragmentedCtx.minShotCount) {
+        const splitInput: AutoSplitInput = {
+          storyText: input.storyText,
+          sceneDescription: cut.sceneDescription || "",
+          subjectPrimary: cut.charactersInScene?.[0] || "subject",
+          action: cut.videoPrompt || cut.sceneDescription || "",
+          environment: cut.moodLighting || "",
+          moodLighting: cut.moodLighting || "",
+          durationSec: cut.durationSec,
+          camera: { framing: "MS", angle: "eye-level", motion: "steady" },
+          sceneType: cut.shotCategory,
+          styleSuffix: cut.videoPrompt?.includes("No text") ? "No text, no watermark" : undefined,
+        };
+        const autoResult = planAutoSplitShots(splitInput);
+        if (autoResult.validation.passed && autoResult.shots.length >= 3) {
+          cut.multiShot = autoResult.shots.map((shot, i) => ({
+            index: i + 1,
+            prompt: shot.action,
+            duration: String(Math.round(shot.endSec - shot.startSec)),
+            role: inferRoleFromShotId(shot.shotId, autoResult.shots.length),
+          }));
+        }
+      }
+    }
   }
 
   // density 보정 후 구조 보조 메타 자동 부여

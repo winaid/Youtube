@@ -57,6 +57,13 @@ export interface ValidatePayloadInput {
   mode?: GenerationMode;
   /** 의도적 원테이크 여부 */
   intentionalOneTake?: boolean;
+  /** 분절 편집 요청 컨텍스트 */
+  fragmentedEditContext?: {
+    isFragmented: boolean;
+    triggerTerms: string[];
+    minShotCount: number;
+    editStyle: string;
+  };
 }
 
 // ── 중점 검사 단어 ────────────────────────────────────────────────
@@ -450,6 +457,62 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
           ? `${input.durationSec}초 ${input.shotCategory ?? ""} — 멀티샷 필수 (Studio Mode). 의도적 원테이크라면 명시 설정 필요.`
           : `${input.durationSec}초 ${input.shotCategory ?? ""} — 멀티샷 자동 생성됨 (Batch Mode)`,
       });
+    }
+  }
+
+  // ── Rule 18: Fragmented edit enforcement ──────────────────
+  if (input.fragmentedEditContext?.isFragmented) {
+    const fec = input.fragmentedEditContext;
+    const shotCount = input.multiShots?.length ?? 0;
+
+    // Rule 18a: 분절 편집 요청인데 shots 배열이 없음
+    if (!input.multiShots || shotCount === 0) {
+      issues.push({
+        rule: "fragmented_edit_without_shots_array",
+        severity: "error",
+        message: `Fragmented edit requested (${fec.triggerTerms.join(", ")}) but no multiShot array present.`,
+      });
+    }
+
+    // Rule 18b: 분절 편집 요청인데 single-shot output
+    if (shotCount === 1) {
+      issues.push({
+        rule: "fragmented_edit_but_single_shot",
+        severity: "error",
+        message: `Fragmented edit requested but only 1 shot — multi-shot output is mandatory for fragmented editing.`,
+      });
+    }
+
+    // Rule 18c: 최소 shot 수 미달
+    if (shotCount > 0 && shotCount < 3) {
+      issues.push({
+        rule: "shots_below_minimum_count",
+        severity: "error",
+        message: `Fragmented edit requires minimum 3 shots, got ${shotCount}.`,
+      });
+    }
+
+    // Rule 18d: 분절 편집 요청 대비 부족
+    if (shotCount > 0 && shotCount < fec.minShotCount) {
+      issues.push({
+        rule: "missing_required_shots_for_fragmented_edit",
+        severity: "error",
+        message: `Fragmented edit style "${fec.editStyle}" requires minimum ${fec.minShotCount} shots, got ${shotCount}.`,
+      });
+    }
+
+    // Rule 18e: shot 간 framing/motion 차이 부족
+    if (input.multiShots && input.multiShots.length >= 2) {
+      // 모든 shot이 동일 prompt prefix (첫 40자)를 공유하면 variation 부족
+      const prefixes = input.multiShots.map(s => s.prompt.slice(0, 40).toLowerCase());
+      const uniquePrefixes = new Set(prefixes).size;
+      if (uniquePrefixes <= 1) {
+        issues.push({
+          rule: "insufficient_shot_variation",
+          severity: "error",
+          message: `All ${shotCount} shots share identical visual description — each shot must be a distinct visual unit for fragmented editing.`,
+        });
+      }
     }
   }
 
