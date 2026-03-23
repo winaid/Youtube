@@ -516,9 +516,10 @@ export function validatePromptContent(prompt: string, shots: ShotDescriptor[]): 
     }
   }
 
-  // 주체(subject) 정보
+  // 주체(subject) 정보 — subject가 string 또는 { primary } 일 수 있으므로 안전 추출
   if (shots[0]?.subject) {
-    const subjectWords = shots[0].subject.split(/\s+/).filter(w => w.length > 3);
+    const subjectStr = typeof shots[0].subject === "string" ? shots[0].subject : (shots[0].subject as { primary: string }).primary ?? "";
+    const subjectWords = subjectStr.split(/\s+/).filter(w => w.length > 3);
     const subjectFound = subjectWords.some(w => lower.includes(w.toLowerCase()));
     if (!subjectFound && subjectWords.length > 0) {
       missing.push("subject identity");

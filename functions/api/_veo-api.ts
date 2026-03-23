@@ -63,17 +63,50 @@ export interface VeoEnv {
 
 const VEO_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-function getApiKey(env: VeoEnv): string {
-  const key = env.GEMINI_API_KEY || env.GEMINI_API_KEY_2 || "";
-  if (!key) throw new VeoApiError("GEMINI_API_KEY not configured", "missing_api_key", false);
-  return key;
+/** API 키 목록 반환 (fallback 순서) */
+function getApiKeys(env: VeoEnv): string[] {
+  const keys: string[] = [];
+  if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY);
+  if (env.GEMINI_API_KEY_2) keys.push(env.GEMINI_API_KEY_2);
+  if (keys.length === 0) throw new VeoApiError("GEMINI_API_KEY not configured", "missing_api_key", false);
+  return keys;
 }
 
-function veoHeaders(env: VeoEnv): Record<string, string> {
+function veoHeaders(apiKey: string): Record<string, string> {
   return {
     "Content-Type": "application/json",
-    "x-goog-api-key": getApiKey(env),
+    "x-goog-api-key": apiKey,
   };
+}
+
+/** VEO fetch with key fallback — 첫 번째 키 실패(429/401/403) 시 두 번째 키로 재시도 */
+async function veoFetchWithKeyFallback(
+  env: VeoEnv,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const keys = getApiKeys(env);
+  let lastError: Error | null = null;
+
+  for (const key of keys) {
+    const headers = { ...veoHeaders(key), ...(init.headers as Record<string, string> || {}) };
+    try {
+      const res = await fetch(url, { ...init, headers });
+      // 키 관련 에러만 fallback (429 rate limit, 401/403 auth)
+      if ((res.status === 429 || res.status === 401 || res.status === 403) && keys.indexOf(key) < keys.length - 1) {
+        console.warn(`[_veo-api] Key ${keys.indexOf(key) + 1} failed (${res.status}), trying next key`);
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (keys.indexOf(key) < keys.length - 1) {
+        console.warn(`[_veo-api] Key ${keys.indexOf(key) + 1} fetch error, trying next key:`, lastError.message);
+        continue;
+      }
+    }
+  }
+  throw lastError || new VeoApiError("All API keys failed", "api_error", true);
 }
 
 // ── Request / Response types ─────────────────────────────────────────────────
@@ -126,7 +159,7 @@ export async function veoGenerate(
   env: VeoEnv,
   req: VeoGenerateRequest,
 ): Promise<{ operationName: string; model: string; durationSent: number }> {
-  const headers = veoHeaders(env);
+  const headers = veoHeaders(getApiKeys(env)[0]);
   const model = req.model || VEO_DEFAULT_MODEL;
   const cap = getCapability(model);
   const duration = req.durationSeconds
@@ -177,9 +210,8 @@ export async function veoGenerate(
   };
 
   const url = `${VEO_API_BASE}/models/${model}:predictLongRunning`;
-  const res = await fetch(url, {
+  const res = await veoFetchWithKeyFallback(env, url, {
     method: "POST",
-    headers,
     body: JSON.stringify(body),
   });
 
@@ -259,7 +291,7 @@ export async function veoExtend(
   env: VeoEnv,
   req: VeoExtendRequest,
 ): Promise<{ operationName: string; model: string; durationSent: number }> {
-  const headers = veoHeaders(env);
+  const headers = veoHeaders(getApiKeys(env)[0]);
   const model = req.model || VEO_DEFAULT_MODEL;
   const cap = getCapability(model);
 
@@ -315,9 +347,8 @@ export async function veoExtend(
   };
 
   const url = `${VEO_API_BASE}/models/${model}:predictLongRunning`;
-  const res = await fetch(url, {
+  const res = await veoFetchWithKeyFallback(env, url, {
     method: "POST",
-    headers,
     body: JSON.stringify(body),
   });
 
@@ -331,9 +362,8 @@ export async function veoExtend(
       console.warn("[_veo-api] veoExtend: generateAudio not supported — retrying without audio");
       delete parameters.generateAudio;
       const retryBody = { instances: body.instances, parameters };
-      const retryRes = await fetch(url, {
+      const retryRes = await veoFetchWithKeyFallback(env, url, {
         method: "POST",
-        headers,
         body: JSON.stringify(retryBody),
       });
       text = await retryRes.text();
@@ -378,7 +408,7 @@ export async function veoCheckStatus(
   env: VeoEnv,
   operationName: string,
 ): Promise<VeoTaskStatus> {
-  const headers = veoHeaders(env);
+  const headers = veoHeaders(getApiKeys(env)[0]);
 
   const url = `${VEO_API_BASE}/${operationName}`;
   const res = await fetch(url, {

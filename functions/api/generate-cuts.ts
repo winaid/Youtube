@@ -454,28 +454,29 @@ const REGION_FLAVOR_MAP: Record<string, string> = {
  * 기준: 역사 신호가 하나라도 있으면 극영화 재연 모드.
  */
 function detectContentMode(storyText: string): "dramatized_reenactment" | "general" {
-  // 강한 역사 신호: 이것만으로 dramatized_reenactment 확정
+  // 강한 역사 재연 신호: 구체적인 역사적 인물/사건/시대가 명시되어야 활성화
+  // "병원", "의사", "마케팅" 등 현대 콘텐츠에도 등장하는 단어는 강한 신호가 아님
   const strongHistoricalSignals = [
-    /역사[적]?|역사[적]?\s*인물|역사[적]?\s*사건/,
-    /\d{3,4}년[대]?|세기|왕조|시대/,
-    /실제\s*(인물|사건)|실화|재연/,
+    /\d{3,4}년[대]?\s*[\uAC00-\uD7A3]/, // "1920년대 미국" 같은 구체적 연도+맥락
+    /실제\s*(인물|사건)\s*재연|실화\s*재연|역사\s*재연/,
     /대체\s*역사|가정[형]?\s*역사/,
-    /제국|왕조|멸망|전쟁|혁명|독립|통일|분단|식민/,
-    /로마|몽골|나폴레옹|오스만|조선|고구려|메이지|냉전/,
-    /Painless|Parker|Blackwell|Joshi|Kellogg|patent medicine/i,
+    /제국|왕조|멸망|전쟁\s*(?:중|당시)|혁명|독립\s*운동|식민\s*(?:지|시대)/,
+    /로마\s*제국|몽골\s*제국|나폴레옹|오스만|메이지\s*유신|냉전\s*시대/,
+    /조선\s*(?:시대|왕조)|고구려|백제|신라|고려\s*시대/,
   ];
-  if (strongHistoricalSignals.some(r => r.test(storyText))) return "dramatized_reenactment";
+  const strongCount = strongHistoricalSignals.filter(r => r.test(storyText)).length;
+  // 강한 신호 2개 이상 또는 1개 + 특정 키워드(재연, 시대극)
+  if (strongCount >= 2) return "dramatized_reenactment";
+  if (strongCount >= 1 && /재연|시대극|역사\s*드라마/.test(storyText)) return "dramatized_reenactment";
 
-  // 약한 신호: 2개 이상 조합될 때만 dramatized_reenactment
-  // (단독으로는 현대 콘텐츠일 수 있음: "병원 마케팅", "의사 브이로그" 등)
-  const weakSignals = [
-    /의사|치과|병원|의원|클리닉|surgeon|dentist/i,
-    /마케팅\s*(사례|역사|전략)|광고\s*역사/,
-    /실제\s*사례/,
-    /만약[에]?\s|if\s.*had\s/i,
-  ];
-  const weakCount = weakSignals.filter(r => r.test(storyText)).length;
-  if (weakCount >= 2) return "dramatized_reenactment";
+  // 영문 역사 인물 (특정 인물명이 명시적으로 등장해야)
+  if (/Painless\s+Parker|Elizabeth\s+Blackwell|Anandibai\s+Joshi|patent\s+medicine\s+era/i.test(storyText)) {
+    return "dramatized_reenactment";
+  }
+
+  // "역사"라는 단어가 있더라도 "마케팅 역사", "광고의 역사" 같은 분석/설명 맥락은 general
+  // "역사적 인물을 재연한다" 같은 명시적 재연 맥락만 dramatized_reenactment
+  if (/역사[적]?\s*(인물|사건)\s*(재연|재현|묘사)/.test(storyText)) return "dramatized_reenactment";
 
   return "general";
 }
@@ -1726,8 +1727,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     } = await context.request.json() as Record<string, string | number | object>;
 
     // ── 필수 입력 검증 (연산 전에 조기 반환) ──
-    if (!storyText || !directorName) {
+    if (!storyText?.trim() || !directorName) {
       return Response.json({ error: "storyText and directorName required" }, { status: 400 });
+    }
+    if (Number(cutCount) < 0 || Number(cutCount) > 100) {
+      return Response.json({ error: `cutCount must be 0-100, got ${cutCount}` }, { status: 400 });
+    }
+    if (Number(rawTotalDuration) < 0 || Number(rawTotalDuration) > 3600) {
+      return Response.json({ error: `duration must be 0-3600, got ${rawTotalDuration}` }, { status: 400 });
     }
 
     // cutDuration=0/undefined/null → auto. 1~15 → 명시값. VEO: 8초 고정.
