@@ -1324,7 +1324,7 @@ Each director object must have:
         let res: Response;
         try {
           // grounding 호출 타임아웃 — 후속 stage 여유를 위해 30초로 제한
-          const timeoutMs = opts.useGrounding ? 30_000 : undefined;
+          const timeoutMs = opts.useGrounding ? 15_000 : undefined; // 15초 — grounding 실패 시 빠르게 fallback
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
@@ -1426,11 +1426,18 @@ Each director object must have:
       let recoveredAtStage: number | null = null;
 
       const pipelineStartMs = Date.now();
-      const PIPELINE_DEADLINE_MS = 55_000; // Stage1 30s + 후속 stage 여유
+      const PIPELINE_DEADLINE_MS = 45_000; // 45초로 단축 — Cloudflare 60초 edge timeout 내 응답 보장
+      let skipToFallback = false; // grounding 실패 시 Stage 2/3 건너뛰고 Stage 4로 직행
 
       for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
         // ── 이미 후보 확보되면 종료 ──
         if (stageAccepted.length > 0) break;
+
+        // ── grounding 실패 시 중간 단계 건너뛰기 ──
+        if (skipToFallback && stageNum < MAX_STAGES) {
+          console.info(`[recommend-director] Skipping stage ${stageNum} — fast fallback to stage ${MAX_STAGES}`);
+          continue;
+        }
 
         // ── 집계 타임아웃: 남은 시간 부족하면 빠르게 종료 ──
         const elapsedMs = Date.now() - pipelineStartMs;
@@ -1560,8 +1567,16 @@ Each director object must have:
         // ── grounding 추적 ──
         if (useGrounding) {
           groundingAttempted = true;
-          if (!stageResult.grounded) groundingFailed = true;
-          else groundingFailed = false; // 이후 stage에서 grounding 성공하면 복구
+          if (!stageResult.grounded) {
+            groundingFailed = true;
+            // Stage 1 grounding 실패 → Stage 2/3 건너뛰고 Stage 4 fallback으로 직행
+            // (Stage 2/3도 grounding 재시도인데 보통 같은 이유로 실패 → 시간 낭비)
+            if (stageNum === 1) {
+              skipToFallback = true;
+              console.info(`[recommend-director] Stage 1 grounding failed — fast-tracking to model fallback`);
+            }
+          }
+          else groundingFailed = false;
         }
 
         // ── 결과 수집 ──
