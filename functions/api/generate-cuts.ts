@@ -1155,7 +1155,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, ${aspectRatio} aspect ratio, no text overlay, no watermark, purely visual`;
+  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, no text overlay, no watermark, purely visual`;
 
   // 전체 시퀀스 컨텍스트 (배치 외 컷은 간략화하여 토큰 절약)
   const batchCutNums = new Set(batchOutlines.map(o => o.cutNumber));
@@ -1478,7 +1478,7 @@ function buildDeterministicCuts(
   const fallbackStyleFP = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, ${aspectRatio} aspect ratio, no text overlay, no watermark, purely visual${editorialTag}`;
+  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, no text overlay, no watermark, purely visual${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
@@ -2855,7 +2855,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const finalStyleFingerprint = String(directorStyle ?? "")
       ? String(directorStyle).split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
       : String(directorName);
-    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, ${String(aspectRatio ?? "16:9")} aspect ratio, no text overlay, no watermark, purely visual`;
+    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, no text overlay, no watermark, purely visual`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);
