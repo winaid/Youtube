@@ -21,9 +21,9 @@ import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recomme
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
 import { VEO_DEFAULT_MODEL, VEO_SEGMENT_CAP, VEO_EXTENSION_DURATION, getCapability } from "./_veo-capability";
-// VEO 정책: 8초, 반드시 4샷 고정
-const getMaxShots = (_modelId: string, _durationSec: number) => 4;
-const getMinShots = (_modelId: string, _durationSec: number) => 4;
+// VEO 정책: 8초=4샷, 7초(extend)=3샷
+const getMaxShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
+const getMinShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 

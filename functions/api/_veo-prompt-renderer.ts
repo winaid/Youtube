@@ -46,19 +46,25 @@ export interface VeoRenderedPrompt {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * 지원 멀티샷 구조 (모두 8초 합산).
- * 4샷이 기본값.
+ * 지원 멀티샷 구조.
+ * 8초: 4샷 기본. 7초(VEO extend): 3샷.
  */
 export const SHOT_STRUCTURES = {
-  /** 4샷: establish → develop → peak → resolve */
+  /** 4샷: establish → develop → peak → resolve (8초용) */
   FOUR: [
     { startSec: 0, endSec: 2, role: "establish" },
     { startSec: 2, endSec: 4, role: "develop" },
     { startSec: 4, endSec: 6, role: "peak" },
     { startSec: 6, endSec: 8, role: "resolve" },
   ],
-  /** 3샷: establish → develop+peak → resolve */
+  /** 3샷: establish → develop → resolve (7초 VEO extend용) */
   THREE: [
+    { startSec: 0, endSec: 2, role: "establish" },
+    { startSec: 2, endSec: 5, role: "develop" },
+    { startSec: 5, endSec: 7, role: "resolve" },
+  ],
+  /** 3샷 8초: establish → develop → resolve */
+  THREE_8S: [
     { startSec: 0, endSec: 2, role: "establish" },
     { startSec: 2, endSec: 5, role: "develop" },
     { startSec: 5, endSec: 8, role: "resolve" },
@@ -199,22 +205,23 @@ export function convertMultiShotToTimestamp(
     currentSec += dur;
   }
 
-  // 합이 8초가 아니면 비례 스케일링 (마지막 샷만 조정하면 endSec < startSec 가능)
-  if (currentSec !== 8 && entries.length > 0) {
-    const ratio = 8 / currentSec;
+  // 합이 목표 duration과 다르면 비례 스케일링
+  // VEO: 첫 컷 8초, extend 컷 7초 — 둘 다 허용
+  const targetDuration = (currentSec === 7 || currentSec === 8) ? currentSec : 8;
+  if (currentSec !== targetDuration && entries.length > 0) {
+    const ratio = targetDuration / currentSec;
     let runningStart = 0;
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
       const origDur = e.endSec - e.startSec;
       const scaledDur = i === entries.length - 1
-        ? 8 - runningStart  // 마지막 샷: 나머지 전부
+        ? targetDuration - runningStart  // 마지막 샷: 나머지 전부
         : Math.max(1, Math.round(origDur * ratio));
       e.startSec = runningStart;
       e.endSec = runningStart + Math.max(1, scaledDur);
       runningStart = e.endSec;
     }
-    // 마지막 샷 endSec 강제 8초
-    entries[entries.length - 1].endSec = 8;
+    entries[entries.length - 1].endSec = targetDuration;
   }
 
   return entries;
@@ -388,7 +395,7 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
     negativePrompt: finalNegative,
     globalAnchor,
     shotCount: shots.length,
-    totalDurationSec: 8,
+    totalDurationSec: shots.length > 0 ? shots[shots.length - 1].endSec : 8,
     cleanupLog,
   };
 }
