@@ -3196,6 +3196,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     };
     let promptKoRepairCount = 0;
     let promptClampCount = 0;
+    let shotTrimCount = 0;
     for (const fc of finalizedCuts) {
       if (!Array.isArray(fc.multiShot)) continue;
       const fcAny = fc as Record<string, unknown>;
