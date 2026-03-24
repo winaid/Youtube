@@ -1384,7 +1384,7 @@ Each director object must have:
         let res: Response;
         try {
           // grounding 호출 타임아웃 — 후속 stage 여유를 위해 30초로 제한
-          const timeoutMs = opts.useGrounding ? 25_000 : 12_000; // grounding 25초, 일반 12초
+          const timeoutMs = opts.useGrounding ? 35_000 : 15_000; // grounding 35초, 일반 15초 — retry 없으므로 여유 있게
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
@@ -1478,308 +1478,79 @@ Each director object must have:
         };
       };
 
-      // ── Stage execution ──
-      const MAX_STAGES = 4;
-      let currentStageQuery = webSearchQuery!;
+      // ── 단순 2-step 웹 검색: grounding 1회 → 실패 시 모델 지식 fallback 1회 ──
       let stageAccepted: Array<Record<string, unknown>> = [];
       let allEmptyReasons: WebSearchEmptyReason[] = [];
-      let recoveredAtStage: number | null = null;
 
-      const pipelineStartMs = Date.now();
-      const PIPELINE_DEADLINE_MS = 45_000; // 45초로 단축 — Cloudflare 60초 edge timeout 내 응답 보장
-      let skipToFallback = false; // grounding 실패 시 Stage 2/3 건너뛰고 Stage 4로 직행
-
-      // ── Speculative Stage 4: Stage 1과 동시 시작 (Stage 1~3 실패 시 즉시 사용) ──
-      const excludeNamesSpec = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
-      const genreStrSpec = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
-      const moodStrSpec = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
-      const speculativeStage4Prompt = `You MUST recommend exactly 4 real film directors whose visual style fits a ${genreStrSpec}, ${moodStrSpec} video scenario.
-Exclude these directors: ${excludeNamesSpec}.
-Include directors from at least 2 different regions (Korea, Japan, Europe, US, India, etc.).
-Each director must be a real person with real filmography.
-
-Return ONLY valid JSON with exactly 4 directors:
-{"directors":[
-  {"name":"English name","nameKo":"한국어 이름","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean 1-2 sentence description","reason":"Korean reason why this director fits","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]},
-  ... (exactly 4 directors total)
-]}`;
-      console.info(`[recommend-director] Speculative stage4 launched in parallel with pipeline`);
-      const speculativeStage4Promise = callGeminiForDirectors({
+      // ── STEP A: Google grounding 웹 검색 ──
+      console.info(`[recommend-director] 웹 검색 시작 — grounding, query="${webSearchQuery?.slice(0, 60)}..."`);
+      groundingAttempted = true;
+      const webResult = await callGeminiForDirectors({
         model: GEMINI_MODEL_FLASH,
-        prompt: speculativeStage4Prompt,
-        useGrounding: false,
-        label: "stage4_speculative",
-        forceMimeType: true,
+        prompt: buildWebPrompt(),
+        useGrounding: true,
+        label: "web_grounded",
+        forceMimeType: false,
       });
+      webSearchAttemptCount = 1;
+      retryStagesLog.push({
+        stage: 1, name: "web_grounded", model: GEMINI_MODEL_FLASH,
+        grounded: webResult.grounded, normalizedQuery: webSearchQuery || "",
+        timeoutOccurred: webResult.timeoutOccurred, httpStatus: webResult.httpStatus,
+        rawResultCount: webResult.rawCount, acceptedCount: webResult.accepted.length,
+        rejectedCount: webResult.rejected, emptyReasons: webResult.emptyReasons,
+        triggerReason: "initial_grounded_search",
+        partialRecoveryCount: webResult.partialRecoveryCount, durationMs: webResult.durationMs,
+        groundingDiag: webResult.groundingDiag,
+      });
+      if (webResult.timeoutOccurred) pipelineTimeoutOccurred = true;
+      webSearchRawBeforeDedup += webResult.rawCount;
+      webSearchPartialRecoveryCount += webResult.partialRecoveryCount;
+      if (webResult.rawSnippet) webSearchRawSnippet = webResult.rawSnippet;
+      webSearchRejectionReasons.push(...webResult.reasons.map(r => `[web_grounded] ${r}`));
+      allEmptyReasons.push(...webResult.emptyReasons);
 
-      for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
-        // ── 이미 후보 확보되면 종료 ──
-        if (stageAccepted.length > 0) break;
-
-        // ── grounding 실패 시 중간 단계 건너뛰기 ──
-        if (skipToFallback && stageNum < MAX_STAGES) {
-          console.info(`[recommend-director] Skipping stage ${stageNum} — fast fallback to stage ${MAX_STAGES}`);
-          continue;
-        }
-
-        // ── 집계 타임아웃: 남은 시간 부족하면 빠르게 종료 ──
-        const elapsedMs = Date.now() - pipelineStartMs;
-        if (elapsedMs > PIPELINE_DEADLINE_MS) {
-          console.warn(`[recommend-director] Pipeline deadline ${PIPELINE_DEADLINE_MS}ms exceeded at stage ${stageNum} (${elapsedMs}ms elapsed) — breaking`);
-          allEmptyReasons.push("pipeline_deadline_exceeded");
-          pipelineTimeoutOccurred = true;
-          break;
-        }
-
-        let stageLabel: string;
-        let model: string;
-        let prompt: string;
-        let useGrounding: boolean;
-        let forceMimeType: boolean;
-        let triggerReason: string;
-
-        if (stageNum === 1) {
-          // ── STAGE 1: 항상 웹 검색 grounding 사용 ──
-          // grounding + responseMimeType 동시 사용 불가 → grounding 우선
-          stageLabel = "stage1_grounded_search";
-          model = GEMINI_MODEL_FLASH;
-          prompt = buildWebPrompt();
-          useGrounding = true;
-          forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
-          triggerReason = stageStatus.extractSignals === "weak"
-            ? "weak_signals → grounding for web search"
-            : "strong_signals → grounding for web search";
-          console.info(`[recommend-director] Stage 1: using grounding (signals=${stageStatus.extractSignals})`);
-
-        } else if (stageNum === 2) {
-          // ── STAGE 2: grounding 실패 시 Flash-Lite JSON 폴백 (grounding 재시도 무의미) ──
-          const prevReasons = allEmptyReasons;
-          const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
-          if (shouldSkipToStage4) { continue; }
-
-          const stage1Log = retryStagesLog.find(s => s.stage === 1);
-          const stage1UsedGrounding = stage1Log?.name === "stage1_grounded_search";
-          const stage1HadNoSources = stage1Log && !stage1Log.grounded;
-
-          if (stage1HadNoSources && !stage1UsedGrounding) {
-            // Stage 1이 JSON 모드(grounding 꺼짐)였고 소스 없음 → Flash로 grounding 시도
-            // (네트워크 일시 장애 or 모델 문제일 수 있으므로 다른 모델로 재시도)
-            stageLabel = "stage2_grounding_retry";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt();
-            useGrounding = true;
-            forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
-            triggerReason = `stage1 grounding empty → retry with ${GEMINI_MODEL_FLASH}: ${prevReasons.join(",")}`;
-          } else if (stage1UsedGrounding && stage1HadNoSources) {
-            // Stage 1이 이미 grounding을 시도했지만 실패 → Pro 모델로 JSON 강제 시도
-            // (grounding 재시도 무의미, 모델 지식 기반으로 전환)
-            const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
-            stageLabel = "stage2_flash_json_fallback";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt({ retryNote });
-            useGrounding = false;
-            forceMimeType = true;
-            triggerReason = `stage1 grounding attempted but failed → Flash JSON fallback: ${prevReasons.join(",")}`;
-          } else {
-            // 파싱 실패 등 → JSON 강제로 재시도
-            const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
-            stageLabel = "stage2_flash_json";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt({ retryNote });
-            useGrounding = false;
-            forceMimeType = true;
-            triggerReason = `stage1 failed: ${prevReasons.join(",")}`;
-          }
-        } else if (stageNum === 3) {
-          // ── STAGE 3: Duplicate 복구 OR 쿼리 단순화 JSON 재시도 ──
-          const prevReasons = allEmptyReasons;
-          const hasDuplicate = prevReasons.includes("duplicate_filtered_all");
-          const shouldSkipToStage4 = prevReasons.includes("provider_timeout") || prevReasons.includes("provider_failed");
-
-          if (shouldSkipToStage4) { continue; }
-
-          if (hasDuplicate) {
-            // 중복 전멸 → 강한 제외 조건으로 재시도
-            const dupRetryNote = `\n## DUPLICATE RECOVERY RETRY\nYour previous responses contained ONLY directors already in the user's collection.\nYou MUST find completely different, lesser-known directors this time.\nDo NOT recommend any director even remotely similar to: ${localNameExclusionPairs}\nFind directors from underrepresented regions or indie film scenes.\n`;
-
-            stageLabel = "stage3_duplicate_recovery";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt({ retryNote: dupRetryNote, strengthenExclusion: true });
-            useGrounding = false;
-            forceMimeType = true;
-            triggerReason = "duplicate_filtered_all";
-          } else {
-            // Stage 2도 실패 → 쿼리 단순화 후 JSON 재시도
-            const simplifiedQuery = simplifyQueryForRetry(currentStageQuery, extractedGenres, extractedMoods);
-            currentStageQuery = simplifiedQuery;
-            stageLabel = "stage3_simplified_json";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt({ retryNote: "\n## Return ONLY valid JSON.\n", queryOverride: simplifiedQuery });
-            useGrounding = false;
-            forceMimeType = true;
-            triggerReason = `stage2 failed: ${prevReasons.join(",")}`;
-          }
-        } else {
-          // ── STAGE 4: speculative 결과 활용 (이미 병렬 실행됨) ──
-          stageLabel = "stage4_model_fallback";
-          model = GEMINI_MODEL_FLASH;
-          triggerReason = `all prior stages failed: ${allEmptyReasons.join(",")}`;
-          fallbackUsed = true;
-
-          console.info(`[recommend-director] Stage 4: awaiting speculative result (already running in background)`);
-          const specResult = await speculativeStage4Promise;
-
-          // speculative 결과를 직접 사용 — callGeminiForDirectors 재호출 불필요
-          webSearchAttemptCount = stageNum;
-          const specStageLog: RetryStageLog = {
-            stage: stageNum,
-            name: stageLabel,
-            model,
-            grounded: specResult.grounded,
-            normalizedQuery: currentStageQuery,
-            timeoutOccurred: specResult.timeoutOccurred,
-            httpStatus: specResult.httpStatus,
-            rawResultCount: specResult.rawCount,
-            acceptedCount: specResult.accepted.length,
-            rejectedCount: specResult.rejected,
-            emptyReasons: specResult.emptyReasons,
-            triggerReason,
-            partialRecoveryCount: specResult.partialRecoveryCount,
-            durationMs: specResult.durationMs,
-            groundingDiag: specResult.groundingDiag,
-          };
-          retryStagesLog.push(specStageLog);
-
-          if (specResult.timeoutOccurred) pipelineTimeoutOccurred = true;
-          webSearchRawBeforeDedup += specResult.rawCount;
-          webSearchPartialRecoveryCount += specResult.partialRecoveryCount;
-          if (specResult.rawSnippet && !webSearchRawSnippet) {
-            webSearchRawSnippet = specResult.rawSnippet;
-          }
-          webSearchRejectionReasons.push(...specResult.reasons.map(r => `[${stageLabel}] ${r}`));
-          allEmptyReasons.push(...specResult.emptyReasons);
-
-          if (specResult.accepted.length > 0) {
-            stageAccepted.push(...specResult.accepted);
-            recoveredAtStage = stageNum;
-            finalProvider = `${model} (${stageLabel})`;
-            finalGrounded = specResult.grounded;
-            console.log(`[recommend-director] STAGE ${stageNum} 성공 (speculative): ${specResult.accepted.length}명 채택`);
-          } else {
-            console.log(`[recommend-director] STAGE ${stageNum} 실패 (speculative): emptyReasons=${specResult.emptyReasons.join(",")}`);
-          }
-          break; // Stage 4는 speculative 결과 사용 후 루프 종료
-        }
-
-        webSearchAttemptCount = stageNum;
-        console.log(`[recommend-director] STAGE ${stageNum} (${stageLabel}): model=${model}, grounding=${useGrounding}, query="${currentStageQuery.slice(0, 60)}..."`);
-
-        const stageResult = await callGeminiForDirectors({
-          model, prompt, useGrounding, label: stageLabel, forceMimeType,
+      if (webResult.accepted.length > 0) {
+        stageAccepted = webResult.accepted;
+        finalProvider = `${GEMINI_MODEL_FLASH} (web_grounded)`;
+        finalGrounded = webResult.grounded;
+        console.log(`[recommend-director] 웹 검색 성공: ${webResult.accepted.length}명 채택 (grounded=${webResult.grounded})`);
+      } else {
+        // ── STEP B: grounding 실패 → 모델 지식 fallback (JSON 강제) ──
+        groundingFailed = true;
+        console.info(`[recommend-director] 웹 검색 실패 (${allEmptyReasons.join(",")}) → 모델 지식 fallback`);
+        const fallbackResult = await callGeminiForDirectors({
+          model: GEMINI_MODEL_FLASH,
+          prompt: buildWebPrompt({ retryNote: "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation.\n" }),
+          useGrounding: false,
+          label: "model_fallback",
+          forceMimeType: true,
         });
+        webSearchAttemptCount = 2;
+        fallbackUsed = true;
+        retryStagesLog.push({
+          stage: 2, name: "model_fallback", model: GEMINI_MODEL_FLASH,
+          grounded: false, normalizedQuery: webSearchQuery || "",
+          timeoutOccurred: fallbackResult.timeoutOccurred, httpStatus: fallbackResult.httpStatus,
+          rawResultCount: fallbackResult.rawCount, acceptedCount: fallbackResult.accepted.length,
+          rejectedCount: fallbackResult.rejected, emptyReasons: fallbackResult.emptyReasons,
+          triggerReason: `grounding_failed: ${allEmptyReasons.join(",")}`,
+          partialRecoveryCount: fallbackResult.partialRecoveryCount, durationMs: fallbackResult.durationMs,
+        });
+        if (fallbackResult.timeoutOccurred) pipelineTimeoutOccurred = true;
+        webSearchRawBeforeDedup += fallbackResult.rawCount;
+        webSearchPartialRecoveryCount += fallbackResult.partialRecoveryCount;
+        if (fallbackResult.rawSnippet && !webSearchRawSnippet) webSearchRawSnippet = fallbackResult.rawSnippet;
+        webSearchRejectionReasons.push(...fallbackResult.reasons.map(r => `[model_fallback] ${r}`));
+        allEmptyReasons.push(...fallbackResult.emptyReasons);
 
-        // ── Stage 기록 ──
-        const stageLog: RetryStageLog = {
-          stage: stageNum,
-          name: stageLabel,
-          model,
-          grounded: stageResult.grounded,
-          normalizedQuery: currentStageQuery,
-          timeoutOccurred: stageResult.timeoutOccurred,
-          httpStatus: stageResult.httpStatus,
-          rawResultCount: stageResult.rawCount,
-          acceptedCount: stageResult.accepted.length,
-          rejectedCount: stageResult.rejected,
-          emptyReasons: stageResult.emptyReasons,
-          triggerReason,
-          partialRecoveryCount: stageResult.partialRecoveryCount,
-          durationMs: stageResult.durationMs,
-          groundingDiag: stageResult.groundingDiag,
-        };
-        retryStagesLog.push(stageLog);
-
-        // ── grounding 추적 ──
-        if (useGrounding) {
-          groundingAttempted = true;
-          if (!stageResult.grounded) {
-            groundingFailed = true;
-            // Stage 1 grounding 실패 시:
-            // - stage1_model_json (기존 경로): grounding 안 썼으므로 여기 안 옴
-            // - stage1_grounded_search (weak signals 경로): Stage 2에서 Pro JSON 시도하므로 skip 안 함
-            if (stageNum === 1 && stageLabel !== "stage1_grounded_search") {
-              skipToFallback = true;
-              console.info(`[recommend-director] Stage 1 grounding failed — fast-tracking to model fallback`);
-            } else if (stageNum === 1) {
-              console.info(`[recommend-director] Stage 1 grounded search failed — will try Pro JSON in Stage 2`);
-            }
-          }
-          else groundingFailed = false;
-        }
-
-        // ── 결과 수집 ──
-        if (stageResult.timeoutOccurred) pipelineTimeoutOccurred = true;
-        webSearchRawBeforeDedup += stageResult.rawCount;
-        webSearchPartialRecoveryCount += stageResult.partialRecoveryCount;
-        if (stageResult.rawSnippet && !webSearchRawSnippet) {
-          webSearchRawSnippet = stageResult.rawSnippet;
-        }
-        webSearchRejectionReasons.push(...stageResult.reasons.map(r => `[${stageLabel}] ${r}`));
-        allEmptyReasons.push(...stageResult.emptyReasons);
-
-        if (stageResult.accepted.length > 0) {
-          stageAccepted.push(...stageResult.accepted);
-          recoveredAtStage = stageNum;
-          finalProvider = `${model} (${stageLabel})`;
-          finalGrounded = stageResult.grounded;
-          console.log(`[recommend-director] STAGE ${stageNum} 성공: ${stageResult.accepted.length}명 채택 (grounded=${stageResult.grounded})`);
+        if (fallbackResult.accepted.length > 0) {
+          stageAccepted = fallbackResult.accepted;
+          finalProvider = `${GEMINI_MODEL_FLASH} (model_fallback)`;
+          finalGrounded = false;
+          console.log(`[recommend-director] 모델 fallback 성공: ${fallbackResult.accepted.length}명 채택`);
         } else {
-          console.log(`[recommend-director] STAGE ${stageNum} 실패: emptyReasons=${stageResult.emptyReasons.join(",")}, rawCount=${stageResult.rawCount}`);
-        }
-      }
-
-      // ── Stage 4도 실패했으면 Flash 긴급 폴백 (Stage 4가 Pro였을 때만) ──
-      const emergencyElapsed = Date.now() - pipelineStartMs;
-      if (stageAccepted.length === 0 && retryStagesLog.length >= 4 && emergencyElapsed < PIPELINE_DEADLINE_MS) {
-        const lastStage = retryStagesLog[retryStagesLog.length - 1];
-        if (lastStage.model !== GEMINI_MODEL_FLASH) {
-          console.log(`[recommend-director] Stage 4 Pro 실패 → Flash 긴급 폴백`);
-          const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
-          const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
-          const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
-          const emergencyPrompt = `Recommend 4 real film directors for a ${genreStr} ${moodStr} scenario. Do NOT recommend: ${excludeNames}. Return JSON: {"directors":[{"name":"English name","nameKo":"Korean name","region":"미국","fitScore":75}]}`;
-
-          const flashResult = await callGeminiForDirectors({
-            model: GEMINI_MODEL_FLASH,
-            prompt: emergencyPrompt,
-            useGrounding: false,
-            label: "stage4_flash_emergency",
-            forceMimeType: true,
-          });
-          webSearchAttemptCount++;
-          retryStagesLog.push({
-            stage: 5,
-            name: "stage4_flash_emergency",
-            model: GEMINI_MODEL_FLASH,
-            grounded: false,
-            normalizedQuery: currentStageQuery,
-            timeoutOccurred: flashResult.timeoutOccurred,
-            httpStatus: flashResult.httpStatus,
-            rawResultCount: flashResult.rawCount,
-            acceptedCount: flashResult.accepted.length,
-            rejectedCount: flashResult.rejected,
-            emptyReasons: flashResult.emptyReasons,
-            triggerReason: "stage4_pro_failed",
-            partialRecoveryCount: flashResult.partialRecoveryCount,
-            durationMs: flashResult.durationMs,
-          });
-          if (flashResult.accepted.length > 0) {
-            stageAccepted.push(...flashResult.accepted);
-            recoveredAtStage = 5;
-            finalProvider = `${GEMINI_MODEL_FLASH} (flash_emergency)`;
-            finalGrounded = false;
-            fallbackUsed = true;
-          }
-          allEmptyReasons.push(...flashResult.emptyReasons);
+          console.log(`[recommend-director] 모델 fallback도 실패: ${fallbackResult.emptyReasons.join(",")}`);
         }
       }
 
