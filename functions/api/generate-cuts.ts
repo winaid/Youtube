@@ -865,7 +865,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 
 - cutNumber: 순번
 - sceneKo: ≤80자 — 이 장면이 시나리오에서 어떤 맥락/사건/변화를 보여주는지 구체적으로 서술. 단순 라벨("공장 장면") 금지 → 맥락 포함("경쟁 심화로 공장이 문을 닫고 노동자들이 마지막 짐을 싸는 장면")
-- narrativeFunction: 영어 ≤8 words — 이 시퀀스가 전체 이야기에서 맡는 서사 역할 (예: "reveal cause of decline", "show turning point decision", "contrast before and after")
+- narrativeFunction: 영어 ≤8 words — 이 시퀀스가 전체 이야기에서 맡는 서사 역할. ⚠️ 시나리오에 언급된 핵심 사건/개념은 영어 명칭을 반드시 포함 (예: "Black Death devastates Europe", "feudal system collapses", "Industrial Revolution begins")
 - newInformation: 영어 ≤12 words — 이 컷이 이전 컷에 없던 새로 전달하는 정보 (예: "reveal the empty factory floor that caused the decline"). 이전 컷과 겹치면 안 됨.
 - emotion: 영어 키워드
 - emotionalDelta: "이전→현재" (CUT1: "opening→[emotion]")
@@ -1199,6 +1199,7 @@ async function step23DetailBatch(
 - 최우선: STORY ROLE → 시각적 번역. 서사 기능이 보이는 장면 > 멋있는 비주얼.
 - 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
 - ⚠️ 원본 시나리오의 톤을 존중하라. 담담한 설명문이면 과도한 극적 표현 금지. 시나리오에 없는 갈등/위기/감정 폭발을 만들지 마라.
+- ⚠️ 시나리오에 등장하는 핵심 사건/개념(역사적 사건명, 핵심 키워드)을 영어 프롬프트에 반드시 포함하라. 예: 흑사병→"Black Death plague", 산업혁명→"Industrial Revolution", 봉건제→"feudal system collapse". 시각 묘사만으로 맥락을 암시하지 말고, 핵심 용어를 명시적으로 적어야 한다.
 
 ## ⚠️ 컷 간 차별화 (필수 — 위반 시 실패)
 - 쇼트 사이즈만 바꾸는 기계적 변화 금지 (wide→medium→close 순서 단순 반복 ✗).
