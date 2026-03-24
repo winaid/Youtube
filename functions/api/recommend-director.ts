@@ -1258,13 +1258,61 @@ Each director object must have:
         rawSnippet: string; durationMs: number;
       };
 
-      if (streamResult.error || streamResult.timedOut) {
+      if (streamResult.timedOut) {
+        // 완전 타임아웃 — 부분 텍스트로 복구 시도
+        console.warn(`[recommend-director] streamingGenerate 타임아웃: ${streamResult.error?.slice(0, 200)}`);
+        const partialDirectors = streamText.length > 10 ? recoverTruncatedDirectors(streamText) : [];
+        if (partialDirectors.length > 0) {
+          console.log(`[recommend-director] 타임아웃이지만 부분 복구 성공: ${partialDirectors.length}명`);
+          const validated = processWebResponse(JSON.stringify({ directors: partialDirectors }), [], "direct_analysis_timeout_recovery");
+          result = {
+            ...validated,
+            partialRecoveryCount: partialDirectors.length,
+            grounded: false,
+            httpStatus: streamResult.status ?? null, timeoutOccurred: true,
+            rawSnippet: streamText.slice(0, 200), durationMs: streamDuration,
+          };
+        } else {
+          result = {
+            accepted: [], rejected: 0, reasons: [], rawCount: 0,
+            emptyReasons: ["provider_timeout"],
+            partialRecoveryCount: 0, grounded: false,
+            httpStatus: streamResult.status ?? null, timeoutOccurred: true,
+            rawSnippet: streamResult.error?.slice(0, 100) ?? "", durationMs: streamDuration,
+          };
+        }
+      } else if (streamResult.error && streamResult.truncated && streamText.length > 10) {
+        // MAX_TOKENS 절단 — 부분 텍스트에서 완성된 감독 객체 복구
+        console.warn(`[recommend-director] streamingGenerate MAX_TOKENS 절단 (${streamText.length}자) — 부분 복구 시도`);
+        const partialDirectors = recoverTruncatedDirectors(streamText);
+        if (partialDirectors.length > 0) {
+          console.log(`[recommend-director] MAX_TOKENS 부분 복구 성공: ${partialDirectors.length}명`);
+          const validated = processWebResponse(JSON.stringify({ directors: partialDirectors }), [], "direct_analysis_truncated_recovery");
+          result = {
+            ...validated,
+            partialRecoveryCount: partialDirectors.length,
+            grounded: false,
+            httpStatus: 200, timeoutOccurred: false,
+            rawSnippet: streamText.slice(0, 200), durationMs: streamDuration,
+          };
+        } else {
+          console.warn(`[recommend-director] MAX_TOKENS 부분 복구 실패 — 완성된 객체 없음`);
+          result = {
+            accepted: [], rejected: 0, reasons: [], rawCount: 0,
+            emptyReasons: ["provider_failed"],
+            partialRecoveryCount: 0, grounded: false,
+            httpStatus: 200, timeoutOccurred: false,
+            rawSnippet: `MAX_TOKENS(${streamText.length}자): ${streamText.slice(0, 100)}`, durationMs: streamDuration,
+          };
+        }
+      } else if (streamResult.error) {
+        // 기타 에러 (non-truncated)
         console.warn(`[recommend-director] streamingGenerate 실패: ${streamResult.error?.slice(0, 200)}`);
         result = {
           accepted: [], rejected: 0, reasons: [], rawCount: 0,
-          emptyReasons: [streamResult.timedOut ? "provider_timeout" : "provider_failed"],
+          emptyReasons: ["provider_failed"],
           partialRecoveryCount: 0, grounded: false,
-          httpStatus: streamResult.status ?? null, timeoutOccurred: !!streamResult.timedOut,
+          httpStatus: streamResult.status ?? null, timeoutOccurred: false,
           rawSnippet: streamResult.error?.slice(0, 100) ?? "", durationMs: streamDuration,
         };
       } else {
