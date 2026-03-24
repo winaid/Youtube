@@ -3154,6 +3154,39 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const postShotCounts = finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 0);
     console.info(`[generate-cuts] MULTISHOT REPAIR COMPLETE — postShotCounts=[${postShotCounts.join(",")}], repaired=${preShotCounts.some((v, i) => v !== postShotCounts[i])}, elapsed=${Date.now() - t0_request}ms`);
 
+    // ═══ promptKo 누락 보충 — Gemini가 promptKo를 생성하지 않은 경우 자동 생성 ═══
+    const roleKoFallback: Record<string, string> = {
+      establish: "전경 — 공간과 위치 확인",
+      transition: "전환 — 새로운 시점",
+      develop: "전개 — 인물의 구체적 행동",
+      insert: "인서트 — 핵심 디테일 클로즈업",
+      peak: "절정 — 감정 최고조 순간",
+      resolve: "마무리 — 시각적 해소",
+    };
+    let promptKoRepairCount = 0;
+    for (const fc of finalizedCuts) {
+      if (!Array.isArray(fc.multiShot)) continue;
+      for (const sh of fc.multiShot as Array<{ promptKo?: string; role?: string; prompt?: string }>) {
+        if (!sh.promptKo || sh.promptKo.trim().length === 0) {
+          // sceneDescription (한국어)이 있으면 활용, 없으면 역할 기반 fallback
+          const sceneKo = (fc as Record<string, unknown>).sceneDescription as string | undefined;
+          sh.promptKo = sceneKo && sceneKo.trim().length > 0
+            ? `${roleKoFallback[sh.role ?? "develop"]?.split(" — ")[0] ?? "전개"}: ${sceneKo.slice(0, 35)}`
+            : roleKoFallback[sh.role ?? "develop"] ?? "전개 — 인물의 구체적 행동";
+          promptKoRepairCount++;
+        }
+      }
+      // videoPromptKo도 없으면 sceneDescription에서 보충
+      const fcAny = fc as Record<string, unknown>;
+      if (!fcAny.videoPromptKo && fcAny.sceneDescription) {
+        fcAny.videoPromptKo = String(fcAny.sceneDescription).slice(0, 60);
+        promptKoRepairCount++;
+      }
+    }
+    if (promptKoRepairCount > 0) {
+      console.info(`[generate-cuts] promptKo auto-repair: ${promptKoRepairCount} fields filled from sceneDescription/role fallback`);
+    }
+
     // ═══ Continuity Segment 생성 (continuityMode ON일 때만) ═══════
     // 각 컷에 continuitySegment를 붙여서 클라이언트 → useVideoGeneration → generate-video까지 전달.
     // 이 데이터는 시퀀스 경계에서 이전 컷의 끝 상태를 다음 컷 시작으로 전파하는 핵심 메타.
