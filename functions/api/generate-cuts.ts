@@ -1191,11 +1191,12 @@ async function step23DetailBatch(
   endHook=${o.endHook} | ${prevDesc} | ${nextHint} | ${revealHint} | transition=${o.transitionHint}`;
   }).join("\n\n");
 
-  const prompt = `당신은 촬영 감독이다. 스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""} | ${secPerCut}초/시퀀스 | 화면비: ${aspectRatio}
+  const prompt = `당신은 촬영 감독이다. 스타일: ${videoStyle} | 지역: ${regionFlavor}${editingNote ? ` | ${editingNote}` : ""} | 화면비: ${aspectRatio}
+⚠️ VEO 정책: CUT 1 = ${VEO_SEGMENT_CAP}초(${getMaxShots(VEO_DEFAULT_MODEL, VEO_SEGMENT_CAP)}샷), CUT 2+ = ${VEO_EXTENSION_DURATION}초(${getMaxShots(VEO_DEFAULT_MODEL, VEO_EXTENSION_DURATION)}샷). 이 샷 수는 절대 규칙.
 
 ## 핵심 원칙
-- ${secPerCut}초 = 3개 비트(sceneBeat)로 구성된 시퀀스. 각 비트는 다른 구도/앵글/피사체.
-- ${secPerCut}초 종료 시 "어디서, 무슨 상황, 누가 어떤 감정" 즉시 인식 필수.
+- 각 시퀀스 = 3개 비트(sceneBeat)로 구성. 각 비트는 다른 구도/앵글/피사체.
+- 시퀀스 종료 시 "어디서, 무슨 상황, 누가 어떤 감정" 즉시 인식 필수.
 - 최우선: STORY ROLE → 시각적 번역. 서사 기능이 보이는 장면 > 멋있는 비주얼.
 - 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
 - ⚠️ 원본 시나리오의 톤을 존중하라. 담담한 설명문이면 과도한 극적 표현 금지. 시나리오에 없는 갈등/위기/감정 폭발을 만들지 마라.
@@ -1287,27 +1288,23 @@ moodLighting (≤55 chars, source+direction+quality 3요소 필수 — 하나라
 
 ## MULTI-SHOT 릴 프로그레션
 ${(() => {
-    const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
-    if (maxShots <= 0) {
-      return `multiShot 비활성 (${secPerCut}초 ≤ 3초) — multiShot 필드 생성 금지.`;
-    }
-    if (maxShots <= 2) {
-      return `${maxShots}개 서브샷 필수. 각각 다른 shot size+앵글+피사체. role: "establish"|"resolve". duration 합산=${secPerCut}(최소 2초/샷).
-establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
-    }
-    const roles3 = ["establish", "develop", "resolve"];
-    const roles4 = ["establish", "develop", "peak", "resolve"];
-    const roles = maxShots === 3 ? roles3 : roles4;
-    const rolesStr = roles.join("→");
-    const shotDesc = maxShots === 3
-      ? `- 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 resolve: CU/ECU 감정 해소`
-      : `- 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소`;
-    return `🚨 반드시 ${maxShots}개 서브샷. 감독 스타일 무관. ${maxShots - 1}개 이하 = 규칙 위반.
-프로그레션: ${rolesStr} 순 강도 상승.
+    const baseDur = VEO_SEGMENT_CAP;        // 8초 (CUT 1)
+    const extDur = VEO_EXTENSION_DURATION;  // 7초 (CUT 2+)
+    const baseShots = getMaxShots(VEO_DEFAULT_MODEL, baseDur);   // 4
+    const extShots = getMaxShots(VEO_DEFAULT_MODEL, extDur);     // 3
+    return `🚨🚨 VEO 절대 규칙 — 샷 수는 컷 번호에 따라 다름:
+- CUT 1 (${baseDur}초): 반드시 ${baseShots}개 서브샷. role: establish→develop→peak→resolve.
+  서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소
+  duration 합산=${baseDur}(정수). 최소 2초/샷.
+- CUT 2+ (${extDur}초): 반드시 ${extShots}개 서브샷. role: establish→develop→resolve.
+  서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 resolve: CU/ECU 감정 해소
+  duration 합산=${extDur}(정수). 최소 2초/샷.
+- ${baseShots - 1}개 이하(CUT1) 또는 ${extShots - 1}개 이하(CUT2+) = 규칙 위반. ${baseShots + 1}개 이상(CUT1) 또는 ${extShots + 1}개 이상(CUT2+) = 규칙 위반.
+
+공통 규칙:
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
-${shotDesc}
-- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤35 words/샷, TARGET ≤400 chars / 절대 MAX 500 chars/샷.
+- ≤35 words/샷, TARGET ≤400 chars / 절대 MAX 500 chars/샷.
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
@@ -1332,15 +1329,17 @@ ${shotDesc}
 
 JSON 배열로만 출력 (마크다운 없이):
 ${(() => {
-    const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
+    // 컷별 duration/shot 수: CUT1=8초 4샷, CUT2+=7초 3샷
+    const cutDur = firstCutNum === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION;
+    const cutMaxShots = getMaxShots(VEO_DEFAULT_MODEL, cutDur);
     const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"...","subjectActionKo":"...","narrativeFunctionKo":"...","newInformationKo":"..."`;
-    if (maxShots <= 0) return `[${base}}]`;
-    // 예시 multiShot: maxShots에 맞춰 균등 분배
-    const shotDur = Math.max(2, Math.floor(secPerCut / maxShots));
+    if (cutMaxShots <= 0) return `[${base}}]`;
+    // 예시 multiShot: cutMaxShots에 맞춰 균등 분배
+    const shotDur = Math.max(2, Math.floor(cutDur / cutMaxShots));
     const exampleShots = [];
-    const exampleRoles = maxShots === 3 ? ["establish", "develop", "resolve"] : ["establish", "develop", "peak", "resolve"];
-    let remaining = secPerCut;
-    const exampleCount = maxShots;
+    const exampleRoles = cutMaxShots === 3 ? ["establish", "develop", "resolve"] : ["establish", "develop", "peak", "resolve"];
+    let remaining = cutDur;
+    const exampleCount = cutMaxShots;
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
       exampleShots.push(`{"index":${i},"prompt":"...","promptKo":"한국어 요약 ≤40자","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
@@ -1929,14 +1928,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       personaBias: pBias,
     });
     // 단일 호출 상한: STEP1_SINGLE_CALL_MAX_CUTS. 이 이상은 multi-chain 필요.
-    // 물리적 상한: totalDuration / DURATION_MIN(3초). 7초면 최대 2컷.
-    const physicalMaxCuts = effectiveTotalForDensity > 0
-      ? Math.floor(effectiveTotalForDensity / DURATION_MIN)
-      : STEP1_SINGLE_CALL_MAX_CUTS;
-    const targetCuts = Math.min(
-      Math.max(cutDecision.cutCount, Math.min(3, physicalMaxCuts)),
-      Math.min(physicalMaxCuts, STEP1_SINGLE_CALL_MAX_CUTS),
-    );
+    const targetCuts = Math.min(Math.max(cutDecision.cutCount, 3), STEP1_SINGLE_CALL_MAX_CUTS);
 
     // ── secPerCut ↔ targetCuts 정합성 보정 ──
     // 핵심 문제: secPerCut은 감독 persona에서, targetCuts는 density에서 독립 계산.
