@@ -3209,9 +3209,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       for (let si = 0; si < shotCount; si++) {
         const sh = fc.multiShot[si] as { promptKo?: string; role?: string; prompt: string; index: number };
-        // prompt 500자 하드 클램핑 (VEO 실제 상한 500자, 타겟은 400자)
-        if (sh.prompt && sh.prompt.length > 500) {
-          sh.prompt = sh.prompt.slice(0, 500);
+        // prompt 400자 하드 클램핑
+        if (sh.prompt && sh.prompt.length > 400) {
+          sh.prompt = sh.prompt.slice(0, 400);
           promptClampCount++;
         }
         // promptKo 생성 — 역할 + 컷의 한국어 필드들로 실제 의미 있는 한국어 요약
