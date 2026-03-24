@@ -352,9 +352,17 @@ export function buildDurationSummary(input: DurationSummaryInput): DurationSumma
       headline = `${requestedSecondsPerScene}초 x ${actualSceneCount}장면 = ${actualTotalDurationSeconds}초`;
       detail = "";
     } else {
-      // 불일치: requested vs actual 분리
-      headline = `${actualSceneCount}장면, 실제 계획 총 ${actualTotalDurationSeconds}초`;
-      detail = `요청: ${requestedSecondsPerScene}초/장면 (${requestedTotal}초) → 실제: ${actualTotalDurationSeconds}초 (자동 보정됨)`;
+      // 1시퀀스 8초 + 연장 7초 구조 감지: 첫 컷이 8초이고 나머지가 7초이면 정상 구조
+      const firstDur = durations[0] ?? 0;
+      const restDurs = durations.slice(1);
+      const isFirstExtendPattern = firstDur === 8 && restDurs.length > 0 && restDurs.every(d => d === 7);
+      if (isFirstExtendPattern) {
+        headline = `${actualSceneCount}장면 · 총 ${actualTotalDurationSeconds}초`;
+        detail = `첫 시퀀스 ${firstDur}초 + 연장 ${restDurs.length}회 × 7초`;
+      } else {
+        headline = `${actualSceneCount}장면, 실제 계획 총 ${actualTotalDurationSeconds}초`;
+        detail = `요청: ${requestedSecondsPerScene}초/장면(${requestedTotal}초) > 실제: ${actualTotalDurationSeconds}초 (자동 보정됨)`;
+      }
     }
   }
 
