@@ -828,13 +828,13 @@ ${localList}
 
     console.info(`[recommend-director] STEP 1: calling Gemini for local matching, pool=${directorPoolSize}, elapsed=${Date.now() - _rdStartMs}ms`);
     const _step1Start = Date.now();
-    console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=pro→flash-lite fallback, pool=${directorPoolSize})`);
+    console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=flash-lite→flash fallback, pool=${directorPoolSize})`);
 
     const { response: res, meta: fallbackMeta } = await fetchWithModelFallback(context.env, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(localRequestBody),
-    });
+    }, { primaryModel: GEMINI_MODEL_SEARCH, fallbackModel: GEMINI_MODEL_FLASH, timeoutMs: 15_000 });
 
     console.info(`[recommend-director] STEP 1: Gemini responded, status=${res.status}, elapsed=${Date.now() - _step1Start}ms`);
 

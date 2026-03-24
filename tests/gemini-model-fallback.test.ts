@@ -299,10 +299,10 @@ describe("400 bad request vs transient failure 구분", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("recommend-director STEP 1 로컬 매칭", () => {
-  it("STEP 1 로컬 매칭이 Pro 우선 호출 (Flash primary가 아님)", () => {
+  it("STEP 1 로컬 매칭이 Flash-Lite 우선 호출 (빠른 응답 우선)", () => {
     const content = fs.readFileSync("functions/api/recommend-director.ts", "utf-8");
-    // 구형 Flash-first 패턴이 없어야 함
-    expect(content).not.toMatch(/STEP 1.*model=flash/);
+    // fetchWithModelFallback에 GEMINI_MODEL_SEARCH (Flash-Lite) 지정
+    expect(content).toContain("primaryModel: GEMINI_MODEL_SEARCH");
     // fetchWithModelFallback 사용
     expect(content).toContain("fetchWithModelFallback");
   });
