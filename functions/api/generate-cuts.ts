@@ -576,28 +576,50 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
       const durations = roles.map((_, i) => i < remainder ? baseDur + 1 : baseDur);
 
       const basePrompt = fc.videoPrompt || fc.sceneDescription || "";
-      const roleDirective: Record<ShotRoleServer, { en: string; ko: string }> = {
-        establish: { en: "WS establishing shot. Full environment visible — show the specific location and key objects that identify WHERE this is", ko: "전경 — 공간과 위치 확인" },
-        transition: { en: "MS, camera shifts angle. New perspective revealing depth — different framing from previous shot", ko: "전환 — 새로운 시점" },
-        develop: { en: "MS/MCU, subject in action. Show specific movement or behavior — what the character DOES (verb required)", ko: "전개 — 인물의 구체적 행동" },
-        insert: { en: "ECU, extreme close-up on critical detail. Dramatic scale jump — texture, hands, object surface", ko: "인서트 — 핵심 디테일 클로즈업" },
-        peak: { en: "CU, most intense moment. Character's physical reaction at emotional peak — body language, not emotion labels", ko: "절정 — 감정 최고조 순간" },
-        resolve: { en: "WS/CU, visual closure. Tension releases — the aftermath, result, or changed state of the scene", ko: "마무리 — 시각적 해소" },
+      const roleCamera: Record<ShotRoleServer, string> = {
+        establish: "Wide shot, eye-level.",
+        transition: "Medium shot, new angle.",
+        develop: "Medium close-up, eye-level.",
+        insert: "Extreme close-up.",
+        peak: "Close-up, dramatic angle.",
+        resolve: "Wide shot, pull-back.",
+      };
+      const roleKo: Record<ShotRoleServer, string> = {
+        establish: "전경 — 공간과 위치 확인",
+        transition: "전환 — 새로운 시점",
+        develop: "전개 — 인물의 구체적 행동",
+        insert: "인서트 — 핵심 디테일 클로즈업",
+        peak: "절정 — 감정 최고조 순간",
+        resolve: "마무리 — 시각적 해소",
       };
 
-      // basePrompt에서 3-beat 구조 추출 (beat별로 다른 서브샷에 분배)
-      const beats = basePrompt.split(/\.\s*/).filter(s => s.trim().length > 10);
+      // videoPrompt에서 timing beat 추출 (0s-2s:... 2s-5s:... 5s-8s:...)
+      const timingBeats: string[] = [];
+      const timingPattern = /\d+s-\d+s:\s*([^.]+)/g;
+      let m: RegExpExecArray | null;
+      while ((m = timingPattern.exec(basePrompt)) !== null) {
+        timingBeats.push(m[1].trim());
+      }
+
+      // timing beat가 부족하면 videoPrompt의 문장들로 보충
+      const fallbackBeats = basePrompt.split(/\.\s*/).filter(s => s.trim().length > 10 && !/^\d+s-/.test(s.trim()));
+      while (timingBeats.length < targetCount && fallbackBeats.length > 0) {
+        timingBeats.push(fallbackBeats.shift()!.trim());
+      }
+
       const repairedShots: MultiShotItem[] = roles.map((role, i) => {
         if (i < existingShots.length) {
           return { index: i + 1, prompt: existingShots[i].prompt.slice(0, 350), promptKo: existingShots[i].promptKo, duration: String(durations[i]), role };
         }
-        // 각 서브샷에 다른 beat를 할당 (반복 방지)
-        const beatSlice = beats[Math.min(i, beats.length - 1)]?.trim() || "";
-        const directive = roleDirective[role];
+        // timing beat에서 시나리오 맞춤 내용 추출
+        const beatContent = timingBeats[Math.min(i, timingBeats.length - 1)]?.trim() || "";
+        const camera = roleCamera[role];
         return {
           index: i + 1,
-          prompt: `${directive.en}. ${beatSlice.slice(0, 200)}`.slice(0, 350),
-          promptKo: directive.ko,
+          prompt: beatContent
+            ? `${camera} ${beatContent}`.slice(0, 350)
+            : `${camera} ${basePrompt.slice(0, 150)}`.slice(0, 350),
+          promptKo: roleKo[role],
           duration: String(durations[i]),
           role,
         };
@@ -794,6 +816,12 @@ ${generationPersonaBlock ? generationPersonaBlock.slice(0, 300) + "\n" : ""}${ch
 - "변화 발생" → 이전과 이후의 대비가 보이는 장면
 - "결과/귀결" → 결과의 증거가 보이는 장면
 상징/분위기 샷은 서사 기능을 보조할 때만 사용. 서사를 대체하지 마라.
+
+## ⚠️ 서사 완전 커버리지 규칙 (최우선)
+- 시나리오의 모든 핵심 논점/사건/전환점이 최소 1개 컷에 반영되어야 한다.
+- 시나리오 앞부분에만 집중하고 뒷부분을 생략하는 것은 금지. 마지막 문장까지 커버해야 한다.
+- 컷이 부족하면 1개 컷에 2개 논점을 압축하되, 논점 자체를 누락하지 마라.
+- 특히 시나리오의 결론/결과/의미 부분은 반드시 마지막 컷에 포함해야 한다.
 
 ## ⚠️ 컷 간 차별화 규칙 (필수)
 - 인접 컷은 정보, 구도, 액션, 감정 중 최소 2개 이상 달라야 한다.
