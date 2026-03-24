@@ -529,9 +529,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       console.warn("[generate-video] CUT 1에 videoMode=extend 요청 → generate로 강제 전환");
       console.info("[generate-video] Forced videoMode override: extend -> generate for cut 1", { elapsedMs: Date.now() - tServerStart });
     }
-    console.info("[generate-video] Cut and mode resolved", { elapsedMs: Date.now() - tServerStart, cutNumberRaw, videoMode, sourceVideoPresent: !!sourceVideo });
-
     const sourceVideo = req.sourceVideo || req.previousVideoUri || "";
+
+    console.info("[generate-video] Cut and mode resolved", { elapsedMs: Date.now() - tServerStart, cutNumberRaw, videoMode, sourceVideoPresent: !!sourceVideo });
 
     // ── 모델 선택 ────────────────────────────────────────────────────────────
     const modelUsed = resolveModelForWorkflow({
