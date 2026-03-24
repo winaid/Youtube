@@ -263,6 +263,43 @@ export function preExtractSignals(storyText: string): PreExtractedSignals {
     }
   }
 
+  // ── History content 보강: 역사 콘텐츠는 장르/무드 키워드 없이도 시각 스타일이 뚜렷 ──
+  if (contentType === "history" && genres.length <= 1 && moods.length === 0) {
+    // 시대별 시각적 무드 추론
+    if (/(?:조선|고려|삼국|백제|신라|고구려|왕조|궁궐|사극)/.test(text)) {
+      if (!moods.includes("비장한")) { moods.push("비장한"); reasons.push("inferred epic mood from Korean dynasty history"); }
+      if (!genres.includes("드라마")) { genres.push("드라마"); reasons.push("inferred drama from Korean dynasty history"); }
+      keywords.push("period drama", "dynasty");
+      reasons.push("history content enrichment: Korean dynasty keywords → period drama signals");
+    }
+    if (/(?:로마|제국|중세|르네상스|십자군|봉건|영주|기사|성.*공성)/.test(text)) {
+      if (!moods.includes("비장한")) { moods.push("비장한"); reasons.push("inferred epic mood from Western/medieval history"); }
+      keywords.push("period drama", "epic");
+      reasons.push("history content enrichment: Western medieval keywords → epic period signals");
+    }
+    if (/(?:세계대전|냉전|독립\s*운동|혁명|식민|해방|점령|레지스탕스|저항)/.test(text)) {
+      if (!genres.includes("전쟁")) { genres.push("전쟁"); reasons.push("inferred war genre from modern conflict history"); }
+      if (!moods.includes("비장한")) { moods.push("비장한"); reasons.push("inferred epic mood from modern conflict history"); }
+      keywords.push("war", "resistance");
+      reasons.push("history content enrichment: modern conflict keywords → war/resistance signals");
+    }
+    if (/(?:문명|고대|유적|발굴|유물|신화|전설)/.test(text)) {
+      if (!moods.includes("신비로운")) { moods.push("신비로운"); reasons.push("inferred mysterious mood from ancient civilization history"); }
+      keywords.push("ancient civilization", "mythology");
+      reasons.push("history content enrichment: ancient civilization keywords → mysterious signals");
+    }
+    // 역사 콘텐츠인데 아직도 무드가 없으면 기본값
+    if (moods.length === 0) {
+      moods.push("비장한");
+      reasons.push("history content with no explicit mood → default epic");
+    }
+    // 역사 콘텐츠는 visual hint 보강
+    if (!visualHints.includes("slow-motion")) {
+      visualHints.push("slow-motion");
+      reasons.push("history content enrichment: added slow-motion visual hint");
+    }
+  }
+
   return { genres, moods, keywords, formatHints, visualHints, pacingHints, contentType, reasons };
 }
 
@@ -1469,15 +1506,27 @@ Each director object must have:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: JSON 강제 (grounding 비활성화 — 감독 정보는 모델 지식으로 충분) ──
-          // grounding + responseMimeType 동시 사용 불가 → grounding 제거하고 JSON 강제로 파싱 안정성 확보
-          // 감독 이름/스타일/작품은 Gemini가 이미 잘 아는 지식 → 웹 검색 불필요
-          stageLabel = "stage1_model_json";
-          model = GEMINI_MODEL_PRO;
-          prompt = buildWebPrompt();
-          useGrounding = false;
-          forceMimeType = true;
-          triggerReason = "initial_direct_json";
+          // ── STAGE 1: 시그널 강도에 따라 전략 분기 ──
+          // 시그널이 충분하면 → JSON 강제 (모델 지식으로 충분)
+          // 시그널이 약하면 → grounding 활성화 (웹 검색으로 보완)
+          // grounding + responseMimeType 동시 사용 불가 → 둘 중 하나만 선택
+          const weakSignals = stageStatus.extractSignals === "weak";
+          if (weakSignals) {
+            stageLabel = "stage1_grounded_search";
+            model = GEMINI_MODEL_FLASH;
+            prompt = buildWebPrompt();
+            useGrounding = true;
+            forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
+            triggerReason = "weak_signals → grounding enabled for web search augmentation";
+            console.info(`[recommend-director] Stage 1: weak signals detected — using grounding instead of JSON-forced mode`);
+          } else {
+            stageLabel = "stage1_model_json";
+            model = GEMINI_MODEL_PRO;
+            prompt = buildWebPrompt();
+            useGrounding = false;
+            forceMimeType = true;
+            triggerReason = "initial_direct_json";
+          }
         } else if (stageNum === 2) {
           // ── STAGE 2: grounding 실패 시 Flash-Lite JSON 폴백 (grounding 재시도 무의미) ──
           const prevReasons = allEmptyReasons;
@@ -1485,10 +1534,11 @@ Each director object must have:
           if (shouldSkipToStage4) { continue; }
 
           const stage1Log = retryStagesLog.find(s => s.stage === 1);
+          const stage1UsedGrounding = stage1Log?.name === "stage1_grounded_search";
           const stage1HadNoSources = stage1Log && !stage1Log.grounded;
 
-          if (stage1HadNoSources) {
-            // Stage 1에서 grounding 자체가 안 됐으면 → Flash로 grounding 한 번 더 시도
+          if (stage1HadNoSources && !stage1UsedGrounding) {
+            // Stage 1이 JSON 모드(grounding 꺼짐)였고 소스 없음 → Flash로 grounding 시도
             // (네트워크 일시 장애 or 모델 문제일 수 있으므로 다른 모델로 재시도)
             stageLabel = "stage2_grounding_retry";
             model = GEMINI_MODEL_FLASH;
@@ -1496,6 +1546,16 @@ Each director object must have:
             useGrounding = true;
             forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
             triggerReason = `stage1 grounding empty → retry with ${GEMINI_MODEL_FLASH}: ${prevReasons.join(",")}`;
+          } else if (stage1UsedGrounding && stage1HadNoSources) {
+            // Stage 1이 이미 grounding을 시도했지만 실패 → Pro 모델로 JSON 강제 시도
+            // (grounding 재시도 무의미, 모델 지식 기반으로 전환)
+            const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
+            stageLabel = "stage2_pro_json_fallback";
+            model = GEMINI_MODEL_PRO;
+            prompt = buildWebPrompt({ retryNote });
+            useGrounding = false;
+            forceMimeType = true;
+            triggerReason = `stage1 grounding attempted but failed → Pro JSON fallback: ${prevReasons.join(",")}`;
           } else {
             // 파싱 실패 등 → JSON 강제로 재시도
             const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
@@ -1593,11 +1653,14 @@ Return ONLY valid JSON with exactly 4 directors:
           groundingAttempted = true;
           if (!stageResult.grounded) {
             groundingFailed = true;
-            // Stage 1 grounding 실패 → Stage 2/3 건너뛰고 Stage 4 fallback으로 직행
-            // (Stage 2/3도 grounding 재시도인데 보통 같은 이유로 실패 → 시간 낭비)
-            if (stageNum === 1) {
+            // Stage 1 grounding 실패 시:
+            // - stage1_model_json (기존 경로): grounding 안 썼으므로 여기 안 옴
+            // - stage1_grounded_search (weak signals 경로): Stage 2에서 Pro JSON 시도하므로 skip 안 함
+            if (stageNum === 1 && stageLabel !== "stage1_grounded_search") {
               skipToFallback = true;
               console.info(`[recommend-director] Stage 1 grounding failed — fast-tracking to model fallback`);
+            } else if (stageNum === 1) {
+              console.info(`[recommend-director] Stage 1 grounded search failed — will try Pro JSON in Stage 2`);
             }
           }
           else groundingFailed = false;
