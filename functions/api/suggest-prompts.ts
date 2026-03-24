@@ -2,6 +2,10 @@ import { GeminiEnv, fetchWithAuth, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODE
 
 type Env = GeminiEnv;
 
+// ── 공통 출력 포맷 ──
+const CARD_OUTPUT_FORMAT = `JSON 배열로만 응답 (마크다운 없이):
+[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+
 // ── 페르소나별 프롬프트 생성 ──
 
 function buildHistoryMarketingPrompt(): string {
@@ -44,8 +48,7 @@ marketingTactic (10~20자): 핵심 환자 유치 수단
 intentionalProof (15~40자): 마케팅 의도의 역사적 증거 1문장 (비거나 약하면 카드 무효)
 region (5~15자): 지역/문화권
 
-JSON 배열만:
-[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+${CARD_OUTPUT_FORMAT}`;
 }
 
 function buildWhatIfHistoryPrompt(): string {
@@ -76,8 +79,7 @@ hook (20~40자): "이게 진짜 달라졌으면?" 반응 유발. MZ세대 말투
 marketingTactic (10~20자): "[분기점] → [가능한 변화]" 한 줄
 region (5~15자): 지역/시대
 
-JSON 배열로만 응답 (마크다운 없이):
-[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+${CARD_OUTPUT_FORMAT}`;
 }
 
 function buildVsShortsPrompt(): string {
@@ -108,8 +110,7 @@ hook (20~40자): 핵심 변수를 한 줄로. MZ세대 말투.
 marketingTactic (10~20자): "[핵심 비교 변수] → [조건부 판정]"
 region (5~15자): 카테고리 (예: "동물", "군사·역사", "기술", "가상")
 
-JSON 배열로만 응답 (마크다운 없이):
-[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+${CARD_OUTPUT_FORMAT}`;
 }
 
 function buildShortFilmPrompt(): string {
@@ -141,8 +142,7 @@ hook (20~40자): "이런 장면 상상해봐" 반응 유발. 자연스러운 말
 marketingTactic (10~20자): 핵심 비주얼 컨셉
 region (5~15자): 배경 장소
 
-JSON 배열로만 응답 (마크다운 없이):
-[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+${CARD_OUTPUT_FORMAT}`;
 }
 
 function buildGenericPrompt(personaName: string, personaDescription: string): string {
@@ -168,8 +168,7 @@ hook (20~40자): 관심 유발. 자연스러운 말투.
 marketingTactic (10~20자): 핵심 포인트
 region (5~15자): 배경/분야
 
-JSON 배열로만 응답 (마크다운 없이):
-[{"title":"...","hook":"...","marketingTactic":"...","region":"..."}]`;
+${CARD_OUTPUT_FORMAT}`;
 }
 
 function getPromptForPersona(personaId: string, personaName?: string, personaDescription?: string): string {

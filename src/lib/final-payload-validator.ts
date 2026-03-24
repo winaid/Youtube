@@ -72,10 +72,7 @@ export interface ValidatePayloadInput {
 
 // ── 중점 검사 단어 ────────────────────────────────────────────────
 
-const POS_NEG_CRITICAL_WORDS = [
-  "watermark", "caption", "subtitle", "logo",
-  "photorealistic", "cinematic", "text overlay",
-];
+import { CRITICAL_CONFLICT_WORDS as POS_NEG_CRITICAL_WORDS } from "@/lib/critical-words";
 
 // ── Environment 금지 어휘 ──────────────────────────────────────────
 

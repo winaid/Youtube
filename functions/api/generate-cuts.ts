@@ -27,6 +27,9 @@ const getMinShots = (_modelId: string, _durationSec: number) => 4;
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
+// ─── 샷 타입 기본 순환 (fallback 용) ─────────────────────────────────────────────
+const SHOT_TYPE_CYCLE = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"] as const;
+
 // ─── 스타일별 카메라/모션 렌더링 힌트 ──────────────────────────────────────────
 // style-catalog.ts의 STYLE_RENDERING_OVERRIDES + CATEGORY_RENDERING_DEFAULTS를 Gemini용으로 압축
 const STYLE_RENDERING_HINTS: Record<string, string> = {
@@ -1011,7 +1014,7 @@ JSON만: {"_narrativeCore":"≤30자","_targetEmotions":["emotion"],"characterSe
   }
 
   // 샷 타입 기본 순환 (step1이 다양화에 실패했을 때 fallback)
-  const shotCycle = ["MS", "CU", "WS", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+  const shotCycle: string[] = [...SHOT_TYPE_CYCLE];
 
   // 영화적 기본 카메라 움직임 (fallback용)
   const defaultMovements = [
@@ -1165,11 +1168,9 @@ async function step23DetailBatch(
 - ${secPerCut}초 종료 시 "어디서, 무슨 상황, 누가 어떤 감정" 즉시 인식 필수.
 - 최우선: STORY ROLE → 시각적 번역. 서사 기능이 보이는 장면 > 멋있는 비주얼.
 - 상황은 시각적 증거로(빈 의자, 줄 선 사람, 꺼진 조명). 추상 설명 금지.
-- 상징/분위기 샷은 서사 보조용만 허용.
 - ⚠️ 원본 시나리오의 톤을 존중하라. 담담한 설명문이면 과도한 극적 표현 금지. 시나리오에 없는 갈등/위기/감정 폭발을 만들지 마라.
 
 ## ⚠️ 컷 간 차별화 (필수 — 위반 시 실패)
-- 인접 컷은 정보/구도/액션/감정 중 최소 2개 이상 달라야 한다.
 - 쇼트 사이즈만 바꾸는 기계적 변화 금지 (wide→medium→close 순서 단순 반복 ✗).
 - 각 컷은 NEW_INFO에 명시된 신규 정보를 반드시 시각적으로 전달해야 한다.
 - 모든 컷은 WHY_THIS_CUT 필드의 서사 역할이 프롬프트에 드러나야 한다.
@@ -1189,8 +1190,6 @@ ${sequenceContext}
 ${batchDirectives}
 
 ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPersonaBlock ? characterPersonaBlock + "\n\n" : ""}${historicalGroundingBlock ? historicalGroundingBlock + "\n\n" : ""}${koreanSubjectBlock ? koreanSubjectBlock + "\n\n" : ""}${contentMode === "dramatized_reenactment" ? `## 콘텐츠 모드: 역사 재연 (dramatized_reenactment)
-- 강사/발표자/해설자/내레이터 캐릭터 생성 절대 금지
-- 카메라를 향해 설명하는 인물 금지
 - 스크립트가 현대→과거 비교 구조이면 시대 전환 장면을 시각적으로 구분하라
 - 서사 순서 엄수: Step1이 결정한 장면 순서를 변경하지 마라
 
@@ -1198,12 +1197,11 @@ ${generationPersonaBlock ? generationPersonaBlock + "\n\n" : ""}${characterPerso
 금지: 자막, 나레이션, 해설자/진행자, 강의형 대사. 필수: 대사는 한국어. 정보는 갈등·유머·공포·아이러니로 전달. 인물은 극 중 목적으로 행동. 교훈은 상황 결과로.
 
 ## SHOT CATEGORY × charRef 규칙
-- character-driven (protagonist/partial): charRef 포함, 구체적 행동 필수 (standing/motionless 금지)
+- character-driven (protagonist/partial): charRef 포함, 구체적 행동 필수
 - environment (absent/background/silhouette): 공간이 주 피사체, charRef 생략/"distant silhouette" 정도
 - object-detail (absent/partial): 사물이 주 피사체, charRef 생략
 - transition-atmosphere (absent): 전환 샷, charRef 완전 생략
 charRef 수위: protagonist=전체 | partial=부분(손,뒷모습) | silhouette=실루엣만 | background=최소힌트 | absent=생략
-행동 없는 캐릭터 금지 — stands/motionless/faces camera 금지. 반드시 동사 포함.
 
 ## 캐릭터 묘사 필수 요소 (character-driven 씬에서)
 charRef 사용 시 반드시 포함: skin tone(예: warm beige, deep brown, pale ivory), hair color+style(예: black shoulder-length hair).
@@ -1252,7 +1250,7 @@ moodLighting (≤55 chars, source+direction+quality 3요소 필수 — 하나라
 
 ## 대사/텍스트 규칙
 - 대사 텍스트는 별도 처리됨. videoPrompt/imagePrompt에 대사 절대 포함 금지. 말하는 행동만 묘사("lips move urgently" ✅ / "says '...'" ❌)
-- 한국어 텍스트 videoPrompt/imagePrompt 금지 (VEO가 자막 렌더링). sign/signboard/billboard 금지 → wooden panel/metal plate 대체
+- 한국어 텍스트 videoPrompt/imagePrompt 금지 (VEO가 자막 렌더링).
 - 환경 오브젝트 2개+ 필수. 메타 정보 대신 화면 디테일(cracked tile, rusted pipe 등).
 
 ## MULTI-SHOT 릴 프로그레션
@@ -1402,7 +1400,7 @@ function buildDeterministicCuts(
 ) {
   const physics = getPhysicsForScene(storyText);
   const storyExcerpt = storyText.slice(0, 200);
-  const shotCycle = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+  const shotCycle: string[] = [...SHOT_TYPE_CYCLE];
   const purposeCycle = ["establish", "develop", "climax", "resolve"];
   // editorial persona에 따른 카메라 움직임 기본값
   const epMotion = editorialPersona?.motionBias;
@@ -1593,7 +1591,7 @@ async function repairMissingOutlines(
   console.info(`[cuts:step1:repair] repaired ${repaired.length} cuts`);
 
   // 기존 + 보충 합산 후 cutNumber 기준 정렬
-  const shotCycle = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+  const shotCycle: string[] = [...SHOT_TYPE_CYCLE];
   const validCategories: ShotCategory[] = ["character-driven", "environment", "object-detail", "map-graphic", "transition-atmosphere"];
   const validRoles: CharacterRole[] = ["protagonist", "background", "silhouette", "partial", "absent"];
 
@@ -2417,7 +2415,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               targetEmotions = Array.isArray(parsed._targetEmotions)
                 ? (parsed._targetEmotions as unknown[]).map(e => String(e)).slice(0, 3)
                 : undefined;
-              const shotCycleF = ["WS", "MS", "CU", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+              const shotCycleF: string[] = [...SHOT_TYPE_CYCLE];
               outlines = (parsed.outlines as Array<Partial<CutOutline>>).map((o, i) => ({
                 cutNumber: Number(o.cutNumber ?? i + 1),
                 sceneKo: String(o.sceneKo ?? `장면 ${i + 1}`).slice(0, 100),
@@ -2544,7 +2542,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     // 아웃라인 정규화 — LLM이 targetCuts보다 적게 생성한 경우 패딩
-    const shotCycle = ["MS", "CU", "WS", "OTS", "MCU", "LS", "ECU", "POV", "MLS"];
+    const shotCycle: string[] = [...SHOT_TYPE_CYCLE];
     if (outlines.length < targetCuts) {
       console.warn(`[generate-cuts] outline padding: LLM produced ${outlines.length}/${targetCuts} outlines — padding ${targetCuts - outlines.length} more`);
       step1Warnings.push(`LLM이 ${outlines.length}/${targetCuts}컷만 생성하여 나머지를 자동 보충했습니다`);

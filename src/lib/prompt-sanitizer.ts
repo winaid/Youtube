@@ -30,12 +30,7 @@ import {
 // 1. Positive / Negative Conflict Sanitizer
 // ═══════════════════════════════════════════════════════════════════
 
-/** 중점 검사 대상 단어 — 이 단어들이 positive와 negative에 동시 존재하면 반드시 해결 */
-const CRITICAL_CONFLICT_WORDS = [
-  "watermark", "caption", "subtitle", "logo",
-  "photorealistic", "cinematic", "text overlay",
-  "blurry", "low quality",
-];
+import { CRITICAL_CONFLICT_WORDS } from "@/lib/critical-words";
 
 export interface PosNegConflictResult {
   /** 정리된 positive 텍스트 */

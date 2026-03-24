@@ -62,9 +62,7 @@ export interface FinalProviderPayload {
 // Critical conflict words — final payload에서 0건이어야 하는 단어
 // ═══════════════════════════════════════════════════════════════════
 
-const ZERO_TOLERANCE_WORDS = [
-  "watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic",
-];
+import { CRITICAL_CONFLICT_WORDS as ZERO_TOLERANCE_WORDS } from "@/lib/critical-words";
 
 // ═══════════════════════════════════════════════════════════════════
 // Builder

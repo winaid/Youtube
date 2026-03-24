@@ -196,6 +196,7 @@ function resolveSceneType(shotCategory?: string): SceneType | null {
 // Critical conflict words
 // ═══════════════════════════════════════════════════════════════════
 
+// ⚠️ 원본: src/lib/critical-words.ts — 수정 시 반드시 원본과 동기화
 const CRITICAL_CONFLICT_WORDS = [
   "watermark", "caption", "subtitle", "logo",
   "photorealistic", "cinematic", "text overlay",

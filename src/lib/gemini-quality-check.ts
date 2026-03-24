@@ -21,6 +21,7 @@ import type { StructuredSequenceDocument, PhysicsRules } from "@/types";
 import { detectPhysicsRules, checkPhysicsConsistency } from "@/lib/physics-rules";
 import { validateSequenceDensity } from "@/lib/shot-splitting";
 import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
+import { CRITICAL_CONFLICT_WORDS } from "@/lib/critical-words";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Quality Check Result Types
@@ -87,8 +88,7 @@ export function preflightQualityCheck(
       seq.shotPlan.moodLighting,
     ].join(" ").toLowerCase();
 
-    const CRITICAL_WORDS = ["watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic", "text overlay"];
-    for (const word of CRITICAL_WORDS) {
+    for (const word of CRITICAL_CONFLICT_WORDS) {
       const inNeg = allNeg.some(n => n.toLowerCase().includes(word));
       if (inNeg && promptText.includes(word)) {
         const guardRe = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${word}\\b`, "i");

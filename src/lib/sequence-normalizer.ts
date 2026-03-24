@@ -17,6 +17,7 @@
 
 import type { SingleShotDocument } from "@/lib/sequence-assembler";
 import { resolveSceneType, applySceneTypeVocabularyRules, type SceneType } from "@/lib/scene-type-rules";
+import { CRITICAL_CONFLICT_WORDS } from "@/lib/critical-words";
 import {
   detectSceneContext,
   getPlaceIdentityCandidates,
@@ -1039,7 +1040,7 @@ export function normalizeSequence(doc: SingleShotDocument): NormalizeResult {
 
   // ── 7. Final positive/negative cleanup ─────────────────────────
   // 이전 단계에서 텍스트가 변경되었을 수 있으므로 ALL text fields 재검사
-  const criticalWords = ["watermark", "caption", "subtitle", "logo", "photorealistic", "cinematic", "text overlay"];
+  const criticalWords = CRITICAL_CONFLICT_WORDS;
 
   const allNeg = [
     ...result.negatives.universal,
