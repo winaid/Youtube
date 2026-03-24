@@ -30,6 +30,7 @@ import {
   toCanonicalSequence,
   type CanonicalResult,
 } from "@/lib/canonical-sequence";
+import { ROLE_KO } from "@/lib/multi-shot-planner";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. CutCard View-Model
@@ -175,12 +176,21 @@ export function canonicalToMultiShotViewModel(
     rawDurations[rawDurations.length - 1] += seq.durationSec - rawSum;
   }
 
-  const shots: MultiShotPrompt[] = seqShots.map((shot, i) => ({
-    index: i + 1,
-    prompt: `${shot.camera.framing} shot. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
-    duration: String(Math.max(1, rawDurations[i])),
-    role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seqShots.length),
-  }));
+  const shots: MultiShotPrompt[] = seqShots.map((shot, i) => {
+    const role: ShotRole = (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seqShots.length);
+    let prompt = `${shot.camera.framing} shot. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim();
+    if (prompt.length > 400) {
+      const lastDot = prompt.lastIndexOf(".", 400);
+      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+    }
+    return {
+      index: i + 1,
+      prompt,
+      promptKo: ROLE_KO[role] ?? `서브샷 ${i + 1}`,
+      duration: String(Math.max(1, rawDurations[i])),
+      role,
+    };
+  });
 
   return {
     shots: shots.length >= 2 ? shots : [],

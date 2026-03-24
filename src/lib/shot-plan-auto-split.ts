@@ -38,6 +38,7 @@ import {
 import {
   planShotRoles,
   ROLE_PROGRESSION_DIRECTIVE,
+  ROLE_KO,
   type PlannerSceneType,
 } from "@/lib/multi-shot-planner";
 import type { ShotRole } from "@/types";
@@ -691,7 +692,7 @@ export function compressAutoSplitPrompt(
 export function shotsToMultiShotPrompts(
   shots: ShotDescriptor[],
   roles?: ShotRole[],
-): Array<{ index: number; prompt: string; duration: string; role: ShotRole }> {
+): Array<{ index: number; prompt: string; promptKo: string; duration: string; role: ShotRole }> {
   return shots.map((shot, i) => {
     const framingLabel = shot.camera.framing === "WS" ? "Wide shot" :
       shot.camera.framing === "CU" ? "Close-up" :
@@ -708,11 +709,16 @@ export function shotsToMultiShotPrompts(
       shot.moodLighting,
     ].filter(Boolean);
 
-    const prompt = parts.join(". ").trim();
+    let prompt = parts.join(". ").trim();
+    if (prompt.length > 400) {
+      const lastDot = prompt.lastIndexOf(".", 400);
+      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+    }
     const duration = String(Math.max(1, Math.round(shot.endSec - shot.startSec)));
     const role = roles?.[i] ?? inferRoleFromPosition(i, shots.length);
+    const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;
 
-    return { index: i + 1, prompt, duration, role };
+    return { index: i + 1, prompt, promptKo, duration, role };
   });
 }
 

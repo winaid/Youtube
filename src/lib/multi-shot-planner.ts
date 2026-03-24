@@ -35,12 +35,13 @@ export const ROLE_KO: Record<ShotRole, string> = {
   peak: "절정 — 감정 최고조 순간",
   resolve: "마무리 — 시각적 해소",
 };
-// VEO capability constants defined locally (VEO_MAX_SHOTS, VEO_MIN_SHOTS, VEO_MIN_SHOT_DURATION)
+// VEO capability constants defined locally (VEO_MAX_SHOTS, veoMinShots, VEO_MIN_SHOT_DURATION)
 
-/** VEO 멀티샷 정책: 반드시 4샷 (8s 기준) */
+/** VEO 멀티샷 정책: 8초=4샷, 7초=3샷 */
 const VEO_MAX_SHOTS = 4;
-const VEO_MIN_SHOTS = 4;
 const VEO_MIN_SHOT_DURATION = 2;
+/** duration 기반 최소 샷 수 — 7초 이하=3, 8초 이상=4 */
+const veoMinShots = (durationSec: number) => durationSec <= 7 ? 3 : 4;
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -419,14 +420,18 @@ export function buildDefaultMultiShot(opts: {
     return [];
   }
 
-  const policyMin = VEO_MIN_SHOTS;
-  const effectiveCount = Math.max(policyMin || 2, shotCount);
+  const policyMin = veoMinShots(durationSec);
+  const effectiveCount = Math.max(policyMin, shotCount);
   const roles = planShotRoles(effectiveCount, sceneType);
   const durations = distributeDurations(roles, durationSec, VEO_MIN_SHOT_DURATION);
 
   return roles.map((role, i) => {
     const baseShot = buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType);
-    const prompt = styleSuffix ? `${baseShot}. ${styleSuffix}` : baseShot;
+    let prompt = styleSuffix ? `${baseShot}. ${styleSuffix}` : baseShot;
+    if (prompt.length > 400) {
+      const lastDot = prompt.lastIndexOf(".", 400);
+      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+    }
     const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;
     return { index: i + 1, prompt, promptKo, duration: String(durations[i]), role };
   });
@@ -925,8 +930,8 @@ export function buildMultiShotPlan(opts: {
   }
 
   const shotCount = planRecommendedShotCount(modelId, durationSec, sceneType);
-  const policyMin = VEO_MIN_SHOTS;
-  const effectiveCount = forced ? Math.max(policyMin || 2, shotCount) : shotCount;
+  const policyMin = veoMinShots(durationSec);
+  const effectiveCount = forced ? Math.max(policyMin, shotCount) : shotCount;
   const roles = planShotRoles(effectiveCount, sceneType);
   const durations = distributeDurations(roles, durationSec, VEO_MIN_SHOT_DURATION);
 
