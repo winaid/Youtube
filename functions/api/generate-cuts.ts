@@ -1314,11 +1314,17 @@ establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
   예: "35mm 렌즈. 느린 접근 → 고정"
 - moodLightingKo: moodLighting을 한국어로 변환 (≤30자).
   예: "왼쪽 촛불, 따뜻한 깜빡임, 호박색"
+- subjectActionKo: subjectAction을 한국어로 변환 (≤30자).
+  예: "주인공이 망설이며 문을 연다"
+- narrativeFunctionKo: 이 컷의 서사 기능 한국어 (≤15자).
+  예: "배경 설정", "반전", "결과/귀결"
+- newInformationKo: 이 컷이 새로 전달하는 정보 한국어 (≤30자).
+  예: "공개 발치 쇼의 실체가 드러남"
 
 JSON 배열로만 출력 (마크다운 없이):
 ${(() => {
     const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
-    const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"..."`;
+    const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"...","subjectActionKo":"...","narrativeFunctionKo":"...","newInformationKo":"..."`;
     if (maxShots <= 0) return `[${base}}]`;
     // 예시 multiShot: 반드시 4샷 균등 분배
     const shotDur = Math.max(2, Math.floor(secPerCut / 4));
@@ -3006,6 +3012,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         ...(d?.videoPromptKo ? { videoPromptKo: d.videoPromptKo } : {}),
         ...(d?.cameraDirectionKo ? { cameraDirectionKo: d.cameraDirectionKo } : {}),
         ...(d?.moodLightingKo ? { moodLightingKo: d.moodLightingKo } : {}),
+        ...(d?.subjectActionKo ? { subjectActionKo: d.subjectActionKo } : {}),
+        ...(d?.narrativeFunctionKo ? { narrativeFunctionKo: d.narrativeFunctionKo } : {}),
+        ...(d?.newInformationKo ? { newInformationKo: d.newInformationKo } : {}),
         // 극 중 대사 → TTS 나레이션으로 출력 (영상 프롬프트에는 포함 안 됨)
         ...(dialogueAsNarration ? { narrationText: dialogueAsNarration } : {}),
         videoPrompt:      d?.videoPrompt      ?? defaultVideoPrompt,

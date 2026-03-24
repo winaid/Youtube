@@ -393,6 +393,9 @@ export interface Cut {
   videoPromptKo?: string;
   cameraDirectionKo?: string;
   moodLightingKo?: string;
+  subjectActionKo?: string;
+  narrativeFunctionKo?: string;
+  newInformationKo?: string;
   characterConsistency: string;
   charactersInScene: string[];
   multiShot?: MultiShotPrompt[]; // VEO 멀티샷: 8초 타임스탬프 형식 (4샷 기본 — establish/develop/peak/resolve)

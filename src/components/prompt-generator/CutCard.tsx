@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/accordion";
 import { cameraPresets, categoryLabels, type CameraPreset } from "@/data/camera-presets";
 import { motionLevels } from "@/data/motion-intensity-presets";
+import { SHOT_TYPE_KO, SHOT_CATEGORY_KO, NARRATIVE_FUNCTION_KO, CHARACTER_ROLE_KO, PURPOSE_KO, koLabel } from "@/data/ko-label-maps";
 
 interface CutCardProps {
   cut: Cut;
@@ -598,11 +599,11 @@ export default function CutCard({
             </Badge>
             {cut.cutNumber === 1 ? (
               <Badge className="text-xs" style={{ background: "#787fff30", color: "#5a5ecc" }}>
-                Video Prompt
+                영상 프롬프트
               </Badge>
             ) : (
               <Badge className="text-xs" style={{ background: "#6b5ce720", color: "#6b5ce7" }}>
-                Extend
+                확장
               </Badge>
             )}
             {/* 구조 보조 메타 뱃지 — 값이 있을 때만 표시 */}
@@ -615,6 +616,11 @@ export default function CutCard({
           <Badge variant="outline" className="text-xs" style={{ borderColor: isEven ? "#fff787" : "#787fff80" }}>
             {cut.transitionHint}
           </Badge>
+          {cut.shotCategory && (
+            <Badge variant="outline" className="text-[10px]" style={{ borderColor: "#22c55e80", color: "#22c55e" }}>
+              {koLabel(SHOT_CATEGORY_KO, cut.shotCategory)}
+            </Badge>
+          )}
         </div>
 
         {/* 등장 캐릭터 */}
@@ -1068,14 +1074,14 @@ export default function CutCard({
             </AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
               <EditableField
-                label="시작 프레임 Image Prompt"
+                label="시작 프레임 이미지 프롬프트"
                 value={cut.imagePrompt}
                 color="#787fff"
                 bgColor="#787fff10"
                 onSave={(v) => handleFieldSave("imagePrompt", v)}
               />
               <EditableField
-                label="끝 프레임 End Image Prompt"
+                label="끝 프레임 이미지 프롬프트"
                 value={cut.endImagePrompt || ""}
                 color="#22c55e"
                 bgColor="#22c55e10"
@@ -1094,7 +1100,7 @@ export default function CutCard({
                 <>
                   <JsonPromptView
                     json={effectiveVideoPromptJson}
-                    label={`Video Prompt (${effectiveDurationSec}초)`}
+                    label={`영상 프롬프트 (${effectiveDurationSec}초)`}
                     color="#c4b800"
                     onSaveField={(field, value) => {
                       if (onUpdate && effectiveVideoPromptJson) {
@@ -1124,8 +1130,8 @@ export default function CutCard({
                         <div key={shot.index} className="flex items-center gap-2 text-[9px]" style={{ color: "#6b7280" }}>
                           <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
                           <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
-                          <span className="truncate flex-1">{shot.prompt?.slice(0, 80)}{(shot.prompt?.length ?? 0) > 80 ? "…" : ""}</span>
-                          {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{shot.role}</span>}
+                          <span className="truncate flex-1">{shot.promptKo || `${shot.prompt?.slice(0, 80)}${(shot.prompt?.length ?? 0) > 80 ? "…" : ""}`}</span>
+                          {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{koLabel(PURPOSE_KO, shot.role)}</span>}
                         </div>
                       ))}
                     </div>
@@ -1133,7 +1139,7 @@ export default function CutCard({
                 </>
               ) : (
                 <EditableField
-                  label={`Video Prompt (${effectiveDurationSec}초)`}
+                  label={`영상 프롬프트 (${effectiveDurationSec}초)`}
                   value={effectiveVideoPrompt}
                   color="#c4b800"
                   bgColor="#fff78720"
@@ -1142,7 +1148,7 @@ export default function CutCard({
               )}
               {cut.cutNumber > 1 && (
                 <EditableField
-                  label="Extend Prompt (이전 클립 연장)"
+                  label="확장 프롬프트 (이전 클립 연장)"
                   value={cut.extendPrompt}
                   color="#6b5ce7"
                   bgColor="#6b5ce710"
