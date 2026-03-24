@@ -609,7 +609,7 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
 
       const repairedShots: MultiShotItem[] = roles.map((role, i) => {
         if (i < existingShots.length) {
-          return { index: i + 1, prompt: existingShots[i].prompt.slice(0, 350), promptKo: existingShots[i].promptKo, duration: String(durations[i]), role };
+          return { index: i + 1, prompt: existingShots[i].prompt.slice(0, 400), promptKo: existingShots[i].promptKo, duration: String(durations[i]), role };
         }
         // timing beat에서 시나리오 맞춤 내용 추출
         const beatContent = timingBeats[Math.min(i, timingBeats.length - 1)]?.trim() || "";
@@ -617,8 +617,8 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
         return {
           index: i + 1,
           prompt: beatContent
-            ? `${camera} ${beatContent}`.slice(0, 350)
-            : `${camera} ${basePrompt.slice(0, 150)}`.slice(0, 350),
+            ? `${camera} ${beatContent}`.slice(0, 400)
+            : `${camera} ${basePrompt.slice(0, 200)}`.slice(0, 400),
           promptKo: roleKo[role],
           duration: String(durations[i]),
           role,
@@ -1307,7 +1307,7 @@ establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
 ${shotDesc}
-- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤50 words/샷, ≤350 chars/샷.
+- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤50 words/샷, ≤400 chars/샷.
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
@@ -1533,9 +1533,9 @@ function buildDeterministicCuts(
     const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
     const shotDesc = shotLabel[shotType] || shotType;
 
-    const imagePrompt = cleanText(`${shotDesc}, eye-level. ${template.env}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
-    const videoPrompt = cleanText(`${shotDesc}, eye-level. ${cameraMovement}. ${template.env}. ${template.action}. ${defaultLighting} ${noTextSuffix}`).slice(0, 350);
-    const endImagePrompt = cleanText(`${template.mood}. ${noTextSuffix}`).slice(0, 350);
+    const imagePrompt = cleanText(`${shotDesc}, eye-level. ${template.env}. ${defaultLighting} ${noTextSuffix}`).slice(0, 400);
+    const videoPrompt = cleanText(`${shotDesc}, eye-level. ${cameraMovement}. ${template.env}. ${template.action}. ${defaultLighting} ${noTextSuffix}`).slice(0, 400);
+    const endImagePrompt = cleanText(`${template.mood}. ${noTextSuffix}`).slice(0, 400);
 
     const videoPromptJson: VideoPromptJson = {
       shotSize: shotType,

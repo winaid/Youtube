@@ -13,8 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-/** Fixed max shots (VEO supports up to 4 internal shots) */
-const getMaxShots = (_modelId: string, _duration: number) => 4;
+/** VEO 정책: 8초=4샷, 7초(extend)=3샷 */
+const getMaxShots = (_modelId: string, duration: number) => duration <= 7 ? 3 : 4;
 import {
   validateMultiShots,
   addShot,

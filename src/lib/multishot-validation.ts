@@ -47,7 +47,7 @@ export const PROMPT_WARN_LENGTH = 450;
  * maxLength는 "입력 시 차단", validation은 "기존 데이터 검출" 역할.
  * export layer(final-payload-validator)에서도 동일 상수로 Rule 15 적용.
  */
-export const PROMPT_MAX_LENGTH = 512;
+export const PROMPT_MAX_LENGTH = 400;
 
 // ═══════════════════════════════════════════════════════════════════
 // Runtime Heuristic Defaults
