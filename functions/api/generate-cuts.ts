@@ -630,6 +630,23 @@ function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: n
   }
 }
 
+/** 7초=3샷, 8초=4샷 강제 trim — 모든 return 경로에서 호출 */
+function trimMultiShotMax(cuts: Array<{ cutNumber: number; durationSec: number; multiShot?: unknown[] }>): void {
+  for (const fc of cuts) {
+    if (!Array.isArray(fc.multiShot) || fc.multiShot.length === 0) continue;
+    const max = getMaxShots(VEO_DEFAULT_MODEL, fc.durationSec);
+    if (fc.multiShot.length > max) {
+      fc.multiShot = fc.multiShot.slice(0, max);
+      const baseDur = Math.floor(fc.durationSec / max);
+      const remainder = fc.durationSec - baseDur * max;
+      fc.multiShot.forEach((sh, i) => {
+        (sh as Record<string, unknown>).index = i + 1;
+        (sh as Record<string, unknown>).duration = String(i < remainder ? baseDur + 1 : baseDur);
+      });
+    }
+  }
+}
+
 function inferMultiShotRole(index: number, total: number): ShotRoleServer {
   if (total <= 1) return "establish";
   if (index === 0) return "establish";
@@ -2429,6 +2446,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
         for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
         repairMultiShotMinimums(finalizedCuts);
+        trimMultiShotMax(finalizedCuts);
         console.info(`[generate-cuts] DETERMINISTIC FALLBACK RESPONSE — cuts=${finalizedCuts.length}, seeds=${defaultSeeds.length}, totalElapsed=${Date.now() - t0_request}ms`);
         return Response.json({ ok: true, degraded: true, reason: `step1 timeout + ultra-compact already failed`, source: "deterministic-fallback", warnings: step1Warnings, characterSeeds: defaultSeeds, cuts: finalizedCuts, secPerCut });
       } else if (isTimeout) {
@@ -2531,6 +2549,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
           for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
           repairMultiShotMinimums(finalizedCuts);
+          trimMultiShotMax(finalizedCuts);
           const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
             styleId: String(animationMode || "live-action"),
             aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
@@ -2575,6 +2594,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const finalizedCuts = classifyCuts(densifyCuts(deterministicCuts));
         for (const fc of finalizedCuts) { fc.durationSec = fc.cutNumber === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION; }
         repairMultiShotMinimums(finalizedCuts);
+        trimMultiShotMax(finalizedCuts);
         const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
           styleId: String(animationMode || "live-action"),
           aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
@@ -3155,26 +3175,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     console.info(`[generate-cuts] MULTISHOT REPAIR COMPLETE — postShotCounts=[${postShotCounts.join(",")}], repaired=${preShotCounts.some((v, i) => v !== postShotCounts[i])}, elapsed=${Date.now() - t0_request}ms`);
 
     // ═══ 멀티샷 최대 초과 자르기 — 7초=3샷, 8초=4샷 강제 ═══
-    let shotTrimCount = 0;
-    for (const fc of finalizedCuts) {
-      if (!Array.isArray(fc.multiShot) || fc.multiShot.length === 0) continue;
-      const max = getMaxShots(VEO_DEFAULT_MODEL, fc.durationSec);
-      if (fc.multiShot.length > max) {
-        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} (${fc.durationSec}s): multiShot ${fc.multiShot.length}개 > 최대 ${max}개 → 초과분 제거`);
-        // 초과 서브샷 제거 후 duration 재분배
-        fc.multiShot = fc.multiShot.slice(0, max);
-        const baseDur = Math.floor(fc.durationSec / max);
-        const remainder = fc.durationSec - baseDur * max;
-        fc.multiShot.forEach((sh, i) => {
-          (sh as Record<string, unknown>).index = i + 1;
-          (sh as Record<string, unknown>).duration = String(i < remainder ? baseDur + 1 : baseDur);
-        });
-        shotTrimCount++;
-      }
-    }
-    if (shotTrimCount > 0) {
-      console.info(`[generate-cuts] multiShot max-trim: ${shotTrimCount} cuts trimmed to max shot count`);
-    }
+    trimMultiShotMax(finalizedCuts);
 
     // ═══ prompt 400자 클램핑 + promptKo 생성 ═══
     const roleKoMap: Record<string, string> = {

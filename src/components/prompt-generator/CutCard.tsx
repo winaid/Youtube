@@ -3,8 +3,8 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
-/** Fixed max shots (VEO supports up to 4 internal shots) */
-const getMaxShots = (_modelId: string, _duration: number) => 4;
+/** VEO 정책: 8초=4샷, 7초(extend)=3샷 */
+const getMaxShots = (_modelId: string, duration: number) => duration <= 7 ? 3 : 4;
 import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
 import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles, planRecommendedShotCount } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
@@ -516,10 +516,12 @@ export default function CutCard({
           beatHint,
         });
         if (splitResult.wasSplit && splitResult.shots.length >= 2) {
-          // ── 10s+ 최소 샷 수 강제 ──
-          // content-aware split이 duration 대비 너무 적은 샷을 만들면
-          // generic role-based split으로 대체하여 밀도 규칙 준수
+          // ── 샷 수 범위 강제 ──
           const recommendedMin = planRecommendedShotCount(modelId, effectiveDurationSec, sceneType);
+          // max 초과 시 잘라냄 (7초=3샷, 8초=4샷)
+          if (splitResult.shots.length > maxShots) {
+            splitResult.shots = splitResult.shots.slice(0, maxShots);
+          }
           if (splitResult.shots.length < recommendedMin) {
             // content-aware split 결과가 밀도 미달 → generic fallback으로 넘김
           } else {

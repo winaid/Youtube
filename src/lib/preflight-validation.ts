@@ -18,8 +18,8 @@
 
 import type { Cut, MultiShotPrompt } from "@/types";
 import { getCapability } from "@/lib/veo-capability";
-// VEO 정책: 8초 4샷 고정
-const getMaxShots = (_modelId: string, _durationSec: number) => 4;
+// VEO 정책: 8초=4샷, 7초(extend)=3샷
+const getMaxShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
 import {
   getStyleCapability, getStyleUiState, resolveGenerationStyle,
   getTierDescriptionKo,
