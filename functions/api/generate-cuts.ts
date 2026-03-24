@@ -686,6 +686,8 @@ async function step1Outlines(
   deepAnalysisBriefBlock?: string,
   modelOverride?: string,
   fragmentedEditBlock?: string,
+  historicalGroundingBlock?: string,
+  koreanSubjectBlock?: string,
 ): Promise<{ characterSeeds: CharacterSeed[]; outlines: CutOutline[]; _narrativeCore?: string; _targetEmotions?: string[] }> {
 
   // ── 단일 호출 cutCount 상한: STEP1_SINGLE_CALL_MAX_CUTS ──
@@ -2213,6 +2215,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         deepAnalysisBriefBlock || undefined,
         undefined, // modelOverride
         fragmentedEditBlock || undefined,
+        historicalGroundingBlock || undefined,
+        koreanSubjectBlock || undefined,
       ));
       console.info(`[generate-cuts] STEP1 API RETURNED — characterSeeds=${characterSeeds.length}, outlines=${outlines.length}, narrativeCore=${narrativeCore?.slice(0, 30) ?? "none"}, elapsed=${Date.now() - t0_step1}ms`);
     } catch (e) {
@@ -2250,6 +2254,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               scriptAnalysisHint ? String(scriptAnalysisHint) : undefined,
               continuityPromptBlock || undefined,
               deepAnalysisBriefBlock || undefined,
+              undefined, // modelOverride
+              fragmentedEditBlock || undefined,
+              historicalGroundingBlock || undefined,
+              koreanSubjectBlock || undefined,
             ));
             retrySuccess = true;
             step1Degraded = true;
@@ -2283,6 +2291,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               continuityPromptBlock || undefined,
               deepAnalysisBriefBlock || undefined,
               GEMINI_MODEL_FLASH,
+              fragmentedEditBlock || undefined,
+              historicalGroundingBlock || undefined,
+              koreanSubjectBlock || undefined,
             ));
             retrySuccess = true;
             step1Degraded = true;
@@ -2336,6 +2347,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             deepAnalysisBriefBlock || undefined,
             undefined, // modelOverride
             fragmentedEditBlock || undefined,
+            historicalGroundingBlock || undefined,
+            koreanSubjectBlock || undefined,
           );
           characterSeeds = retryResult.characterSeeds;
           outlines = retryResult.outlines;
