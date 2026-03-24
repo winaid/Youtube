@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, lazy, Suspense } from "react";
-import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt } from "@/types";
+import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarrationState, type MultiShotPrompt, SHOT_ROLE_META, type ShotRole } from "@/types";
 import MultiShotEditor from "./MultiShotEditor";
 /** VEO 정책: 8초=4샷, 7초(extend)=3샷 */
 const getMaxShots = (_modelId: string, duration: number) => duration <= 7 ? 3 : 4;
@@ -531,11 +531,13 @@ export default function CutCard({
                 shot.camera.framing === "CU" ? "Close-up" :
                 shot.camera.framing === "MCU" ? "Medium close-up" :
                 `${shot.camera.framing} shot`;
+              const shotRole = roles[i] || ("develop" as const);
               return {
                 index: i + 1,
                 prompt: `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim(),
+                promptKo: SHOT_ROLE_META[shotRole as ShotRole]?.progression ?? `서브샷 ${i + 1}`,
                 duration: String(Math.round(shot.endSec - shot.startSec)),
-                role: roles[i] || ("develop" as const),
+                role: shotRole,
               };
             });
             onUpdate({ ...cut, multiShot: progressionMultiShot });

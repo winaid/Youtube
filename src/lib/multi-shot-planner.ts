@@ -25,6 +25,16 @@
  */
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
+
+/** role → 한국어 기본 promptKo (auto-init / repair 시 사용) */
+const ROLE_KO: Record<ShotRole, string> = {
+  establish: "전경 — 공간과 위치 확인",
+  transition: "전환 — 새로운 시점",
+  develop: "전개 — 인물의 구체적 행동",
+  insert: "인서트 — 핵심 디테일 클로즈업",
+  peak: "절정 — 감정 최고조 순간",
+  resolve: "마무리 — 시각적 해소",
+};
 // VEO capability constants defined locally (VEO_MAX_SHOTS, VEO_MIN_SHOTS, VEO_MIN_SHOT_DURATION)
 
 /** VEO 멀티샷 정책: 반드시 4샷 (8s 기준) */
@@ -417,7 +427,8 @@ export function buildDefaultMultiShot(opts: {
   return roles.map((role, i) => {
     const baseShot = buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType);
     const prompt = styleSuffix ? `${baseShot}. ${styleSuffix}` : baseShot;
-    return { index: i + 1, prompt, duration: String(durations[i]), role };
+    const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;
+    return { index: i + 1, prompt, promptKo, duration: String(durations[i]), role };
   });
 }
 
