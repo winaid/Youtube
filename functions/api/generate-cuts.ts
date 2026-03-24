@@ -1483,6 +1483,7 @@ function buildDeterministicCuts(
 
     // 영어 시각 장면 (VEO용 — 한국어 절대 포함 금지)
     const template = sceneTemplates[i % sceneTemplates.length];
+    const subjectAction = template.action;
 
     const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
     const shotDesc = shotLabel[shotType] || shotType;
