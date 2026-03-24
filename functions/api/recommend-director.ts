@@ -1,4 +1,4 @@
-import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, GEMINI_MODEL_SEARCH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
+import { GeminiEnv, fetchWithAuth, fetchWithModelFallback, buildGeminiUrl, streamingGenerate, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, GEMINI_MODEL_SEARCH, geminiErrorResponse, parseFirstJsonObject } from "./_gemini-keys";
 import {
   generateSlugId,
   extractGroundingSources,
@@ -1136,7 +1136,7 @@ Each director object must have:
         let res: Response;
         try {
           // grounding 호출 타임아웃 — 후속 stage 여유를 위해 30초로 제한
-          const timeoutMs = opts.useGrounding ? 35_000 : 15_000; // grounding 35초, 일반 15초 — retry 없으므로 여유 있게
+          const timeoutMs = 45_000; // 단일 호출 — Cloudflare 60초 제한 내 여유 있게 45초
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
@@ -1234,14 +1234,49 @@ Each director object must have:
       let stageAccepted: Array<Record<string, unknown>> = [];
       let allEmptyReasons: WebSearchEmptyReason[] = [];
 
-      console.info(`[recommend-director] 감독 추천 시작 — 글 자체 분석 (모델 지식)`);
-      const result = await callGeminiForDirectors({
-        model: GEMINI_MODEL_FLASH,
-        prompt: buildWebPrompt(),
-        useGrounding: false,
-        label: "direct_analysis",
-        forceMimeType: true,
-      });
+      console.info(`[recommend-director] 감독 추천 시작 — 글 자체 분석 (streamingGenerate)`);
+
+      // streamingGenerate 사용 — 청크 단위 응답으로 Cloudflare 타임아웃 회피
+      const streamStart = Date.now();
+      const streamBody: Record<string, unknown> = {
+        contents: [{ role: "user", parts: [{ text: buildWebPrompt() }] }],
+        generationConfig: {
+          temperature: 0.5,
+          maxOutputTokens: 4096,
+          responseMimeType: "application/json" as const,
+        },
+      };
+      const streamResult = await streamingGenerate(context.env, GEMINI_MODEL_FLASH, streamBody, { timeoutMs: 50_000 });
+      const streamDuration = Date.now() - streamStart;
+      const streamText = streamResult.text?.trim() ?? "{}";
+
+      // streamingGenerate 결과를 processWebResponse 형식으로 변환
+      let result: {
+        accepted: Array<Record<string, unknown>>; rejected: number; reasons: string[];
+        rawCount: number; emptyReasons: WebSearchEmptyReason[]; partialRecoveryCount: number;
+        grounded: boolean; httpStatus: number | null; timeoutOccurred: boolean;
+        rawSnippet: string; durationMs: number;
+      };
+
+      if (streamResult.error || streamResult.timedOut) {
+        console.warn(`[recommend-director] streamingGenerate 실패: ${streamResult.error?.slice(0, 200)}`);
+        result = {
+          accepted: [], rejected: 0, reasons: [], rawCount: 0,
+          emptyReasons: [streamResult.timedOut ? "provider_timeout" : "provider_failed"],
+          partialRecoveryCount: 0, grounded: false,
+          httpStatus: streamResult.status ?? null, timeoutOccurred: !!streamResult.timedOut,
+          rawSnippet: streamResult.error?.slice(0, 100) ?? "", durationMs: streamDuration,
+        };
+      } else {
+        const parsed = processWebResponse(streamText, [], "direct_analysis");
+        result = {
+          ...parsed,
+          grounded: false,
+          httpStatus: 200, timeoutOccurred: false,
+          rawSnippet: streamText.slice(0, 200), durationMs: streamDuration,
+        };
+        console.log(`[recommend-director] streamingGenerate 성공: ${parsed.accepted.length}명, elapsed=${streamDuration}ms`);
+      }
       webSearchAttemptCount = 1;
       finalProvider = `${GEMINI_MODEL_FLASH} (direct_analysis)`;
       retryStagesLog.push({
