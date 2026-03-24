@@ -792,27 +792,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const excerpt = storyText.slice(0, 600);
         // 장르/무드 추출 실패 시 스토리 텍스트 자체를 분석 대상으로 사용
         const hasSignalKeywords = kw.length > 3;
-        return `You are a film/animation director discovery engine.
-IMPORTANT: You MUST use the google_search tool to search the web before answering. Do NOT rely on your internal knowledge alone.${hasSignalKeywords ? " Search for directors matching the scenario keywords to find accurate, up-to-date information." : " Read the story text below carefully, analyze its themes, visual atmosphere, and narrative style, then search for directors whose visual style matches."}
-
-## SOURCE PRIORITY (공신력 있는 출처만 사용)
-When searching, prioritize authoritative sources ONLY:
-- IMDb, TMDB, Letterboxd (filmography databases)
-- Wikipedia, Namu Wiki (encyclopedic sources)
-- Rotten Tomatoes, Metacritic (critic aggregators)
-- Film festival sites (Cannes, Venice, Berlin, Toronto, Busan)
-- Major film publications (Sight & Sound, Cahiers du Cinéma, Film Comment, IndieWire, Variety, The Hollywood Reporter)
-- Korean film sources (한국영화데이터베이스 KMDb, 씨네21, 맥스무비)
-IGNORE results from: YouTube, TikTok, personal blogs, fan forums, social media posts, or any user-generated content platforms. These are NOT reliable sources for director filmography or style information.
+        return `You are a film/animation director discovery engine with deep knowledge of world cinema.
+Read the story text below carefully, analyze its themes, visual atmosphere, narrative style, and genre, then recommend directors whose visual style matches.
 
 Your mission: find directors who are NOT in the user's existing collection but whose visual style matches the scenario.
 
 ${exclusionBlock}${retryNote}
 ## SCENARIO CONTEXT
-${hasSignalKeywords ? `Keywords: ${kw}\n` : ""}Story text (analyze this directly for themes, mood, visual style, and genre):
+Story text (analyze this directly):
 ${excerpt}
-
-${hasSignalKeywords ? `Search the web for: "${kw} film directors visual style"` : `Based on the story text above, identify the core themes and visual atmosphere, then search the web for directors whose cinematographic style matches.`}
 
 ## REQUIREMENTS
 1. Recommend exactly 4 real, existing directors. No fictional directors.
@@ -1242,80 +1230,42 @@ Each director object must have:
         };
       };
 
-      // ── 단순 2-step 웹 검색: grounding 1회 → 실패 시 모델 지식 fallback 1회 ──
+      // ── 단일 호출: 모델 지식으로 글 분석 → 감독 추천 (grounding 없음, JSON 강제) ──
       let stageAccepted: Array<Record<string, unknown>> = [];
       let allEmptyReasons: WebSearchEmptyReason[] = [];
 
-      // ── STEP A: Google grounding 웹 검색 ──
-      console.info(`[recommend-director] 웹 검색 시작 — grounding, query="${webSearchQuery?.slice(0, 60)}..."`);
-      groundingAttempted = true;
-      const webResult = await callGeminiForDirectors({
+      console.info(`[recommend-director] 감독 추천 시작 — 글 자체 분석 (모델 지식)`);
+      const result = await callGeminiForDirectors({
         model: GEMINI_MODEL_FLASH,
         prompt: buildWebPrompt(),
-        useGrounding: true,
-        label: "web_grounded",
-        forceMimeType: false,
+        useGrounding: false,
+        label: "direct_analysis",
+        forceMimeType: true,
       });
       webSearchAttemptCount = 1;
+      finalProvider = `${GEMINI_MODEL_FLASH} (direct_analysis)`;
       retryStagesLog.push({
-        stage: 1, name: "web_grounded", model: GEMINI_MODEL_FLASH,
-        grounded: webResult.grounded, normalizedQuery: webSearchQuery || "",
-        timeoutOccurred: webResult.timeoutOccurred, httpStatus: webResult.httpStatus,
-        rawResultCount: webResult.rawCount, acceptedCount: webResult.accepted.length,
-        rejectedCount: webResult.rejected, emptyReasons: webResult.emptyReasons,
-        triggerReason: "initial_grounded_search",
-        partialRecoveryCount: webResult.partialRecoveryCount, durationMs: webResult.durationMs,
-        groundingDiag: webResult.groundingDiag,
+        stage: 1, name: "direct_analysis", model: GEMINI_MODEL_FLASH,
+        grounded: false, normalizedQuery: webSearchQuery || "",
+        timeoutOccurred: result.timeoutOccurred, httpStatus: result.httpStatus,
+        rawResultCount: result.rawCount, acceptedCount: result.accepted.length,
+        rejectedCount: result.rejected, emptyReasons: result.emptyReasons,
+        triggerReason: "direct_text_analysis",
+        partialRecoveryCount: result.partialRecoveryCount, durationMs: result.durationMs,
       });
-      if (webResult.timeoutOccurred) pipelineTimeoutOccurred = true;
-      webSearchRawBeforeDedup += webResult.rawCount;
-      webSearchPartialRecoveryCount += webResult.partialRecoveryCount;
-      if (webResult.rawSnippet) webSearchRawSnippet = webResult.rawSnippet;
-      webSearchRejectionReasons.push(...webResult.reasons.map(r => `[web_grounded] ${r}`));
-      allEmptyReasons.push(...webResult.emptyReasons);
+      if (result.timeoutOccurred) pipelineTimeoutOccurred = true;
+      webSearchRawBeforeDedup += result.rawCount;
+      webSearchPartialRecoveryCount += result.partialRecoveryCount;
+      if (result.rawSnippet) webSearchRawSnippet = result.rawSnippet;
+      webSearchRejectionReasons.push(...result.reasons.map(r => `[direct_analysis] ${r}`));
+      allEmptyReasons.push(...result.emptyReasons);
 
-      if (webResult.accepted.length > 0) {
-        stageAccepted = webResult.accepted;
-        finalProvider = `${GEMINI_MODEL_FLASH} (web_grounded)`;
-        finalGrounded = webResult.grounded;
-        console.log(`[recommend-director] 웹 검색 성공: ${webResult.accepted.length}명 채택 (grounded=${webResult.grounded})`);
+      if (result.accepted.length > 0) {
+        stageAccepted = result.accepted;
+        finalGrounded = false;
+        console.log(`[recommend-director] 감독 추천 성공: ${result.accepted.length}명 채택`);
       } else {
-        // ── STEP B: grounding 실패 → 모델 지식 fallback (JSON 강제) ──
-        groundingFailed = true;
-        console.info(`[recommend-director] 웹 검색 실패 (${allEmptyReasons.join(",")}) → 모델 지식 fallback`);
-        const fallbackResult = await callGeminiForDirectors({
-          model: GEMINI_MODEL_FLASH,
-          prompt: buildWebPrompt({ retryNote: "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation.\n" }),
-          useGrounding: false,
-          label: "model_fallback",
-          forceMimeType: true,
-        });
-        webSearchAttemptCount = 2;
-        fallbackUsed = true;
-        retryStagesLog.push({
-          stage: 2, name: "model_fallback", model: GEMINI_MODEL_FLASH,
-          grounded: false, normalizedQuery: webSearchQuery || "",
-          timeoutOccurred: fallbackResult.timeoutOccurred, httpStatus: fallbackResult.httpStatus,
-          rawResultCount: fallbackResult.rawCount, acceptedCount: fallbackResult.accepted.length,
-          rejectedCount: fallbackResult.rejected, emptyReasons: fallbackResult.emptyReasons,
-          triggerReason: `grounding_failed: ${allEmptyReasons.join(",")}`,
-          partialRecoveryCount: fallbackResult.partialRecoveryCount, durationMs: fallbackResult.durationMs,
-        });
-        if (fallbackResult.timeoutOccurred) pipelineTimeoutOccurred = true;
-        webSearchRawBeforeDedup += fallbackResult.rawCount;
-        webSearchPartialRecoveryCount += fallbackResult.partialRecoveryCount;
-        if (fallbackResult.rawSnippet && !webSearchRawSnippet) webSearchRawSnippet = fallbackResult.rawSnippet;
-        webSearchRejectionReasons.push(...fallbackResult.reasons.map(r => `[model_fallback] ${r}`));
-        allEmptyReasons.push(...fallbackResult.emptyReasons);
-
-        if (fallbackResult.accepted.length > 0) {
-          stageAccepted = fallbackResult.accepted;
-          finalProvider = `${GEMINI_MODEL_FLASH} (model_fallback)`;
-          finalGrounded = false;
-          console.log(`[recommend-director] 모델 fallback 성공: ${fallbackResult.accepted.length}명 채택`);
-        } else {
-          console.log(`[recommend-director] 모델 fallback도 실패: ${fallbackResult.emptyReasons.join(",")}`);
-        }
+        console.log(`[recommend-director] 감독 추천 실패: ${result.emptyReasons.join(",")}`);
       }
 
       // ── 시나리오 지역 기반 정렬: 같은 region 감독 우선 ──
