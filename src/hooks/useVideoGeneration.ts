@@ -19,9 +19,7 @@ import { DURATION_FALLBACK, safeDuration } from "@/lib/duration-reconciliation";
 import {
   buildMultiChainPlan,
   isChainFirstCut,
-  isChainLastCut,
   getChainForCut,
-  type MultiChainPlan,
 } from "@/lib/multi-chain-orchestrator";
 import {
   Cut,
@@ -37,7 +35,6 @@ import {
   type StructuredSequenceDocument,
   type ShotVariant,
   type ShotSnapshots,
-  type CutProvenance,
   type DurationMeta,
   type NarrationTrack,
   type AudioMeta,
@@ -79,7 +76,6 @@ import {
 import {
   VEO_DEFAULT_MODEL,
   resolveModelForWorkflow,
-  VEO_MANDATORY_DURATION,
 } from "@/lib/veo-capability";
 
 interface UseVideoGenerationOptions {
@@ -949,7 +945,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       activePolls.current.delete(cutNumber);
       pollTimers.current.delete(cutNumber);
     }
-  }, [updateClip, onSeedDetected]);
+  }, [updateClip, onSeedDetected, state.clips]);
 
   // 미완료 작업 polling 재개
   const resumeJob = useCallback((job: VideoJobRecord) => {
@@ -1531,7 +1527,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       const engine = "veo" as const;
 
       // ── 워크플로우 기반 effective model 결정 (clamp 정책에 사용) ──────────
-      const effectiveModel = resolveModelForWorkflow({
+      const _effectiveModel = resolveModelForWorkflow({
         workflow: cfg.workflowType,
         hasImage: !!firstFrameBase64 || !!(storyboardImages?.[cutNumber]),
       });
@@ -2832,6 +2828,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         return next;
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.clips, state.config]);
 
   /**

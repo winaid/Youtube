@@ -155,10 +155,6 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
 
   // ── Rule 3: Camera framing conflict in prompt text ─────────────
   const framingUpper = input.framing.toUpperCase();
-  let declaredCategory: "wide" | "medium" | "close" = "medium";
-  if (["WS", "LS", "MLS"].includes(framingUpper)) declaredCategory = "wide";
-  else if (["CU", "ECU", "MCU"].includes(framingUpper)) declaredCategory = "close";
-
   const hasWide = WIDE_TERMS.test(input.prompt);
   const hasMedium = MEDIUM_TERMS.test(input.prompt);
   const hasClose = CLOSE_TERMS.test(input.prompt);

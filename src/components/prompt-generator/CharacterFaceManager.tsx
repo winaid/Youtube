@@ -13,7 +13,6 @@ interface ElementAssetStub {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-const canCreateElement = (_base64?: string) => false;
 const getElementUnavailableReason = (_base64?: string) => "Custom Element creation is not available with VEO";
 
 interface CharacterFaceManagerProps {
@@ -22,7 +21,7 @@ interface CharacterFaceManagerProps {
   faceRefs: CharacterFaceRef[];
   onFaceRefsChange: (refs: CharacterFaceRef[]) => void;
   elementAssets: ElementAssetStub[];
-  onElementAssetsChange: React.Dispatch<React.SetStateAction<ElementAssetStub[]>>;
+  onElementAssetsChange?: React.Dispatch<React.SetStateAction<ElementAssetStub[]>>;
 }
 
 export default function CharacterFaceManager({
@@ -31,11 +30,11 @@ export default function CharacterFaceManager({
   faceRefs,
   onFaceRefsChange,
   elementAssets,
-  onElementAssetsChange,
+  onElementAssetsChange: _onElementAssetsChange,
 }: CharacterFaceManagerProps) {
   const [extracting, setExtracting] = useState<number | null>(null);
   const [autoExtractingAll, setAutoExtractingAll] = useState(false);
-  const [creatingElement, setCreatingElement] = useState<string | null>(null);
+  const [creatingElement, _setCreatingElement] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // 이미지에서 얼굴 영역 크롭

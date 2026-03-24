@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { EditableShot } from "@/lib/shot-editing";
-import type { ShotRegenerateStatus, NarrationMode, ShotNarrationState } from "@/types";
+import type { ShotRegenerateStatus, ShotNarrationState } from "@/types";
 import { FRAMING_OPTIONS, ANGLE_OPTIONS } from "@/lib/shot-editing";
 
 // ═══════════════════════════════════════════════════════════════════

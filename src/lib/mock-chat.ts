@@ -31,7 +31,6 @@ export async function generateChatResponse(
       console.error("Chat API error:", err);
       const code = (err as Record<string, unknown>).code as string | undefined;
       const help = (err as Record<string, unknown>).help as string | undefined;
-      const errorMsg = (err as Record<string, unknown>).error as string | undefined;
       if (code === "MISSING_API_KEY") {
         return { reply: `⚠️ GEMINI_API_KEY가 설정되지 않았습니다.\n\n${help || "Cloudflare Pages 환경변수에서 설정하세요."}` };
       }

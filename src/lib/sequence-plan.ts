@@ -12,11 +12,10 @@
  * - 생성 후 fidelity 평가 가능
  */
 
-import type { VideoPromptJson, ExtendPromptJson, Cut } from "@/types";
+import type { VideoPromptJson, Cut } from "@/types";
 import {
   isEnvironmentScene,
   enforceEnvironmentCamera,
-  ENVIRONMENT_BANNED_MOTIONS_RE,
 } from "@/lib/sequence-assembler";
 
 // ═══════════════════════════════════════════════════════════════════

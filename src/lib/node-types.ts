@@ -428,7 +428,7 @@ const CANVAS_KEY = "node-canvas-state";
 const VIEWPORT_KEY = "node-canvas-viewport";
 
 export function saveCanvasState(state: CanvasState, viewport: ViewportState): void {
-  const { pendingEdge: _, ...saveable } = state;
+  const { pendingEdge: _pendingEdge, ...saveable } = state;
   try {
     localStorage.setItem(CANVAS_KEY, JSON.stringify(saveable));
     localStorage.setItem(VIEWPORT_KEY, JSON.stringify(viewport));

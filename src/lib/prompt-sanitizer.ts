@@ -14,15 +14,12 @@
  */
 
 import {
-  type SceneType,
-  type EnvironmentSubtype,
   resolveSceneType,
   applySceneTypeVocabularyRules,
   ensureDescriptiveCoverage,
   enforcePositiveKeywords,
   detectEnvironmentSubtype,
   getEnvironmentRequiredElements,
-  isPushInMotion,
   detectOutdoorContamination,
 } from "@/lib/scene-type-rules";
 
@@ -563,14 +560,14 @@ export function runSanitizePipeline(input: SanitizePipelineInput): SanitizePipel
 export function detectPhysicsIssues(
   prompt: string,
   physicsRules?: PhysicsRulesContext,
-  sceneTypeOrCategory?: string,
+  _sceneTypeOrCategory?: string,
 ): { issues: SanitizeIssue[]; fixedPrompt: string } {
   const issues: SanitizeIssue[] = [];
   let fixed = prompt;
 
   if (!physicsRules) return { issues, fixedPrompt: fixed };
 
-  const lower = fixed.toLowerCase();
+  const _lower = fixed.toLowerCase();
 
   // ── No-wind environment: flutter/wave/blow 충돌 감지 ──
   if (!physicsRules.hasWind) {
@@ -671,7 +668,7 @@ export function detectStructuralIssues(
   environmentType?: string,
 ): SanitizeIssue[] {
   const issues: SanitizeIssue[] = [];
-  const lower = prompt.toLowerCase();
+  const _lower = prompt.toLowerCase();
 
   // ── Discrete shot type sequence in single generation ──
   // "Wide shot → Medium shot → Close-up" 같은 나열 감지

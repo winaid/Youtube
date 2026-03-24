@@ -699,7 +699,7 @@ function buildSpaceLayer(spaceWords: string[], prompt: string): string {
   return `The full environment of the scene — space, light, and atmosphere filling the frame from edge to edge`;
 }
 
-function buildTransitionLayer(spaceClauses: string[], detailClauses: string[], spaceWords: string[], prompt: string): string {
+function buildTransitionLayer(spaceClauses: string[], detailClauses: string[], spaceWords: string[], _prompt: string): string {
   if (detailClauses.length > 0) {
     return `${detailClauses[0]}, glimpsed from a new angle as the camera moves through the space`;
   }
@@ -715,7 +715,7 @@ function buildTransitionLayer(spaceClauses: string[], detailClauses: string[], s
   return `The same space from a shifted vantage point, new depth and geometry emerging as the camera finds a second angle`;
 }
 
-function buildActionLayer(subjectWords: string[], actionWords: string[], prompt: string): string {
+function buildActionLayer(subjectWords: string[], actionWords: string[], _prompt: string): string {
   const subject = subjectWords.length > 0 ? `The ${subjectWords[0]}` : "The figure";
 
   if (subjectWords.length > 0 && actionWords.length > 0) {
@@ -730,7 +730,7 @@ function buildActionLayer(subjectWords: string[], actionWords: string[], prompt:
   return `The central action unfolding, subject and movement captured together for the first time`;
 }
 
-function buildDetailLayer(detailWords: string[], spaceWords: string[], prompt: string): string {
+function buildDetailLayer(detailWords: string[], spaceWords: string[], _prompt: string): string {
   if (detailWords.length >= 3) {
     return `${capitalize(detailWords[0])} and ${detailWords[1]} and ${detailWords[2]}, surface texture magnified until it fills the entire frame`;
   }
@@ -812,7 +812,7 @@ function buildResultLayer(emotionWords: string[], actionWords: string[], subject
 export function shouldForceMultiShot(
   sceneType: PlannerSceneType | string,
   durationSec: number,
-  modelId: string,
+  _modelId: string,
 ): boolean {
   // VEO: 멀티샷 항상 지원 (단일샷 금지 정책)
   const maxShots = VEO_MAX_SHOTS;

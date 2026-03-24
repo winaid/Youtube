@@ -17,9 +17,8 @@
  *   → VEO generate
  */
 
-import type { StructuredSequenceDocument, PhysicsRules } from "@/types";
-import { detectPhysicsRules, checkPhysicsConsistency } from "@/lib/physics-rules";
-import { validateSequenceDensity } from "@/lib/shot-splitting";
+import type { StructuredSequenceDocument } from "@/types";
+import { checkPhysicsConsistency } from "@/lib/physics-rules";
 import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 import { CRITICAL_CONFLICT_WORDS } from "@/lib/critical-words";
 

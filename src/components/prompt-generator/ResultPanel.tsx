@@ -14,8 +14,8 @@ import { resolveModelForWorkflow } from "@/lib/veo-capability";
 import { DURATION_FALLBACK, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { checkBatchBudget, BATCH_BUDGET_SECONDS } from "@/lib/batch-runtime-budget";
 import type { BatchClipInfo } from "@/lib/batch-runtime-budget";
-import { classifyCuts } from "@/lib/structure-classification";
-import { densifyCuts } from "@/lib/sequence-density";
+
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import TimelineEditor from "./TimelineEditor";
 import SequenceTimelineEditor from "./SequenceTimelineEditor";
 import CharacterFaceManager from "./CharacterFaceManager";
 import OneClickPipeline from "./OneClickPipeline";
-import VideoHistoryPanel, { saveToHistory } from "./VideoHistoryPanel";
+import { saveToHistory } from "./VideoHistoryPanel";
 import VideoReviewPanel from "./VideoReviewPanel";
 import { useVideoGeneration } from "@/hooks/useVideoGeneration";
 import { cutToViewModel, viewModelToExportSequence, type CutCardViewModel } from "@/lib/canonical-view-model";
@@ -164,11 +164,11 @@ export default function ResultPanel({
   const [srtError, setSrtError] = useState<string | null>(null);
   // SEO
   const [seoResult, setSeoResult] = useState<YouTubeSEO | null>(null);
-  const [seoLoading, setSeoLoading] = useState(false);
+  const [, setSeoLoading] = useState(false);
   const [seoError, setSeoError] = useState<string | null>(null);
   // Thumbnail
   const [thumbnailImages, setThumbnailImages] = useState<{ base64: string; mimeType: string }[]>([]);
-  const [thumbnailLoading, setThumbnailLoading] = useState(false);
+  const [, setThumbnailLoading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
   // Final export (stitch)
   const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null);
@@ -178,8 +178,8 @@ export default function ResultPanel({
   // VEO Custom Element assets
   const [elementAssets, setElementAssets] = useState<ElementAssetStub[]>([]);
   // 인라인 감독 변경 재생성
-  const [altDirector, setAltDirector] = useState("");
-  const [altGenerating, setAltGenerating] = useState(false);
+  const [_altDirector, _setAltDirector] = useState("");
+  const [_altGenerating, _setAltGenerating] = useState(false);
 
   const videoGen = useVideoGeneration({
     cuts: result?.cuts ?? [],
@@ -558,7 +558,7 @@ export default function ResultPanel({
   };
 
   const genMode = videoGen.config.generationMode ?? "batch";
-  const fastCuts = result.cuts;
+  const _fastCuts = result.cuts;
 
   // 런타임 예산 계산 — canonical view-model preferred
   const batchClips: BatchClipInfo[] = result.cuts.map(c => {

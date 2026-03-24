@@ -5,7 +5,6 @@ import {
   PromptInput, Region, AnimationMode, Duration, AspectRatio, DirectorPersona, SignatureTechniques,
   GenerationPersona, DEFAULT_GENERATION_PERSONA, StyleFamily,
   EditingDensityPreset, CutCountRange,
-  type PromptOutput,
 } from "@/types";
 import { recommendCutCountRange, densityPresetToRange } from "@/lib/sequence-density";
 import { directors, workToDirectorMap } from "@/data/directors";
@@ -14,9 +13,8 @@ import {
   getStyleUiState, getStyleBadgeText, getStyleBadgeColor,
   isStyleSelectable, getStyleCapability,
   getRecommendedStyleIds, sortStylesByTier, getTierDescriptionKo,
-  type StyleUiState,
 } from "@/lib/style-capability-matrix";
-import { DURATION_FALLBACK, DURATION_MIN, DURATION_MAX, safeDuration } from "@/lib/duration-reconciliation";
+import { DURATION_FALLBACK, safeDuration } from "@/lib/duration-reconciliation";
 import { appendRecommendLog, classifyRecommendError, type RecommendLogEntry } from "@/lib/draft-store";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import {
@@ -288,7 +286,7 @@ function persistCustomDirectors(dirs: DirectorPersona[]) {
   } catch { /* storage full */ }
 }
 
-export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, prefillInput, onPrefillInputConsumed, secondsPerScene, onSecondsPerSceneChange, hasResult }: InputPanelProps) {
+export default function InputPanel({ onGenerate, isLoading, prefillScenario, onPrefillConsumed, prefillInput, onPrefillInputConsumed, secondsPerScene: _secondsPerScene, onSecondsPerSceneChange: _onSecondsPerSceneChange, hasResult }: InputPanelProps) {
   const [storyText, setStoryText] = useState("");
   const [directorPersona, setDirectorPersona] = useState("");
   const [region, setRegion] = useState<Region>("한국");
@@ -303,7 +301,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [customDirectors, setCustomDirectors] = useState<DirectorPersona[]>(loadCustomDirectors);
   const [cutCount, setCutCount] = useState<number | "auto">("auto");
   // VEO 정책: 8초 고정. 부모에게 항상 8초를 보고.
-  const cutDuration = 8;
+  const _cutDuration = 8;
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [editingDensity, setEditingDensity] = useState<EditingDensityPreset>("auto");
   const [customCutRange, setCustomCutRange] = useState<CutCountRange>({ min: 3, max: 5 });
@@ -352,7 +350,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
   const [analysisDepth, setAnalysisDepth] = useState<AnalysisDepth>("basic");
   const [analysisPhase, setAnalysisPhase] = useState<AnalysisPhase>("idle");
   const analysisAbortRef = useRef(false);
-  const isLongForm = storyText.replace(/\s/g, "").length >= 300;
+  const _isLongForm = storyText.replace(/\s/g, "").length >= 300;
 
   // handleAnalyzeThenGenerate 제거됨 — 분석 깊이가 handleSubmit에 통합됨
 

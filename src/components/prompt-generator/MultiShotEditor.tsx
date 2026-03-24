@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import type { MultiShotPrompt, ShotRole, Cut } from "@/types";
 import { SHOT_ROLE_META, SHOT_ROLES } from "@/types";
-import { Badge } from "@/components/ui/badge";
+
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -70,7 +70,7 @@ interface MultiShotEditorProps {
 // ═══════════════════════════════════════════════════════════════════
 
 export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMultiShot, effectiveDurationSec }: MultiShotEditorProps) {
-  const shots = effectiveMultiShot ?? cut.multiShot ?? [];
+  const shots = useMemo(() => effectiveMultiShot ?? cut.multiShot ?? [], [effectiveMultiShot, cut.multiShot]);
   const totalDuration = effectiveDurationSec ?? cut.durationSec;
   const maxShots = getMaxShots(modelId, totalDuration);
 

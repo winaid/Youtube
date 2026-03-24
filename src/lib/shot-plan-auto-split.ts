@@ -31,7 +31,6 @@ import {
   rebalanceShotTimings,
   computeShotSimilarity,
   type ShotDescriptor,
-  type SplitResult,
   type ShotBeatHint,
   MAX_SPLIT_SHOTS,
 } from "@/lib/shot-splitting";
@@ -130,7 +129,7 @@ export const PROMPT_CHAR_LIMIT = 500;
 // ═══════════════════════════════════════════════════════════════════
 
 const FRAMING_POOL = ["WS", "MS", "MCU", "CU", "ECU", "LS"] as const;
-const ANGLE_POOL = ["eye-level", "low-angle", "high-angle", "overhead", "dutch-angle"] as const;
+const _ANGLE_POOL = ["eye-level", "low-angle", "high-angle", "overhead", "dutch-angle"] as const;
 const MOTION_POOL = ["slow pan", "push-in", "pull-back", "tracking", "static", "tilt-up", "dolly", "handheld"] as const;
 
 /**

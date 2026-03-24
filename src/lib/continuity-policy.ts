@@ -12,7 +12,6 @@ import type {
   SegmentState,
   SegmentRole,
   ContinuityValidationRuleId,
-  ContinuityValidationSeverity,
 } from "@/types/continuity";
 
 // ═══════════════════════════════════════════════════════════════════

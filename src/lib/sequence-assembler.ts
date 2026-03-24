@@ -16,7 +16,7 @@ import { runSanitizePipeline, stripMetaLabels } from "@/lib/prompt-sanitizer";
 import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payload-validator";
 import { normalizeSequence } from "@/lib/sequence-normalizer";
 import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
-import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
+import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
 import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
 import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor, type ShotBeatHint } from "@/lib/shot-splitting";
 import { planShotRoles, ROLE_KO } from "@/lib/multi-shot-planner";

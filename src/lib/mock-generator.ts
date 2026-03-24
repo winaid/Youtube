@@ -2,14 +2,13 @@ import { PromptInput, PromptOutput, Cut, DirectorPersona, CharacterSeed } from "
 import { directors } from "@/data/directors";
 import { getStyleById } from "@/data/style-catalog";
 import { classifyCuts } from "@/lib/structure-classification";
-import { densifyCuts, VEO_SEGMENT_CAP } from "@/lib/sequence-density";
+import { densifyCuts } from "@/lib/sequence-density";
 import { computeAutoDuration, buildDurationSummary } from "@/lib/duration-reconciliation";
 import { estimateProjectDuration, estimateAutoEditPlan } from "@/lib/story-duration-estimator";
 import { distributeRhythm } from "@/lib/rhythm-distribution";
 import type { PacingMode } from "@/lib/rhythm-distribution";
 import { buildMultiChainPlan, SINGLE_CHAIN_MAX_SEC } from "@/lib/multi-chain-orchestrator";
 import { detectFragmentedIntent, planAutoSplitShots, type AutoSplitInput } from "@/lib/shot-plan-auto-split";
-import { buildFragmentedShotBlock } from "@/lib/korean-subject-defaults";
 import { ROLE_KO } from "@/lib/multi-shot-planner";
 
 async function fetchGeminiPersona(
@@ -479,7 +478,7 @@ export async function generatePrompt(
         if (autoResult.validation.passed && autoResult.shots.length >= 3) {
           cut.multiShot = autoResult.shots.map((shot, i) => {
             const role = inferRoleFromShotId(shot.shotId, autoResult.shots.length) ?? "develop";
-            let prompt = String(shot.action || "").slice(0, 400);
+            const prompt = String(shot.action || "").slice(0, 400);
             return {
               index: i + 1,
               prompt,

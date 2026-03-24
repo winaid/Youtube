@@ -73,7 +73,7 @@ const YOUTUBE_MODE_CONFIG: ContentModeConfig = {
 /** Legacy aliases for backward compatibility in callers */
 const SEQ_MIN_SEC = SHORT_FORM_CONFIG.sectionMinSec;
 const SEQ_MAX_SEC = SHORT_FORM_CONFIG.sectionMaxSec;
-const SEQ_TARGET_SEC = SHORT_FORM_CONFIG.sectionTargetSec;
+const _SEQ_TARGET_SEC = SHORT_FORM_CONFIG.sectionTargetSec;
 
 /** 문장당 최소 예상 화면 시간 (나레이션 없는 시각적 표현 포함) */
 const MIN_SEC_PER_SENTENCE = 2;
@@ -1326,7 +1326,7 @@ export function convertToCuts(analysis: ScriptAnalysisResult): Cut[] {
 
     for (let i = 0; i < seqCuts.length; i++) {
       const ac = seqCuts[i];
-      const isFirst = i === 0;
+      const _isFirst = i === 0;
       const isLast = i === seqCuts.length - 1;
 
       cuts.push({

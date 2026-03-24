@@ -5,7 +5,7 @@ import { Cut, CharacterSeed, VideoPromptJson, type ShotSnapshots, type ShotNarra
 import MultiShotEditor from "./MultiShotEditor";
 /** VEO 정책: 8초=4샷, 7초(extend)=3샷 */
 const getMaxShots = (_modelId: string, duration: number) => duration <= 7 ? 3 : 4;
-import { distributeEvenly, checkShotDensity, getRecommendedShotRange } from "@/lib/multishot-validation";
+import { distributeEvenly, getRecommendedShotRange } from "@/lib/multishot-validation";
 import { shouldForceMultiShot, buildDefaultMultiShot, planShotRoles, planRecommendedShotCount } from "@/lib/multi-shot-planner";
 import type { PlannerSceneType } from "@/lib/multi-shot-planner";
 import { detectShotProgression, splitSingleShotSequence, type ShotBeatHint } from "@/lib/shot-splitting";
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/accordion";
 import { cameraPresets, categoryLabels, type CameraPreset } from "@/data/camera-presets";
 import { motionLevels } from "@/data/motion-intensity-presets";
-import { SHOT_TYPE_KO, SHOT_CATEGORY_KO, NARRATIVE_FUNCTION_KO, CHARACTER_ROLE_KO, PURPOSE_KO, koLabel } from "@/data/ko-label-maps";
+import { SHOT_CATEGORY_KO, PURPOSE_KO, koLabel } from "@/data/ko-label-maps";
 
 interface CutCardProps {
   cut: Cut;
@@ -374,7 +374,7 @@ export default function CutCard({
   const [autoSplitResult, setAutoSplitResult] = useState<AutoSplitResult | null>(null);
   const [showSketchCanvas, setShowSketchCanvas] = useState(false);
   const [sketchAnalyzing, setSketchAnalyzing] = useState(false);
-  const [sketchAnalysis, setSketchAnalysis] = useState<SketchAnalysisResult | null>(null);
+  const [_sketchAnalysis, setSketchAnalysis] = useState<SketchAnalysisResult | null>(null);
   const [sketchShotPlan, setSketchShotPlan] = useState<ReturnType<typeof sketchToShotPlan> | null>(null);
 
   // ── 스케치 구도 분석 핸들러 ──

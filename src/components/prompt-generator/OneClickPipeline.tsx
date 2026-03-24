@@ -27,7 +27,7 @@ interface OneClickPipelineProps {
 }
 
 export default function OneClickPipeline({
-  hasCuts, hasVideo: _hasVideo, hasSrt, hasSeo,
+  hasCuts, hasSrt, hasSeo,
   onRunVideoGeneration, onRunSrt, onRunSeo, onRunThumbnail,
 }: OneClickPipelineProps) {
   const [running, setRunning] = useState(false);

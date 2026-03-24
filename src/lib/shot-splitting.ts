@@ -11,7 +11,7 @@
  *       MAX_SPLIT_SHOTS
  */
 
-import type { TemporalBeat } from "@/types";
+
 import { VEO_DEFAULT_MODEL } from "@/lib/veo-capability";
 import { MULTI_SHOT_SCENE_TYPES } from "@/lib/multi-shot-scene-types";
 

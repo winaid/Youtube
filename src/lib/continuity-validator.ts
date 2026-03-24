@@ -9,7 +9,6 @@
 
 import type {
   SegmentState,
-  ContinuityValidationRuleId,
   ContinuityValidationSeverity,
   ContinuityValidationResult,
   ContinuityValidationReport,

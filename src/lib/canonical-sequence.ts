@@ -37,13 +37,12 @@ import type {
   ShotRole,
   EditorialPersona,
 } from "@/types";
-import { DEFAULT_EDITORIAL_PERSONA } from "@/types";
 import { assembleFromJSON, type SingleShotDocument } from "@/lib/sequence-assembler";
 import { buildFinalProviderPayload, type FinalProviderPayload } from "@/lib/final-payload-builder";
 import { safeDuration } from "@/lib/duration-reconciliation";
 // VEO 멀티샷 정책: 7초=3샷, 8초+=4샷
 const veoMinShots = (durationSec: number) => durationSec <= 7 ? 3 : 4;
-import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
+import { getStyleById, getStyleByLegacyMode, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
 import { structuredShotToSequenceShot } from "@/lib/structured-shot-normalize";
 import { ROLE_KO } from "@/lib/multi-shot-planner";

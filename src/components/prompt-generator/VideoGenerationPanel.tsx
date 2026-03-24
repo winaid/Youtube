@@ -6,7 +6,7 @@ import { Cut, CharacterSeed, VideoClip, SHOT_ROLE_META, type MultiShotPrompt } f
 import { inferShotRole } from "@/lib/multishot-validation";
 import { generateSummariesFromNormalizedMultiPrompt } from "@/lib/shot-summary-ko";
 
-import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult, type PreflightInput } from "@/lib/preflight-validation";
+import { runPreflightValidation, getCutDisplayTitle, getCutSubInfo, type PreflightResult } from "@/lib/preflight-validation";
 import { getVideoFilterStyle } from "@/lib/style-postprocess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,8 @@ import {
 } from "@/lib/montage-export";
 import type { StitchProgress, StitchJob } from "@/lib/client-stitch";
 import type { VideoJobRecord } from "@/lib/video-job-store";
-import { JOB_STATUS_LABELS, JOB_STATUS_DESCRIPTIONS } from "@/lib/video-job-store";
+
+
 
 interface VideoGenerationPanelProps {
   cuts: Cut[];
@@ -108,8 +109,8 @@ export default function VideoGenerationPanel({
   onResetClip,
   onAddCut,
   onSelectVariant,
-  recoverableJobs,
-  onResumeJob,
+  recoverableJobs: _recoverableJobs,
+  onResumeJob: _onResumeJob,
   canonicalMultiShots,
   canonicalDurations,
   styleId,
@@ -138,11 +139,11 @@ export default function VideoGenerationPanel({
 
   const montageState = computeMontageExportState(cuts, clips);
   // 동적으로 감지된 capability를 덮어쓰기
-  const enrichedState = {
+  const enrichedState = useMemo(() => ({
     ...montageState,
     stitchCapability,
     stitchUnavailableReason: stitchUnavailableReason || montageState.stitchUnavailableReason,
-  };
+  }), [montageState, stitchCapability, stitchUnavailableReason]);
   const stitchReadiness = evaluateStitchReadiness(enrichedState);
 
   // FFmpeg.wasm 가용 여부 감지 (마운트 시 1회)
@@ -250,7 +251,7 @@ export default function VideoGenerationPanel({
           const tips: string[] = [];
 
           // 컷 수 적절성
-          const totalDur = cuts.reduce((s, c) => s + (canonicalDurations?.get(c.cutNumber) ?? c.durationSec), 0);
+          const _totalDur = cuts.reduce((s, c) => s + (canonicalDurations?.get(c.cutNumber) ?? c.durationSec), 0);
           if (cuts.length >= 3 && cuts.length <= 8) score += 10;
           else if (cuts.length < 3) { score -= 10; tips.push("컷 수가 적습니다 — 최소 3컷 이상 권장"); }
 

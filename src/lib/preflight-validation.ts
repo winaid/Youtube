@@ -22,7 +22,6 @@ import { getCapability } from "@/lib/veo-capability";
 const getMaxShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
 import {
   getStyleCapability, getStyleUiState, resolveGenerationStyle,
-  getTierDescriptionKo,
   type StyleSupportTier,
 } from "@/lib/style-capability-matrix";
 import {
@@ -323,7 +322,7 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
 function checkStyle(input: PreflightInput, issues: PreflightIssue[]) {
   const { styleId } = input;
   const cap = getStyleCapability(styleId);
-  const uiState = getStyleUiState(styleId);
+  const _uiState = getStyleUiState(styleId);
   const resolution = resolveGenerationStyle(styleId);
 
   // temporarily-hidden → 생성 불가

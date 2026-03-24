@@ -18,7 +18,6 @@ import {
   listDrafts,
   saveDraft,
   deleteDraft,
-  buildDraft,
   exportDraftJSON,
   importDraftJSON,
   isDraftStale,
@@ -53,7 +52,7 @@ interface Props {
 export default function ProjectManager({
   currentInput,
   currentOutput,
-  currentMeta,
+  currentMeta: _currentMeta,
   activeDraftId,
   saveStatus,
   lastSavedAt,

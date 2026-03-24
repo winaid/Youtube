@@ -622,7 +622,7 @@ export function assessAndCorrectDrift(
   const issues: string[] = [];
   let riskScore = 0;
 
-  const firstSentence = prompt.split(/[.!?]/).filter(s => s.trim().length > 3)[0] || "";
+  const _firstSentence = prompt.split(/[.!?]/).filter(s => s.trim().length > 3)[0] || "";
 
   // Check 1: 첫 문장에 구체적 subject 명사가 없는가?
   if (!hasStrongSubjectAnchor(prompt)) {
@@ -686,7 +686,7 @@ const CAMERA_CONFLICT_PATTERNS: Array<{ a: RegExp; b: RegExp; description: strin
 ];
 
 /** 3D/CGI 표현이 cinematic realism 프롬프트에 섞인 패턴 */
-const CGI_CONTAMINATION_PATTERNS = /\b(3D\s+topograph|3D\s+map|3D\s+terrain|3D\s+rendered?|CGI\s+(?:render|terrain|landscape)|game[\s-]?map|strategy\s+game|mini(?:ature)?\s+diorama|glossy\s+(?:3D|render)|plastic\s+(?:terrain|model|surface))\b/gi;
+const _CGI_CONTAMINATION_PATTERNS = /\b(3D\s+topograph|3D\s+map|3D\s+terrain|3D\s+rendered?|CGI\s+(?:render|terrain|landscape)|game[\s-]?map|strategy\s+game|mini(?:ature)?\s+diorama|glossy\s+(?:3D|render)|plastic\s+(?:terrain|model|surface))\b/gi;
 
 /** cinematic realism 대체 표현 */
 const CGI_TO_CINEMATIC_MAP: Array<{ pattern: RegExp; replacement: string }> = [

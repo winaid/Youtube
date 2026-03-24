@@ -215,7 +215,6 @@ export function buildCompactEditorialSummary(ep: EditorialPersona): string {
 
 export function buildDurationAwareBeatTemplate(
   secPerCut: number,
-  _ep?: EditorialPersona,
 ): { beatTemplate: string; extendBeatTemplate: string } {
   if (secPerCut <= 3) {
     return {

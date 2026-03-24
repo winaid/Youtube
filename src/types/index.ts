@@ -680,6 +680,7 @@ export interface StructuredSequenceDocument {
   /** negatives 수집 결과 */
   negatives?: {
     universal: string[];
+    style?: string[];
     sceneSpecific: string[];
     failureMode: string[];
     user: string[];
