@@ -1242,7 +1242,7 @@ Each director object must have:
         contents: [{ role: "user", parts: [{ text: buildWebPrompt() }] }],
         generationConfig: {
           temperature: 0.5,
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
           responseMimeType: "application/json" as const,
         },
       };
