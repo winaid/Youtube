@@ -27,6 +27,7 @@ import {
   type MultiShotValidationResult,
 } from "@/lib/multishot-validation";
 import { ROLE_PROGRESSION_DIRECTIVE } from "@/lib/multi-shot-planner";
+import { generateShotSummaryKo } from "@/lib/shot-summary-ko";
 
 // ── Shot change indicator — shows what changed from previous shot ──
 function describeShotChange(prev: MultiShotPrompt, current: MultiShotPrompt, prevRole: ShotRole, currentRole: ShotRole): string | null {
@@ -375,52 +376,46 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 <div
                   className="rounded px-1 py-0.5 transition-all min-h-[24px]"
                 >
-                  {/* 한국어 요약이 있으면 메인으로 표시 */}
-                  {shot.promptKo ? (
-                    <>
+                  {/* 한국어 요약 — promptKo 또는 영어 프롬프트에서 자동 생성 */}
+                  {(() => {
+                    const koSummary = shot.prompt
+                      ? (shot.promptKo || generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)))
+                      : "";
+                    return koSummary ? (
+                      <>
+                        <div
+                          className="text-[12px] font-sans text-gray-900 leading-relaxed cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
+                          style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
+                          onClick={() => {
+                            setEditingIndex(shot.index);
+                            setEditDraft(shot.prompt);
+                          }}
+                        >
+                          {koSummary}
+                        </div>
+                        <div
+                          className="mt-1 text-[9px] font-mono text-gray-400 leading-snug break-all line-clamp-2 cursor-pointer hover:line-clamp-none"
+                          onClick={() => {
+                            setEditingIndex(shot.index);
+                            setEditDraft(shot.prompt);
+                          }}
+                        >
+                          {shot.prompt}
+                        </div>
+                      </>
+                    ) : (
                       <div
-                        className="text-[12px] font-sans text-gray-900 leading-relaxed cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
+                        className="rounded px-1 py-0.5 cursor-pointer hover:ring-1 hover:ring-offset-1"
                         style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
                         onClick={() => {
                           setEditingIndex(shot.index);
                           setEditDraft(shot.prompt);
                         }}
                       >
-                        {shot.promptKo}
-                      </div>
-                      <div
-                        className="mt-1 text-[9px] font-mono text-gray-400 leading-snug break-all line-clamp-2 cursor-pointer hover:line-clamp-none"
-                        onClick={() => {
-                          setEditingIndex(shot.index);
-                          setEditDraft(shot.prompt);
-                        }}
-                      >
-                        {shot.prompt}
-                      </div>
-                    </>
-                  ) : (
-                    <div
-                      className="rounded px-1 py-0.5 cursor-pointer hover:ring-1 hover:ring-offset-1"
-                      style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
-                      onClick={() => {
-                        setEditingIndex(shot.index);
-                        setEditDraft(shot.prompt);
-                      }}
-                    >
-                      {shot.prompt ? (
-                        <>
-                          <div className="text-[12px] font-sans text-gray-900 leading-relaxed">
-                            {meta.label} — 영문 프롬프트
-                          </div>
-                          <div className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all line-clamp-2 hover:line-clamp-none">
-                            {shot.prompt}
-                          </div>
-                        </>
-                      ) : (
                         <span className="text-[11px] text-muted-foreground italic">프롬프트를 입력하세요...</span>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
