@@ -163,13 +163,14 @@ describe("D. range vs density minimum conflict", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("E. persona bias within range", () => {
-  it("16) upper bias → max of range", () => {
+  it("16) upper bias → max of range (capped by physicalMax)", () => {
     const result = resolveCutCount({
       preferredRange: { min: 3, max: 7 },
       totalDurationSec: 8,
       personaBias: "upper",
     });
-    expect(result.cutCount).toBe(7);
+    // physicalMax = floor(8/2) = 4 → 각 컷 최소 2초 보장
+    expect(result.cutCount).toBe(4);
   });
 
   it("17) lower bias → min of range", () => {
@@ -181,13 +182,14 @@ describe("E. persona bias within range", () => {
     expect(result.cutCount).toBe(3);
   });
 
-  it("18) neutral bias → midpoint of range", () => {
+  it("18) neutral bias → midpoint of range (capped by physicalMax)", () => {
     const result = resolveCutCount({
       preferredRange: { min: 3, max: 7 },
       totalDurationSec: 8,
       personaBias: "neutral",
     });
-    expect(result.cutCount).toBe(5);
+    // physicalMax = floor(8/2) = 4 → midpoint(3,7)=5 capped to 4
+    expect(result.cutCount).toBe(4);
   });
 });
 

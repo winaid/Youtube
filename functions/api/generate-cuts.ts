@@ -1155,7 +1155,7 @@ async function step23DetailBatch(
   const styleFingerprint = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, no text overlay, no watermark, purely visual`;
+  const noTextSuffix = `${videoStyle}, ${styleFingerprint}, no text, no watermark`;
 
   // 전체 시퀀스 컨텍스트 (배치 외 컷은 간략화하여 토큰 절약)
   const batchCutNums = new Set(batchOutlines.map(o => o.cutNumber));
@@ -1256,10 +1256,10 @@ ${SCENE_TERM_PRECISION_BLOCK}
 
 ## STRICT 글자 제한 (자연어만 — 메타태그 SHOT_SIZE:/CAMERA_ANGLE:/REVEALED: 등 절대 금지)
 
-imagePrompt (≤80 words EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
-endImagePrompt (≤65 words EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
+imagePrompt (≤55 words, ≤400 chars EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
+endImagePrompt (≤45 words, ≤400 chars EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
 
-videoPrompt (≤180 words EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
+videoPrompt (≤120 words, ≤400 chars EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
   Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+ 구체적 오브젝트/질감(cracked tile, rusted pipe, wilted flower, stacked books)]").replace("[develop]", "[BEAT2: WHAT 상황 증거(empty chair, closed shutters, overflowing ashtray, half-eaten meal)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동(fingers grip armrest, shoulders slump forward, gaze drops to floor)]")}. [charRef if not absent]. [noTextSuffix]"
   환경 디테일: 최소 2개 구체적 오브젝트/질감/현상 필수 (cracked, rusted, damp, torn 등 형용사+명사)
   상황 증거: 현재 상황을 보여주는 시각 단서 필수 (empty/crowded/broken/closed/overflowing 등)
@@ -1267,7 +1267,7 @@ videoPrompt (≤180 words EN — 3비트 시퀀스, 각 비트 다른 shot size/
   BANNED: continues/still/same as before/standing/motionless, sign/signboard, emotion labels(anxious/sad/angry 등)
   BANNED: 한국어 테마 문구(인본주의적 시선, 시대극의 현대적 해석, 인물 심리 묘사 등) — 비디오 모델이 렌더링 불가. 영문 시각 묘사로만 기술
 
-extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤120 words EN):
+extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤80 words, ≤400 chars EN):
   "Continuing from previous — [endHook]. [Beat1 다른 앵글]. [Beat2 상황 증거]. [Beat3 감정 행동]. [charRef if applicable]. [noTextSuffix]"
 
 cameraDirection (≤55 chars): "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
@@ -1307,7 +1307,7 @@ establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
 ${shotDesc}
-- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤50 words/샷, ≤400 chars/샷.
+- duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤35 words/샷, ≤400 chars/샷.
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
@@ -1478,7 +1478,7 @@ function buildDeterministicCuts(
   const fallbackStyleFP = directorStyle
     ? directorStyle.split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
     : directorName;
-  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, no text overlay, no watermark, purely visual${editorialTag}`;
+  const noTextSuffix = `${videoStyle}, ${fallbackStyleFP}, no text, no watermark${editorialTag}`;
 
   // 물리 규칙에 따른 lighting
   const defaultLighting = physics.environmentType === "lunar"
@@ -3014,8 +3014,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         characterRole: outline.characterRole,
         cameraDirection:  d?.cameraDirection  ?? `Lens 35mm. Slow dolly in. ${String(directorName)} style.`,
         moodLighting,
-        imagePrompt:      d?.imagePrompt      ?? defaultImagePrompt,
-        endImagePrompt:   d?.endImagePrompt   ?? defaultEndImagePrompt,
+        imagePrompt:      (d?.imagePrompt      ?? defaultImagePrompt).slice(0, 400),
+        endImagePrompt:   (d?.endImagePrompt   ?? defaultEndImagePrompt).slice(0, 400),
         // 한국어 표시용 필드 — UI에서 사용자에게 보여주는 한국어 설명
         ...(d?.videoPromptKo ? { videoPromptKo: d.videoPromptKo } : {}),
         ...(d?.cameraDirectionKo ? { cameraDirectionKo: d.cameraDirectionKo } : {}),
@@ -3025,10 +3025,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         ...(d?.newInformationKo ? { newInformationKo: d.newInformationKo } : {}),
         // 극 중 대사 → TTS 나레이션으로 출력 (영상 프롬프트에는 포함 안 됨)
         ...(dialogueAsNarration ? { narrationText: dialogueAsNarration } : {}),
-        videoPrompt:      d?.videoPrompt      ?? defaultVideoPrompt,
+        videoPrompt:      (d?.videoPrompt      ?? defaultVideoPrompt).slice(0, 400),
         extendPrompt:     i === 0 ? "" : (d?.extendPrompt && d.extendPrompt.trim().length > 20
-          ? d.extendPrompt
-          : extendFallback),
+          ? d.extendPrompt.slice(0, 400)
+          : extendFallback.slice(0, 400)),
         transitionHint:   outline.transitionHint,
         characterConsistency,
         charactersInScene,

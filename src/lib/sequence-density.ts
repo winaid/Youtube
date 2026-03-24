@@ -165,14 +165,16 @@ export function resolveCutCount(opts: {
   const { exactCutCount, preferredRange, totalDurationSec, personaBias } = opts;
   const densityMin = recommendMinimumCutCount(totalDurationSec);
   const notes: string[] = [];
+  // 물리적 상한: 각 컷 최소 2초 보장 → totalDuration / 2 이상의 컷 수 불가
+  const physicalMax = totalDurationSec > 0 ? Math.max(1, Math.floor(totalDurationSec / 2)) : CUT_COUNT_MAX;
 
   // 1. exact cutCount — 최우선
   if (exactCutCount && exactCutCount > 0) {
     if (exactCutCount < densityMin) {
       notes.push(`exact cutCount(${exactCutCount}) < density minimum(${densityMin}), using density minimum`);
-      return { cutCount: densityMin, source: "exact_cutCount", densityMinimum: densityMin, notes };
+      return { cutCount: Math.min(densityMin, physicalMax), source: "exact_cutCount", densityMinimum: densityMin, notes };
     }
-    return { cutCount: Math.min(exactCutCount, CUT_COUNT_MAX), source: "exact_cutCount", densityMinimum: densityMin, notes };
+    return { cutCount: Math.min(exactCutCount, CUT_COUNT_MAX, physicalMax), source: "exact_cutCount", densityMinimum: densityMin, notes };
   }
 
   // 2. preferred range
@@ -199,7 +201,7 @@ export function resolveCutCount(opts: {
     }
 
     return {
-      cutCount: Math.min(selected, CUT_COUNT_MAX),
+      cutCount: Math.min(selected, CUT_COUNT_MAX, physicalMax),
       source: "preferred_range",
       densityMinimum: densityMin,
       notes,
@@ -219,7 +221,7 @@ export function resolveCutCount(opts: {
   fallbackCount = Math.max(fallbackCount, densityMin);
 
   return {
-    cutCount: Math.min(fallbackCount, CUT_COUNT_MAX),
+    cutCount: Math.min(fallbackCount, CUT_COUNT_MAX, physicalMax),
     source: "fallback",
     densityMinimum: densityMin,
     notes: ["no exact cutCount or preferred range provided, using density policy"],
