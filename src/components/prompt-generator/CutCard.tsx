@@ -1089,9 +1089,9 @@ export default function CutCard({
               />
               {/* 한국어 영상 프롬프트 요약 — 사용자가 장면 내용을 한눈에 파악 */}
               {cut.videoPromptKo && (
-                <div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5">
-                  <span className="text-[10px] font-medium" style={{ color: "#c4b800" }}>장면 프롬프트 (한국어): </span>
-                  <span className="text-xs">{cut.videoPromptKo}</span>
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                  <span className="text-[10px] font-semibold block mb-0.5" style={{ color: "#c4b800" }}>장면 요약</span>
+                  <span className="text-[13px] text-gray-900 leading-relaxed">{cut.videoPromptKo}</span>
                 </div>
               )}
               {/* Video Prompt: JSON 뷰 (있으면) + raw string 토글 */}
@@ -1130,7 +1130,7 @@ export default function CutCard({
                         <div key={shot.index} className="flex items-center gap-2 text-[9px]" style={{ color: "#6b7280" }}>
                           <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
                           <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
-                          <span className="truncate flex-1">{shot.promptKo || `${shot.prompt?.slice(0, 80)}${(shot.prompt?.length ?? 0) > 80 ? "…" : ""}`}</span>
+                          <span className="truncate flex-1">{shot.promptKo || `${shot.prompt?.slice(0, 60)}${(shot.prompt?.length ?? 0) > 60 ? "…" : ""}`}</span>
                           {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{koLabel(PURPOSE_KO, shot.role)}</span>}
                         </div>
                       ))}

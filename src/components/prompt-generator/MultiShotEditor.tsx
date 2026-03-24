@@ -362,18 +362,44 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 </div>
               ) : (
                 <div
-                  className="text-[11px] font-mono leading-relaxed text-gray-700 break-all cursor-pointer hover:ring-1 hover:ring-offset-1 rounded px-1 py-0.5 transition-all min-h-[24px]"
-                  style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
-                  onClick={() => {
-                    setEditingIndex(shot.index);
-                    setEditDraft(shot.prompt);
-                  }}
+                  className="rounded px-1 py-0.5 transition-all min-h-[24px]"
                 >
-                  {shot.promptKo && (
-                    <span className="block text-[12px] font-sans text-gray-900 mb-1 font-medium">{shot.promptKo}</span>
-                  )}
-                  {shot.prompt || (
-                    <span className="text-muted-foreground italic">프롬프트를 입력하세요...</span>
+                  {/* 한국어 요약이 있으면 메인으로 표시 */}
+                  {shot.promptKo ? (
+                    <>
+                      <div
+                        className="text-[12px] font-sans text-gray-900 leading-relaxed cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
+                        style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
+                        onClick={() => {
+                          setEditingIndex(shot.index);
+                          setEditDraft(shot.prompt);
+                        }}
+                      >
+                        {shot.promptKo}
+                      </div>
+                      <div
+                        className="mt-1 text-[9px] font-mono text-gray-400 leading-snug break-all line-clamp-2 cursor-pointer hover:line-clamp-none"
+                        onClick={() => {
+                          setEditingIndex(shot.index);
+                          setEditDraft(shot.prompt);
+                        }}
+                      >
+                        {shot.prompt}
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      className="text-[11px] font-mono leading-relaxed text-gray-700 break-all cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
+                      style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
+                      onClick={() => {
+                        setEditingIndex(shot.index);
+                        setEditDraft(shot.prompt);
+                      }}
+                    >
+                      {shot.prompt || (
+                        <span className="text-muted-foreground italic">프롬프트를 입력하세요...</span>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
