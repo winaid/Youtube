@@ -27,7 +27,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const prompt = `Create a YouTube thumbnail image.
 Title: ${input.projectTitle || ""}
 Concept: ${input.conceptSummary || ""}
-Aspect Ratio: ${input.aspectRatio || "16:9"}
 
 Thumbnail Description: ${input.thumbnailPrompt}
 

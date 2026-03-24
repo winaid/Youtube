@@ -32,7 +32,7 @@ function makeBaseJson(overrides: Partial<VideoPromptJson> = {}): VideoPromptJson
     transitionFromPrev: "",
     characterRef: "",
     moodLighting: "harsh directional sunlight from upper-left, deep shadows in craters",
-    styleSuffix: "cinematic realism, no text overlay, no watermark",
+    styleSuffix: "cinematic realism, no text, no watermark",
     locationCue: "",
     situationCue: "",
     emotionalAnchor: "",
@@ -90,7 +90,7 @@ describe("renderPromptFromJson — structuredSequence field preservation", () =>
 
   it("should strip audio suffix from VEO styleSuffix", () => {
     const json = makeBaseJson({
-      styleSuffix: "cinematic realism, no text overlay, no watermark, with natural diegetic sound and ambient audio",
+      styleSuffix: "cinematic realism, no text, no watermark, with natural diegetic sound and ambient audio",
     });
     const prompt = renderPromptFromJson(json);
     expect(prompt).not.toContain("with natural diegetic sound and ambient audio");
@@ -179,7 +179,7 @@ describe("lunar surface — VEO prompt quality", () => {
       subjectAction: "dust particles settle slowly in low gravity, leaving micro-craters",
       moodLighting: "harsh unfiltered sunlight from upper-left casting razor-sharp shadows, no atmospheric diffusion",
       timingBeat: "0s-3s: wide crater establishing. 3s-5s: crane reveals flag. 5s-8s: dust settles around base",
-      styleSuffix: "cinematic realism, no text overlay, no watermark",
+      styleSuffix: "cinematic realism, no text, no watermark",
     });
 
     const prompt = renderPromptFromJson(json);

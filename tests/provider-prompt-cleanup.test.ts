@@ -197,8 +197,8 @@ describe("extractCompactVisualLock", () => {
     expect(compact).toContain("practical light");
     // Should NOT contain the full suffix
     expect(compact.length).toBeLessThan(fullSuffix.length);
-    // Should NOT contain "no text overlay" or "16:9"
-    expect(compact).not.toContain("text overlay");
+    // Should NOT contain "no text" or "16:9"
+    expect(compact).not.toContain("no text");
     expect(compact).not.toContain("16:9");
   });
 
@@ -208,12 +208,12 @@ describe("extractCompactVisualLock", () => {
     expect(compact).toBe("");
   });
 
-  it("strips 'no text overlay', aspect ratios, and 'cinematic framing' before extraction", () => {
-    const input = "Claymation. No text overlay, no watermark. 16:9 cinematic framing. Desaturated palette.";
+  it("strips 'no text', aspect ratios, and 'cinematic framing' before extraction", () => {
+    const input = "Claymation. no text, no watermark. 16:9 cinematic framing. Desaturated palette.";
     const compact = extractCompactVisualLock(input);
     expect(compact).toContain("claymation");
     expect(compact).toContain("desaturated");
-    expect(compact).not.toContain("text overlay");
+    expect(compact).not.toContain("no text");
     expect(compact).not.toContain("16:9");
     expect(compact).not.toContain("cinematic framing");
   });
@@ -611,7 +611,7 @@ describe("dental scene: full cleanup pipeline snapshot", () => {
   });
 
   it("step 5: visualLock is compact (no outdoor lights, no fallback)", () => {
-    const styleSuffix = "Claymation stop-motion with visible fingerprint texture. Warm practical light, desaturated palette. No text overlay, no watermark. 16:9 cinematic framing.";
+    const styleSuffix = "Claymation stop-motion with visible fingerprint texture. Warm practical light, desaturated palette. no text, no watermark.";
     const lock = extractCompactVisualLock(styleSuffix);
     expect(lock).toContain("claymation");
     expect(lock).toContain("fingerprint texture");

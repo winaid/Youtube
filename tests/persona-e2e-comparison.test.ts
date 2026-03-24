@@ -155,7 +155,7 @@ function simulateFullPipeline(presetName: string): PersonaSimResult {
     transitionFromPrev: transition,
     characterRef: "",
     moodLighting: "cold moonlight from upper right through broken window, deep shadows pool beneath equipment",
-    styleSuffix: `cinematic realism, 16:9, no text, no watermark. ${compactSummary}`,
+    styleSuffix: `cinematic realism, no text, no watermark. ${compactSummary}`,
     locationCue: "Victorian dental laboratory",
     situationCue: "abandoned dusty equipment",
     emotionalAnchor: "approaching footsteps",

@@ -880,9 +880,9 @@ export function assemblePromptV2(
     finalPrompt += ". Diegetic ambient sound";
   }
 
-  // No text overlay (안전)
-  if (!/no text overlay/i.test(finalPrompt)) {
-    finalPrompt += ". No text overlay, no watermark";
+  // No text (안전)
+  if (!/no text/i.test(finalPrompt)) {
+    finalPrompt += ". no text, no watermark";
   }
 
   // 워드 캡: 250단어 (VEO는 긴 프롬프트를 잘 처리)

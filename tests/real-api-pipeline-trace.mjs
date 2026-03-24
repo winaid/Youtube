@@ -92,7 +92,7 @@ For EACH cut, generate a detailed VEO-ready prompt. Output ONLY valid JSON array
 [
   {
     "cutNumber": 1,
-    "videoPrompt": "Full 8-second video prompt in English. Must describe concrete visible scene, camera, action, lighting. ≤200 words.",
+    "videoPrompt": "Full 8-second video prompt in English. Must describe concrete visible scene, camera, action, lighting. ≤120 words, ≤400 chars.",
     "videoPromptJson": {
       "shotSize": "WS|MS|CU|etc",
       "cameraAngle": "eye-level|low-angle|high-angle|dutch",

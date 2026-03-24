@@ -69,7 +69,7 @@ function simulatePayload(presetName: string): { json: VideoPromptJson; rendered:
     transitionFromPrev: "",
     characterRef: "young woman, dark hair, casual outfit",
     moodLighting: "soft directional light from upper left",
-    styleSuffix: `cinematic realism, 16:9, no text, no watermark. ${summary}`,
+    styleSuffix: `cinematic realism, no text, no watermark. ${summary}`,
     locationCue: "city street",
     situationCue: "empty sidewalk",
     emotionalAnchor: "solitary figure",

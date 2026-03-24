@@ -336,7 +336,7 @@ function buildNegativeDirectives(cut: Cut): string[] {
     neg.push(...MAP_MEDIUM_LOCK_NEGATIVES);
   }
   if (isEnvironmentScene(cut.shotCategory)) {
-    neg.push("no text overlay", "no UI element", "no caption", "no HUD", "no logo", "no subtitle");
+    neg.push("no text", "no UI element", "no caption", "no HUD", "no logo", "no subtitle");
   }
   if (cut.shotCategory === "character-driven") {
     neg.push("no deformed face", "no extra limbs");

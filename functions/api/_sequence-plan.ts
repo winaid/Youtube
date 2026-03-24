@@ -189,7 +189,7 @@ export function buildSequencePlanFromCuts(
       negatives.push("no 3D globe", "no landscape painting", "no readable text");
       negatives.push(...MAP_MEDIUM_LOCK_NEGATIVES);
     }
-    if (cut.shotCategory === "environment") negatives.push("no text overlay", "no UI element");
+    if (cut.shotCategory === "environment") negatives.push("no text", "no UI element");
     if (cut.shotCategory === "character-driven") negatives.push("no deformed face", "no extra limbs");
 
     // cinematic realism + terrain/map → 3D/CGI drift 차단

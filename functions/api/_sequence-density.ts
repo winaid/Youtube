@@ -44,13 +44,14 @@ export const CUT_COUNT_MAX = 90;
  *
  * 확정 규칙 (2026-03):
  *   ≤5초: 1~2컷 (micro)
- *   6~9초: 3~6컷 (short — 최소 3컷)
- *   10~15초: 4~6컷 (shortform-critical)
+ *   6~9초: 3~6컷 (short — 최소 3컷, physicalMax로 실제 상한 제한: 6초=3, 8초=4)
+ *   10~15초: 4~6컷 (shortform-critical, physicalMax 적용)
+ *   ※ physicalMax = floor(totalDuration/2) — 각 컷 최소 2초 보장
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 9,  min: 3, max: 6 },  // 6~9초: 최소 3컷
-  { maxSec: 15, min: 4, max: 6 },  // 10~15초: 4~6컷
+  { maxSec: 9,  min: 3, max: 6 },  // 6~9초: 최소 3컷 (physicalMax로 실제 상한 제한)
+  { maxSec: 15, min: 4, max: 6 },  // 10~15초: 4~6컷 (physicalMax로 실제 상한 제한)
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {

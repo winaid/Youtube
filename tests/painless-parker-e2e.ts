@@ -51,7 +51,7 @@ const SYSTEM_PROMPT = `당신은 영상 감독 스타일로 장면을 구조화�
       "shotType": "WS",
       "narrativeFunction": "배경 설정",
       "newInformation": "English ≤12 words",
-      "videoPrompt": "English visual description for VEO, ≤80 words",
+      "videoPrompt": "English visual description for VEO, ≤120 words",
       "videoPromptKo": "한국어 장면 요약 ≤40자",
       "subjectAction": "what the subject physically does",
       "moodLighting": "lighting description"

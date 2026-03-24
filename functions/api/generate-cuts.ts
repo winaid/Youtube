@@ -2855,7 +2855,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const finalStyleFingerprint = String(directorStyle ?? "")
       ? String(directorStyle).split(/[,;|]/).slice(0, 3).map(s => s.trim()).filter(Boolean).join(", ")
       : String(directorName);
-    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, no text overlay, no watermark, purely visual`;
+    const noTextSuffix = `${videoStyle}, ${finalStyleFingerprint}, no text, no watermark`;
 
     const cuts = outlines.map((outline, i) => {
       const d = detailMap.get(outline.cutNumber);

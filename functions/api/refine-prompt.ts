@@ -55,7 +55,7 @@ Structure EXACTLY in this order:
 
 ### Negative Prompt Embedding
 EMBED avoidance directly into the prompt:
-${negativePrompt ? `AVOID: ${String(negativePrompt)}. Weave "no X, no Y" naturally into the prompt.` : 'Add "no text overlay, no watermark" at the end.'}
+${negativePrompt ? `AVOID: ${String(negativePrompt)}. Weave "no X, no Y" naturally into the prompt.` : 'Add "no text, no watermark" at the end.'}
 
 ## Prompt Length Rules
 - Sweet spot: 180-280 words

@@ -46,7 +46,7 @@ export interface PosNegConflictResult {
  *
  * 규칙:
  * - negative 키워드가 positive에 포함 → positive에서 해당 구절 제거
- * - 단, "no watermark", "no text overlay" 같은 금지 구문은 보존
+ * - 단, "no watermark", "no text" 같은 금지 구문은 보존
  * - 중복 negative 제거
  */
 export function sanitizePositiveNegativeConflicts(

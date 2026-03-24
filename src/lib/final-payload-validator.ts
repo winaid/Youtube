@@ -124,7 +124,7 @@ export function validateFinalProviderPayload(input: ValidatePayloadInput): Paylo
     const isInNeg = input.negatives.some(n => n.toLowerCase().includes(wordLower));
     if (!isInNeg) continue;
 
-    // prompt 본문에 해당 단어가 있되, "no X" / "avoid X" / "no text overlay, no X" 패턴 아닌 경우 = 충돌
+    // prompt 본문에 해당 단어가 있되, "no X" / "avoid X" / "no text, no X" 패턴 아닌 경우 = 충돌
     if (bodyLower.includes(wordLower)) {
       const guardPattern = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${escapeRegex(word)}\\b`, "i");
       if (!guardPattern.test(promptBodyForConflict)) {
@@ -607,7 +607,7 @@ export function autoFixPayload(input: ValidatePayloadInput): {
   for (const word of POS_NEG_CRITICAL_WORDS) {
     const isInNeg = negatives.some(n => n.toLowerCase().includes(word.toLowerCase()));
     if (!isInNeg) continue;
-    // Guard: "no watermark", "no text overlay, no watermark" 등 부정 구문 보존
+    // Guard: "no watermark", "no text, no watermark" 등 부정 구문 보존
     const guardCheck = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${escapeRegex(word)}\\b`, "i");
     if (guardCheck.test(promptBody)) continue;
     const pattern = new RegExp(`\\b${escapeRegex(word)}\\b`, "gi");

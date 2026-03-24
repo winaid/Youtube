@@ -118,7 +118,7 @@ export function buildFinalProviderPayload(input: BuildFinalPayloadInput): FinalP
     const bodyLower = cleanedBody.toLowerCase();
     if (!bodyLower.includes(wordLower)) continue;
 
-    // Guard: "no watermark", "no text overlay, no watermark" 등 보존
+    // Guard: "no watermark", "no text, no watermark" 등 보존
     const guardRe = new RegExp(`\\b(?:no|avoid|without)\\s+(?:[\\w\\s,]+\\s+)?${escapeRe(word)}\\b`, "i");
     if (guardRe.test(cleanedBody)) continue;
 
