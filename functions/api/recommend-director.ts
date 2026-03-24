@@ -1374,7 +1374,7 @@ Each director object must have:
         let res: Response;
         try {
           // grounding 호출 타임아웃 — 후속 stage 여유를 위해 30초로 제한
-          const timeoutMs = opts.useGrounding ? 15_000 : 12_000; // grounding 15초, 일반 12초 — 빠른 fallback
+          const timeoutMs = opts.useGrounding ? 25_000 : 12_000; // grounding 25초, 일반 12초
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
