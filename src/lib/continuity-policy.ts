@@ -33,8 +33,8 @@ export interface SegmentDurationPolicy {
 
 export const SEGMENT_DURATION_POLICY: SegmentDurationPolicy = {
   minSegmentSec: 5,
-  maxSegmentSec: 15,
-  defaultSegmentSec: 10,
+  maxSegmentSec: 8,
+  defaultSegmentSec: 8,
   minTotalForContinuity: 20,
 };
 

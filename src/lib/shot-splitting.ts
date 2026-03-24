@@ -341,7 +341,7 @@ export function splitSingleShotSequence(input: {
   }
 
   const template = SCENE_SPLIT_TEMPLATES[input.sceneType] || SCENE_SPLIT_TEMPLATES.environment!;
-  // duration 기반 최소 샷 수 정책 적용 (9~15초: 최소 4, 4~8초: 최소 3)
+  // duration 기반 최소 샷 수 정책 적용 (8초: 최소 4, 4~7초: 최소 3)
   const durationMinShots = getMinShots(DEFAULT_MODEL_ID, input.durationSec);
   const shotCount = progression.hasProgression
     ? Math.max(Math.min(progression.suggestedShotCount, template.shots.length), durationMinShots)

@@ -137,7 +137,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
 
   // ── 최소 샷 수 정책 최종 방어 ──
   // 서버 repair가 적용되었더라도 클라이언트 suggestedMultiShot이 덮어쓸 수 있으므로
-  // 여기서 한 번 더 확인. (9~15초: 최소 4샷, 4~8초: 최소 3샷)
+  // 여기서 한 번 더 확인. (8초: 최소 4샷, 7초 이하: 최소 3샷)
   const dur = result.structuredSequence.durationSec;
   const minRequired = veoMinShots(dur);
   if (minRequired > 0 && multiShot.length < minRequired) {

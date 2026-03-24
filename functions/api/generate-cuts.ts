@@ -1870,9 +1870,7 @@ function buildRationale(opts: {
   secPerCut: number;
 }): string[] {
   const r: string[] = [];
-  if (opts.bandPolicy.is13to15Special) {
-    r.push(`13-15초 숏폼 리듬을 위해 최소 ${opts.bandPolicy.minCuts}컷을 유지했습니다.`);
-  } else if (opts.bandPolicy.isShortformBand) {
+  if (opts.bandPolicy.isShortformBand) {
     r.push(`${opts.bandPolicy.band} 밴드 정책: 최소 ${opts.bandPolicy.minCuts}컷.`);
   }
   if (opts.directorPaceWasDownweighted || opts.shortformPlan.directorPaceDownweighted) {
@@ -3411,7 +3409,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         minimumCuts: bandPolicy.minCuts,
         reconciledSecPerCut: secPerCut,
         shortformPolicyApplied: bandPolicy.isShortformBand,
-        specialHandling13to15: bandPolicy.is13to15Special,
+        specialHandling13to15: false,
         directorRequested: String(directorNameKo || directorName || ""),
         directorRequestedPace: autoResult.duration,
         directorAppliedPace: secPerCut,

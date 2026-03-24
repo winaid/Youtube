@@ -90,7 +90,7 @@ export interface DraftGenerationMeta {
   shortformRhythm?: {
     band: string;
     minCuts: number;
-    is13to15Special: boolean;
+    is13to15Special?: boolean;
   };
   usedFallback?: boolean;
   degraded?: boolean;
@@ -480,7 +480,7 @@ export interface OwnerSessionSummary {
   downWeightRate: number;
   /** Save/reopen confusion count */
   saveConfusionCount: number;
-  /** Shortform critical band (13-15s) failure count */
+  /** Shortform critical band failure count */
   criticalBandFailCount: number;
   /** Recent nextFixGuess entries (latest 5) */
   recentFixGuesses: string[];
@@ -536,7 +536,7 @@ export function buildOwnerSummary(log: SessionLogEntry[]): OwnerSessionSummary {
   // Save confusion count
   const saveConfusionCount = stats["save-reopen-confusion"];
 
-  // Critical band (13-15s) failures
+  // Critical band failures
   const criticalEntries = log.filter(e => e.durationBand === "shortform-critical");
   const criticalBandFailCount = criticalEntries.filter(e =>
     e.failureTags.some(t => t !== "ok")
@@ -581,7 +581,7 @@ export function deriveActionItems(summary: OwnerSessionSummary): string[] {
   }
 
   if (summary.criticalBandFailCount > 0) {
-    items.push(`[P0] 13-15초 critical band에서 ${summary.criticalBandFailCount}회 실패 — shortform 리듬 정책 최우선 점검`);
+    items.push(`[P0] critical band에서 ${summary.criticalBandFailCount}회 실패 — shortform 리듬 정책 최우선 점검`);
   }
 
   if (summary.worstDirectorStyle && summary.worstDirectorStyle.count >= 2) {

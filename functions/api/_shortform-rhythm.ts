@@ -28,8 +28,8 @@ export interface ShortformBandPolicy {
   minShotsPerCut: number;
   /** Whether this band has special shortform handling */
   isShortformBand: boolean;
-  /** Whether 13-15s special handling is active */
-  is13to15Special: boolean;
+  /** Reserved (legacy) */
+  is13to15Special: false;
 }
 
 /**
@@ -37,9 +37,8 @@ export interface ShortformBandPolicy {
  *
  * 확정 규칙 (2026-03):
  * - ≤5초: micro (1컷)
- * - 6~9초: short (최소 3컷)
- * - 10~15초: shortform-critical (4~6컷 필수)
- * - 16초+: 생성 불가 (shortform 범위 초과)
+ * - 6~8초: short (최소 3컷, VEO 단일 클립 최대 8초)
+ * - 9초+: over-limit (shortform 범위 초과, mid-form 이상은 세그먼트 분할)
  */
 export function resolveShortformBandPolicy(totalDurationSec: number): ShortformBandPolicy {
   if (totalDurationSec <= 0) {
@@ -51,17 +50,12 @@ export function resolveShortformBandPolicy(totalDurationSec: number): ShortformB
     return { band: "micro", minCuts: 1, preferredCuts: 1, maxSecPerCut: 5, minShotsPerCut: 1, isShortformBand: true, is13to15Special: false };
   }
 
-  // 6~9초: 숏 클립 — 최소 3컷, maxSecPerCut은 총 duration/minCuts (고정값, totalDuration 의존 아님)
-  if (totalDurationSec <= 9) {
+  // 6~8초: 숏 클립 — 최소 3컷 (VEO 단일 클립 최대 8초)
+  if (totalDurationSec <= 8) {
     return { band: "short", minCuts: 3, preferredCuts: 3, maxSecPerCut: 3, minShotsPerCut: 2, isShortformBand: true, is13to15Special: false };
   }
 
-  // 10~15초: 숏폼 핵심 구간 — 4~6컷 필수
-  if (totalDurationSec <= 15) {
-    return { band: "shortform-critical", minCuts: 4, preferredCuts: 4, maxSecPerCut: 4, minShotsPerCut: 2, isShortformBand: true, is13to15Special: true };
-  }
-
-  // 16초+: shortform 범위 초과 — 생성 불가
+  // 9초+: shortform 범위 초과 — 세그먼트 분할 필요
   // reconciliation에서는 이 band가 오면 에러로 처리해야 함
   return { band: "over-limit", minCuts: 0, preferredCuts: 0, maxSecPerCut: 0, minShotsPerCut: 0, isShortformBand: false, is13to15Special: false };
 }
@@ -284,9 +278,7 @@ export function buildReconciliationExplanation(plan: ReconciledCutPlan): string 
 
   const parts: string[] = [];
 
-  if (plan.bandPolicy.is13to15Special) {
-    parts.push(`${plan.totalDurationSec}초 숏폼 리듬을 위해 컷 수를 ${plan.cutCount}개로 유지했습니다.`);
-  } else if (plan.bandPolicy.isShortformBand && plan.cutCount > plan.densityTargetCuts) {
+  if (plan.bandPolicy.isShortformBand && plan.cutCount > plan.densityTargetCuts) {
     parts.push(`숏폼 전달력을 위해 컷 수를 ${plan.densityTargetCuts}→${plan.cutCount}개로 올렸습니다.`);
   }
 

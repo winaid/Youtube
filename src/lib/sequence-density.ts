@@ -31,7 +31,8 @@ export const SEQUENCE_MIN_DURATION = 8;
  * 시퀀스 내부의 샷 수는 multi-shot-planner가 관리.
  *
  * 확정 규칙 (2026-03):
- *   ≤5초: 1컷 (micro), 6~9초: 3컷 (short), 10~15초: 4컷 (critical)
+ *   ≤5초: 1컷 (micro), 6~8초: 3~4컷 (short)
+ *   VEO 단일 클립 최대 8초. 8초 초과 프로젝트는 세그먼트 분할.
  *   DENSITY_POLICY는 레거시 — recommendMinimumCutCount()가 실제 source of truth.
  */
 // ═══════════════════════════════════════════════════════════════════
@@ -58,32 +59,31 @@ export const CUT_COUNT_MAX = 90;
 /**
  * 확정 규칙 (2026-03):
  *   ≤5초: 1~2컷 (micro)
- *   6~9초: 3~6컷 (short — 최소 3컷, physicalMax로 실제 상한 제한: 6초=3, 8초=4)
- *   10~15초: 4~6컷 (shortform-critical, physicalMax 적용)
+ *   6~8초: 3~4컷 (short — VEO 단일 클립 최대 8초)
  *   ※ physicalMax = floor(totalDuration/2) — 각 컷 최소 2초 보장
+ *   ※ 8초 초과 프로젝트는 8초 세그먼트 단위로 분할하여 합산
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 9,  min: 3, max: 6 },  // 6~9초: 최소 3컷 (physicalMax로 실제 상한 제한)
-  { maxSec: 15, min: 4, max: 6 },  // 10~15초: 4~6컷 (physicalMax로 실제 상한 제한)
+  { maxSec: 8,  min: 3, max: 4 },  // 6~8초: 최소 3컷, 최대 4컷 (VEO 8초 상한)
 ];
 
 /**
- * 단일 segment(≤15s) 기준 컷 수 범위 반환. 내부 전용.
+ * 단일 segment(≤8s) 기준 컷 수 범위 반환. 내부 전용.
  */
 function singleSegmentRange(segDur: number): { min: number; max: number } {
   if (segDur <= 0) return { min: 1, max: 2 };
   for (const preset of RANGE_PRESETS) {
     if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
   }
-  return { min: 3, max: 6 }; // fallback: segDur > 15이면 multi-segment이므로 여기 도달하면 안 됨
+  return { min: 3, max: 4 }; // fallback: VEO 8초 상한 기준
 }
 
 /**
  * 총 런타임(초) → 권장 시퀀스 수 범위 반환.
- * 15초 초과 시 segment 단위로 분할하여 합산.
- * 예: 48초 = 4 segments → 시퀀스 4개 (내부 플래닝 기준 8–15초, 실제 생성은 8초 고정)
- * 예: 120초 = 8 segments → 시퀀스 8개
+ * 8초 초과 시 segment 단위(8초)로 분할하여 합산.
+ * 예: 48초 = 6 segments → 시퀀스 6개
+ * 예: 120초 = 15 segments → 시퀀스 15개
  */
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {
   if (!totalDurationSec || totalDurationSec <= 0) return { min: 1, max: 2 };
@@ -423,9 +423,8 @@ export function resolveSegmentPlan(opts: {
 /**
  * 확정 규칙 (2026-03):
  *   ≤5초: 1컷 (micro)
- *   6~9초: 3컷 (short)
- *   10~15초: 4컷 (shortform-critical)
- *   16초+: over-limit (segment 분할)
+ *   6~8초: 3~4컷 (short, VEO 단일 클립 최대 8초)
+ *   9초+: 세그먼트 분할
  */
 export function recommendMinimumCutCount(totalDurationSec: number): number {
   if (!totalDurationSec || totalDurationSec <= 0) return 1;

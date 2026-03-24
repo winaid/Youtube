@@ -24,7 +24,8 @@ export const VEO_SEGMENT_CAP = 8;
  */
 /**
  * 확정 규칙 (2026-03):
- *   ≤5초: 1컷, 6~9초: 3컷, 10~15초: 4컷
+ *   ≤5초: 1컷, 6~8초: 3~4컷
+ *   VEO 단일 클립 최대 8초. 8초 초과는 세그먼트 분할.
  *   recommendMinimumCutCount()가 source of truth.
  */
 
@@ -44,14 +45,13 @@ export const CUT_COUNT_MAX = 90;
  *
  * 확정 규칙 (2026-03):
  *   ≤5초: 1~2컷 (micro)
- *   6~9초: 3~6컷 (short — 최소 3컷, physicalMax로 실제 상한 제한: 6초=3, 8초=4)
- *   10~15초: 4~6컷 (shortform-critical, physicalMax 적용)
+ *   6~8초: 3~4컷 (short — VEO 단일 클립 최대 8초)
  *   ※ physicalMax = floor(totalDuration/2) — 각 컷 최소 2초 보장
+ *   ※ 8초 초과 프로젝트는 8초 세그먼트 단위로 분할하여 합산
  */
 const RANGE_PRESETS: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 5,  min: 1, max: 2 },
-  { maxSec: 9,  min: 3, max: 6 },  // 6~9초: 최소 3컷 (physicalMax로 실제 상한 제한)
-  { maxSec: 15, min: 4, max: 6 },  // 10~15초: 4~6컷 (physicalMax로 실제 상한 제한)
+  { maxSec: 8,  min: 3, max: 4 },  // 6~8초: 최소 3컷, 최대 4컷 (VEO 8초 상한)
 ];
 
 function singleSegmentRange(segDur: number): { min: number; max: number } {
@@ -59,10 +59,8 @@ function singleSegmentRange(segDur: number): { min: number; max: number } {
   for (const preset of RANGE_PRESETS) {
     if (segDur <= preset.maxSec) return { min: preset.min, max: preset.max };
   }
-  // 15초+ segment: 마지막 preset 기준으로 비례 확장 (1-2 fallback은 과소 추정)
-  const lastPreset = RANGE_PRESETS[RANGE_PRESETS.length - 1];
-  const scale = Math.ceil(segDur / lastPreset.maxSec);
-  return { min: lastPreset.min * scale, max: lastPreset.max * scale };
+  // VEO 8초 상한 기준 fallback
+  return { min: 3, max: 4 };
 }
 
 export function recommendCutCountRange(totalDurationSec: number): { min: number; max: number } {

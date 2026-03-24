@@ -115,18 +115,17 @@ export interface PreflightInput {
 //
 // 확정 규칙 (2026-03):
 //   ≤5초: micro (1컷)
-//   6~9초: short (최소 3컷)
-//   10~15초: shortform-critical (4~6컷 필수)
-//   16~60초: mid-form (extend 체인, 컷당 8초)
-//   61~120초: long-form-shorts (extend 체인, 최대 ~15 세그먼트)
-//   121초+: 생성 불가
+//   6~8초: short (최소 3컷, VEO 단일 클립 최대 8초)
+//   9~60초: mid-form (세그먼트 분할, 컷당 8초)
+//   61~600초: long-form-shorts (멀티 체인)
+//   601초+: 생성 불가
 // ═══════════════════════════════════════════════════════════════════
 
 /** 총 길이 상한 — 멀티 체인으로 10분까지 지원. 단일 체인 최대 ~141초. */
 export const SEQUENCE_MAX_TOTAL_DURATION = 600;
 
 export interface SequenceBandRule {
-  band: "micro" | "short" | "shortform-critical" | "mid-form" | "long-form-shorts" | "over-limit";
+  band: "micro" | "short" | "mid-form" | "long-form-shorts" | "over-limit";
   minCuts: number;
   maxCuts: number;
   maxSecPerCut: number;
@@ -140,10 +139,8 @@ export interface SequenceBandRule {
 export function getSequenceBandRule(totalDurationSec: number): SequenceBandRule {
   if (totalDurationSec <= 5)
     return { band: "micro", minCuts: 1, maxCuts: 2, maxSecPerCut: 5, supported: true };
-  if (totalDurationSec <= 9)
-    return { band: "short", minCuts: 3, maxCuts: 6, maxSecPerCut: totalDurationSec, supported: true };
-  if (totalDurationSec <= 15)
-    return { band: "shortform-critical", minCuts: 4, maxCuts: 6, maxSecPerCut: 4, supported: true };
+  if (totalDurationSec <= 8)
+    return { band: "short", minCuts: 3, maxCuts: 4, maxSecPerCut: totalDurationSec, supported: true };
   if (totalDurationSec <= 60)
     return { band: "mid-form", minCuts: Math.ceil(totalDurationSec / 8), maxCuts: Math.ceil(totalDurationSec / 6), maxSecPerCut: 8, supported: true };
   if (totalDurationSec <= 600)
@@ -286,48 +283,39 @@ function checkSequenceStructure(input: PreflightInput, issues: PreflightIssue[])
 
   // 밴드별 라벨
   const bandLabel = bandRule.band === "short"
-    ? `6~9초 영상`
-    : bandRule.band === "shortform-critical"
-      ? `10~15초 영상`
-      : `${totalDuration}초 영상`;
+    ? `6~8초 영상`
+    : `${totalDuration}초 영상`;
 
   // ── 컷 수 하한 ──
   if (cutCount < bandRule.minCuts) {
     issues.push({
       severity: "blocking",
       code: "cut_count_too_low",
-      messageKo: bandRule.band === "shortform-critical"
-        ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}개 시퀀스로 구성해야 합니다. 현재 ${cutCount}개라 생성할 수 없습니다. 시퀀스를 추가해 주세요.`
-        : bandRule.band === "short"
-          ? `${bandLabel}은 최소 ${bandRule.minCuts}개 시퀀스 이상이어야 합니다. 현재 ${cutCount}개라 생성할 수 없습니다. 시퀀스를 추가해 주세요.`
-          : `${bandLabel}은 최소 ${bandRule.minCuts}개 시퀀스가 필요합니다. 현재 ${cutCount}개입니다.`,
+      messageKo: bandRule.band === "short"
+        ? `${bandLabel}은 최소 ${bandRule.minCuts}개 시퀀스 이상이어야 합니다. 현재 ${cutCount}개라 생성할 수 없습니다. 시퀀스를 추가해 주세요.`
+        : `${bandLabel}은 최소 ${bandRule.minCuts}개 시퀀스가 필요합니다. 현재 ${cutCount}개입니다.`,
     });
   }
 
   // ── 컷 수 상한 ──
   if (cutCount > bandRule.maxCuts) {
-    const isHardLimit = bandRule.band === "shortform-critical";
     issues.push({
-      severity: isHardLimit ? "blocking" : "warning",
+      severity: "warning",
       code: "cut_count_too_high",
-      messageKo: isHardLimit
-        ? `${bandLabel}은 ${bandRule.minCuts}~${bandRule.maxCuts}개 시퀀스로 구성해야 합니다. 현재 ${cutCount}개라 너무 많습니다. ${bandRule.maxCuts}개 이하로 줄여 주세요.`
-        : `${bandLabel}에 ${cutCount}개 시퀀스는 권장 상한(${bandRule.maxCuts}개)을 초과합니다. 시퀀스를 줄이는 것을 권장합니다.`,
+      messageKo: `${bandLabel}에 ${cutCount}개 시퀀스는 권장 상한(${bandRule.maxCuts}개)을 초과합니다. 시퀀스를 줄이는 것을 권장합니다.`,
     });
   }
 
-  // ── 개별 컷이 밴드 maxSecPerCut 초과 (shortform-critical에서만 강제) ──
-  if (bandRule.band === "shortform-critical") {
-    for (const cut of input.cuts) {
-      const duration = input.canonicalDurations.get(cut.cutNumber) ?? cut.durationSec;
-      if (duration > bandRule.maxSecPerCut) {
-        issues.push({
-          severity: "blocking",
-          code: "invalid_duration_structure",
-          messageKo: `시퀀스 ${cut.cutNumber}: ${duration}초 — ${bandLabel}에서는 시퀀스당 최대 ${bandRule.maxSecPerCut}초입니다. 길이를 줄여 주세요.`,
-          cutNumber: cut.cutNumber,
-        });
-      }
+  // ── 개별 컷이 VEO 상한(8초) 초과 ──
+  for (const cut of input.cuts) {
+    const duration = input.canonicalDurations.get(cut.cutNumber) ?? cut.durationSec;
+    if (duration > 8) {
+      issues.push({
+        severity: "blocking",
+        code: "invalid_duration_structure",
+        messageKo: `시퀀스 ${cut.cutNumber}: ${duration}초 — VEO 단일 클립 최대 8초입니다. 길이를 줄여 주세요.`,
+        cutNumber: cut.cutNumber,
+      });
     }
   }
 }

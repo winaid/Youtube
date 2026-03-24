@@ -174,9 +174,8 @@ export const RETENTION_ROLE_PATTERNS: Record<number, ShotRole[]> = {
  */
 const SHOT_COUNT_RANGES: { maxSec: number; min: number; max: number }[] = [
   { maxSec: 3,  min: 1, max: 1 },  // 3초 이하: 멀티샷 불필요 (단일샷)
-  { maxSec: 7,  min: 3, max: 3 },  // 7초 (VEO extend): 3샷
-  { maxSec: 8,  min: 4, max: 4 },  // 8초: 반드시 4샷
-  { maxSec: 15, min: 4, max: 4 },  // 15초: 반드시 4샷
+  { maxSec: 7,  min: 3, max: 3 },  // 7초: 3샷
+  { maxSec: 8,  min: 4, max: 4 },  // 8초 (VEO 상한): 반드시 4샷
 ];
 
 /** scene type별 shot count 보정 */

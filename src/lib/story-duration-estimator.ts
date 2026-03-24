@@ -7,7 +7,7 @@
  *
  * 주의:
  *   - 이 값은 project total duration (영상 전체 길이)이다.
- *   - current segment duration (VEO 1회 요청 단위, 3~15초)과 혼동하지 말 것.
+ *   - current segment duration (VEO 1회 요청 단위, 최대 8초)과 혼동하지 말 것.
  *   - generate-cuts는 이 값을 projectTotalDurationSeconds로 받아
  *     segment planning의 기준으로 사용한다.
  */
@@ -182,7 +182,7 @@ export interface AutoEditPlan {
  *   - 문장 수 ≤ 15 → 중간 콘텐츠: 5~6초/컷, 8~12컷
  *   - 문장 수 > 15  → 긴 콘텐츠: 4~5초/컷, 12~15컷 (segment 분할 대상)
  *   - 컷 수 × 장면당 초 ≈ totalSec 유지
- *   - cutDuration: 3~15초 범위 (VEO 최대 15초 지원)
+ *   - cutDuration: 3~8초 범위 (VEO 단일 클립 최대 8초)
  */
 export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
   const est = estimateProjectDuration(storyText);
@@ -213,7 +213,7 @@ export function estimateAutoEditPlan(storyText: string): AutoEditPlan {
   const cutCount = Math.min(DEMO_CUT_CAP, Math.max(4, rawCutCount));
 
   // cutDuration 재조정: cutCount × cutDuration ≈ totalSec
-  // 내부 플래닝 휴리스틱: 3~15초 범위로 추정. 실제 생성은 8초 고정.
+  // 내부 플래닝 휴리스틱: 3~8초 범위로 추정. 실제 VEO 생성은 8초 고정.
   // 여기서의 cutDuration은 스토리 구조 분석용이며 VEO 요청에 직접 사용되지 않음.
   const adjustedDuration = Math.round(totalSec / cutCount);
   cutDuration = Math.min(15, Math.max(3, adjustedDuration));

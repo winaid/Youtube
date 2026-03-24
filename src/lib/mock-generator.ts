@@ -351,7 +351,7 @@ export async function generatePrompt(
   const directorStyle = director?.style ?? "";
 
   // project total duration 추정: 명시값이면 그대로, auto이면 스토리 기반 추정
-  // 주의: 이 값은 project total이다. current segment cap(15초)과 혼동하지 말 것.
+  // 주의: 이 값은 project total이다. current segment cap(8초)과 혼동하지 말 것.
   const isFullAuto = input.duration === "auto" && !input.cutDuration && !input.cutCount;
 
   let effectiveDuration: number;
