@@ -2658,6 +2658,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? { core: narrativeCore, emotions: targetEmotions }
       : undefined;
 
+    // storyExcerpt for step2/3 context — storyText is from request body
+    const storyExcerpt = String(storyText).slice(0, 800);
+
     /** 모든 배치를 병렬 실행하는 헬퍼 — allSettled로 성공 배치 보존 (실패 배치만 재시도 가능) */
     const runAllBatches = async (modelOverride?: string): Promise<unknown[][]> => {
       const results = await Promise.allSettled(step23Batches.map((batch, idx) =>
