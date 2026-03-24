@@ -380,11 +380,24 @@ export function distributeDurations(
   const raw = weights.map(w => Math.max(minShotDuration, Math.floor((w / totalWeight) * totalDurationSec)));
 
   // 나머지 흡수
-  const currentSum = raw.reduce((s, d) => s + d, 0);
-  let remainder = totalDurationSec - currentSum;
+  let currentSum = raw.reduce((s, d) => s + d, 0);
 
-  // 가장 큰 가중치 샷부터 나머지 분배
+  // clamp이 합을 초과시킨 경우 — 가장 긴 샷부터 줄임
   const indices = weights.map((_, i) => i).sort((a, b) => weights[b] - weights[a]);
+  while (currentSum > totalDurationSec) {
+    for (const idx of indices) {
+      if (currentSum <= totalDurationSec) break;
+      if (raw[idx] > minShotDuration) {
+        raw[idx] -= 1;
+        currentSum -= 1;
+      }
+    }
+    // 모든 샷이 minShotDuration이면 더 이상 줄일 수 없으므로 탈출
+    if (raw.every(d => d <= minShotDuration)) break;
+  }
+
+  // 합이 부족할 경우 — 가장 큰 가중치 샷부터 나머지 분배
+  let remainder = totalDurationSec - currentSum;
   for (const idx of indices) {
     if (remainder <= 0) break;
     raw[idx] += 1;
@@ -429,7 +442,12 @@ export function buildDefaultMultiShot(opts: {
     let prompt = styleSuffix ? `${baseShot}. ${styleSuffix}` : baseShot;
     if (prompt.length > 400) {
       const lastDot = prompt.lastIndexOf(".", 400);
-      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+      if (lastDot > 300) {
+        prompt = prompt.slice(0, lastDot + 1);
+      } else {
+        const lastSpace = prompt.lastIndexOf(" ", 400);
+        prompt = (lastSpace > 0 ? prompt.slice(0, lastSpace) : prompt.slice(0, 400)) + "...";
+      }
     }
     const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;
     return { index: i + 1, prompt, promptKo, duration: String(durations[i]), role };

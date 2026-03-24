@@ -23,7 +23,6 @@ import type { PacingMode } from "./_rhythm-distribution";
 import { VEO_DEFAULT_MODEL, VEO_SEGMENT_CAP, VEO_EXTENSION_DURATION, getCapability } from "./_veo-capability";
 // VEO 정책: 8초=4샷, 7초(extend)=3샷
 const getMaxShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
-const getMinShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
 import { runDeepAnalysis, serializePromptBrief } from "./_deep-analysis";
 
@@ -135,7 +134,7 @@ const FAST_PATH_MAX_CUTS = 5;
 // 각 retry 경로에서 리터럴 값 대신 이 상수를 사용.
 // 변경 시 여기만 수정하면 전 경로에 반영됨.
 
-/** Step1 초기 요청 maxOutputTokens 상한 (Gemini 3.1 Pro max: 65536) */
+/** Step1 초기 요청 maxOutputTokens 상한 (max: 65536) */
 const STEP1_MAX_TOKENS = 65536;
 /** Higher-token retry / compact retry maxOutputTokens */
 const STEP1_RETRY_MAX_TOKENS = 65536;
@@ -542,6 +541,12 @@ interface CutDetail {
   cameraDirection: string;
   moodLighting: string;
   multiShot?: MultiShotItem[];
+  videoPromptKo?: string;
+  cameraDirectionKo?: string;
+  moodLightingKo?: string;
+  subjectActionKo?: string;
+  narrativeFunctionKo?: string;
+  newInformationKo?: string;
 }
 
 // ─── ShotRole 자동 추론 (서버사이드 — src/lib/multishot-validation.ts 동기화) ──
@@ -562,7 +567,7 @@ const ROLE_PATTERNS_REPAIR: Record<number, ShotRoleServer[]> = {
 function repairMultiShotMinimums(cuts: Array<{ cutNumber: number; durationSec: number; videoPrompt?: string; sceneDescription?: string; multiShot?: MultiShotItem[] }>): void {
   for (const fc of cuts) {
     const dur = fc.durationSec;
-    const minRequired = getMinShots(VEO_DEFAULT_MODEL, dur);
+    const minRequired = getMaxShots(VEO_DEFAULT_MODEL, dur);
     const existingShots: MultiShotItem[] = Array.isArray(fc.multiShot) ? fc.multiShot : [];
 
     if (minRequired >= 2 && existingShots.length < minRequired) {
@@ -764,7 +769,6 @@ function safeParseArr(text: string): unknown[] | null {
     }
     return null;
   })());
-  return null;
 }
 
 // ─── Beat 타이밍 헬퍼 (duration-aware) ─────────────────────────────────────
@@ -1093,14 +1097,14 @@ JSON만: {"_narrativeCore":"≤30자","_targetEmotions":["emotion"],"characterSe
         parseMode = "compact_retry";
         console.info(`[cuts:step1] ultra-compact recovery succeeded. responseLen=${result.text.length}`);
       } else {
-        throw new Error(`step1 TIMEOUT + ultra-compact retry failed: ${result.error.slice(0, 300)}`);
+        throw new Error(`step1 TIMEOUT + ultra-compact retry failed: ${result.error?.slice(0, 300) ?? "unknown error"}`);
       }
     } else if (result.status && (result.status >= 500 || result.status === 429)) {
       // Provider-side error (503 UNAVAILABLE, 429 rate limit, 500 etc.)
       // Mark clearly so outer handler doesn't misclassify as MAX_TOKENS
-      throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error.slice(0, 400)}`);
+      throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error?.slice(0, 400) ?? "unknown error"}`);
     } else {
-      throw new Error(`step1 API error: ${result.error.slice(0, 500)}`);
+      throw new Error(`step1 API error: ${result.error?.slice(0, 500) ?? "unknown error"}`);
     }
   }
 
@@ -1465,7 +1469,7 @@ ${(() => {
     console.error(`[cuts:${stepLabel}] error: ${result.error.slice(0, 500)}`);
     // Provider 5xx/429 에러는 silent fallback 대신 throw → 상위에서 올바른 HTTP 상태 반환
     if (result.status && (result.status >= 500 || result.status === 429)) {
-      throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error.slice(0, 400)}`);
+      throw new Error(`PROVIDER_ERROR:${result.status}: ${result.error?.slice(0, 400) ?? "unknown error"}`);
     }
     if (result.truncated && result.text) {
       console.warn(`[cuts:${stepLabel}] TRUNCATED after retry! partialLen=${result.text.length} rawTail500: ${result.text.slice(-500)}`);
@@ -2518,8 +2522,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         repairMultiShotMinimums(finalizedCuts);
         trimMultiShotMax(finalizedCuts);
         postRepairCuts(finalizedCuts);
+        const sequencePlan = buildSequencePlanFromCuts(finalizedCuts, {
+          styleId: String(animationMode || "live-action"),
+          aspectRatio: (aspectRatio === "9:16" ? "9:16" : "16:9"),
+          directorId: String(directorName || ""),
+        });
+        const sequenceValidation = validateSequencePlan(sequencePlan);
         console.info(`[generate-cuts] DETERMINISTIC FALLBACK RESPONSE — cuts=${finalizedCuts.length}, seeds=${defaultSeeds.length}, totalElapsed=${Date.now() - t0_request}ms`);
-        return Response.json({ ok: true, degraded: true, reason: `step1 timeout + ultra-compact already failed`, source: "deterministic-fallback", warnings: step1Warnings, characterSeeds: defaultSeeds, cuts: finalizedCuts, secPerCut });
+        return Response.json({ ok: true, degraded: true, reason: `step1 timeout + ultra-compact already failed`, source: "deterministic-fallback", warnings: step1Warnings, characterSeeds: defaultSeeds, cuts: finalizedCuts, sequencePlan, sequenceValidation, secPerCut });
       } else if (isTimeout) {
         timedOutAtStep1 = true;
         console.warn("[generate-cuts] step1 timeout — attempting ultra-compact retry (outer)");

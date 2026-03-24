@@ -187,6 +187,10 @@ export function canonicalShotsToMultiShot(
   if (rawSum !== totalDuration && rawDurations.length > 0) {
     rawDurations[rawDurations.length - 1] += totalDuration - rawSum;
   }
+  // Guard: ensure last shot duration is at least 1 second after rounding correction
+  if (rawDurations.length > 0 && rawDurations[rawDurations.length - 1] < 1) {
+    rawDurations[rawDurations.length - 1] = 1;
+  }
 
   return seq.shots.map((shot, i) => {
     // Rich prompt: framing label + motion (if not static) + action + env + mood

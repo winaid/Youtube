@@ -210,7 +210,7 @@ const ENVIRONMENT_CONTINUOUS_MOTIONS = [
 ];
 
 /** Environment 씬에서 금지되는 cut 기반 카메라 지시 */
-const ENVIRONMENT_BANNED_MOTIONS = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut)\b/i;
+const ENVIRONMENT_BANNED_MOTIONS = /\b(whip\s*pan|quick\s*cut|jump\s*cut|snap\s*zoom|rack\s*focus|crash\s*zoom|smash\s*cut|match\s*cut)\b/gi;
 
 /** Environment positive 키워드 (반드시 포함) */
 const ENVIRONMENT_POSITIVE_KEYWORDS = [
@@ -1435,7 +1435,7 @@ export function assembleFromJSON(input: {
     framing: rawDoc.camera.framing,
     motion: rawDoc.camera.motion,
     shotCategory: rawDoc.scene.shotCategory,
-    negativeCount: rawDoc.negatives.universal.length + rawDoc.negatives.sceneSpecific.length + rawDoc.negatives.failureMode.length + rawDoc.negatives.user.length,
+    negativeCount: rawDoc.negatives.universal.length + (rawDoc.negatives.style || []).length + rawDoc.negatives.sceneSpecific.length + rawDoc.negatives.failureMode.length + rawDoc.negatives.user.length,
   };
 
   // Step 2: Sanitize (BEFORE validation — so validation reflects cleaned state)
@@ -1814,6 +1814,7 @@ export function assembleFromJSON(input: {
     videoPromptJson: input.cut.videoPromptJson,
     negatives: {
       universal: normalizedDoc.negatives.universal,
+      style: [...new Set(normalizedDoc.negatives.style || [])],
       sceneSpecific: [...new Set(normalizedDoc.negatives.sceneSpecific)],
       failureMode: [...new Set(normalizedDoc.negatives.failureMode)],
       user: normalizedDoc.negatives.user,

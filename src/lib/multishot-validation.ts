@@ -36,7 +36,7 @@ function safePrompt(shot: MultiShotPrompt): string {
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
-export const PROMPT_WARN_LENGTH = 450;
+export const PROMPT_WARN_LENGTH = 350;
 /**
  * 최대 prompt 길이.
  *
@@ -89,7 +89,7 @@ export function checkShotDensity(
   if (shotCount < rec.min) {
     const isExtreme = shotCount <= 1 && totalDurationSec >= 8;
     return {
-      severity: isExtreme ? "warning" : "warning",
+      severity: isExtreme ? "error" : "warning",
       message: `이 장면 ${totalDurationSec}초에 내부 멀티샷 ${shotCount}개 — 리텐션을 위해 ${rec.min}–${rec.max}개 권장. 의도적 원테이크라면 무시 가능.`,
       recommended: rec,
     };
@@ -384,7 +384,7 @@ export function addShot(
   updated[bestIdx] = { ...updated[bestIdx], duration: String(remainDur) };
 
   const newTotal = updated.length + 1;
-  const newRole = inferShotRole(newTotal - 1, newTotal);
+  const newRole = inferShotRole(bestIdx + 1, newTotal);
   const newShot: MultiShotPrompt = {
     index: 0, // will be re-indexed below
     prompt: "",
@@ -841,15 +841,27 @@ export function distributeEvenly(
   const baseDur = Math.max(minDur, Math.floor(totalDurationSec / shotCount));
   const remainder = totalDurationSec - baseDur * shotCount;
 
-  return Array.from({ length: shotCount }, (_, i) => {
+  const result = Array.from({ length: shotCount }, (_, i) => {
     const isLast = i === shotCount - 1;
     const dur = isLast ? baseDur + remainder : baseDur;
     const existing = existingShots?.[i];
     return {
       index: i + 1,
       prompt: existing?.prompt ?? "",
+      promptKo: existing?.promptKo,
       duration: String(Math.max(minDur, dur)),
       role: existing?.role ?? inferShotRole(i, shotCount),
     };
   });
+
+  // Correction: ensure sum of durations matches totalDurationSec
+  const sumDur = result.reduce((acc, s) => acc + parseFloat(s.duration), 0);
+  const diff = totalDurationSec - sumDur;
+  if (diff !== 0 && result.length > 0) {
+    const last = result[result.length - 1];
+    const adjusted = Math.max(minDur, parseFloat(last.duration) + diff);
+    result[result.length - 1] = { ...last, duration: String(adjusted) };
+  }
+
+  return result;
 }

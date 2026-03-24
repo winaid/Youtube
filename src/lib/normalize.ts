@@ -52,7 +52,7 @@ export function normalizeMultiShotPrompt(shot: Partial<MultiShotPrompt> & { inde
   return {
     index: safeNumber(shot.index, fallbackIndex),
     prompt: safeString(shot.prompt),
-    ...(shot.promptKo ? { promptKo: safeString(shot.promptKo) } : {}),
+    ...(shot.promptKo !== undefined ? { promptKo: safeString(shot.promptKo) } : {}),
     duration: safeString(shot.duration) || "3",
     role: (VALID_ROLES.includes(shot.role as ShotRole) ? shot.role : "develop") as ShotRole,
   };
@@ -118,10 +118,13 @@ function normalizeVisualStrategy(raw: Partial<VisualStrategy> | undefined): Visu
   };
 }
 
+const VALID_VISUAL_FOCUS: AnalyzedCut["visualFocus"][] = ["environment", "action", "face", "emotion", "aftermath", "object-detail", "contrast", "spectacle"];
+
 function normalizeAnalyzedCut(raw: Partial<AnalyzedCut> | undefined): AnalyzedCut {
+  const visualFocusRaw = safeString(raw?.visualFocus);
   return {
     role: (VALID_ROLES.includes(raw?.role as ShotRole) ? raw!.role : "develop") as ShotRole,
-    visualFocus: safeString(raw?.visualFocus) as AnalyzedCut["visualFocus"] || "action",
+    visualFocus: VALID_VISUAL_FOCUS.includes(visualFocusRaw as AnalyzedCut["visualFocus"]) ? visualFocusRaw as AnalyzedCut["visualFocus"] : "action",
     changeFromPrevious: safeString(raw?.changeFromPrevious),
     narrativeFunction: safeString(raw?.narrativeFunction),
     suggestedPromptIntent: safeString(raw?.suggestedPromptIntent),
@@ -129,20 +132,25 @@ function normalizeAnalyzedCut(raw: Partial<AnalyzedCut> | undefined): AnalyzedCu
   };
 }
 
+const VALID_BEAT_TYPES: AnalyzedSequence["beatType"][] = ["hook", "setup", "mechanism", "development", "reveal", "consequence", "escalation", "paradox", "payoff", "transition"];
+const VALID_ENDING_MODES: AnalyzedSequence["endingMode"][] = ["close", "cliffhanger", "loop-open", "payoff"];
+
 export function normalizeAnalyzedSequence(raw: Partial<AnalyzedSequence>, fallbackId: number): AnalyzedSequence {
   const cuts = safeArray<Partial<AnalyzedCut>>(raw.cuts).map(c => normalizeAnalyzedCut(c));
+  const beatTypeRaw = safeString(raw.beatType);
+  const endingModeRaw = safeString(raw.endingMode);
 
   return {
     id: safeNumber(raw.id, fallbackId),
     title: safeString(raw.title) || `시퀀스 ${fallbackId}`,
     purpose: safeString(raw.purpose),
-    beatType: safeString(raw.beatType) as AnalyzedSequence["beatType"] || "development",
+    beatType: VALID_BEAT_TYPES.includes(beatTypeRaw as AnalyzedSequence["beatType"]) ? beatTypeRaw as AnalyzedSequence["beatType"] : "development",
     sourceText: safeString(raw.sourceText),
     sourceSpan: raw.sourceSpan,
     recommendedDurationSec: safeNumber(raw.recommendedDurationSec, 8),
     recommendedCutCount: safeNumber(raw.recommendedCutCount, cuts.length || 2),
     rationale: safeString(raw.rationale),
-    endingMode: safeString(raw.endingMode) as AnalyzedSequence["endingMode"] || "close",
+    endingMode: VALID_ENDING_MODES.includes(endingModeRaw as AnalyzedSequence["endingMode"]) ? endingModeRaw as AnalyzedSequence["endingMode"] : "close",
     cliffhangerText: raw.cliffhangerText ? safeString(raw.cliffhangerText) : undefined,
     retentionStrategy: normalizeRetentionStrategy(raw.retentionStrategy),
     visualStrategy: normalizeVisualStrategy(raw.visualStrategy),
@@ -150,9 +158,12 @@ export function normalizeAnalyzedSequence(raw: Partial<AnalyzedSequence>, fallba
   };
 }
 
+const VALID_ISSUE_CODES: ScriptAnalysisIssue["code"][] = ["weak_hook", "too_dense", "too_repetitive", "too_abstract", "sequence_overload", "weak_payoff", "unclear_boundary", "single_beat_type", "short_script", "INCOMPLETE_ANALYSIS", "EMPTY_CUTS"];
+
 function normalizeIssue(raw: Partial<ScriptAnalysisIssue>): ScriptAnalysisIssue {
+  const codeRaw = safeString(raw.code);
   return {
-    code: safeString(raw.code) as ScriptAnalysisIssue["code"] || "short_script",
+    code: VALID_ISSUE_CODES.includes(codeRaw as ScriptAnalysisIssue["code"]) ? codeRaw as ScriptAnalysisIssue["code"] : "short_script",
     severity: (raw.severity === "info" || raw.severity === "warning" || raw.severity === "error")
       ? raw.severity : "info",
     message: safeString(raw.message),

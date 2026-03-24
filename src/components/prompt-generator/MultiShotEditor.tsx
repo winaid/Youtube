@@ -142,9 +142,14 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
 
   const handleRoleChange = useCallback(
     (shotIndex: number, role: ShotRole) => {
-      const updated = shots.map((s) =>
-        s.index === shotIndex ? { ...s, role } : s,
-      );
+      const updated = shots.map((s) => {
+        if (s.index !== shotIndex) return s;
+        const patch: Partial<MultiShotPrompt> = { role };
+        if (s.promptKo !== undefined) {
+          patch.promptKo = SHOT_ROLE_META[role].label;
+        }
+        return { ...s, ...patch };
+      });
       updateShots(updated);
     },
     [shots, updateShots],
@@ -223,12 +228,12 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
 
       {/* Shot Cards */}
       <div className="space-y-1.5">
-        {shots.map((shot) => {
-          const role = shot.role ?? inferShotRole(shot.index - 1, shots.length);
+        {shots.map((shot, arrayIdx) => {
+          const role = shot.role ?? inferShotRole(arrayIdx, shots.length);
           const meta = SHOT_ROLE_META[role];
           // Compute change from previous shot
-          const prevShot = shots.find(s => s.index === shot.index - 1);
-          const prevRole = prevShot ? (prevShot.role ?? inferShotRole(prevShot.index - 1, shots.length)) : null;
+          const prevShot = arrayIdx > 0 ? shots[arrayIdx - 1] : null;
+          const prevRole = prevShot ? (prevShot.role ?? inferShotRole(arrayIdx - 1, shots.length)) : null;
           const changeHint = prevShot && prevRole ? describeShotChange(prevShot, shot, prevRole, role) : null;
           const shotErrors = validation.shotIssues.filter(
             (i) => i.shotIndex === shot.index && i.severity === "error",
