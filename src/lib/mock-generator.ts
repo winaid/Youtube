@@ -10,6 +10,7 @@ import type { PacingMode } from "@/lib/rhythm-distribution";
 import { buildMultiChainPlan, SINGLE_CHAIN_MAX_SEC } from "@/lib/multi-chain-orchestrator";
 import { detectFragmentedIntent, planAutoSplitShots, type AutoSplitInput } from "@/lib/shot-plan-auto-split";
 import { buildFragmentedShotBlock } from "@/lib/korean-subject-defaults";
+import { ROLE_KO } from "@/lib/multi-shot-planner";
 
 async function fetchGeminiPersona(
   director: DirectorPersona,
@@ -476,12 +477,17 @@ export async function generatePrompt(
         };
         const autoResult = planAutoSplitShots(splitInput);
         if (autoResult.validation.passed && autoResult.shots.length >= 3) {
-          cut.multiShot = autoResult.shots.map((shot, i) => ({
-            index: i + 1,
-            prompt: shot.action,
-            duration: String(Math.round(shot.endSec - shot.startSec)),
-            role: inferRoleFromShotId(shot.shotId, autoResult.shots.length),
-          }));
+          cut.multiShot = autoResult.shots.map((shot, i) => {
+            const role = inferRoleFromShotId(shot.shotId, autoResult.shots.length) ?? "develop";
+            let prompt = String(shot.action || "").slice(0, 400);
+            return {
+              index: i + 1,
+              prompt,
+              promptKo: ROLE_KO[role] ?? `서브샷 ${i + 1}`,
+              duration: String(Math.round(shot.endSec - shot.startSec)),
+              role,
+            };
+          });
         }
       }
     }

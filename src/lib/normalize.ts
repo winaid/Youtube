@@ -52,6 +52,7 @@ export function normalizeMultiShotPrompt(shot: Partial<MultiShotPrompt> & { inde
   return {
     index: safeNumber(shot.index, fallbackIndex),
     prompt: safeString(shot.prompt),
+    ...(shot.promptKo ? { promptKo: safeString(shot.promptKo) } : {}),
     duration: safeString(shot.duration) || "3",
     role: (VALID_ROLES.includes(shot.role as ShotRole) ? shot.role : "develop") as ShotRole,
   };

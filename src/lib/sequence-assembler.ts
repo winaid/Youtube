@@ -19,7 +19,7 @@ import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
 import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, rewriteForPhysics, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
 import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
 import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor, type ShotBeatHint } from "@/lib/shot-splitting";
-import { planShotRoles } from "@/lib/multi-shot-planner";
+import { planShotRoles, ROLE_KO } from "@/lib/multi-shot-planner";
 import type { MultiShotPrompt, ShotRole } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1747,7 +1747,11 @@ export function assembleFromJSON(input: {
         shot.focus,
       ].filter(Boolean).join(". ").trim() + styleTag;
       const duration = String(Math.max(1, shotRawDurations[i]));
-      return { index: i + 1, prompt: prompt.slice(0, 500), duration, role };
+      const promptKo = ROLE_KO[role as keyof typeof ROLE_KO] ?? `서브샷 ${i + 1}`;
+      const clampedPrompt = prompt.length > 400
+        ? (prompt.lastIndexOf(".", 400) > 300 ? prompt.slice(0, prompt.lastIndexOf(".", 400) + 1) : prompt.slice(0, 400))
+        : prompt;
+      return { index: i + 1, prompt: clampedPrompt, promptKo, duration, role };
     });
   }
 

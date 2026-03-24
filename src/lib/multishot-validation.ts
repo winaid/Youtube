@@ -21,8 +21,8 @@
 import type { MultiShotPrompt, ShotRole } from "@/types";
 // VEO capability constants imported via local constants above
 
-/** VEO 고정 4샷 정책 */
-const VEO_MAX_SHOTS = 4;
+/** VEO 샷 수 정책: 7초=3샷, 8초+=4샷 */
+const veoMaxShots = (durationSec: number) => durationSec <= 7 ? 3 : 4;
 const VEO_MIN_SHOT_DURATION = 2;
 import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
 import type { GenerationMode } from "@/lib/multi-shot-planner";
@@ -162,7 +162,7 @@ export function validateMultiShots(
   const shotIssues: ShotIssue[] = [];
   const aggregateIssues: AggregateIssue[] = [];
 
-  const maxShots = VEO_MAX_SHOTS;
+  const maxShots = veoMaxShots(totalDurationSec);
 
   // ── 샷 개수 검증 ──
   if (shots.length === 0) {
@@ -342,7 +342,7 @@ export function addShot(
   shots: MultiShotPrompt[],
   totalDurationSec: number,
 ): MultiShotPrompt[] | null {
-  const maxShots = VEO_MAX_SHOTS;
+  const maxShots = veoMaxShots(totalDurationSec);
   if (shots.length >= maxShots) return null;
 
   const minDur = VEO_MIN_SHOT_DURATION;

@@ -41,8 +41,8 @@ import { DEFAULT_EDITORIAL_PERSONA } from "@/types";
 import { assembleFromJSON, type SingleShotDocument } from "@/lib/sequence-assembler";
 import { buildFinalProviderPayload, type FinalProviderPayload } from "@/lib/final-payload-builder";
 import { safeDuration } from "@/lib/duration-reconciliation";
-// VEO 멀티샷 정책: 3~4샷
-const VEO_MIN_SHOTS = 3;
+// VEO 멀티샷 정책: 7초=3샷, 8초+=4샷
+const veoMinShots = (durationSec: number) => durationSec <= 7 ? 3 : 4;
 import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
 import { structuredShotToSequenceShot } from "@/lib/structured-shot-normalize";
@@ -139,7 +139,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
   // 서버 repair가 적용되었더라도 클라이언트 suggestedMultiShot이 덮어쓸 수 있으므로
   // 여기서 한 번 더 확인. (9~15초: 최소 4샷, 4~8초: 최소 3샷)
   const dur = result.structuredSequence.durationSec;
-  const minRequired = VEO_MIN_SHOTS;
+  const minRequired = veoMinShots(dur);
   if (minRequired > 0 && multiShot.length < minRequired) {
     // 서버에서 보낸 cut.multiShot이 정책을 충족하면 그것을 사용
     if (input.cut.multiShot && input.cut.multiShot.length >= minRequired) {
@@ -205,9 +205,14 @@ export function canonicalShotsToMultiShot(
       shot.moodLighting,
     ].filter(Boolean);
     const role: ShotRole = (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length);
+    let prompt = parts.join(". ").trim();
+    if (prompt.length > 400) {
+      const lastDot = prompt.lastIndexOf(".", 400);
+      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+    }
     return {
       index: i + 1,
-      prompt: parts.join(". ").trim(),
+      prompt,
       promptKo: ROLE_KO[role] ?? `서브샷 ${i + 1}`,
       duration: String(Math.max(1, rawDurations[i])),
       role,
