@@ -707,34 +707,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: "storyText is required" }, { status: 400 });
     }
 
-    const validLocalIds = new Set((localDirectors || []).map(d => d.id));
-    const directorPoolSize = validLocalIds.size;
+    const directorPoolSize = (localDirectors || []).length;
 
     // ── Debug state ──
     const stageStatus: StageStatus = {
-      extractSignals: "failed",
-      localMatch: "failed",
+      extractSignals: "ok",
+      localMatch: "skipped",
       webSearch: "not_attempted",
       finalAssembly: "failed",
     };
-    const stageReasons: StageReasons = {};
+    const stageReasons: StageReasons = { extractSignals: "direct_text_analysis", localMatch: "skipped" };
 
-    let extractedGenres: string[] = [];
-    let extractedMoods: string[] = [];
-    let extractedKeywords: string[] = [];
-    let scenarioRegions: string[] = [];
-    let consideredLocalIds: string[] = [];
-    let rejectedLocalIds: string[] = [];
-    let localRejectionReasons: string[] = [];
-    let invalidIdsRemoved: string[] = [];
-
-    // ── 규칙 기반 사전 추출 (Gemini fallback) ──
-    console.info(`[recommend-director] Running preExtractSignals, elapsed=${Date.now() - _rdStartMs}ms`);
-    const preSignals = preExtractSignals(storyText);
-    console.info(`[recommend-director] preExtractSignals done: genres=${preSignals.genres.length}, moods=${preSignals.moods.length}, contentType=${preSignals.contentType}, elapsed=${Date.now() - _rdStartMs}ms`);
+    const extractedGenres: string[] = [];
+    const extractedMoods: string[] = [];
+    const extractedKeywords: string[] = [];
+    const scenarioRegions: string[] = [];
+    const consideredLocalIds: string[] = [];
+    const rejectedLocalIds: string[] = [];
+    const localRejectionReasons: string[] = [];
+    const invalidIdsRemoved: string[] = [];
+    const preSignals = preExtractSignals(storyText); // 최소한의 사전 추출 (contentType 등)
 
     // Raw response snippets for debug
-    let localMatchRawSnippet = "";
+    const localMatchRawSnippet = "";
     let webSearchRawSnippet = "";
 
     // Web search state
@@ -745,226 +740,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let webSearchAcceptedCount = 0;
     let webSearchRejectedCount = 0;
     let webSearchRejectionReasons: string[] = [];
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 1: Gemini 기반 로컬 매칭 (기존 로직)
-    // ═══════════════════════════════════════════════════════════
-
-    const localList = (localDirectors || [])
-      .map((d) => `- id:"${d.id}" | ${d.nameKo} (${d.name}) | ${d.region} | ${d.style}`)
-      .join("\n");
-
-    // Gemini에 보조 힌트 전달 (사전 추출 결과)
-    const preHintLines: string[] = [];
-    if (preSignals.contentType) {
-      preHintLines.push(`- 입력 형식: ${preSignals.contentType}`);
-    }
-    if (preSignals.formatHints.length > 0) {
-      preHintLines.push(`- 형식 힌트: ${preSignals.formatHints.join(", ")}`);
-    }
-    if (preSignals.genres.length > 0) {
-      preHintLines.push(`- 사전 감지 장르 후보: ${preSignals.genres.join(", ")} (참고용, 확정 아님)`);
-    }
-    if (preSignals.moods.length > 0) {
-      preHintLines.push(`- 사전 감지 무드 후보: ${preSignals.moods.join(", ")} (참고용, 확정 아님)`);
-    }
-    if (preSignals.visualHints.length > 0) {
-      preHintLines.push(`- 시각적 힌트: ${preSignals.visualHints.join(", ")}`);
-    }
-    const preHintBlock = preHintLines.length > 0
-      ? `\n\n## 사전 분석 힌트 (참고용)\n${preHintLines.join("\n")}\n위 힌트는 규칙 기반 자동 감지 결과입니다. 동의할 경우 추출 결과에 반영하고, 동의하지 않으면 무시하세요.`
-      : "";
-
-    const localPrompt = `당신은 영화 연출 전문가이자 AI 영상 감독 매칭 시스템입니다.
-
-## 분석할 시나리오
-${storyText.slice(0, 1200)}${preHintBlock}
-
-## 보유 감독 목록 — 총 ${directorPoolSize}명
-${localList}
-
-## 임무
-위 시나리오를 분석하고, 보유 감독 목록에서 가장 잘 어울리는 감독 1~3명을 추천하세요.
-
-### 분석 결과 기록 (반드시 포함)
-- extractedGenres: 장르 키워드 배열 (직접 키워드가 없더라도 맥락에서 유추 가능한 장르 포함. 단, 근거 있는 유추만 허용)
-- extractedMoods: 무드 키워드 배열 (감정선, 분위기, 톤 등. 간접적 단서도 포함)
-- extractedKeywords: 핵심 시각 키워드 배열 (장소, 오브젝트, 시각적 특징, 시대 배경 등)
-- scenarioRegions: 시나리오에 등장하는 국가/지역 배열 (예: ["한국"], ["한국", "일본"], ["미국"]). 조선시대→한국, 에도시대→일본 등 시대 배경에서 유추 가능한 국가도 포함. 특정 국가가 없으면 빈 배열.
-
-### 로컬 감독 매칭 규칙
-- 반드시 목록에 있는 id만 사용 (새로 만들지 말 것)
-- 각 감독에 fitScore(0-100)과 reason(한국어 2문장) 포함
-- 시나리오 배경 국가와 같은 region의 감독이 있으면 우선 추천 (예: 조선시대 시나리오 → 한국 감독 우선)
-- 목록에 어울리는 감독이 없어도 가장 가까운 1명을 fitScore 30 이상으로 포함
-- 검토했지만 제외한 감독이 있으면 rejectedLocalIds와 rejectionReasons에 기록
-
-## 출력 형식 (순수 JSON)
-{
-  "_pipeline": {
-    "extractedGenres": [],
-    "extractedMoods": [],
-    "extractedKeywords": [],
-    "scenarioRegions": [],
-    "consideredLocalCount": 0,
-    "consideredLocalIds": [],
-    "rejectedLocalIds": [],
-    "rejectionReasons": []
-  },
-  "analysis": "시나리오 특성 요약 2~3줄 (한국어)",
-  "localMatches": [
-    { "id": "기존 감독 id", "fitScore": 0-100, "reason": "한국어 2문장" }
-  ]
-}`;
-
-    const localRequestBody = {
-      contents: [{ role: "user", parts: [{ text: localPrompt }] }],
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json" as const,
-      },
-    };
-
-    console.info(`[recommend-director] STEP 1: calling Gemini for local matching, pool=${directorPoolSize}, elapsed=${Date.now() - _rdStartMs}ms`);
-    const _step1Start = Date.now();
-    console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=flash-lite→flash fallback, pool=${directorPoolSize})`);
-
-    const { response: res, meta: fallbackMeta } = await fetchWithModelFallback(context.env, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(localRequestBody),
-    }, { primaryModel: GEMINI_MODEL_SEARCH, fallbackModel: GEMINI_MODEL_FLASH, timeoutMs: 15_000 });
-
-    console.info(`[recommend-director] STEP 1: Gemini responded, status=${res.status}, elapsed=${Date.now() - _step1Start}ms`);
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.info(`[recommend-director] STEP 1 error: status=${res.status}, elapsed=${Date.now() - _rdStartMs}ms`);
-      console.error(`[recommend-director] 로컬 매칭 최종 실패: status=${res.status}`);
-      stageStatus.localMatch = "failed";
-      stageReasons.localMatch = `API 실패 (${res.status})`;
-      return geminiErrorResponse(res, errText, "recommend-director");
-    }
-
-    // meta.finalModel에서 정확한 모델명 추출 (URL 기반 추측 대신)
-    const modelUsed = fallbackMeta.finalModel.includes("flash") ? "flash" : fallbackMeta.finalModel.includes("pro") ? "pro" : fallbackMeta.finalModel;
-    console.info(`[recommend-director] STEP 1: modelUsed=${modelUsed}, parsing response`);
-
-    const data = await res.json() as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-    };
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
-
-    // ── 디버그: STEP 1 raw 응답 기록 ──
-    localMatchRawSnippet = rawText.slice(0, 200);
-    console.log(`[recommend-director] STEP 1 raw (first 500): ${rawText.slice(0, 500)}`);
-
-    // 마크다운 코드 블록 제거
-    let text = rawText;
-    const step1CodeBlock = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-    if (step1CodeBlock) {
-      text = step1CodeBlock[1].trim();
-    }
-
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      parsed = (parseFirstJsonObject(text) as Record<string, unknown>) ?? { localMatches: [] };
-    }
-
-    // ── Extract pipeline metadata ──
-    const geminiPipeline = (parsed._pipeline ?? {}) as Record<string, unknown>;
-    extractedGenres = Array.isArray(geminiPipeline.extractedGenres) ? geminiPipeline.extractedGenres as string[] : [];
-    extractedMoods = Array.isArray(geminiPipeline.extractedMoods) ? geminiPipeline.extractedMoods as string[] : [];
-    extractedKeywords = Array.isArray(geminiPipeline.extractedKeywords) ? geminiPipeline.extractedKeywords as string[] : [];
-    scenarioRegions = Array.isArray(geminiPipeline.scenarioRegions) ? (geminiPipeline.scenarioRegions as string[]).filter(r => typeof r === "string" && r.length > 0) : [];
-    consideredLocalIds = Array.isArray(geminiPipeline.consideredLocalIds) ? geminiPipeline.consideredLocalIds as string[] : [];
-    rejectedLocalIds = Array.isArray(geminiPipeline.rejectedLocalIds) ? geminiPipeline.rejectedLocalIds as string[] : [];
-    localRejectionReasons = Array.isArray(geminiPipeline.rejectionReasons) ? geminiPipeline.rejectionReasons as string[] : [];
-
-    // ── Merge pre-extracted signals as fallback ──
-    console.info(`[recommend-director] STEP 1 parsed: genres=${extractedGenres.length}, moods=${extractedMoods.length}, keywords=${extractedKeywords.length}, localMatches=${(parsed.localMatches as unknown[])?.length ?? 0}, elapsed=${Date.now() - _rdStartMs}ms`);
-    const mergeResult = mergePreExtractedSignals(extractedGenres, extractedMoods, extractedKeywords, preSignals);
-    extractedGenres = mergeResult.genres;
-    extractedMoods = mergeResult.moods;
-    extractedKeywords = mergeResult.keywords;
-
-    // Signal extraction status — 상세 debug
+    // Step 1 (로컬 매칭) 생략 — 글 자체 분석으로 바로 웹 검색
+    const localMatches: Array<Record<string, unknown>> = [];
+    const modelUsed = "flash";
     const signalDetails: string[] = [];
-
-    // Gemini 원본이 비었는지
-    const geminiGenreCount = (geminiPipeline.extractedGenres as string[] | undefined)?.length ?? 0;
-    const geminiMoodCount = (geminiPipeline.extractedMoods as string[] | undefined)?.length ?? 0;
-    if (geminiGenreCount === 0) signalDetails.push("no explicit genre keywords from Gemini");
-    if (geminiMoodCount === 0) signalDetails.push("no explicit mood keywords from Gemini");
-
-    // 사전 추출 보강 여부
-    if (mergeResult.mergeReasons.length > 0) {
-      signalDetails.push(...mergeResult.mergeReasons);
-    }
-
-    // content type / format hints
-    if (preSignals.contentType) {
-      signalDetails.push(`content type detected: ${preSignals.contentType}`);
-    }
-    if (preSignals.formatHints.length > 0) {
-      signalDetails.push(`format hints: ${preSignals.formatHints.join(", ")}`);
-    }
-    if (preSignals.visualHints.length > 0) {
-      signalDetails.push(`visual hints detected: ${preSignals.visualHints.join(", ")}`);
-    }
-    if (preSignals.pacingHints.length > 0) {
-      signalDetails.push(`pacing hints detected: ${preSignals.pacingHints.join(", ")}`);
-    }
-
-    // 최종 판정
-    if (extractedGenres.length > 0 || extractedMoods.length > 0) {
-      if (geminiGenreCount === 0 && geminiMoodCount === 0) {
-        // Gemini가 못 잡았지만 pre-extraction으로 보강됨
-        stageStatus.extractSignals = "weak";
-        signalDetails.push("Gemini extraction empty — supplemented by rule-based pre-extraction");
-      } else {
-        stageStatus.extractSignals = "ok";
-      }
-      stageReasons.extractSignals = `genres=${extractedGenres.length}, moods=${extractedMoods.length}, keywords=${extractedKeywords.length}` +
-        (signalDetails.length > 0 ? ` | ${signalDetails.join("; ")}` : "");
-    } else {
-      stageStatus.extractSignals = "weak";
-      stageReasons.extractSignals = `장르/무드 신호를 추출하지 못함` +
-        (signalDetails.length > 0 ? ` | ${signalDetails.join("; ")}` : "") +
-        (preSignals.reasons.length > 0 ? ` | pre-extraction notes: ${preSignals.reasons.join("; ")}` : "");
-    }
-
-    // ── Validate local matches ──
-    const rawLocalMatches = Array.isArray(parsed.localMatches) ? parsed.localMatches as Array<Record<string, unknown>> : [];
-    invalidIdsRemoved = rawLocalMatches.filter(m => !validLocalIds.has(String(m.id))).map(m => String(m.id));
-    let localMatches = rawLocalMatches.filter(m => validLocalIds.has(String(m.id)));
-
-    // Clamp fitScore + ensure reason
-    for (const m of localMatches) {
-      if (typeof m.fitScore === "number") m.fitScore = Math.max(0, Math.min(100, Math.round(m.fitScore)));
-      if (!m.reason || typeof m.reason !== "string") m.reason = "(이유 미제공)";
-    }
-
-    if (localMatches.length > 0) {
-      stageStatus.localMatch = "ok";
-      stageReasons.localMatch = `${localMatches.length}명 매칭 성공`;
-    } else if (invalidIdsRemoved.length > 0) {
-      stageStatus.localMatch = "invalid_ids";
-      stageReasons.localMatch = `Gemini가 생성한 id ${invalidIdsRemoved.length}개가 목록에 없어 제거됨`;
-    } else if (rawLocalMatches.length === 0) {
-      stageStatus.localMatch = "empty";
-      stageReasons.localMatch = "Gemini가 로컬 매치를 반환하지 않음";
-    }
-
-    if (invalidIdsRemoved.length > 0) {
-      console.warn(`[recommend-director] 환각 id ${invalidIdsRemoved.length}개 제거: ${invalidIdsRemoved.join(", ")}`);
-    }
+    const mergeResult = { mergeReasons: [] as string[] };
 
     // ═══════════════════════════════════════════════════════════
-    // STEP 2: 웹 검색 기반 외부 감독 추천 — Stage-based retry pipeline
+    // 웹 검색 기반 감독 추천 — 글 자체를 Gemini에 넘겨 바로 추천
     // ═══════════════════════════════════════════════════════════
 
     let webSuggestions: Array<Record<string, unknown>> = [];
@@ -973,43 +756,24 @@ ${localList}
     let webSearchDedupRemoved = 0;
     let webSearchRetryReason: string | null = null;
     let webSearchEmptyReasons: WebSearchEmptyReason[] = [];
-    let webSearchQueryCorrected = false;
-    let webSearchQueryCorrectionReason: string | undefined;
+    const webSearchQueryCorrected = false;
+    const webSearchQueryCorrectionReason: string | undefined = undefined;
     let webSearchPartialRecoveryCount = 0;
     const retryStagesLog: RetryStageLog[] = [];
     let finalProvider = "";
     let finalGrounded = false;
     let fallbackUsed = false;
-    let groundingAttempted = false; // grounding을 시도했는지
-    let groundingFailed = false;    // grounding을 시도했지만 소스가 없었는지
+    let groundingAttempted = false;
+    let groundingFailed = false;
     let pipelineTimeoutOccurred = false;
 
-    // ── Stage-based retry pipeline — reason code가 다음 action을 결정 ──
     {
       attemptedWebSearch = true;
-
-      // ── 검색 쿼리 구성 ──
-      const enhanced = buildEnhancedWebSearchQuery(extractedGenres, extractedMoods, extractedKeywords, preSignals);
-      webSearchQuery = enhanced.query;
-      if (enhanced.queryReasons.length > 0) {
-        signalDetails.push(`web query: ${enhanced.queryReasons.join("; ")}`);
-      }
-
-      // ── weak_query 자동 보정 ──
-      const isWeakQuery = enhanced.queryReasons.some(r => r.includes("generic storytelling"));
-      if (isWeakQuery && storyText.length > 30) {
-        const corrected = correctWeakQuery(storyText);
-        if (corrected) {
-          webSearchQuery = corrected.query;
-          webSearchQueryCorrected = true;
-          webSearchQueryCorrectionReason = corrected.reason;
-          signalDetails.push(corrected.reason);
-        }
-      }
+      webSearchQuery = "direct_text_analysis"; // 쿼리 없이 글 자체 분석
 
       const localNameSet = buildLocalNameSet(localDirectors || []);
 
-      console.log(`[recommend-director] STEP 2: 웹 검색 파이프라인 시작 — query="${webSearchQuery}", localNames=${localNameSet.size}`);
+      console.log(`[recommend-director] 웹 검색 시작 — 글 자체 분석, localNames=${localNameSet.size}`);
 
       // ── 로컬 감독 제외 목록 (재시도별 강도 다름) ──
       const localNameExclusionPairs = (localDirectors || [])
@@ -1652,8 +1416,7 @@ Each director object must have:
       extractedMoods,
       extractedKeywords,
       scenarioRegions,
-      consideredLocalCount: typeof geminiPipeline.consideredLocalCount === "number"
-        ? geminiPipeline.consideredLocalCount as number : consideredLocalIds.length,
+      consideredLocalCount: 0,
       consideredLocalIds,
       validLocalCount: finalLocalCount,
       invalidIdsRemoved,
@@ -1729,7 +1492,7 @@ Each director object must have:
 
     console.info(`[recommend-director] Final response: localMatches=${finalLocalCount}, webSuggestions=${finalWebCount}, total=${finalCount}, elapsed=${Date.now() - _rdStartMs}ms`);
     return Response.json({
-      analysis: (parsed.analysis as string) ?? "",
+      analysis: "",
       localMatches,
       webSuggestions,
       _meta: {
