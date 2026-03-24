@@ -1281,7 +1281,8 @@ moodLighting (≤55 chars, source+direction+quality 3요소 필수 — 하나라
 
 ## 대사/텍스트 규칙
 - 대사 텍스트는 별도 처리됨. videoPrompt/imagePrompt에 대사 절대 포함 금지. 말하는 행동만 묘사("lips move urgently" ✅ / "says '...'" ❌)
-- 한국어 텍스트 videoPrompt/imagePrompt 금지 (VEO가 자막 렌더링).
+- videoPrompt/imagePrompt/endImagePrompt/extendPrompt/cameraDirection/moodLighting 필드에 한국어 금지 (영어 전용, VEO 엔진 전달용).
+- 반면 videoPromptKo/cameraDirectionKo/moodLightingKo/subjectActionKo/narrativeFunctionKo/newInformationKo/promptKo 필드는 반드시 한국어로 작성 (UI 표시용). 이 Ko 필드가 비어있으면 규칙 위반.
 - 환경 오브젝트 2개+ 필수. 메타 정보 대신 화면 디테일(cracked tile, rusted pipe 등).
 
 ## MULTI-SHOT 릴 프로그레션
@@ -1294,21 +1295,28 @@ ${(() => {
       return `${maxShots}개 서브샷 필수. 각각 다른 shot size+앵글+피사체. role: "establish"|"resolve". duration 합산=${secPerCut}(최소 2초/샷).
 establish=WS/LS 공간확인. resolve=CU/ECU 감정payoff.`;
     }
-    return `🚨 반드시 4개 서브샷. 감독 스타일 무관. 3개 이하 = 규칙 위반.
-프로그레션: establish→develop→peak→resolve 순 강도 상승.
+    const roles3 = ["establish", "develop", "resolve"];
+    const roles4 = ["establish", "develop", "peak", "resolve"];
+    const roles = maxShots === 3 ? roles3 : roles4;
+    const rolesStr = roles.join("→");
+    const shotDesc = maxShots === 3
+      ? `- 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 resolve: CU/ECU 감정 해소`
+      : `- 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소`;
+    return `🚨 반드시 ${maxShots}개 서브샷. 감독 스타일 무관. ${maxShots - 1}개 이하 = 규칙 위반.
+프로그레션: ${rolesStr} 순 강도 상승.
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
-- 서브샷 1 establish: WS/LS 공간 정체성 | 2 develop: MS/MCU 새 행동/디테일 | 3 peak: CU/ECU 감정 최고점 | 4 resolve: WS/CU 시각적 해소
+${shotDesc}
 - duration 합산=${secPerCut}(정수). 최소 2초/샷. ≤50 words/샷, ≤350 chars/샷.
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
-- ⚠️ prompt는 영어 (VEO용). 한국어 텍스트 금지 (장면/씬/컷 등 한국어 단어 삽입 금지).
-- ⚠️ promptKo 필수: 각 서브샷의 한국어 요약 (≤40자). 사용자가 한눈에 내용 파악용. 예: "폐허 전경, 돌담과 잡초" / "주인공이 문을 열고 안을 들여다봄"`;
+- ⚠️ prompt 필드는 반드시 영어 (VEO 영상생성 엔진 전달용). prompt 안에 한국어 단어 삽입 절대 금지.
+- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 각 서브샷의 한국어 요약 (≤40자). 예: "폐허 전경, 돌담과 잡초" / "주인공이 문을 열고 안을 들여다봄". promptKo가 비어있으면 규칙 위반.`;
   })()}
 
-## 한국어 표시용 필드 (UI에서 사용자에게 보여주는 용도 — VEO에는 전달 안 됨)
-- videoPromptKo: videoPrompt를 한국어로 요약 (≤60자). 사용자가 영상 내용을 한눈에 파악할 수 있게.
+## 🚨 한국어 표시용 필드 (필수 — 하나라도 빠지면 규칙 위반)
+- videoPromptKo (필수): videoPrompt를 한국어로 요약 (≤60자). 반드시 한국어로 작성.
   예: "어두운 방에서 여자가 폰을 떨어뜨리고, 화면 빛에 얼굴이 비침"
 - cameraDirectionKo: cameraDirection을 한국어로 변환 (≤30자).
   예: "35mm 렌즈. 느린 접근 → 고정"
@@ -1326,12 +1334,12 @@ ${(() => {
     const maxShots = getMaxShots(VEO_DEFAULT_MODEL, secPerCut);
     const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"...","subjectActionKo":"...","narrativeFunctionKo":"...","newInformationKo":"..."`;
     if (maxShots <= 0) return `[${base}}]`;
-    // 예시 multiShot: 반드시 4샷 균등 분배
-    const shotDur = Math.max(2, Math.floor(secPerCut / 4));
+    // 예시 multiShot: maxShots에 맞춰 균등 분배
+    const shotDur = Math.max(2, Math.floor(secPerCut / maxShots));
     const exampleShots = [];
-    const exampleRoles = ["establish", "develop", "peak", "resolve"];
+    const exampleRoles = maxShots === 3 ? ["establish", "develop", "resolve"] : ["establish", "develop", "peak", "resolve"];
     let remaining = secPerCut;
-    const exampleCount = 4; // 반드시 4샷 예시
+    const exampleCount = maxShots;
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
       exampleShots.push(`{"index":${i},"prompt":"...","promptKo":"한국어 요약 ≤40자","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
