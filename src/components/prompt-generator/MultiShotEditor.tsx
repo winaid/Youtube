@@ -389,15 +389,24 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                     </>
                   ) : (
                     <div
-                      className="text-[11px] font-mono leading-relaxed text-gray-700 break-all cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
+                      className="rounded px-1 py-0.5 cursor-pointer hover:ring-1 hover:ring-offset-1"
                       style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
                       onClick={() => {
                         setEditingIndex(shot.index);
                         setEditDraft(shot.prompt);
                       }}
                     >
-                      {shot.prompt || (
-                        <span className="text-muted-foreground italic">프롬프트를 입력하세요...</span>
+                      {shot.prompt ? (
+                        <>
+                          <div className="text-[12px] font-sans text-gray-900 leading-relaxed">
+                            {meta.label} — 영문 프롬프트
+                          </div>
+                          <div className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all line-clamp-2 hover:line-clamp-none">
+                            {shot.prompt}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground italic">프롬프트를 입력하세요...</span>
                       )}
                     </div>
                   )}

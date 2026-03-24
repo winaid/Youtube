@@ -3154,7 +3154,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const postShotCounts = finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 0);
     console.info(`[generate-cuts] MULTISHOT REPAIR COMPLETE — postShotCounts=[${postShotCounts.join(",")}], repaired=${preShotCounts.some((v, i) => v !== postShotCounts[i])}, elapsed=${Date.now() - t0_request}ms`);
 
-    // ═══ promptKo 누락 보충 — Gemini가 promptKo를 생성하지 않은 경우 자동 생성 ═══
+    // ═══ prompt 400자 클램핑 + promptKo 누락 보충 ═══
     const roleKoFallback: Record<string, string> = {
       establish: "전경 — 공간과 위치 확인",
       transition: "전환 — 새로운 시점",
@@ -3164,15 +3164,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       resolve: "마무리 — 시각적 해소",
     };
     let promptKoRepairCount = 0;
+    let promptClampCount = 0;
     for (const fc of finalizedCuts) {
       if (!Array.isArray(fc.multiShot)) continue;
-      for (const sh of fc.multiShot as Array<{ promptKo?: string; role?: string; prompt?: string }>) {
+      for (const sh of fc.multiShot as Array<{ promptKo?: string; role?: string; prompt: string }>) {
+        // prompt 400자 하드 클램핑 — Gemini가 초과 생성해도 여기서 잘라냄
+        if (sh.prompt && sh.prompt.length > 400) {
+          sh.prompt = sh.prompt.slice(0, 400);
+          promptClampCount++;
+        }
+        // promptKo 누락 보충
         if (!sh.promptKo || sh.promptKo.trim().length === 0) {
-          // sceneDescription (한국어)이 있으면 활용, 없으면 역할 기반 fallback
           const sceneKo = (fc as Record<string, unknown>).sceneDescription as string | undefined;
-          sh.promptKo = sceneKo && sceneKo.trim().length > 0
-            ? `${roleKoFallback[sh.role ?? "develop"]?.split(" — ")[0] ?? "전개"}: ${sceneKo.slice(0, 35)}`
-            : roleKoFallback[sh.role ?? "develop"] ?? "전개 — 인물의 구체적 행동";
+          const roleName = roleKoFallback[sh.role ?? "develop"]?.split(" — ")[0] ?? "전개";
+          if (sceneKo && sceneKo.trim().length > 0) {
+            sh.promptKo = `${roleName}: ${sceneKo.slice(0, 35)}`;
+          } else {
+            // sceneDescription도 없으면 videoPromptKo에서 추출
+            const vpKo = (fc as Record<string, unknown>).videoPromptKo as string | undefined;
+            sh.promptKo = vpKo && vpKo.trim().length > 0
+              ? `${roleName}: ${vpKo.slice(0, 35)}`
+              : roleKoFallback[sh.role ?? "develop"] ?? "전개 — 인물의 구체적 행동";
+          }
           promptKoRepairCount++;
         }
       }
@@ -3183,8 +3196,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         promptKoRepairCount++;
       }
     }
-    if (promptKoRepairCount > 0) {
-      console.info(`[generate-cuts] promptKo auto-repair: ${promptKoRepairCount} fields filled from sceneDescription/role fallback`);
+    if (promptKoRepairCount > 0 || promptClampCount > 0) {
+      console.info(`[generate-cuts] post-repair: promptKo=${promptKoRepairCount} filled, prompt=${promptClampCount} clamped to 400 chars`);
     }
 
     // ═══ Continuity Segment 생성 (continuityMode ON일 때만) ═══════
