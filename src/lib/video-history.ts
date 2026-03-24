@@ -86,19 +86,6 @@ export function saveVideoRecord(record: Omit<VideoRecord, "id" | "createdAt">): 
   return newRecord;
 }
 
-export function deleteVideoRecord(id: string): void {
-  const records = getVideoHistory().filter((r) => r.id !== id);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  } catch { /* ignore */ }
-}
-
-export function clearVideoHistory(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch { /* ignore */ }
-}
-
 /**
  * VideoRecord의 asset status를 결정.
  * gcsUri, proxyUri, canonicalVideoUri 유무에 따라 자산 상태 계산.
@@ -120,24 +107,6 @@ export function computeAssetStatus(record: VideoRecord): VideoAssetStatus {
     return "ASSET_STORED_INTERNAL";
   }
   return "GENERATED";
-}
-
-/**
- * Scene Extension 가능 여부 — canonicalVideoUri(gs:// 또는 https://)가 있어야 함.
- * SCENE_EXTENSION_READY 또는 VISIBLE_IN_LIBRARY 상태에서만 true.
- */
-export function canExtendScene(record: VideoRecord): boolean {
-  if (record.status === "failed") return false;
-  return !!record.canonicalVideoUri &&
-    (record.canonicalVideoUri.startsWith("gs://") || record.canonicalVideoUri.startsWith("https://"));
-}
-
-/**
- * 라이브러리 표시 가능 여부 — 재생 가능한 proxyUri + 안정적 canonicalVideoUri 모두 필요.
- */
-export function visibleInLibrary(record: VideoRecord): boolean {
-  if (record.status === "failed") return false;
-  return !!record.proxyUri && !!record.canonicalVideoUri;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { PromptInput, PromptOutput } from "@/types";
 
-export interface PromptHistoryEntry {
+interface PromptHistoryEntry {
   id: string;
   createdAt: number;
   input: PromptInput;
@@ -14,7 +14,7 @@ function genId(): string {
   return `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function getPromptHistory(): PromptHistoryEntry[] {
+function getPromptHistory(): PromptHistoryEntry[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -42,9 +42,4 @@ export function savePromptHistory(input: PromptInput, output: PromptOutput): Pro
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch { /* ignore */ }
   }
   return entry;
-}
-
-export function deletePromptHistory(id: string): void {
-  const history = getPromptHistory().filter((e) => e.id !== id);
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch { /* ignore */ }
 }

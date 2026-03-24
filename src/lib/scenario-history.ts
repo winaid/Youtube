@@ -44,14 +44,6 @@ export function saveScenario(entry: Omit<ScenarioEntry, "id" | "createdAt" | "up
   return newEntry;
 }
 
-export function updateScenario(id: string, updates: Partial<Pick<ScenarioEntry, "messages" | "finalScenario" | "title">>): void {
-  const history = getScenarioHistory();
-  const idx = history.findIndex((e) => e.id === id);
-  if (idx === -1) return;
-  Object.assign(history[idx], updates, { updatedAt: Date.now() });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
-}
-
 export function deleteScenario(id: string): void {
   const history = getScenarioHistory().filter((e) => e.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(history));

@@ -154,11 +154,6 @@ export function getJob(jobId: string): VideoJobRecord | null {
   return getAllJobs().find(j => j.jobId === jobId) ?? null;
 }
 
-/** 특정 job을 taskId로 조회 */
-export function getJobByTaskId(taskId: string): VideoJobRecord | null {
-  return getAllJobs().find(j => j.taskId === taskId) ?? null;
-}
-
 /** 새 job record를 생성한다 (queued 상태) */
 export function createJob(params: {
   engine?: string;
@@ -280,13 +275,6 @@ export function markTimeoutRecoverable(jobId: string): VideoJobRecord | null {
   });
 }
 
-/** job 삭제 */
-export function deleteJob(jobId: string): void {
-  const jobs = getAllJobs().filter(j => j.jobId !== jobId);
-  persistJobs(jobs);
-  notifyChange();
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Recovery — 페이지 새로고침 후 미완료 작업 탐색
 // ═══════════════════════════════════════════════════════════════════
@@ -296,14 +284,6 @@ export function getRecoverableJobs(): VideoJobRecord[] {
   return getAllJobs().filter(j =>
     j.taskId != null &&
     (j.status === "submitted" || j.status === "processing" || j.status === "timeout_recoverable"),
-  );
-}
-
-/** queued 상태에서 오래 방치된 작업 (taskId 없이 1시간 이상) → 자동 정리 */
-export function getStaleQueuedJobs(): VideoJobRecord[] {
-  const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  return getAllJobs().filter(j =>
-    j.status === "queued" && j.taskId == null && j.createdAt < oneHourAgo,
   );
 }
 

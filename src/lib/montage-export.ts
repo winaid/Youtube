@@ -207,20 +207,6 @@ export function evaluateStitchReadiness(
 }
 
 /**
- * 완료된 clip URL들을 cutNumber 순서대로 반환.
- * stitch concat 순서의 source of truth.
- */
-export function getOrderedClipUrls(
-  cuts: Cut[],
-  clips: VideoClip[],
-): string[] {
-  const state = computeMontageExportState(cuts, clips);
-  return state.orderedClips
-    .filter((c) => c.status === "completed")
-    .map((c) => c.videoUri);
-}
-
-/**
  * 모든 완료된 clip을 순서대로 개별 다운로드.
  * stitch 불가능 상태에서의 fallback UX.
  */

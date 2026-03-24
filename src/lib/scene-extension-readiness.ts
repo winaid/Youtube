@@ -7,9 +7,7 @@
  * 해결: 업로드 완료 후 eligibility를 재평가하고, 다음 컷의 모드를 결정.
  *
  * grep: reevaluateSceneExtensionEligibilityAfterUpload,
- *       selectVideoModeForNextCut,
- *       ensureCanonicalVideoUriPromotion,
- *       buildExtendPayloadFromCanonicalUri
+ *       selectVideoModeForNextCut
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -31,46 +29,6 @@ export interface ModeDecisionResult {
   imageBase64?: string;    // IMAGE_TO_VIDEO일 때 사용할 프레임
   reason: string;
   continuityScore: number; // 0-100: 연속성 점수
-}
-
-export interface ExtendPayload {
-  previousVideoUri: string;
-  extendPrompt?: string;
-  durationSec: number;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Canonical URI Promotion
-// ═══════════════════════════════════════════════════════════════════
-
-/**
- * proxy URI를 절대 HTTPS URL로 승격.
- * /api/proxy-video?r2key=... → https://origin/api/proxy-video?r2key=...
- *
- * grep: ensureCanonicalVideoUriPromotion
- */
-export function ensureCanonicalVideoUriPromotion(
-  proxyUri: string | undefined,
-  origin: string,
-): string | undefined {
-  if (!proxyUri) return undefined;
-
-  // 이미 절대 URL이면 그대로 반환
-  if (proxyUri.startsWith("https://") || proxyUri.startsWith("gs://")) {
-    return proxyUri;
-  }
-
-  // data: URI는 Scene Extension 불가
-  if (proxyUri.startsWith("data:")) {
-    return undefined;
-  }
-
-  // 상대 경로 → 절대 URL로 승격
-  if (proxyUri.startsWith("/")) {
-    return `${origin}${proxyUri}`;
-  }
-
-  return undefined;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -219,74 +177,3 @@ export function selectVideoModeForNextCut(
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Extend Payload Builder
-// ═══════════════════════════════════════════════════════════════════
-
-/**
- * Scene Extension API payload 빌드.
- * canonicalVideoUri가 확정된 후에만 호출.
- *
- * grep: buildExtendPayloadFromCanonicalUri
- */
-export function buildExtendPayloadFromCanonicalUri(
-  canonicalVideoUri: string,
-  extendPrompt: string | undefined,
-  durationSec: number,
-): ExtendPayload | null {
-  if (!canonicalVideoUri) return null;
-
-  // Validate URI scheme
-  if (!canonicalVideoUri.startsWith("gs://") && !canonicalVideoUri.startsWith("https://")) {
-    return null;
-  }
-
-  return {
-    previousVideoUri: canonicalVideoUri,
-    extendPrompt: extendPrompt?.trim() || undefined,
-    durationSec,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Wait-for-upload helper (비동기)
-// ═══════════════════════════════════════════════════════════════════
-
-/**
- * 이전 컷의 업로드 완료를 기다린 후 eligibility 재평가.
- * auto-mode에서 다음 컷 시작 전에 호출.
- *
- * maxWaitMs: 최대 대기 시간 (기본 10초)
- * pollIntervalMs: 체크 간격 (기본 500ms)
- *
- * grep: waitForUploadAndReevaluate
- */
-export async function waitForUploadAndReevaluate(
-  getClip: () => ClipLike | undefined,
-  maxWaitMs: number = 10000,
-  pollIntervalMs: number = 500,
-): Promise<SceneExtensionEligibility> {
-  const start = Date.now();
-
-  while (Date.now() - start < maxWaitMs) {
-    const clip = getClip();
-    if (!clip) {
-      return { eligible: false, reason: "clip not found" };
-    }
-
-    // 업로드가 완료되었거나 실패했으면 바로 평가
-    if (clip.uploadStatus !== "pending") {
-      return reevaluateSceneExtensionEligibilityAfterUpload(clip);
-    }
-
-    // 업로드 대기 중이면 잠시 후 재시도
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-  }
-
-  // 타임아웃 — 현재 상태로 평가
-  const clip = getClip();
-  if (clip) {
-    return reevaluateSceneExtensionEligibilityAfterUpload(clip);
-  }
-  return { eligible: false, reason: "timeout waiting for upload", uploadStatus: "pending" };
-}
