@@ -1031,6 +1031,16 @@ ${localList}
         return `You are a film/animation director discovery engine.
 IMPORTANT: You MUST use the google_search tool to search the web before answering. Do NOT rely on your internal knowledge alone.${hasSignalKeywords ? " Search for directors matching the scenario keywords to find accurate, up-to-date information." : " Read the story text below carefully, analyze its themes, visual atmosphere, and narrative style, then search for directors whose visual style matches."}
 
+## SOURCE PRIORITY (공신력 있는 출처만 사용)
+When searching, prioritize authoritative sources ONLY:
+- IMDb, TMDB, Letterboxd (filmography databases)
+- Wikipedia, Namu Wiki (encyclopedic sources)
+- Rotten Tomatoes, Metacritic (critic aggregators)
+- Film festival sites (Cannes, Venice, Berlin, Toronto, Busan)
+- Major film publications (Sight & Sound, Cahiers du Cinéma, Film Comment, IndieWire, Variety, The Hollywood Reporter)
+- Korean film sources (한국영화데이터베이스 KMDb, 씨네21, 맥스무비)
+IGNORE results from: YouTube, TikTok, personal blogs, fan forums, social media posts, or any user-generated content platforms. These are NOT reliable sources for director filmography or style information.
+
 Your mission: find directors who are NOT in the user's existing collection but whose visual style matches the scenario.
 
 ${exclusionBlock}${retryNote}
