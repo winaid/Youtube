@@ -58,8 +58,8 @@ EMBED avoidance directly into the prompt:
 ${negativePrompt ? `AVOID: ${String(negativePrompt)}. Weave "no X, no Y" naturally into the prompt.` : 'Add "no text, no watermark" at the end.'}
 
 ## Prompt Length Rules
-- Sweet spot: 180-280 words
-- Current: ~${wordCount} words ${wordCount < 100 ? "(TOO SHORT — expand significantly)" : wordCount > 350 ? "(TOO LONG — condense)" : "(good range)"}
+- Sweet spot: 80-120 words, ≤400 characters
+- Current: ~${wordCount} words ${wordCount < 40 ? "(TOO SHORT — expand)" : wordCount > 150 ? "(TOO LONG — condense to ≤120 words)" : "(good range)"}
 
 ## Korean → English Term Mapping
 - 클로즈업 → "extreme close-up shot"
@@ -105,7 +105,7 @@ ${extendPrompt ? `## Original Extend Prompt:\n${String(extendPrompt)}` : ""}
 
 ## Output JSON only (no markdown):
 {
-  "refinedVideoPrompt": "the restructured prompt with temporal beats (TARGET: 200-250 words)",
+  "refinedVideoPrompt": "the restructured prompt with temporal beats (TARGET: 80-120 words, ≤400 chars)",
   "refinedExtendPrompt": "restructured extend prompt if applicable",
   "wordCount": number,
   "changes": ["list of structural improvements made"]

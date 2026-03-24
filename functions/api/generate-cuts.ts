@@ -884,7 +884,7 @@ outlines (정확히 ${cutCount}개 — 각 항목은 ${secPerCut}초짜리 시�
 - emotionalAnchor: 영어 ≤8 words — 이 서사 기능의 감정적 무게가 집약되는 시각 포인트
 - dialogueText: (선택) 한국어 — 이 장면에서 인물이 말하는 대사. TTS 음성으로 재생됨. ⚠️ 이 텍스트는 videoPrompt/imagePrompt에 절대 포함하지 마라. subjectAction에는 "말하는 행동"만 묘사 (예: "lips move urgently", "speaks with clenched jaw")
 
-## ⚠️ 텍스트/자막 절대 금지 (Purely Visual)
+## ⚠️ 텍스트/자막 절대 금지
 - 모든 장면은 순수 시각 표현만 사용. 텍스트, 자막, 간판, 제목 카드, 로고 등 화면 위 글자를 포함하는 요소 금지.
 - sign/signboard/billboard 금지 → wooden panel/metal plate/surface 등 텍스트 없는 대체물로.
 - 대사가 필요하면 dialogueText 필드에 별도 기록 (TTS로 재생됨). videoPrompt/imagePrompt에 대사 포함 금지.

@@ -362,11 +362,8 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
     cleanupLog.push(`[veo-renderer] Fragmented edit hard clamp applied: ${finalPrompt.length}/${FRAGMENTED_CHAR_LIMIT} chars, ${shotLines.length} shot boundaries preserved`);
   }
 
-  // ── 텍스트 방지: VEO에 보내는 프롬프트 토큰을 절약하기 위해
-  // 길고 반복적인 "no text" 지시어 대신 VEO API의 generate 요청에서 처리.
-  // VEO는 negative prompt를 지원하지 않으므로 프롬프트 안에서 "no text"를 반복하는 것은
-  // 토큰 낭비이며 VEO가 오히려 "text" 키워드에 반응할 수 있음.
-  // 대신: 각 shot prompt에서 텍스트 관련 단어가 이미 stripTextForVeo()로 제거됨.
+  // ── 텍스트 방지: noTextSuffix("no text, no watermark")가 프롬프트 끝에 포함됨.
+  // stripTextForVeo()가 불필요한 텍스트 관련 단어를 추가 정리.
 
   // ── Historical grounding injection — 역사적 시각 앵커를 프롬프트에 주입 ──
   if (input.historicalGrounding) {

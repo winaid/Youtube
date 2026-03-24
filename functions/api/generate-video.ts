@@ -592,7 +592,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         extendPromptText = stripTextForVeo(stripInternalTags(deduplicatePromptClauses(extendPromptText)));
         // TEXT_FREE_DIRECTIVE — extend에서도 텍스트/자막 방지 강제
         if (req.extendPromptJson && !extendPromptText.includes("no text")) {
-          extendPromptText = "No text, no subtitles, no captions. Purely visual storytelling. " + extendPromptText;
+          extendPromptText = "no text, no watermark. " + extendPromptText;
         }
         console.info("[generate-video] VEO EXTEND mode selected", {
           elapsedMs: Date.now() - tServerStart,
