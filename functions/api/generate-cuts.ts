@@ -1272,12 +1272,14 @@ charRef에 이미 포함된 경우 그대로 사용. 누락 시 videoPrompt에�
 3. 매 장면 새 시각 정보 1개+. 동일 감정 연속 시 다른 행동. 정지 포즈 금지 → 진행 중 행동.
 ${SCENE_TERM_PRECISION_BLOCK}
 
-## STRICT 글자 제한 (자연어만 — 메타태그 SHOT_SIZE:/CAMERA_ANGLE:/REVEALED: 등 절대 금지)
+## 🚨 STRICT 글자 제한 (자연어만 — 메타태그 SHOT_SIZE:/CAMERA_ANGLE:/REVEALED: 등 절대 금지)
+⚠️⚠️ 모든 prompt 필드는 반드시 400자 이내로 작성하라. 400자 초과 = 규칙 위반. 500자 초과 시 잘림 발생.
+⚠️⚠️ prompt 400자 제한을 지키기 위해: 환경 디테일 2개만, 형용사 최소화, 불필요한 반복 제거.
 
-imagePrompt (≤55 words, TARGET ≤400 chars / 절대 MAX 500 chars EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
-endImagePrompt (≤45 words, TARGET ≤400 chars / 절대 MAX 500 chars EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
+imagePrompt (≤55 words, 반드시 ≤400 chars EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
+endImagePrompt (≤45 words, 반드시 ≤400 chars EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
 
-videoPrompt (≤120 words, TARGET ≤400 chars / 절대 MAX 500 chars EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
+videoPrompt (≤120 words, 반드시 ≤400 chars EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
   Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+ 구체적 오브젝트/질감(cracked tile, rusted pipe, wilted flower, stacked books)]").replace("[develop]", "[BEAT2: WHAT 상황 증거(empty chair, closed shutters, overflowing ashtray, half-eaten meal)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동(fingers grip armrest, shoulders slump forward, gaze drops to floor)]")}. [charRef if not absent]. [noTextSuffix]"
   환경 디테일: 최소 2개 구체적 오브젝트/질감/현상 필수 (cracked, rusted, damp, torn 등 형용사+명사)
   상황 증거: 현재 상황을 보여주는 시각 단서 필수 (empty/crowded/broken/closed/overflowing 등)
@@ -1285,7 +1287,7 @@ videoPrompt (≤120 words, TARGET ≤400 chars / 절대 MAX 500 chars EN — 3�
   BANNED: continues/still/same as before/standing/motionless, sign/signboard, emotion labels(anxious/sad/angry 등)
   BANNED: 한국어 테마 문구(인본주의적 시선, 시대극의 현대적 해석, 인물 심리 묘사 등) — 비디오 모델이 렌더링 불가. 영문 시각 묘사로만 기술
 
-extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤80 words, TARGET ≤400 chars / 절대 MAX 500 chars EN):
+extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤80 words, 반드시 ≤400 chars EN):
   "Continuing from previous — [endHook]. [Beat1 다른 앵글]. [Beat2 상황 증거]. [Beat3 감정 행동]. [charRef if applicable]. [noTextSuffix]"
 
 cameraDirection (≤55 chars): "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
@@ -1321,7 +1323,7 @@ ${(() => {
 공통 규칙:
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
-- ≤35 words/샷, TARGET ≤400 chars / 절대 MAX 500 chars/샷.
+- ≤35 words/샷, 반드시 ≤400 chars/샷 (400자 초과 = 규칙 위반).
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
@@ -3197,56 +3199,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     let promptKoRepairCount = 0;
     let promptClampCount = 0;
     let shotTrimCount = 0;
+
+    // ── 1단계: Ko 필드 보충 (영어 필드에서) — promptKo 생성 전에 먼저 실행 ──
     for (const fc of finalizedCuts) {
-      if (!Array.isArray(fc.multiShot)) continue;
       const fcAny = fc as Record<string, unknown>;
       const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || "";
-      const vpKo = (fcAny.videoPromptKo as string | undefined)?.trim() || "";
-      const subActKo = (fcAny.subjectActionKo as string | undefined)?.trim() || "";
-      const moodKo = (fcAny.moodLightingKo as string | undefined)?.trim() || "";
-      const camKo = (fcAny.cameraDirectionKo as string | undefined)?.trim() || "";
-      const shotCount = fc.multiShot.length;
-
-      for (let si = 0; si < shotCount; si++) {
-        const sh = fc.multiShot[si] as { promptKo?: string; role?: string; prompt: string; index: number };
-        // prompt 400자 하드 클램핑
-        if (sh.prompt && sh.prompt.length > 400) {
-          sh.prompt = sh.prompt.slice(0, 400);
-          promptClampCount++;
-        }
-        // promptKo 생성 — 역할 + 컷의 한국어 필드들로 실제 의미 있는 한국어 요약
-        if (!sh.promptKo || sh.promptKo.trim().length === 0) {
-          const role = sh.role ?? "develop";
-          const roleLabel = roleKoMap[role] ?? "전개";
-
-          // 서브샷 위치별로 다른 한국어 소스 조합
-          let koText = "";
-          if (role === "establish") {
-            // 전경: 장면 설명 우선
-            koText = sceneKo || vpKo || roleDescKo[role]!;
-          } else if (role === "develop" || role === "peak") {
-            // 전개/절정: 인물 행동 우선
-            koText = subActKo || sceneKo || vpKo || roleDescKo[role]!;
-          } else if (role === "insert") {
-            // 인서트: 분위기/디테일 우선
-            koText = moodKo || sceneKo || roleDescKo[role]!;
-          } else if (role === "resolve") {
-            // 마무리: 카메라 + 장면
-            koText = camKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || roleDescKo[role]!;
-          } else {
-            koText = sceneKo || vpKo || roleDescKo[role]!;
-          }
-
-          sh.promptKo = `${roleLabel}: ${koText}`.slice(0, 40);
-          promptKoRepairCount++;
-        }
-      }
-      // videoPromptKo도 없으면 sceneDescription에서 보충
       if (!fcAny.videoPromptKo && sceneKo) {
         fcAny.videoPromptKo = sceneKo.slice(0, 60);
         promptKoRepairCount++;
       }
-      // 나머지 Ko 필드도 비어있으면 영어 필드에서 보충 (빈 상태보다 영어라도 있는 게 나음)
       if (!fcAny.cameraDirectionKo && fcAny.cameraDirection) {
         fcAny.cameraDirectionKo = String(fcAny.cameraDirection).slice(0, 30);
         promptKoRepairCount++;
@@ -3266,6 +3227,50 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (!fcAny.newInformationKo && fcAny.newInformation) {
         fcAny.newInformationKo = String(fcAny.newInformation).slice(0, 30);
         promptKoRepairCount++;
+      }
+    }
+
+    // ── 2단계: prompt 클램핑 + promptKo 생성 (보충된 Ko 필드 활용) ──
+    for (const fc of finalizedCuts) {
+      if (!Array.isArray(fc.multiShot)) continue;
+      const fcAny = fc as Record<string, unknown>;
+      const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || "";
+      const vpKo = (fcAny.videoPromptKo as string | undefined)?.trim() || "";
+      const subActKo = (fcAny.subjectActionKo as string | undefined)?.trim() || "";
+      const moodKo = (fcAny.moodLightingKo as string | undefined)?.trim() || "";
+      const camKo = (fcAny.cameraDirectionKo as string | undefined)?.trim() || "";
+      const shotCount = fc.multiShot.length;
+
+      for (let si = 0; si < shotCount; si++) {
+        const sh = fc.multiShot[si] as { promptKo?: string; role?: string; prompt: string; index: number };
+        // prompt 400자 소프트 클램핑 (타겟) — 마침표 기준으로 자연스럽게 자르기
+        if (sh.prompt && sh.prompt.length > 400) {
+          const lastDot = sh.prompt.lastIndexOf(".", 400);
+          sh.prompt = lastDot > 300 ? sh.prompt.slice(0, lastDot + 1) : sh.prompt.slice(0, 400);
+          promptClampCount++;
+        }
+        // promptKo 생성 — 역할 + 컷의 한국어 필드들로 실제 의미 있는 한국어 요약
+        if (!sh.promptKo || sh.promptKo.trim().length === 0) {
+          const role = sh.role ?? "develop";
+          const roleLabel = roleKoMap[role] ?? "전개";
+
+          // 서브샷 위치별로 다른 한국어 소스 조합
+          let koText = "";
+          if (role === "establish") {
+            koText = sceneKo || vpKo || roleDescKo[role]!;
+          } else if (role === "develop" || role === "peak") {
+            koText = subActKo || sceneKo || vpKo || roleDescKo[role]!;
+          } else if (role === "insert") {
+            koText = moodKo || sceneKo || roleDescKo[role]!;
+          } else if (role === "resolve") {
+            koText = camKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || roleDescKo[role]!;
+          } else {
+            koText = sceneKo || vpKo || roleDescKo[role]!;
+          }
+
+          sh.promptKo = `${roleLabel}: ${koText}`.slice(0, 40);
+          promptKoRepairCount++;
+        }
       }
     }
     if (promptKoRepairCount > 0 || promptClampCount > 0) {
@@ -3368,6 +3373,34 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       fastPathUsed,
       skippedSteps,
     });
+
+    // ═══ 최종 안전장치: 멀티샷 수 + prompt 길이 강제 클램핑 ═══
+    // 모든 후처리 이후에도 정책 위반이 있으면 여기서 잡음
+    for (const fc of finalizedCuts) {
+      if (!Array.isArray(fc.multiShot) || fc.multiShot.length === 0) continue;
+      const max = getMaxShots(VEO_DEFAULT_MODEL, fc.durationSec);
+      if (fc.multiShot.length > max) {
+        console.warn(`[generate-cuts] ⚠️ FINAL CLAMP: cut ${fc.cutNumber} (${fc.durationSec}s) had ${fc.multiShot.length} shots → trimmed to ${max}`);
+        fc.multiShot = fc.multiShot.slice(0, max);
+        // 서브샷 duration 재보정
+        const baseDur = Math.floor(fc.durationSec / max);
+        const remainder = fc.durationSec - baseDur * max;
+        fc.multiShot.forEach((sh, idx) => {
+          (sh as Record<string, unknown>).index = idx + 1;
+          (sh as Record<string, unknown>).duration = String(idx < remainder ? baseDur + 1 : baseDur);
+        });
+        shotTrimCount++;
+      }
+      // prompt 400자 최종 확인
+      for (const sh of fc.multiShot) {
+        const shAny = sh as Record<string, unknown>;
+        const p = shAny.prompt as string | undefined;
+        if (p && p.length > 400) {
+          const lastDot = p.lastIndexOf(".", 400);
+          shAny.prompt = lastDot > 300 ? p.slice(0, lastDot + 1) : p.slice(0, 400);
+        }
+      }
+    }
 
     console.info(`[generate-cuts] FINAL RESPONSE — source=gemini, ok=true, degraded=${step1Degraded}, fastPath=${fastPathUsed}, cuts=${finalizedCuts.length}, totalShots=${finalizedCuts.reduce((s, c) => s + (Array.isArray(c.multiShot) ? c.multiShot.length : 1), 0)}, characterSeeds=${characterSeeds.length}, totalElapsed=${totalLatencyMs}ms, step1=${step1LatencyMs}ms, step23=${step23LatencyMs}ms, postprocess=${postprocessLatencyMs}ms`);
 

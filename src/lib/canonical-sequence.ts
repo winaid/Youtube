@@ -46,6 +46,7 @@ const VEO_MIN_SHOTS = 3;
 import { getStyleById, getStyleByLegacyMode, getStylePersona, getStyleRenderingRules } from "@/data/style-catalog";
 import { extractEditorialPersona, buildEditorialPlanningRules, buildCompactEditorialSummary } from "@/lib/editorial-persona";
 import { structuredShotToSequenceShot } from "@/lib/structured-shot-normalize";
+import { ROLE_KO } from "@/lib/multi-shot-planner";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. Adapter: Legacy → Canonical
@@ -203,11 +204,13 @@ export function canonicalShotsToMultiShot(
       shot.environment,
       shot.moodLighting,
     ].filter(Boolean);
+    const role: ShotRole = (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length);
     return {
       index: i + 1,
       prompt: parts.join(". ").trim(),
+      promptKo: ROLE_KO[role] ?? `서브샷 ${i + 1}`,
       duration: String(Math.max(1, rawDurations[i])),
-      role: (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length),
+      role,
     };
   });
 }

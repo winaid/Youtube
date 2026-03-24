@@ -27,7 +27,7 @@
 import type { MultiShotPrompt, ShotRole } from "@/types";
 
 /** role → 한국어 기본 promptKo (auto-init / repair 시 사용) */
-const ROLE_KO: Record<ShotRole, string> = {
+export const ROLE_KO: Record<ShotRole, string> = {
   establish: "전경 — 공간과 위치 확인",
   transition: "전환 — 새로운 시점",
   develop: "전개 — 인물의 구체적 행동",
