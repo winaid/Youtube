@@ -64,7 +64,7 @@ function isRetryableError(status: number, body?: string): boolean {
   if (isDeprecatedModelError(status, body)) return false;
   if (status === 401) return true;
   if (status === 429) return true;
-  if (status === 403 && body && /quota|rate|RESOURCE_EXHAUSTED|exhausted/i.test(body)) return true;
+  if (status === 403) return true; // permission denied, quota, rate limit — 다른 키로 재시도
   if ((status === 500 || status === 502) && body && /RESOURCE_EXHAUSTED|quota|overloaded|exhausted/i.test(body)) return true;
   if (status === 503) return true;
   // Cloudflare timeout — retry with next key
@@ -653,6 +653,7 @@ export interface ModelFallbackMeta {
 export function shouldFallbackToAltModel(status: number, body: string): boolean {
   if (isDeprecatedModelError(status, body)) return false; // 모델 자체가 없으면 폴백도 무의미
   if (status === 400) return false; // bad request — 요청 구조 문제, 폴백 무의미
+  if (status === 403) return true; // permission denied / quota — 다른 모델은 가능할 수 있음
   if (status === 504 && body.includes('"TIMEOUT"')) return true; // timeout
   if (status === 429) return true; // rate limit
   if (status === 503) return true; // overloaded
