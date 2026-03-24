@@ -24,7 +24,7 @@ import type { MultiShotPrompt, ShotRole } from "@/types";
 /** VEO 샷 수 정책: 7초=3샷, 8초+=4샷 */
 const veoMaxShots = (durationSec: number) => durationSec <= 7 ? 3 : 4;
 const VEO_MIN_SHOT_DURATION = 2;
-import { shouldForceMultiShot } from "@/lib/multi-shot-planner";
+import { shouldForceMultiShot, ROLE_KO } from "@/lib/multi-shot-planner";
 import type { GenerationMode } from "@/lib/multi-shot-planner";
 
 /** Safely get prompt text — guards against undefined in malformed multiShot data */
@@ -349,11 +349,13 @@ export function addShot(
 
   if (shots.length === 0) {
     // 첫 샷 추가
+    const role = inferShotRole(0, 1);
     const newShot: MultiShotPrompt = {
       index: 1,
       prompt: "",
+      promptKo: ROLE_KO[role] ?? "서브샷 1",
       duration: String(totalDurationSec),
-      role: inferShotRole(0, 1),
+      role,
     };
     return [newShot];
   }
@@ -382,11 +384,13 @@ export function addShot(
   updated[bestIdx] = { ...updated[bestIdx], duration: String(remainDur) };
 
   const newTotal = updated.length + 1;
+  const newRole = inferShotRole(newTotal - 1, newTotal);
   const newShot: MultiShotPrompt = {
     index: 0, // will be re-indexed below
     prompt: "",
+    promptKo: ROLE_KO[newRole] ?? `서브샷 ${newTotal}`,
     duration: String(newShotDur),
-    role: inferShotRole(newTotal - 1, newTotal),
+    role: newRole,
   };
 
   // 분할 대상 바로 뒤에 삽입

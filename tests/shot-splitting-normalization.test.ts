@@ -72,7 +72,7 @@ describe("detectShotProgression", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("arrow progression auto-split", () => {
-  it("3-segment arrow produces 4 shots in final output (min 4 policy)", () => {
+  it("3-segment arrow produces 3 shots in final output (min 3 policy for 7s)", () => {
     const result = splitSingleShotSequence({
       ...BASE_INPUT,
       sceneType: "character-driven",
@@ -80,14 +80,14 @@ describe("arrow progression auto-split", () => {
     });
 
     expect(result.wasSplit).toBe(true);
-    expect(result.shots.length).toBe(4);
+    expect(result.shots.length).toBe(3);
     // Each shot has distinct action (not the full arrow string)
     for (const shot of result.shots) {
       expect(shot.action).not.toContain("→");
     }
   });
 
-  it("2-segment arrow produces 4 shots (min 4 policy)", () => {
+  it("2-segment arrow produces 3 shots (min 3 policy for 7s)", () => {
     const result = splitSingleShotSequence({
       ...BASE_INPUT,
       sceneType: "environment",
@@ -95,7 +95,7 @@ describe("arrow progression auto-split", () => {
     });
 
     expect(result.wasSplit).toBe(true);
-    expect(result.shots.length).toBe(4);
+    expect(result.shots.length).toBe(3);
   });
 
   it("each split shot has valid timing", () => {
@@ -129,7 +129,7 @@ describe("enforceMinimumShotCount with arrow progression", () => {
 
     expect(result).not.toBeNull();
     expect(result!.wasSplit).toBe(true);
-    expect(result!.shots.length).toBe(4);
+    expect(result!.shots.length).toBe(3);
   });
 
   it("splits arrow progression for non-MULTI_SHOT_SCENE_TYPES", () => {
@@ -185,7 +185,7 @@ describe("hook sequence shot priority", () => {
     });
 
     expect(result.wasSplit).toBe(true);
-    expect(result.shots.length).toBe(4);
+    expect(result.shots.length).toBe(3);
     // First shot should be the macro segment (landscape/wide/plague)
     expect(result.shots[0].action).toMatch(/landscape|plague|devastation|wide/i);
   });
@@ -266,7 +266,7 @@ describe("validation with auto-split", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("Case A — Arrow progression normalization (end-to-end)", () => {
-  it("7-second sequence with 3 visual beats produces 4 actual shots (min 4 policy)", () => {
+  it("7-second sequence with 3 visual beats produces 3 actual shots (min 3 policy for 7s)", () => {
     const action = "dark muddy ground → single silver coin in palm → trembling dirty fingers gripping coin";
     const splitResult = enforceMinimumShotCount({
       sceneType: "character-driven",
@@ -283,7 +283,7 @@ describe("Case A — Arrow progression normalization (end-to-end)", () => {
     // MUST produce real multi-shot, not null (single-shot)
     expect(splitResult).not.toBeNull();
     expect(splitResult!.wasSplit).toBe(true);
-    expect(splitResult!.shots.length).toBe(4);
+    expect(splitResult!.shots.length).toBe(3);
 
     // Each shot MUST NOT contain arrow-separated content
     for (const shot of splitResult!.shots) {
@@ -394,7 +394,7 @@ describe("Case B — Hook opening priority", () => {
     });
 
     expect(splitResult.wasSplit).toBe(true);
-    expect(splitResult.shots.length).toBe(4);
+    expect(splitResult.shots.length).toBe(3);
 
     // First shot MUST be the macro segment (plague/landscape/wide/devastation)
     const firstAction = splitResult.shots[0].action.toLowerCase();
@@ -541,7 +541,7 @@ describe("Case C — Editor / preview / submit consistency", () => {
 });
 
 describe("Case D — No fake late conversion", () => {
-  it("single-shot without progression gets split to 4 shots (min 4 policy for >3s)", () => {
+  it("single-shot without progression stays single for non-multishot scene type (4s)", () => {
     const result = enforceMinimumShotCount({
       sceneType: "transition-atmosphere",
       subjectPrimary: "atmospheric mist",
@@ -553,9 +553,8 @@ describe("Case D — No fake late conversion", () => {
       currentShotCount: 1,
     });
 
-    // With min 4 policy, all clips >3s are split regardless of scene type
-    expect(result).not.toBeNull();
-    expect(result!.shots.length).toBe(4);
+    // transition-atmosphere is not a multi-shot scene type — no forced split for ≤7s
+    expect(result).toBeNull();
   });
 
   it("progression detection is explicit and logged", () => {

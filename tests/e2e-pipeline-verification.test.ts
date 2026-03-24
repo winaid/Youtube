@@ -628,7 +628,7 @@ describe("Cross-cutting: No regressions across both samples", () => {
     }
   });
 
-  it("non-progression content >3s gets 4-shot split (min 4 policy)", () => {
+  it("non-progression content ≤7s stays single for non-multishot scene type (7s=3 policy)", () => {
     const simpleCuts = [
       { action: "quiet medieval village at dusk, smoke rising from chimneys", dur: 5 },
       { action: "Steve Jobs standing alone on stage with black turtleneck", dur: 5 },
@@ -637,7 +637,7 @@ describe("Cross-cutting: No regressions across both samples", () => {
     for (const tc of simpleCuts) {
       const progression = detectShotProgression(tc.action, "");
       if (!progression.hasProgression) {
-        // No progression but >3s → getMinShots returns 4, forced split
+        // No progression, ≤7s, transition-atmosphere is not a multi-shot scene type → null
         const result = enforceMinimumShotCount({
           sceneType: "transition-atmosphere",
           subjectPrimary: "scene",
@@ -648,9 +648,8 @@ describe("Cross-cutting: No regressions across both samples", () => {
           camera: { framing: "MS", angle: "eye_level", motion: "static" },
           currentShotCount: 1,
         });
-        // >3s clips always get 4 shots regardless of scene type
-        expect(result).not.toBeNull();
-        expect(result!.shots.length).toBe(4);
+        // transition-atmosphere is not in MULTI_SHOT_SCENE_TYPES, so no forced split for ≤7s
+        expect(result).toBeNull();
       }
     }
   });
