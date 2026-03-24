@@ -789,6 +789,8 @@ ${localList}
       },
     };
 
+    console.info(`[recommend-director] STEP 1: calling Gemini for local matching, pool=${directorPoolSize}, elapsed=${Date.now() - _rdStartMs}ms`);
+    const _step1Start = Date.now();
     console.log(`[recommend-director] STEP 1: 로컬 매칭 시작 (model=pro→flash-lite fallback, pool=${directorPoolSize})`);
 
     const { response: res, meta: fallbackMeta } = await fetchWithModelFallback(context.env, {
@@ -797,8 +799,11 @@ ${localList}
       body: JSON.stringify(localRequestBody),
     });
 
+    console.info(`[recommend-director] STEP 1: Gemini responded, status=${res.status}, elapsed=${Date.now() - _step1Start}ms`);
+
     if (!res.ok) {
       const errText = await res.text();
+      console.info(`[recommend-director] STEP 1 error: status=${res.status}, elapsed=${Date.now() - _rdStartMs}ms`);
       console.error(`[recommend-director] 로컬 매칭 최종 실패: status=${res.status}`);
       stageStatus.localMatch = "failed";
       stageReasons.localMatch = `API 실패 (${res.status})`;
@@ -807,6 +812,7 @@ ${localList}
 
     // meta.finalModel에서 정확한 모델명 추출 (URL 기반 추측 대신)
     const modelUsed = fallbackMeta.finalModel.includes("flash") ? "flash" : fallbackMeta.finalModel.includes("pro") ? "pro" : fallbackMeta.finalModel;
+    console.info(`[recommend-director] STEP 1: modelUsed=${modelUsed}, parsing response`);
 
     const data = await res.json() as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -842,6 +848,7 @@ ${localList}
     localRejectionReasons = Array.isArray(geminiPipeline.rejectionReasons) ? geminiPipeline.rejectionReasons as string[] : [];
 
     // ── Merge pre-extracted signals as fallback ──
+    console.info(`[recommend-director] STEP 1 parsed: genres=${extractedGenres.length}, moods=${extractedMoods.length}, keywords=${extractedKeywords.length}, localMatches=${(parsed.localMatches as unknown[])?.length ?? 0}, elapsed=${Date.now() - _rdStartMs}ms`);
     const mergeResult = mergePreExtractedSignals(extractedGenres, extractedMoods, extractedKeywords, preSignals);
     extractedGenres = mergeResult.genres;
     extractedMoods = mergeResult.moods;
@@ -1721,6 +1728,7 @@ Return ONLY valid JSON with exactly 4 directors:
     // ═══════════════════════════════════════════════════════════
     // STEP 3: Final Assembly
     // ═══════════════════════════════════════════════════════════
+    console.info(`[recommend-director] STEP 3: assembling final response, elapsed=${Date.now() - _rdStartMs}ms`);
 
     const finalLocalCount = localMatches.length;
     const finalWebCount = webSuggestions.length;
@@ -1835,6 +1843,7 @@ Return ONLY valid JSON with exactly 4 directors:
       console.warn(`[recommend-director] 빈 결과 — emptyReason=${emptyReason}, stages=${JSON.stringify(stageStatus)}`);
     }
 
+    console.info(`[recommend-director] Final response: localMatches=${finalLocalCount}, webSuggestions=${finalWebCount}, total=${finalCount}, elapsed=${Date.now() - _rdStartMs}ms`);
     return Response.json({
       analysis: (parsed.analysis as string) ?? "",
       localMatches,
@@ -1866,6 +1875,7 @@ Return ONLY valid JSON with exactly 4 directors:
     });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
+    console.info(`[recommend-director] Unhandled error caught: ${errMsg}, elapsed=${Date.now() - _rdStartMs}ms`);
     console.error("[recommend-director] 예외:", errMsg);
     return Response.json({
       error: `[recommend-director] ${errMsg}`,
