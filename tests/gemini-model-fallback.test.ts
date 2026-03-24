@@ -307,11 +307,12 @@ describe("recommend-director STEP 1 로컬 매칭", () => {
     expect(content).toContain("fetchWithModelFallback");
   });
 
-  it("Stage 4는 항상 GEMINI_MODEL_FLASH (조건부가 아님)", () => {
+  it("Stage 4는 speculative execution으로 병렬 실행", () => {
     const content = fs.readFileSync("functions/api/recommend-director.ts", "utf-8");
     // 구형 조건부 패턴이 없어야 함
     expect(content).not.toContain("(timeoutCount + failCount >= 2) ? GEMINI_MODEL_FLASH : GEMINI_MODEL_PRO");
-    // Stage 4는 항상 Flash-Lite
-    expect(content).toMatch(/Stage 4.*항상.*Flash-Lite/);
+    // speculative stage4가 파이프라인 시작 시 병렬 실행
+    expect(content).toContain("speculativeStage4Promise");
+    expect(content).toContain("stage4_speculative");
   });
 });

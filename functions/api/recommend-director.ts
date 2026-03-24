@@ -1374,7 +1374,7 @@ Each director object must have:
         let res: Response;
         try {
           // grounding 호출 타임아웃 — 후속 stage 여유를 위해 30초로 제한
-          const timeoutMs = opts.useGrounding ? 15_000 : undefined; // 15초 — grounding 실패 시 빠르게 fallback
+          const timeoutMs = opts.useGrounding ? 15_000 : 12_000; // grounding 15초, 일반 12초 — 빠른 fallback
           res = await fetchWithAuth(
             context.env,
             buildGeminiUrl(context.env, opts.model),
@@ -1479,6 +1479,29 @@ Each director object must have:
       const PIPELINE_DEADLINE_MS = 45_000; // 45초로 단축 — Cloudflare 60초 edge timeout 내 응답 보장
       let skipToFallback = false; // grounding 실패 시 Stage 2/3 건너뛰고 Stage 4로 직행
 
+      // ── Speculative Stage 4: Stage 1과 동시 시작 (Stage 1~3 실패 시 즉시 사용) ──
+      const excludeNamesSpec = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
+      const genreStrSpec = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
+      const moodStrSpec = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
+      const speculativeStage4Prompt = `You MUST recommend exactly 4 real film directors whose visual style fits a ${genreStrSpec}, ${moodStrSpec} video scenario.
+Exclude these directors: ${excludeNamesSpec}.
+Include directors from at least 2 different regions (Korea, Japan, Europe, US, India, etc.).
+Each director must be a real person with real filmography.
+
+Return ONLY valid JSON with exactly 4 directors:
+{"directors":[
+  {"name":"English name","nameKo":"한국어 이름","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean 1-2 sentence description","reason":"Korean reason why this director fits","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]},
+  ... (exactly 4 directors total)
+]}`;
+      console.info(`[recommend-director] Speculative stage4 launched in parallel with pipeline`);
+      const speculativeStage4Promise = callGeminiForDirectors({
+        model: GEMINI_MODEL_FLASH,
+        prompt: speculativeStage4Prompt,
+        useGrounding: false,
+        label: "stage4_speculative",
+        forceMimeType: true,
+      });
+
       for (let stageNum = 1; stageNum <= MAX_STAGES; stageNum++) {
         // ── 이미 후보 확보되면 종료 ──
         if (stageAccepted.length > 0) break;
@@ -1521,7 +1544,7 @@ Each director object must have:
             console.info(`[recommend-director] Stage 1: weak signals detected — using grounding instead of JSON-forced mode`);
           } else {
             stageLabel = "stage1_model_json";
-            model = GEMINI_MODEL_PRO;
+            model = GEMINI_MODEL_FLASH;
             prompt = buildWebPrompt();
             useGrounding = false;
             forceMimeType = true;
@@ -1550,12 +1573,12 @@ Each director object must have:
             // Stage 1이 이미 grounding을 시도했지만 실패 → Pro 모델로 JSON 강제 시도
             // (grounding 재시도 무의미, 모델 지식 기반으로 전환)
             const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
-            stageLabel = "stage2_pro_json_fallback";
-            model = GEMINI_MODEL_PRO;
+            stageLabel = "stage2_flash_json_fallback";
+            model = GEMINI_MODEL_FLASH;
             prompt = buildWebPrompt({ retryNote });
             useGrounding = false;
             forceMimeType = true;
-            triggerReason = `stage1 grounding attempted but failed → Pro JSON fallback: ${prevReasons.join(",")}`;
+            triggerReason = `stage1 grounding attempted but failed → Flash JSON fallback: ${prevReasons.join(",")}`;
           } else {
             // 파싱 실패 등 → JSON 강제로 재시도
             const retryNote = "\n## IMPORTANT: Return ONLY valid JSON. No markdown, no explanation, no extra text. Just the JSON object.\n";
@@ -1596,29 +1619,55 @@ Each director object must have:
             triggerReason = `stage2 failed: ${prevReasons.join(",")}`;
           }
         } else {
-          // ── STAGE 4: 모델 지식 폴백 (grounded=false, JSON 강제) ──
-          // Stage 4는 항상 Flash-Lite 폴백 — 검색 전체가 Flash-Lite 통일
+          // ── STAGE 4: speculative 결과 활용 (이미 병렬 실행됨) ──
           stageLabel = "stage4_model_fallback";
           model = GEMINI_MODEL_FLASH;
-
-          const excludeNames = (localDirectors || []).slice(0, 15).map(d => d.name).join(", ");
-          const genreStr = extractedGenres.slice(0, 3).map(g => toEnglish(g)).join(", ") || "drama";
-          const moodStr = extractedMoods.slice(0, 2).map(m => toEnglish(m)).join(", ") || "emotional";
-
-          prompt = `You MUST recommend exactly 4 real film directors whose visual style fits a ${genreStr}, ${moodStr} video scenario.
-Exclude these directors: ${excludeNames}.
-Include directors from at least 2 different regions (Korea, Japan, Europe, US, India, etc.).
-Each director must be a real person with real filmography.
-
-Return ONLY valid JSON with exactly 4 directors:
-{"directors":[
-  {"name":"English name","nameKo":"한국어 이름","region":"한국|일본|중국|유럽|미국|인도|중동|동남아|중남미|아프리카|오세아니아","style":"Korean style keywords","description":"Korean 1-2 sentence description","reason":"Korean reason why this director fits","fitScore":75,"signatureTechniques":{"cameraWork":"","colorPalette":"","lighting":"","editingStyle":"","moodKeywords":""},"notableWorks":["work1","work2","work3"]},
-  ... (exactly 4 directors total)
-]}`;
-          useGrounding = false;
-          forceMimeType = true;
           triggerReason = `all prior stages failed: ${allEmptyReasons.join(",")}`;
           fallbackUsed = true;
+
+          console.info(`[recommend-director] Stage 4: awaiting speculative result (already running in background)`);
+          const specResult = await speculativeStage4Promise;
+
+          // speculative 결과를 직접 사용 — callGeminiForDirectors 재호출 불필요
+          webSearchAttemptCount = stageNum;
+          const specStageLog: RetryStageLog = {
+            stage: stageNum,
+            name: stageLabel,
+            model,
+            grounded: specResult.grounded,
+            normalizedQuery: currentStageQuery,
+            timeoutOccurred: specResult.timeoutOccurred,
+            httpStatus: specResult.httpStatus,
+            rawResultCount: specResult.rawCount,
+            acceptedCount: specResult.accepted.length,
+            rejectedCount: specResult.rejected,
+            emptyReasons: specResult.emptyReasons,
+            triggerReason,
+            partialRecoveryCount: specResult.partialRecoveryCount,
+            durationMs: specResult.durationMs,
+            groundingDiag: specResult.groundingDiag,
+          };
+          retryStagesLog.push(specStageLog);
+
+          if (specResult.timeoutOccurred) pipelineTimeoutOccurred = true;
+          webSearchRawBeforeDedup += specResult.rawCount;
+          webSearchPartialRecoveryCount += specResult.partialRecoveryCount;
+          if (specResult.rawSnippet && !webSearchRawSnippet) {
+            webSearchRawSnippet = specResult.rawSnippet;
+          }
+          webSearchRejectionReasons.push(...specResult.reasons.map(r => `[${stageLabel}] ${r}`));
+          allEmptyReasons.push(...specResult.emptyReasons);
+
+          if (specResult.accepted.length > 0) {
+            stageAccepted.push(...specResult.accepted);
+            recoveredAtStage = stageNum;
+            finalProvider = `${model} (${stageLabel})`;
+            finalGrounded = specResult.grounded;
+            console.log(`[recommend-director] STAGE ${stageNum} 성공 (speculative): ${specResult.accepted.length}명 채택`);
+          } else {
+            console.log(`[recommend-director] STAGE ${stageNum} 실패 (speculative): emptyReasons=${specResult.emptyReasons.join(",")}`);
+          }
+          break; // Stage 4는 speculative 결과 사용 후 루프 종료
         }
 
         webSearchAttemptCount = stageNum;
