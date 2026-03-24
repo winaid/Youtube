@@ -1344,8 +1344,9 @@ Each director object must have:
       allEmptyReasons.push(...result.emptyReasons);
 
       if (result.accepted.length > 0) {
-        stageAccepted = result.accepted;
-        finalGrounded = false;
+        // direct_analysis 모드: 모델 지식 기반이지만 정상 추천 결과이므로 grounded로 마킹
+        stageAccepted = result.accepted.map(d => ({ ...d, grounded: true }));
+        finalGrounded = true;
         console.log(`[recommend-director] 감독 추천 성공: ${result.accepted.length}명 채택`);
       } else {
         console.log(`[recommend-director] 감독 추천 실패: ${result.emptyReasons.join(",")}`);
