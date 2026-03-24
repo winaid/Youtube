@@ -1395,7 +1395,8 @@ Each director object must have:
       // ── stageStatus/stageReasons 설정 ──
       if (stageAccepted.length > 0) {
         stageStatus.webSearch = "attempted_success";
-        const recoveryNote = recoveredAtStage && recoveredAtStage > 1 ? ` (stage ${recoveredAtStage}에서 복구)` : "";
+        const _recoveredAtStage = retryStagesLog.find(s => s.acceptedCount > 0)?.stage ?? null;
+        const recoveryNote = _recoveredAtStage && _recoveredAtStage > 1 ? ` (stage ${_recoveredAtStage}에서 복구)` : "";
         stageReasons.webSearch = `${webSearchAcceptedCount}명 채택, ${resultMode} 모드${recoveryNote} (시도 ${webSearchAttemptCount}회)`;
       } else {
         stageStatus.webSearch = allEmptyReasons.includes("provider_failed") || allEmptyReasons.includes("provider_timeout") ? "failed" : "attempted_empty";
