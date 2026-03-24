@@ -3154,50 +3154,99 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const postShotCounts = finalizedCuts.map(c => Array.isArray(c.multiShot) ? c.multiShot.length : 0);
     console.info(`[generate-cuts] MULTISHOT REPAIR COMPLETE — postShotCounts=[${postShotCounts.join(",")}], repaired=${preShotCounts.some((v, i) => v !== postShotCounts[i])}, elapsed=${Date.now() - t0_request}ms`);
 
-    // ═══ prompt 400자 클램핑 + promptKo 누락 보충 ═══
-    const roleKoFallback: Record<string, string> = {
-      establish: "전경 — 공간과 위치 확인",
-      transition: "전환 — 새로운 시점",
-      develop: "전개 — 인물의 구체적 행동",
-      insert: "인서트 — 핵심 디테일 클로즈업",
-      peak: "절정 — 감정 최고조 순간",
-      resolve: "마무리 — 시각적 해소",
+    // ═══ 멀티샷 최대 초과 자르기 — 7초=3샷, 8초=4샷 강제 ═══
+    let shotTrimCount = 0;
+    for (const fc of finalizedCuts) {
+      if (!Array.isArray(fc.multiShot) || fc.multiShot.length === 0) continue;
+      const max = getMaxShots(VEO_DEFAULT_MODEL, fc.durationSec);
+      if (fc.multiShot.length > max) {
+        console.warn(`[generate-cuts] ⚠️ cut ${fc.cutNumber} (${fc.durationSec}s): multiShot ${fc.multiShot.length}개 > 최대 ${max}개 → 초과분 제거`);
+        // 초과 서브샷 제거 후 duration 재분배
+        fc.multiShot = fc.multiShot.slice(0, max);
+        const baseDur = Math.floor(fc.durationSec / max);
+        const remainder = fc.durationSec - baseDur * max;
+        fc.multiShot.forEach((sh, i) => {
+          (sh as Record<string, unknown>).index = i + 1;
+          (sh as Record<string, unknown>).duration = String(i < remainder ? baseDur + 1 : baseDur);
+        });
+        shotTrimCount++;
+      }
+    }
+    if (shotTrimCount > 0) {
+      console.info(`[generate-cuts] multiShot max-trim: ${shotTrimCount} cuts trimmed to max shot count`);
+    }
+
+    // ═══ prompt 400자 클램핑 + promptKo 생성 ═══
+    const roleKoMap: Record<string, string> = {
+      establish: "전경",
+      transition: "전환",
+      develop: "전개",
+      insert: "인서트",
+      peak: "절정",
+      resolve: "마무리",
+    };
+    const roleDescKo: Record<string, string> = {
+      establish: "공간과 위치를 보여주는 장면",
+      transition: "새로운 시점으로 전환하는 장면",
+      develop: "인물의 구체적 행동을 보여주는 장면",
+      insert: "핵심 디테일을 클로즈업하는 장면",
+      peak: "감정이 최고조에 달하는 장면",
+      resolve: "시각적으로 마무리하는 장면",
     };
     let promptKoRepairCount = 0;
     let promptClampCount = 0;
     for (const fc of finalizedCuts) {
       if (!Array.isArray(fc.multiShot)) continue;
-      for (const sh of fc.multiShot as Array<{ promptKo?: string; role?: string; prompt: string }>) {
-        // prompt 400자 하드 클램핑 — Gemini가 초과 생성해도 여기서 잘라냄
+      const fcAny = fc as Record<string, unknown>;
+      const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || "";
+      const vpKo = (fcAny.videoPromptKo as string | undefined)?.trim() || "";
+      const subActKo = (fcAny.subjectActionKo as string | undefined)?.trim() || "";
+      const moodKo = (fcAny.moodLightingKo as string | undefined)?.trim() || "";
+      const camKo = (fcAny.cameraDirectionKo as string | undefined)?.trim() || "";
+      const shotCount = fc.multiShot.length;
+
+      for (let si = 0; si < shotCount; si++) {
+        const sh = fc.multiShot[si] as { promptKo?: string; role?: string; prompt: string; index: number };
+        // prompt 400자 하드 클램핑
         if (sh.prompt && sh.prompt.length > 400) {
           sh.prompt = sh.prompt.slice(0, 400);
           promptClampCount++;
         }
-        // promptKo 누락 보충
+        // promptKo 생성 — 역할 + 컷의 한국어 필드들로 실제 의미 있는 한국어 요약
         if (!sh.promptKo || sh.promptKo.trim().length === 0) {
-          const sceneKo = (fc as Record<string, unknown>).sceneDescription as string | undefined;
-          const roleName = roleKoFallback[sh.role ?? "develop"]?.split(" — ")[0] ?? "전개";
-          if (sceneKo && sceneKo.trim().length > 0) {
-            sh.promptKo = `${roleName}: ${sceneKo.slice(0, 35)}`;
+          const role = sh.role ?? "develop";
+          const roleLabel = roleKoMap[role] ?? "전개";
+
+          // 서브샷 위치별로 다른 한국어 소스 조합
+          let koText = "";
+          if (role === "establish") {
+            // 전경: 장면 설명 우선
+            koText = sceneKo || vpKo || roleDescKo[role]!;
+          } else if (role === "develop" || role === "peak") {
+            // 전개/절정: 인물 행동 우선
+            koText = subActKo || sceneKo || vpKo || roleDescKo[role]!;
+          } else if (role === "insert") {
+            // 인서트: 분위기/디테일 우선
+            koText = moodKo || sceneKo || roleDescKo[role]!;
+          } else if (role === "resolve") {
+            // 마무리: 카메라 + 장면
+            koText = camKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || roleDescKo[role]!;
           } else {
-            // sceneDescription도 없으면 videoPromptKo에서 추출
-            const vpKo = (fc as Record<string, unknown>).videoPromptKo as string | undefined;
-            sh.promptKo = vpKo && vpKo.trim().length > 0
-              ? `${roleName}: ${vpKo.slice(0, 35)}`
-              : roleKoFallback[sh.role ?? "develop"] ?? "전개 — 인물의 구체적 행동";
+            koText = sceneKo || vpKo || roleDescKo[role]!;
           }
+
+          sh.promptKo = `${roleLabel}: ${koText}`.slice(0, 40);
           promptKoRepairCount++;
         }
       }
       // videoPromptKo도 없으면 sceneDescription에서 보충
-      const fcAny = fc as Record<string, unknown>;
-      if (!fcAny.videoPromptKo && fcAny.sceneDescription) {
-        fcAny.videoPromptKo = String(fcAny.sceneDescription).slice(0, 60);
+      if (!fcAny.videoPromptKo && sceneKo) {
+        fcAny.videoPromptKo = sceneKo.slice(0, 60);
         promptKoRepairCount++;
       }
     }
     if (promptKoRepairCount > 0 || promptClampCount > 0) {
-      console.info(`[generate-cuts] post-repair: promptKo=${promptKoRepairCount} filled, prompt=${promptClampCount} clamped to 400 chars`);
+      console.info(`[generate-cuts] post-repair: promptKo=${promptKoRepairCount} filled, prompt=${promptClampCount} clamped to 400 chars, shotTrim=${shotTrimCount}`);
     }
 
     // ═══ Continuity Segment 생성 (continuityMode ON일 때만) ═══════
