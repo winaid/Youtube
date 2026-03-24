@@ -36,18 +36,15 @@ function safePrompt(shot: MultiShotPrompt): string {
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
-export const PROMPT_WARN_LENGTH = 350;
+export const PROMPT_WARN_LENGTH = 400;
 /**
- * 최대 prompt 길이.
+ * 최대 prompt 길이 (VEO hard cap = 500자).
  *
- * 이중 방어 전략:
- *   1. UI 입력 차단 — MultiShotEditor의 <textarea maxLength={512}>로 초과 타이핑 방지
- *   2. Validation 검증 — 서버 생성/붙여넣기 등 외부 유입 데이터에 대한 후행 검증
- *
- * maxLength는 "입력 시 차단", validation은 "기존 데이터 검출" 역할.
- * export layer(final-payload-validator)에서도 동일 상수로 Rule 15 적용.
+ * LLM에게는 400자 이내로 작성하라고 가이드하지만 (generate-cuts 시스템 프롬프트),
+ * LLM이 450~480자를 출력할 수 있으므로 UI/validation 한계는 500자.
+ * UI textarea maxLength={500}, validation error도 500자 초과 시 발동.
  */
-export const PROMPT_MAX_LENGTH = 400;
+export const PROMPT_MAX_LENGTH = 500;
 
 // ═══════════════════════════════════════════════════════════════════
 // Runtime Heuristic Defaults

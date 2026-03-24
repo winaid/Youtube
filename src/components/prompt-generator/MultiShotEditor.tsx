@@ -379,7 +379,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                   {/* 한국어 요약 — promptKo 또는 영어 프롬프트에서 자동 생성 */}
                   {(() => {
                     const koSummary = shot.prompt
-                      ? (shot.promptKo || generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)))
+                      ? generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length))
                       : "";
                     return koSummary ? (
                       <>
