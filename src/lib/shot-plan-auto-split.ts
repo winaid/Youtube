@@ -709,13 +709,13 @@ export function shotsToMultiShotPrompts(
     ].filter(Boolean);
 
     let prompt = parts.join(". ").trim();
-    if (prompt.length > 400) {
+    if (prompt.length > 500) {
       const lastDot = prompt.lastIndexOf(".", 400);
-      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+      prompt = lastDot > 400 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 500);
     }
     const duration = String(Math.max(1, Math.round(shot.endSec - shot.startSec)));
     const role = roles?.[i] ?? inferRoleFromPosition(i, shots.length);
-    const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;
+    const promptKo = (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`);
 
     return { index: i + 1, prompt, promptKo, duration, role };
   });

@@ -448,13 +448,13 @@ export function buildDefaultMultiShot(opts: {
   return roles.map((role, i) => {
     const baseShot = buildProgressionPrompt(basePrompt, role, i, effectiveCount, sceneType);
     let prompt = styleSuffix ? `${baseShot}. ${styleSuffix}` : baseShot;
-    if (prompt.length > 400) {
+    if (prompt.length > 500) {
       const lastDot = prompt.lastIndexOf(".", 400);
       if (lastDot > 300) {
         prompt = prompt.slice(0, lastDot + 1);
       } else {
         const lastSpace = prompt.lastIndexOf(" ", 400);
-        prompt = (lastSpace > 0 ? prompt.slice(0, lastSpace) : prompt.slice(0, 400)) + "...";
+        prompt = (lastSpace > 0 ? prompt.slice(0, lastSpace) : prompt.slice(0, 500)) + "...";
       }
     }
     const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;

@@ -533,14 +533,14 @@ export default function CutCard({
                 `${shot.camera.framing} shot`;
               const shotRole = roles[i] || ("develop" as const);
               let prompt = `${framingLabel}. ${shot.action}. ${shot.environment}. ${shot.moodLighting}`.trim();
-              if (prompt.length > 400) {
-                const lastDot = prompt.lastIndexOf(".", 400);
-                prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+              if (prompt.length > 500) {
+                const lastDot = prompt.lastIndexOf(".", 500);
+                prompt = lastDot > 400 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 500);
               }
               return {
                 index: i + 1,
                 prompt,
-                promptKo: SHOT_ROLE_META[shotRole as ShotRole]?.progression ?? `서브샷 ${i + 1}`,
+                promptKo: (shot as { promptKo?: string }).promptKo || (SHOT_ROLE_META[shotRole as ShotRole]?.progression ?? `서브샷 ${i + 1}`),
                 duration: String(Math.round(shot.endSec - shot.startSec)),
                 role: shotRole,
               };

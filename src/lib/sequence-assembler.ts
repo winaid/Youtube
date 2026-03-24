@@ -1748,9 +1748,9 @@ export function assembleFromJSON(input: {
         shot.focus,
       ].filter(Boolean).join(". ").trim() + styleTag;
       const duration = String(Math.max(1, shotRawDurations[i]));
-      const promptKo = ROLE_KO[role as keyof typeof ROLE_KO] ?? `서브샷 ${i + 1}`;
-      const clampedPrompt = prompt.length > 400
-        ? (prompt.lastIndexOf(".", 400) > 300 ? prompt.slice(0, prompt.lastIndexOf(".", 400) + 1) : prompt.slice(0, 400))
+      const promptKo = (shot as { promptKo?: string }).promptKo || (ROLE_KO[role as keyof typeof ROLE_KO] ?? `서브샷 ${i + 1}`);
+      const clampedPrompt = prompt.length > 500
+        ? (prompt.lastIndexOf(".", 500) > 400 ? prompt.slice(0, prompt.lastIndexOf(".", 500) + 1) : prompt.slice(0, 500))
         : prompt;
       return { index: i + 1, prompt: clampedPrompt, promptKo, duration, role };
     });

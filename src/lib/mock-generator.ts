@@ -478,11 +478,11 @@ export async function generatePrompt(
         if (autoResult.validation.passed && autoResult.shots.length >= 3) {
           cut.multiShot = autoResult.shots.map((shot, i) => {
             const role = inferRoleFromShotId(shot.shotId, autoResult.shots.length) ?? "develop";
-            const prompt = String(shot.action || "").slice(0, 400);
+            const prompt = String(shot.action || "").slice(0, 500);
             return {
               index: i + 1,
               prompt,
-              promptKo: ROLE_KO[role] ?? `서브샷 ${i + 1}`,
+              promptKo: (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`),
               duration: String(Math.round(shot.endSec - shot.startSec)),
               role,
             };

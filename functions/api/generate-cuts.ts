@@ -1347,13 +1347,13 @@ charRef에 이미 포함된 경우 그대로 사용. 누락 시 videoPrompt에�
 ${SCENE_TERM_PRECISION_BLOCK}
 
 ## 🚨 STRICT 글자 제한 (자연어만 — 메타태그 SHOT_SIZE:/CAMERA_ANGLE:/REVEALED: 등 절대 금지)
-⚠️⚠️ 모든 prompt 필드는 반드시 400자 이내로 작성하라. 400자 초과 = 규칙 위반. 500자 초과 시 잘림 발생.
-⚠️⚠️ prompt 400자 제한을 지키기 위해: 환경 디테일 2개만, 형용사 최소화, 불필요한 반복 제거.
+⚠️⚠️ 모든 prompt 필드는 400~500자 사이로 작성하라. 400자 미만 = 디테일 부족. 500자 초과 = 잘림 발생.
+⚠️⚠️ 환경 디테일을 풍부하게, 구체적인 오브젝트/질감/행동을 추가하여 400자 이상 채워라.
 
-imagePrompt (≤55 words, 반드시 ≤400 chars EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
-endImagePrompt (≤45 words, 반드시 ≤400 chars EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
+imagePrompt (≤55 words, 400~500 chars EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
+endImagePrompt (≤45 words, 400~500 chars EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
 
-videoPrompt (≤120 words, 반드시 ≤400 chars EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
+videoPrompt (≤120 words, 400~500 chars EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
   Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+ 구체적 오브젝트/질감(cracked tile, rusted pipe, wilted flower, stacked books)]").replace("[develop]", "[BEAT2: WHAT 상황 증거(empty chair, closed shutters, overflowing ashtray, half-eaten meal)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동(fingers grip armrest, shoulders slump forward, gaze drops to floor)]")}. [charRef if not absent]. [noTextSuffix]"
   환경 디테일: 최소 2개 구체적 오브젝트/질감/현상 필수 (cracked, rusted, damp, torn 등 형용사+명사)
   상황 증거: 현재 상황을 보여주는 시각 단서 필수 (empty/crowded/broken/closed/overflowing 등)
@@ -1361,7 +1361,7 @@ videoPrompt (≤120 words, 반드시 ≤400 chars EN — 3비트 시퀀스, 각 
   BANNED: continues/still/same as before/standing/motionless, sign/signboard, emotion labels(anxious/sad/angry 등)
   BANNED: 한국어 테마 문구(인본주의적 시선, 시대극의 현대적 해석, 인물 심리 묘사 등) — 비디오 모델이 렌더링 불가. 영문 시각 묘사로만 기술
 
-extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤80 words, 반드시 ≤400 chars EN):
+extendPrompt (SCENE${firstCutNum}=="" if SCENE1 | ≤80 words, 400~500 chars EN):
   "Continuing from previous — [endHook]. [Beat1 다른 앵글]. [Beat2 상황 증거]. [Beat3 감정 행동]. [charRef if applicable]. [noTextSuffix]"
 
 cameraDirection (≤55 chars): "Lens Xmm. [movement1]→[movement2]. ${directorName} style."
@@ -1397,18 +1397,18 @@ ${(() => {
 공통 규칙:
 - 인접 서브샷: 다른 shot size + 앵글 + 피사체 필수. 같은 피사체 반복 = 가짜 분할 → 금지.
 - 정보 증가: 각 서브샷은 이전에 볼 수 없던 것을 보여줘야 함.
-- ≤35 words/샷, 반드시 ≤400 chars/샷 (400자 초과 = 규칙 위반).
+- ≤35 words/샷, 400~500 chars/샷 (500자 초과 = 잘림 발생).
 - 필수 3요소: [shot size] + [구체적 행동/대상(동사필수)] + [장소]
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
 - ⚠️ prompt 필드는 반드시 영어 (VEO 영상생성 엔진 전달용). prompt 안에 한국어 단어 삽입 절대 금지.
-- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 각 서브샷의 한국어 요약 (≤40자). 예: "폐허 전경, 돌담과 잡초" / "주인공이 문을 열고 안을 들여다봄". promptKo가 비어있으면 규칙 위반.`;
+- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 각 서브샷의 영어 prompt를 완전한 한국어로 번역 (≤80자). 영어 prompt의 핵심 내용을 빠짐없이 한국어로 옮겨라. 예: "넓은 전경. 폐허가 된 병원 복도, 깨진 타일과 녹슨 파이프. 천장 형광등이 깜빡이며 차가운 빛을 드리움" / "주인공이 떨리는 손으로 문손잡이를 잡고, 숨을 멈춘 채 문을 밀어 연다". promptKo가 비어있으면 규칙 위반.`;
   })()}
 
 ## 🚨🚨🚨 한국어 표시용 필드 (필수 — 하나라도 빠지거나 영어로 작성하면 전체 무효)
 모든 Ko 필드는 반드시 한국어(한글)로 작성. 영어 금지. 예: "dark room" ❌ → "어두운 방" ✅
-- videoPromptKo (필수): videoPrompt를 한국어로 요약 (≤60자). 반드시 한글로 작성.
-  예: "어두운 방에서 여자가 폰을 떨어뜨리고, 화면 빛에 얼굴이 비침"
+- videoPromptKo (필수): videoPrompt를 한국어로 완전 번역 (≤120자). 반드시 한글로 작성. 영어 prompt의 장면·행동·분위기를 빠짐없이 한국어로 옮겨라.
+  예: "어두운 방, 창문 사이로 가로등 불빛이 비침. 여자가 떨리는 손으로 폰을 쥐다가 떨어뜨리고, 깨진 화면 빛이 얼굴 절반을 비추며 눈가에 그림자가 드리워짐"
 - cameraDirectionKo: cameraDirection을 한국어로 변환 (≤30자).
   예: "35mm 렌즈. 느린 접근 → 고정"
 - moodLightingKo: moodLighting을 한국어로 변환 (≤30자).
@@ -1435,7 +1435,7 @@ ${(() => {
     const exampleCount = cutMaxShots;
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
-      exampleShots.push(`{"index":${i},"prompt":"...","promptKo":"한국어 요약 ≤40자","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
+      exampleShots.push(`{"index":${i},"prompt":"...","promptKo":"영어 prompt의 한국어 번역 ≤80자","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
       remaining -= shotDur;
     }
     return `[${base},"multiShot":[${exampleShots.join(",")}]}]`;

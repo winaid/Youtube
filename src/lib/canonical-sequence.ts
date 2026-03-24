@@ -209,9 +209,9 @@ export function canonicalShotsToMultiShot(
     ].filter(Boolean);
     const role: ShotRole = (shot as { role?: ShotRole }).role || inferRoleFromPosition(i, seq.shots!.length);
     let prompt = parts.join(". ").trim();
-    if (prompt.length > 400) {
+    if (prompt.length > 500) {
       const lastDot = prompt.lastIndexOf(".", 400);
-      prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
+      prompt = lastDot > 400 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 500);
     }
     if (!prompt) {
       prompt = shot.action || `Shot ${i + 1}`;
@@ -219,7 +219,7 @@ export function canonicalShotsToMultiShot(
     return {
       index: i + 1,
       prompt,
-      promptKo: ROLE_KO[role] ?? `서브샷 ${i + 1}`,
+      promptKo: (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`),
       duration: String(Math.max(1, rawDurations[i])),
       role,
     };
