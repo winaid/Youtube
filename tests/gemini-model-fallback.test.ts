@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   GEMINI_MODEL_PRO,
   GEMINI_MODEL_FLASH,
+  GEMINI_MODEL_SEARCH,
   GEMINI_MODEL_IMAGE,
   GEMINI_MODEL_IMAGE_FB,
   isRetryableError,
@@ -31,19 +32,24 @@ describe("Gemini 모델 상수", () => {
     expect(GEMINI_MODEL_PRO).toBe("gemini-3.1-pro-preview");
   });
 
-  it("GEMINI_MODEL_FLASH는 gemini-3.1-pro-preview (전체 Pro 통일)", () => {
-    expect(GEMINI_MODEL_FLASH).toBe("gemini-3.1-pro-preview");
+  it("GEMINI_MODEL_FLASH는 gemini-2.5-flash (안정 버전 폴백)", () => {
+    expect(GEMINI_MODEL_FLASH).toBe("gemini-2.5-flash");
   });
 
-  it("이미지 모델은 별도 도메인 (Flash-Lite 아님)", () => {
+  it("GEMINI_MODEL_SEARCH는 gemini-3.1-flash-lite-preview (검색 grounding 전용)", () => {
+    expect(GEMINI_MODEL_SEARCH).toBe("gemini-3.1-flash-lite-preview");
+  });
+
+  it("이미지 모델은 별도 도메인", () => {
     expect(GEMINI_MODEL_IMAGE).not.toBe(GEMINI_MODEL_PRO);
     expect(GEMINI_MODEL_IMAGE).not.toBe(GEMINI_MODEL_FLASH);
     expect(GEMINI_MODEL_IMAGE_FB).not.toBe(GEMINI_MODEL_PRO);
     expect(GEMINI_MODEL_IMAGE_FB).not.toBe(GEMINI_MODEL_FLASH);
   });
 
-  it("Pro와 Flash가 동일 모델 (현재 정책: 전체 Pro 통일)", () => {
-    expect(GEMINI_MODEL_PRO).toBe(GEMINI_MODEL_FLASH);
+  it("SEARCH 모델은 PRO/FLASH와 다른 모델 (저비용 검색 전용)", () => {
+    expect(GEMINI_MODEL_SEARCH).not.toBe(GEMINI_MODEL_PRO);
+    expect(GEMINI_MODEL_SEARCH).not.toBe(GEMINI_MODEL_FLASH);
   });
 });
 
@@ -104,7 +110,7 @@ describe("ModelFallbackMeta 구조", () => {
     expect(meta.fallbackModel).toBe(GEMINI_MODEL_FLASH);
   });
 
-  it("Pro 실패 → 폴백도 Pro (현재 정책: 전체 Pro 통일)", () => {
+  it("Pro 실패 → Flash로 폴백", () => {
     const meta: ModelFallbackMeta = {
       primaryModel: GEMINI_MODEL_PRO,
       fallbackModel: GEMINI_MODEL_FLASH,
@@ -114,7 +120,7 @@ describe("ModelFallbackMeta 구조", () => {
 
     expect(meta.fallbackUsed).toBe(true);
     expect(meta.finalModel).toBe(GEMINI_MODEL_FLASH);
-    expect(meta.finalModel).toBe(meta.primaryModel);
+    expect(meta.finalModel).not.toBe(meta.primaryModel);
   });
 });
 
