@@ -1529,27 +1529,18 @@ Return ONLY valid JSON with exactly 4 directors:
         let triggerReason: string;
 
         if (stageNum === 1) {
-          // ── STAGE 1: 시그널 강도에 따라 전략 분기 ──
-          // 시그널이 충분하면 → JSON 강제 (모델 지식으로 충분)
-          // 시그널이 약하면 → grounding 활성화 (웹 검색으로 보완)
-          // grounding + responseMimeType 동시 사용 불가 → 둘 중 하나만 선택
-          const weakSignals = stageStatus.extractSignals === "weak";
-          if (weakSignals) {
-            stageLabel = "stage1_grounded_search";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt();
-            useGrounding = true;
-            forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
-            triggerReason = "weak_signals → grounding enabled for web search augmentation";
-            console.info(`[recommend-director] Stage 1: weak signals detected — using grounding instead of JSON-forced mode`);
-          } else {
-            stageLabel = "stage1_model_json";
-            model = GEMINI_MODEL_FLASH;
-            prompt = buildWebPrompt();
-            useGrounding = false;
-            forceMimeType = true;
-            triggerReason = "initial_direct_json";
-          }
+          // ── STAGE 1: 항상 웹 검색 grounding 사용 ──
+          // grounding + responseMimeType 동시 사용 불가 → grounding 우선
+          stageLabel = "stage1_grounded_search";
+          model = GEMINI_MODEL_FLASH;
+          prompt = buildWebPrompt();
+          useGrounding = true;
+          forceMimeType = false; // grounding과 responseMimeType 동시 사용 불가
+          triggerReason = stageStatus.extractSignals === "weak"
+            ? "weak_signals → grounding for web search"
+            : "strong_signals → grounding for web search";
+          console.info(`[recommend-director] Stage 1: using grounding (signals=${stageStatus.extractSignals})`);
+
         } else if (stageNum === 2) {
           // ── STAGE 2: grounding 실패 시 Flash-Lite JSON 폴백 (grounding 재시도 무의미) ──
           const prevReasons = allEmptyReasons;
