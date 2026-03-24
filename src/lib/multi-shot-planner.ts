@@ -234,6 +234,9 @@ export function planRecommendedShotCount(
   const bias = SCENE_TYPE_BIAS[sceneType] ?? 0;
   const target = Math.round((range.min + range.max) / 2) + bias;
 
+  // Enforce <3s = 1 shot rule regardless of bias
+  if (durationSec < 3) return 1;
+
   // clamp to [1, maxShots]
   return Math.max(1, Math.min(maxShots, target));
 }
@@ -371,6 +374,11 @@ export function distributeDurations(
 ): number[] {
   if (roles.length === 0) return [];
   if (roles.length === 1) return [totalDurationSec];
+
+  // Guard: if minimum durations exceed total, clamp minShotDuration
+  if (roles.length * minShotDuration > totalDurationSec) {
+    minShotDuration = Math.max(1, Math.floor(totalDurationSec / roles.length));
+  }
 
   // 가중치 합 계산
   const weights = roles.map(r => ROLE_DURATION_WEIGHT[r] ?? 1.0);

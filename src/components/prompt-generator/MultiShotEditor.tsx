@@ -146,7 +146,13 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
         if (s.index !== shotIndex) return s;
         const patch: Partial<MultiShotPrompt> = { role };
         if (s.promptKo !== undefined) {
-          patch.promptKo = SHOT_ROLE_META[role].label;
+          // Only overwrite if promptKo matches the old role's auto-generated label
+          const oldRole = s.role ?? inferShotRole(s.index - 1, shots.length);
+          const oldLabel = SHOT_ROLE_META[oldRole].label;
+          if (s.promptKo === oldLabel || s.promptKo.startsWith(oldLabel)) {
+            patch.promptKo = SHOT_ROLE_META[role].label;
+          }
+          // else: user has customized promptKo, preserve it
         }
         return { ...s, ...patch };
       });

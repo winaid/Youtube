@@ -825,6 +825,7 @@ export function validateShotDocument(doc: SingleShotDocument): ValidationResult 
 
   // Rule 11: Environment scene — cut-based camera banned
   if (doc.scene.shotCategory === "environment") {
+    ENVIRONMENT_BANNED_MOTIONS.lastIndex = 0;
     if (ENVIRONMENT_BANNED_MOTIONS.test(doc.camera.motion)) {
       issues.push({
         rule: "environment_cut_motion",
@@ -971,7 +972,7 @@ export function sanitizeShotDocument(doc: SingleShotDocument): {
 
     // Remove positive/negative overlaps (공통 헬퍼)
     const posText = result.global.style;
-    for (const layer of ["universal", "sceneSpecific", "user"] as const) {
+    for (const layer of ["universal", "sceneSpecific", "style", "failureMode", "user"] as const) {
       const envResult = sanitizeEnvironmentNegatives(result.negatives[layer], posText);
       result.negatives[layer] = envResult.cleaned;
       for (const r of envResult.removed) fixes.push(`Environment: removed conflicting negative "${r}" (also in positive)`);
@@ -2009,8 +2010,12 @@ export function renderSequenceForProvider(
 
   const framing = framingMap[shot.camera.framing] || shot.camera.framing;
   const angle = angleMap[shot.camera.angle] || shot.camera.angle;
-  const motion = shot.camera.motion && shot.camera.motion !== "static"
-    ? `, ${shot.camera.motion}`
+  const shotBoundaryTerms = /\b(cut\s+to|dissolve\s+to|fade\s+to|wipe\s+to|jump\s+cut)\b/gi;
+  let rawMotion = shot.camera.motion || "";
+  ENVIRONMENT_BANNED_MOTIONS.lastIndex = 0;
+  rawMotion = rawMotion.replace(ENVIRONMENT_BANNED_MOTIONS, "").replace(shotBoundaryTerms, "").replace(/\s{2,}/g, " ").trim();
+  const motion = rawMotion && rawMotion !== "static"
+    ? `, ${rawMotion}`
     : "";
 
   // Subject
@@ -2029,7 +2034,7 @@ export function renderSequenceForProvider(
   if (shot.situationCue) parts.push(shot.situationCue);
 
   // Character ref
-  if (shot.subject.characterRef) parts.push(shot.subject.characterRef);
+  if (sequence.continuity?.characterRef) parts.push(sequence.continuity.characterRef);
 
   // Emotional anchor + Action
   if (shot.emotionalAnchor) parts.push(shot.emotionalAnchor);
@@ -2068,7 +2073,7 @@ export function renderSequenceForProvider(
 
   // Negatives
   const allNeg = sequence.negatives
-    ? [...sequence.negatives.universal, ...sequence.negatives.sceneSpecific, ...sequence.negatives.failureMode, ...sequence.negatives.user]
+    ? [...sequence.negatives.universal, ...(sequence.negatives.style || []), ...sequence.negatives.sceneSpecific, ...sequence.negatives.failureMode, ...sequence.negatives.user]
     : shot.negativeDirectives || [];
   let uniqueNeg = [...new Set(allNeg)].slice(0, 30);
 
@@ -2124,6 +2129,15 @@ export function renderSequenceForProvider(
   const words = prompt.split(/\s+/);
   if (words.length > cap.maxPromptWords) {
     prompt = words.slice(0, cap.maxPromptWords - 5).join(" ");
+  }
+
+  // Char cap — VEO 프롬프트가 너무 길면 품질 저하
+  if (prompt.length > cap.maxPromptChars) {
+    // 문장 단위로 자르기 (마지막 완전한 문장까지)
+    const cutoff = prompt.lastIndexOf(". ", cap.maxPromptChars - 10);
+    prompt = cutoff > cap.maxPromptChars * 0.5
+      ? prompt.slice(0, cutoff + 1)
+      : prompt.slice(0, cap.maxPromptChars);
   }
 
   // Cleanup

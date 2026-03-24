@@ -53,7 +53,12 @@ export function normalizeMultiShotPrompt(shot: Partial<MultiShotPrompt> & { inde
     index: safeNumber(shot.index, fallbackIndex),
     prompt: safeString(shot.prompt),
     ...(shot.promptKo !== undefined ? { promptKo: safeString(shot.promptKo) } : {}),
-    duration: safeString(shot.duration) || "3",
+    duration: (() => {
+      const raw = safeString(shot.duration);
+      const parsed = parseFloat(raw);
+      if (!raw || Number.isNaN(parsed) || parsed < 1) return "2";
+      return raw;
+    })(),
     role: (VALID_ROLES.includes(shot.role as ShotRole) ? shot.role : "develop") as ShotRole,
   };
 }

@@ -849,7 +849,7 @@ export function distributeEvenly(
       index: i + 1,
       prompt: existing?.prompt ?? "",
       promptKo: existing?.promptKo,
-      duration: String(Math.max(minDur, dur)),
+      duration: String(Math.max(isLast ? 1 : minDur, dur)),
       role: existing?.role ?? inferShotRole(i, shotCount),
     };
   });
@@ -859,7 +859,7 @@ export function distributeEvenly(
   const diff = totalDurationSec - sumDur;
   if (diff !== 0 && result.length > 0) {
     const last = result[result.length - 1];
-    const adjusted = Math.max(minDur, parseFloat(last.duration) + diff);
+    const adjusted = Math.max(1, parseFloat(last.duration) + diff);
     result[result.length - 1] = { ...last, duration: String(adjusted) };
   }
 

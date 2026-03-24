@@ -214,6 +214,9 @@ export function canonicalShotsToMultiShot(
       const lastDot = prompt.lastIndexOf(".", 400);
       prompt = lastDot > 300 ? prompt.slice(0, lastDot + 1) : prompt.slice(0, 400);
     }
+    if (!prompt) {
+      prompt = shot.action || `Shot ${i + 1}`;
+    }
     return {
       index: i + 1,
       prompt,

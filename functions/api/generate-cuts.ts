@@ -667,7 +667,7 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
   // 1단계: Ko 필드 보충
   for (const fc of cuts) {
     const fcAny = fc as Record<string, unknown>;
-    const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || "";
+    const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || (fcAny.sceneKo as string | undefined)?.trim() || "";
     if (!fcAny.videoPromptKo && sceneKo) fcAny.videoPromptKo = sceneKo.slice(0, 60);
     if (!fcAny.cameraDirectionKo && fcAny.cameraDirection) fcAny.cameraDirectionKo = String(fcAny.cameraDirection).slice(0, 30);
     if (!fcAny.moodLightingKo && fcAny.moodLighting) fcAny.moodLightingKo = String(fcAny.moodLighting).slice(0, 30);
@@ -680,7 +680,7 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
   for (const fc of cuts) {
     if (!Array.isArray(fc.multiShot) || fc.multiShot.length === 0) continue;
     const fcAny = fc as Record<string, unknown>;
-    const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || "";
+    const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || (fcAny.sceneKo as string | undefined)?.trim() || "";
     const vpKo = (fcAny.videoPromptKo as string | undefined)?.trim() || "";
     const subActKo = (fcAny.subjectActionKo as string | undefined)?.trim() || "";
     const moodKo = (fcAny.moodLightingKo as string | undefined)?.trim() || "";
@@ -714,7 +714,7 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
         if (role === "establish") koText = sceneKo || vpKo || roleDescKo[role]!;
         else if (role === "develop" || role === "peak") koText = subActKo || sceneKo || vpKo || roleDescKo[role]!;
         else if (role === "insert") koText = moodKo || sceneKo || roleDescKo[role]!;
-        else if (role === "resolve") koText = camKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || roleDescKo[role]!;
+        else if (role === "resolve") koText = camKo && sceneKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || camKo || roleDescKo[role]!;
         else koText = sceneKo || vpKo || roleDescKo[role]!;
         shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 40);
       }
@@ -1052,7 +1052,7 @@ ${contentMode === "dramatized_reenactment" ? "역사 재연 콘텐츠. 강사/�
 그 후 각 컷마다 newInformation(이전 컷에 없던 새 정보)을 정의한 후에 시각화.
 인접 컷은 정보/구도/액션/감정 중 최소 2개 이상 달라야 함.
 
-characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]
+characterSeeds (최대 3명): [{id,label,appearance(영어≤30w),appearanceKo(≤20자)}]  // 30w (vs 40w in main prompt) — intentionally shorter for compact retry token savings
 outlines (정확히 ${cutCount}개): [{cutNumber,sceneKo(≤25자),narrativeFunction(≤8w),newInformation(≤12w),emotion,emotionalDelta,purpose,shotType,cameraMovement(≤8w),subjectAction(≤10w),transitionHint(≤8자),shotCategory,characterRole,locationCue(≤6w),situationCue(≤6w),emotionalAnchor(≤6w)}]
 ⚠️ 총 런타임 12초 초과면 1시퀀스 금지, 최소 2시퀀스로 분할. 각 시퀀스 ${secPerCut}초.
 ⚠️ 숏폼 리듬 > 감독 스타일: 감독이 롱테이크 성향이어도 반드시 ${cutCount}개 시퀀스를 생성하라. 컷 수를 줄이지 마라.
@@ -3189,12 +3189,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           const ratio = newDur / oldSubTotal;
           const rescaled = updated.multiShot.map((sh: { index: number; prompt: string; duration: string }, si: number, arr: Array<{ index: number; prompt: string; duration: string }>) => {
             if (si === arr.length - 1) {
-              // 마지막 서브샷: 나머지 할당 (반올림 오차 보정)
+              // 마지막 서브샷: 나머지 할당 (floor 오차 보정)
               const prevSum = arr.slice(0, si).reduce((s2: number, _: unknown, j: number) =>
-                s2 + Math.max(1, Math.round((parseFloat(arr[j].duration) || 0) * ratio)), 0);
+                s2 + Math.max(1, Math.floor((parseFloat(arr[j].duration) || 0) * ratio)), 0);
               return { ...sh, duration: String(Math.max(1, newDur - prevSum)) };
             }
-            return { ...sh, duration: String(Math.max(1, Math.round((parseFloat(sh.duration) || 0) * ratio))) };
+            return { ...sh, duration: String(Math.max(1, Math.floor((parseFloat(sh.duration) || 0) * ratio))) };
           });
           updated.multiShot = rescaled;
         }
@@ -3230,7 +3230,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               if (si === arr.length - 1) {
                 return { ...sh, duration: String(Math.max(1, remaining)) };
               }
-              const scaled = Math.max(1, Math.round((parseFloat(sh.duration) || 0) * ratio));
+              const scaled = Math.max(1, Math.floor((parseFloat(sh.duration) || 0) * ratio));
               remaining -= scaled;
               return { ...sh, duration: String(scaled) };
             });
