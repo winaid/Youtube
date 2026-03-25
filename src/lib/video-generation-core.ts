@@ -407,7 +407,7 @@ export async function pollVideoTask(
   if (options.jobId) {
     try {
       jobStore = await import("@/lib/video-job-store");
-    } catch { /* job store 없어도 polling은 동작 */ }
+    } catch (e) { console.warn("[pollVideoTask] job-store 로딩 실패 (polling 계속):", e); }
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {

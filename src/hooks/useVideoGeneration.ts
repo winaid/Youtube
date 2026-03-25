@@ -1101,7 +1101,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                 negativePrompt = negData.negativePrompt;
               }
             }
-          } catch { /* Fallback to default */ }
+          } catch (negErr) { console.warn("[auto-negative] 실패, 기본값 사용:", negErr); }
         })();
         parallelTasks.push(negativeTask);
 

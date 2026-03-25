@@ -18,7 +18,7 @@
 // Types
 // ═══════════════════════════════════════════════════════════════════
 
-export interface VeoMultiShotEntry {
+interface VeoMultiShotEntry {
   index: number;
   prompt: string;
   startSec: number;
@@ -26,7 +26,7 @@ export interface VeoMultiShotEntry {
   role?: string;
 }
 
-export interface VeoRenderedPrompt {
+interface VeoRenderedPrompt {
   /** 최종 타임스탬프 프롬프트 (VEO API에 전송할 메인 프롬프트) */
   timestampPrompt: string;
   /** 네거티브 프롬프트 */
@@ -49,7 +49,7 @@ export interface VeoRenderedPrompt {
  * 지원 멀티샷 구조.
  * 8초: 4샷 기본. 7초(VEO extend): 3샷.
  */
-export const SHOT_STRUCTURES = {
+const SHOT_STRUCTURES = {
   /** 4샷: establish → develop → peak → resolve (8초용) */
   FOUR: [
     { startSec: 0, endSec: 2, role: "establish" },
@@ -76,7 +76,7 @@ export const SHOT_STRUCTURES = {
   ],
 } as const;
 
-export type ShotStructureType = keyof typeof SHOT_STRUCTURES;
+type ShotStructureType = keyof typeof SHOT_STRUCTURES;
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Tag Cleanup
@@ -151,7 +151,7 @@ function formatTimestamp(sec: number): string {
 /**
  * 멀티샷 엔트리 배열 → VEO 타임스탬프 프롬프트 문자열
  */
-export function renderTimestampPrompt(shots: VeoMultiShotEntry[], globalAnchor?: string): string {
+function renderTimestampPrompt(shots: VeoMultiShotEntry[], globalAnchor?: string): string {
   const lines: string[] = [];
   if (globalAnchor && globalAnchor.trim().length > 0) {
     lines.push(globalAnchor.trim());
@@ -175,7 +175,7 @@ export function renderTimestampPrompt(shots: VeoMultiShotEntry[], globalAnchor?:
  *
  * 입력이 없거나 부족하면 기본 4샷 구조를 자동 생성.
  */
-export function convertMultiShotToTimestamp(
+function convertMultiShotToTimestamp(
   multiShot: Array<{ index: number; prompt: string; duration: string; role?: string }> | undefined,
   basePrompt: string,
   structureType?: ShotStructureType,

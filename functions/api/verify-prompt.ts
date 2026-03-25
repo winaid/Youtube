@@ -473,7 +473,7 @@ ${sceneTypeCriteria}`;
         contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
         generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: "application/json" },
       }),
-    });
+    }, { timeoutMs: 15000 });
 
     const defaultScores = { characterDescription: 5, cameraMovement: 5, actionSequence: 5, lightingMood: 5, videoCompatibility: 5 };
 

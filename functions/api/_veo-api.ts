@@ -111,7 +111,7 @@ async function veoFetchWithKeyFallback(
 
 // ── Request / Response types ─────────────────────────────────────────────────
 
-export interface VeoGenerateRequest {
+interface VeoGenerateRequest {
   prompt: string;
   /** 모델 ID (미지정 시 기본값) */
   model?: string;
@@ -133,7 +133,7 @@ export interface VeoGenerateRequest {
   lastFrameMimeType?: string;
 }
 
-export interface VeoExtendRequest {
+interface VeoExtendRequest {
   prompt: string;
   /** 이전 생성의 비디오 URI (VEO 서버에서 접근 가능한 URI) */
   sourceVideoUri: string;

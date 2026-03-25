@@ -62,7 +62,7 @@ export interface StitchJob {
   finishedAt: number | null;
 }
 
-export type StitchErrorCode =
+type StitchErrorCode =
   | "no_clips"               // 완료된 clip이 없음
   | "missing_clips"          // 일부 clip 누락 (allClipsReady=false)
   | "ffmpeg_unavailable"     // FFmpeg.wasm 로딩 불가
@@ -80,12 +80,12 @@ export class StitchError extends Error {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Stitch Job Factory
+// Stitch Job Factory (internal)
 // ═══════════════════════════════════════════════════════════════════
 
 let jobCounter = 0;
 
-export function createStitchJob(clips: MontageClip[]): StitchJob {
+function createStitchJob(clips: MontageClip[]): StitchJob {
   const completedClips = clips.filter((c) => c.status === "completed");
   return {
     jobId: `stitch-${++jobCounter}-${Date.now()}`,
@@ -210,7 +210,7 @@ export async function concatClips(
 /**
  * 결합된 mp4 데이터를 Blob URL로 변환하고 자동 다운로드 트리거.
  */
-export function exportStitchedVideo(
+function exportStitchedVideo(
   data: Uint8Array,
   projectTitle?: string,
 ): { blobUrl: string; sizeBytes: number } {

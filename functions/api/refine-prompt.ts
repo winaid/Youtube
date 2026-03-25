@@ -224,7 +224,7 @@ ${String(feedback || "Make it better")}
         contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
         generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
       }),
-    });
+    }, { timeoutMs: 15000 });
 
     if (!res.ok) {
       const errText = await res.text();
