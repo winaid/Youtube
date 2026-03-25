@@ -1308,8 +1308,6 @@ export function convertToCuts(analysis: ScriptAnalysisResult): Cut[] {
         sceneDescription: `[${safeString(seq.title)}] ${safeString(seq.purpose)}`,
         cameraDirection: deriveCameraDirection(seq),
         moodLighting: deriveMoodLighting(seq),
-        imagePrompt: "",
-        endImagePrompt: "",
         videoPrompt: safeString(seq.title),
         extendPrompt: "",
         transitionHint: seq.endingMode === "cliffhanger" ? "서스펜스 유지" : "자연 전환",
@@ -1335,8 +1333,6 @@ export function convertToCuts(analysis: ScriptAnalysisResult): Cut[] {
         sceneDescription: `[${safeString(seq.title)}] ${safeString(ac.narrativeFunction)}`,
         cameraDirection: deriveCameraDirectionFromCut(ac),
         moodLighting: deriveMoodLighting(seq),
-        imagePrompt: "",
-        endImagePrompt: "",
         videoPrompt: safeString(ac.suggestedPromptIntent) || safeString(seq.title),
         extendPrompt: "",
         transitionHint: isLast

@@ -370,7 +370,6 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         body: JSON.stringify({
           videoPrompt: cut.videoPrompt,
           extendPrompt: cut.extendPrompt,
-          imagePrompt: cut.imagePrompt,
           sceneDescription: cut.sceneDescription,
           cutNumber: cut.cutNumber,
           shotCategory: cut.shotCategory,
