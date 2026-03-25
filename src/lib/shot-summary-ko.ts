@@ -319,7 +319,7 @@ export function generateShotSummaryKo(
 
   // Layer 1 결과가 있으면 반환
   if (parts.length > 0) {
-    return parts.join(", ").slice(0, 80);
+    return parts.join(", ").slice(0, 200);
   }
 
   // ── Layer 2: 핵심 구절 추출 (키워드 매칭 실패 시) ──
@@ -345,8 +345,8 @@ export function generateShotSummaryKo(
         .join(", ");
       const roleFallback = ROLE_FALLBACK_KO[role || "establish"]?.split(" — ")[0] || "";
       return roleFallback
-        ? `${roleFallback} — ${summary}`.slice(0, 80)
-        : summary.slice(0, 80);
+        ? `${roleFallback} — ${summary}`.slice(0, 200)
+        : summary.slice(0, 200);
     }
   }
 

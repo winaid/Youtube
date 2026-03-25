@@ -653,6 +653,18 @@ function trimMultiShotMax(cuts: Array<{ cutNumber: number; durationSec: number; 
 }
 
 /** 공통 후처리: Ko 필드 보충 + promptKo 생성 + prompt 400자 클램핑 + 멀티샷 수 강제 */
+/** 영어 전용 필드에서 한국어(한글) 텍스트를 제거하고 구두점/공백 정리 */
+function stripKorean(text: string): string {
+  return text
+    .replace(/,?\s*[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+(?:\s*,?\s*[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+)*/g, "")
+    .replace(/[,.]\s*[,.]/g, ",")
+    .replace(/\.\s*\./g, ".")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[,.\s]+/, "")
+    .replace(/[,.\s]+$/, "")
+    .trim();
+}
+
 function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; multiShot?: unknown[] }>): void {
   const roleKoMap: Record<string, string> = {
     establish: "전경", transition: "전환", develop: "전개",
@@ -663,6 +675,17 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
     develop: "인물의 구체적 행동을 보여주는 장면", insert: "핵심 디테일을 클로즈업하는 장면",
     peak: "감정이 최고조에 달하는 장면", resolve: "시각적으로 마무리하는 장면",
   };
+
+  // 0단계: 영어 전용 필드에서 한국어 오염 제거
+  for (const fc of cuts) {
+    const fcAny = fc as Record<string, unknown>;
+    for (const key of ["imagePrompt", "endImagePrompt", "videoPrompt", "extendPrompt", "cameraDirection", "moodLighting"] as const) {
+      const val = fcAny[key];
+      if (typeof val === "string" && /[\uAC00-\uD7A3]/.test(val)) {
+        fcAny[key] = stripKorean(val);
+      }
+    }
+  }
 
   // 1단계: Ko 필드 보충
   for (const fc of cuts) {
@@ -700,6 +723,10 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
 
     for (const sh of fc.multiShot) {
       const shAny = sh as Record<string, unknown>;
+      // 서브샷 prompt 한국어 오염 제거
+      if (typeof shAny.prompt === "string" && /[\uAC00-\uD7A3]/.test(shAny.prompt)) {
+        shAny.prompt = stripKorean(shAny.prompt);
+      }
       // prompt 400자 클램핑
       const p = shAny.prompt as string | undefined;
       if (p && p.length > 400) {
@@ -711,26 +738,41 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
         const role = (shAny.role as string) ?? "develop";
         const roleLabel = roleKoMap[role] ?? "전개";
         const prompt = String(shAny.prompt ?? "");
-        // 1차: Cut-level 한국어 필드에서 조합
-        let koText = "";
-        if (role === "establish") koText = sceneKo || vpKo || roleDescKo[role]!;
-        else if (role === "develop" || role === "peak") koText = subActKo || sceneKo || vpKo || roleDescKo[role]!;
-        else if (role === "insert") koText = moodKo || sceneKo || roleDescKo[role]!;
-        else if (role === "resolve") koText = camKo && sceneKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || camKo || roleDescKo[role]!;
-        else koText = sceneKo || vpKo || roleDescKo[role]!;
-        // 2차: 영어 prompt에서 핵심 구절 추출 (Cut-level 한국어가 너무 짧으면)
-        if (koText.length < 8 && prompt.length > 15) {
+        // 1차: Cut-level 한국어 필드를 역할별로 조합 (상세하게)
+        const koParts: string[] = [];
+        if (role === "establish") {
+          if (sceneKo) koParts.push(sceneKo);
+          if (moodKo) koParts.push(moodKo);
+          if (!koParts.length && vpKo) koParts.push(vpKo);
+        } else if (role === "develop" || role === "peak") {
+          if (subActKo) koParts.push(subActKo);
+          if (sceneKo) koParts.push(sceneKo);
+          if (moodKo) koParts.push(moodKo);
+        } else if (role === "insert") {
+          if (moodKo) koParts.push(moodKo);
+          if (sceneKo) koParts.push(sceneKo);
+        } else if (role === "resolve") {
+          if (camKo) koParts.push(camKo);
+          if (sceneKo) koParts.push(sceneKo);
+          if (moodKo) koParts.push(moodKo);
+        } else {
+          if (sceneKo) koParts.push(sceneKo);
+          if (vpKo) koParts.push(vpKo);
+        }
+        let koText = koParts.filter(Boolean).join(". ") || roleDescKo[role] || "장면";
+        // 2차: 영어 prompt에서 핵심 구절 추출 (한국어 조합이 너무 짧으면)
+        if (koText.length < 15 && prompt.length > 15) {
           const stripped = prompt
             .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
             .replace(/^(eye-level|high angle|low angle|dutch angle)\s*,?\s*/gi, "")
             .replace(/^(slow\s+)?(push[- ]?in|pull[- ]?back|pan|tilt|orbit|tracking|dolly|drift)\s*,?\s*/gi, "")
             .trim();
-          const firstClause = stripped.split(/[.,;]/).filter(c => c.trim().length > 5)[0]?.trim() || "";
-          if (firstClause.length > 5) {
-            koText = firstClause.split(/\s+/).slice(0, 8).join(" ");
+          const clauses = stripped.split(/[.,;]/).filter(c => c.trim().length > 5).slice(0, 3);
+          if (clauses.length > 0) {
+            koText += ". " + clauses.map(c => c.trim().split(/\s+/).slice(0, 8).join(" ")).join(", ");
           }
         }
-        shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 80);
+        shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 200);
       }
     }
   }
@@ -1266,8 +1308,8 @@ async function step23DetailBatch(
   const batchCutNums = new Set(batchOutlines.map(o => o.cutNumber));
   const sequenceContext = allOutlines
     .map(o => batchCutNums.has(o.cutNumber)
-      ? `SCENE${o.cutNumber}[${o.shotType}|${o.purpose}|${o.shotCategory}]: "${o.sceneKo}" | beats: ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3} | endHook: ${o.endHook}`
-      : `SCENE${o.cutNumber}[${o.shotType}|${o.shotCategory}]: "${o.sceneKo}" | endHook: ${o.endHook}`)
+      ? `SCENE${o.cutNumber}[${o.shotType}|${o.purpose}|${o.shotCategory}]: "${o.sceneBeat1}" | beats: ${o.sceneBeat1} → ${o.sceneBeat2} → ${o.sceneBeat3} | endHook: ${o.endHook}`
+      : `SCENE${o.cutNumber}[${o.shotType}|${o.shotCategory}]: "${o.sceneBeat1}" | endHook: ${o.endHook}`)
     .join("\n");
 
   // 이번 배치 컷 연출 지시 (압축형)
@@ -1422,7 +1464,10 @@ ${(() => {
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
 - ⚠️ prompt 필드는 반드시 영어 (VEO 영상생성 엔진 전달용). prompt 안에 한국어 단어 삽입 절대 금지.
-- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 각 서브샷의 영어 prompt를 완전한 한국어로 번역 (≤80자). 영어 prompt의 핵심 내용을 빠짐없이 한국어로 옮겨라. 예: "넓은 전경. 폐허가 된 병원 복도, 깨진 타일과 녹슨 파이프. 천장 형광등이 깜빡이며 차가운 빛을 드리움" / "주인공이 떨리는 손으로 문손잡이를 잡고, 숨을 멈춘 채 문을 밀어 연다". promptKo가 비어있으면 규칙 위반.`;
+- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 영어 prompt를 **완전하고 상세하게** 한국어로 번역 (≤200자). 영어 prompt에 있는 모든 시각 정보(화각, 피사체, 행동, 환경, 분위기, 조명)를 빠짐없이 한국어로 옮겨라. 요약이 아니라 완전한 번역이어야 한다.
+  예: "넓은 전경, 눈높이. 폐허가 된 병원 복도, 깨진 타일과 녹슨 파이프가 벽을 따라 노출됨. 천장 형광등이 깜빡이며 차갑고 푸른 빛을 복도 전체에 드리움. 손에 든 회중시계가 3시를 가리키고 있다"
+  예: "미디엄 샷. 주인공이 떨리는 손으로 녹슨 문손잡이를 잡고, 숨을 멈춘 채 천천히 문을 밀어 연다. 문틈 사이로 따뜻한 호박색 빛이 새어 나와 얼굴 절반을 비춘다"
+  promptKo가 비어있거나 3단어 이하면 규칙 위반.`;
   })()}
 
 ## 🚨🚨🚨 한국어 표시용 필드 (필수 — 하나라도 빠지거나 영어로 작성하면 전체 무효)
@@ -3113,7 +3158,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
       const defaultImagePrompt = needsCharacter
         ? `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${charRefForCut}. ${outline.sceneBeat1}. ${noTextSuffix}`
-        : `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.sceneBeat1}. ${outline.sceneKo}. ${noTextSuffix}`;
+        : `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.sceneBeat1}. ${outline.sceneBeat2}. ${noTextSuffix}`;
       const defaultEndImagePrompt = needsCharacter
         ? `${charRefForCut}. ${outline.sceneBeat3}. ${noTextSuffix}`
         : `${outline.sceneBeat3}. ${noTextSuffix}`;
