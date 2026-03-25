@@ -733,45 +733,55 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
         const lastDot = p.lastIndexOf(".", 400);
         shAny.prompt = lastDot > 300 ? p.slice(0, lastDot + 1) : p.slice(0, 400);
       }
-      // promptKo 생성 — LLM이 누락했으면 영어 prompt에서 한국어 요약 자동 생성
-      if (!shAny.promptKo || String(shAny.promptKo).trim().length === 0) {
+      // promptKo 보강 — LLM이 누락하거나 짧게 줬으면 영어 prompt + Ko 필드로 상세 생성
+      const existingKo = String(shAny.promptKo ?? "").trim();
+      const needsKo = !existingKo || existingKo.length < 50;
+      if (needsKo) {
         const role = (shAny.role as string) ?? "develop";
         const roleLabel = roleKoMap[role] ?? "전개";
         const prompt = String(shAny.prompt ?? "");
-        // 1차: Cut-level 한국어 필드를 역할별로 조합 (상세하게)
-        const koParts: string[] = [];
-        if (role === "establish") {
-          if (sceneKo) koParts.push(sceneKo);
-          if (moodKo) koParts.push(moodKo);
-          if (!koParts.length && vpKo) koParts.push(vpKo);
-        } else if (role === "develop" || role === "peak") {
-          if (subActKo) koParts.push(subActKo);
-          if (sceneKo) koParts.push(sceneKo);
-          if (moodKo) koParts.push(moodKo);
-        } else if (role === "insert") {
-          if (moodKo) koParts.push(moodKo);
-          if (sceneKo) koParts.push(sceneKo);
-        } else if (role === "resolve") {
-          if (camKo) koParts.push(camKo);
-          if (sceneKo) koParts.push(sceneKo);
-          if (moodKo) koParts.push(moodKo);
-        } else {
-          if (sceneKo) koParts.push(sceneKo);
-          if (vpKo) koParts.push(vpKo);
-        }
-        let koText = koParts.filter(Boolean).join(". ") || roleDescKo[role] || "장면";
-        // 2차: 영어 prompt에서 핵심 구절 추출 (한국어 조합이 너무 짧으면)
-        if (koText.length < 15 && prompt.length > 15) {
-          const stripped = prompt
-            .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
-            .replace(/^(eye-level|high angle|low angle|dutch angle)\s*,?\s*/gi, "")
-            .replace(/^(slow\s+)?(push[- ]?in|pull[- ]?back|pan|tilt|orbit|tracking|dolly|drift)\s*,?\s*/gi, "")
-            .trim();
-          const clauses = stripped.split(/[.,;]/).filter(c => c.trim().length > 5).slice(0, 3);
-          if (clauses.length > 0) {
-            koText += ". " + clauses.map(c => c.trim().split(/\s+/).slice(0, 8).join(" ")).join(", ");
+
+        // 모든 Ko 필드 수집
+        const allKoParts: string[] = [];
+        if (sceneKo) allKoParts.push(sceneKo);
+        if (subActKo) allKoParts.push(subActKo);
+        if (vpKo && vpKo !== sceneKo) allKoParts.push(vpKo);
+        if (moodKo) allKoParts.push(moodKo);
+        if (camKo) allKoParts.push(camKo);
+        const koBase = allKoParts.filter(Boolean).join(". ");
+
+        // 영어 prompt에서 핵심 구절 추출 (카메라/스타일 지시 제거)
+        const stripped = prompt
+          .replace(/\b(no text|no watermark|no subtitle)[^.]*\.?\s*/gi, "")
+          .replace(/\b(fully painted|hand[- ]?painted|oil\/watercolor|impasto|brushwork|wet[- ]?on[- ]?wet|visible brush)[^.]*\.?\s*/gi, "")
+          .replace(/\b(expressive visible|thick impasto)[^.]*\.?\s*/gi, "")
+          .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
+          .replace(/^(eye-level|high angle|low angle|dutch angle|bird's eye|over-the-shoulder|pov)\s*,?\s*/gi, "")
+          .replace(/^(slow\s+)?(push[- ]?in|pull[- ]?back|pan|tilt|orbit|tracking|dolly|drift|crane|handheld|steadicam|zoom\s+in|zoom\s+out|subtle\s+push[- ]?in)\s*,?\s*/gi, "")
+          .trim();
+
+        // 영어에서 의미있는 구절들 추출 (최대 5개)
+        const enClauses = stripped.split(/[.,;]/)
+          .map(c => c.trim())
+          .filter(c => c.length > 8 && !/^(slow|fast|gentle)\s/i.test(c))
+          .slice(0, 5)
+          .map(c => c.split(/\s+/).slice(0, 10).join(" "));
+
+        let koText: string;
+        if (koBase.length >= 30) {
+          // Ko 필드가 충분히 있으면 그걸 기반으로
+          koText = koBase;
+          // 영어에서 추가 디테일 보충
+          if (koText.length < 120 && enClauses.length > 0) {
+            koText += ". " + enClauses.slice(0, 3).join(". ");
           }
+        } else if (enClauses.length > 0) {
+          // Ko 필드 부족하면 영어 구절 전체 활용 + Ko 필드 prefix
+          koText = koBase ? `${koBase}. ${enClauses.join(". ")}` : enClauses.join(". ");
+        } else {
+          koText = koBase || roleDescKo[role] || "장면";
         }
+
         shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 400);
       }
     }
@@ -1464,10 +1474,12 @@ ${(() => {
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
 - ⚠️ prompt 필드는 반드시 영어 (VEO 영상생성 엔진 전달용). prompt 안에 한국어 단어 삽입 절대 금지.
-- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 영어 prompt를 **1:1 대응하는 완전한 한국어 번역**으로 작성 (≤400자). 영어 prompt의 길이와 상세함을 그대로 유지하라. 요약/축약 절대 금지. 영어 prompt에 있는 화각, 피사체, 행동, 환경 묘사, 분위기, 조명, 카메라 워크 등 모든 시각 정보를 빠짐없이 한국어로 1:1 번역하라.
-  예: "넓은 전경, 눈높이. 폐허가 된 병원 복도, 깨진 타일과 녹슨 파이프가 벽을 따라 노출됨. 천장 형광등이 깜빡이며 차갑고 푸른 빛을 복도 전체에 드리움. 손에 든 회중시계가 3시를 가리키고 있다"
-  예: "미디엄 샷. 주인공이 떨리는 손으로 녹슨 문손잡이를 잡고, 숨을 멈춘 채 천천히 문을 밀어 연다. 문틈 사이로 따뜻한 호박색 빛이 새어 나와 얼굴 절반을 비춘다"
-  promptKo가 비어있거나 3단어 이하면 규칙 위반.`;
+- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 영어 prompt를 **1:1 대응하는 완전한 한국어 번역**으로 작성 (100~400자). 영어 prompt의 길이와 상세함을 그대로 유지하라. 요약/축약 절대 금지. 영어 prompt에 있는 화각, 피사체, 행동, 환경 묘사, 분위기, 조명, 카메라 워크 등 모든 시각 정보를 빠짐없이 한국어로 1:1 번역하라.
+  ❌ 나쁜 예 (짧은 레이블): "전개: 인물의 구체적 행동" — 이런 식으로 쓰면 규칙 위반!
+  ❌ 나쁜 예 (짧은 요약): "절정: 감정 최고조 순간" — 이것도 규칙 위반!
+  ✅ 좋은 예 (100자 이상 상세 번역): "미디엄 클로즈업, 눈높이. 치과 의자에 갇힌 환자, 어른 형상. 이마에 땀방울이 맺히고, 얼굴이 소리 없는 공포로 일그러진다. 왼쪽 위 창문에서 따뜻한 햇빛이 부드럽게 확산되어 금빛 호박색 광채를 드리운다. 완전한 유화/수채화풍 애니메이션, 모든 프레임이 손으로 그린 듯한 질감. 캐릭터의 감정적 행동과 반응을 클로즈업으로 포착"
+  ✅ 좋은 예: "넓은 전경, 눈높이. 폐허가 된 병원 복도, 깨진 타일과 녹슨 파이프가 벽을 따라 노출됨. 천장 형광등이 깜빡이며 차갑고 푸른 빛을 복도 전체에 드리움. 손에 든 회중시계가 3시를 가리키고 있다"
+  promptKo가 50자 미만이면 규칙 위반. 반드시 100자 이상 작성하라.`;
   })()}
 
 ## 🚨🚨🚨 한국어 표시용 필드 (필수 — 하나라도 빠지거나 영어로 작성하면 전체 무효)

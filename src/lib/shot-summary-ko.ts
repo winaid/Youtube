@@ -317,12 +317,7 @@ export function generateShotSummaryKo(
     parts.push(`${framingKo} 장면`);
   }
 
-  // Layer 1 결과가 있으면 반환
-  if (parts.length > 0) {
-    return parts.join(", ").slice(0, 200);
-  }
-
-  // ── Layer 2: 핵심 구절 추출 (키워드 매칭 실패 시) ──
+  // ── Layer 2: 영어 구절 추출 (Layer 1 보충용 또는 단독 사용) ──
   // shot size/angle/camera 지시 제거 후 핵심 내용 추출
   const stripped = prompt
     .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
@@ -332,22 +327,37 @@ export function generateShotSummaryKo(
     .trim();
 
   if (stripped.length > 8) {
-    // 첫 2개 구절 추출 (마침표/콤마 기준)
-    const clauses = stripped.split(/[.,;]/)
+    // 스타일/워터마크 지시문 제거
+    const cleaned = stripped
+      .replace(/\b(no text|no watermark|no subtitle)[^.]*\.?\s*/gi, "")
+      .replace(/\b(fully painted|hand[- ]?painted|oil\/watercolor|impasto|brushwork|wet[- ]?on[- ]?wet|visible brush)[^.]*\.?\s*/gi, "")
+      .replace(/\b(expressive visible|thick impasto)[^.]*\.?\s*/gi, "")
+      .trim();
+    // 최대 5개 구절 추출, 구절당 12단어까지
+    const clauses = cleaned.split(/[.,;]/)
       .map(c => c.trim())
       .filter(c => c.length > 5)
-      .slice(0, 2);
+      .slice(0, 5);
 
     if (clauses.length > 0) {
-      // 각 구절에서 핵심 단어 6개까지
-      const summary = clauses
-        .map(c => c.split(/\s+/).slice(0, 6).join(" "))
-        .join(", ");
+      const enSummary = clauses
+        .map(c => c.split(/\s+/).slice(0, 12).join(" "))
+        .join(". ");
+      // Layer 1 한국어 키워드 + Layer 2 영어 구절 결합
+      if (parts.length > 0) {
+        const koPrefix = parts.join(", ");
+        return `${koPrefix}. ${enSummary}`.slice(0, 400);
+      }
       const roleFallback = ROLE_FALLBACK_KO[role || "establish"]?.split(" — ")[0] || "";
       return roleFallback
-        ? `${roleFallback} — ${summary}`.slice(0, 200)
-        : summary.slice(0, 200);
+        ? `${roleFallback} — ${enSummary}`.slice(0, 400)
+        : enSummary.slice(0, 400);
     }
+  }
+
+  // Layer 1만 있고 Layer 2 실패 시
+  if (parts.length > 0) {
+    return parts.join(", ").slice(0, 400);
   }
 
   // ── Layer 3: Role-based fallback ──
