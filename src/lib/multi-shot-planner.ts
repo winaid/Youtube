@@ -25,6 +25,7 @@
  */
 
 import type { MultiShotPrompt, ShotRole } from "@/types";
+import { generateShotSummaryKo } from "@/lib/shot-summary-ko";
 
 /** role → 한국어 기본 promptKo (auto-init / repair 시 사용) */
 export const ROLE_KO: Record<ShotRole, string> = {
@@ -457,7 +458,7 @@ export function buildDefaultMultiShot(opts: {
         prompt = (lastSpace > 0 ? prompt.slice(0, lastSpace) : prompt.slice(0, 500)) + "...";
       }
     }
-    const promptKo = ROLE_KO[role] ?? `서브샷 ${i + 1}`;
+    const promptKo = generateShotSummaryKo(prompt, role) || (ROLE_KO[role] ?? `서브샷 ${i + 1}`);
     return { index: i + 1, prompt, promptKo, duration: String(durations[i]), role };
   });
 }

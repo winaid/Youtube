@@ -186,12 +186,12 @@ const SCENE_SPLIT_TEMPLATES: Record<string, SplitTemplate> = {
   },
   "character-driven": {
     shots: [
-      { role: "establishing", framingHint: "MS", motionHint: "steady", focusTemplate: "character introduction in context" },
-      { role: "emphasis", framingHint: "MCU", motionHint: "subtle push-in", focusTemplate: "character action and emotional beat" },
-      { role: "reveal", framingHint: "CU", motionHint: "slow push-in", focusTemplate: "close-up emotional reveal and reaction" },
-      { role: "detail", framingHint: "ECU", motionHint: "static", focusTemplate: "extreme close-up on expression or gesture detail" },
-      { role: "context", framingHint: "MS", motionHint: "tracking", focusTemplate: "character in motion within environment" },
-      { role: "payoff", framingHint: "WS", motionHint: "slow pull-back", focusTemplate: "character payoff in wider context" },
+      { role: "establishing", framingHint: "WS", motionHint: "slow pan", focusTemplate: "wide establishing view — character in full environment" },
+      { role: "emphasis", framingHint: "CU", motionHint: "slow push-in", focusTemplate: "close-up emotional beat — face, hands, or key gesture" },
+      { role: "reveal", framingHint: "MS", motionHint: "tracking", focusTemplate: "medium shot — character action in spatial context" },
+      { role: "detail", framingHint: "ECU", motionHint: "static", focusTemplate: "extreme close-up on eyes, texture, or critical detail" },
+      { role: "context", framingHint: "WS", motionHint: "slow crane up", focusTemplate: "wide pullback — character in broader environment" },
+      { role: "payoff", framingHint: "MCU", motionHint: "subtle push-in", focusTemplate: "medium close-up — final emotional resolution" },
     ],
   },
   crowd: {
@@ -384,6 +384,17 @@ export function splitSingleShotSequence(input: {
       : i === 0 ? input.camera.framing
       : tmpl.framingHint;
 
+    // 프레이밍별 시각 레이어 차별화 — WS는 환경, CU/ECU는 피사체만
+    const isWide = /^(WS|LS|EWS)$/i.test(framing);
+    const isTight = /^(CU|ECU|MCU)$/i.test(framing);
+    // wide shot: 환경+공간 강조, subject는 간략
+    // tight shot: subject+감정 강조, environment 생략
+    const shotSubject = isWide
+      ? `${input.subjectPrimary} in ${input.environment}`.slice(0, 120)
+      : input.subjectPrimary;
+    const shotEnvironment = isTight ? "" : input.environment;
+    const shotMood = (i === 0 || isWide) ? input.moodLighting : "";
+
     shots.push({
       shotId: `shot_${i + 1}`,
       startSec: timing.startSec,
@@ -393,10 +404,10 @@ export function splitSingleShotSequence(input: {
         angle: input.camera.angle,
         motion: isHookFirstShot ? "slow pan" : tmpl.motionHint,
       },
-      subject: input.subjectPrimary,
+      subject: shotSubject,
       action: shotAction,
-      environment: input.environment,
-      moodLighting: input.moodLighting,
+      environment: shotEnvironment,
+      moodLighting: shotMood,
       focus: shotFocus.slice(0, 150),
       ...(input.styleSuffix ? { styleSuffix: input.styleSuffix } : {}),
     });

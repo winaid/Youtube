@@ -17,6 +17,7 @@ import { validateFinalProviderPayload, autoFixPayload } from "@/lib/final-payloa
 import { normalizeSequence } from "@/lib/sequence-normalizer";
 import { buildFinalProviderPayload } from "@/lib/final-payload-builder";
 import { detectPhysicsRules, enforcePhysicsNegatives, checkPhysicsConsistency, sanitizeAllFieldsForPhysics, sanitizeLunarLighting, sanitizeLunarCamera } from "@/lib/physics-rules";
+import { generateShotSummaryKo } from "@/lib/shot-summary-ko";
 import { detectSceneContext, getPlaceIdentityCandidates, getSituationEvidenceCandidates, getNaturalMotionCandidates } from "@/lib/place-situation-anchors";
 import { enforceMinimumShotCount, validateSequenceDensity, type ShotDescriptor, type ShotBeatHint } from "@/lib/shot-splitting";
 import { planShotRoles, ROLE_KO } from "@/lib/multi-shot-planner";
@@ -1750,10 +1751,14 @@ export function assembleFromJSON(input: {
         shot.focus,
       ].filter(Boolean).join(". ").trim() + styleTag;
       const duration = String(Math.max(1, shotRawDurations[i]));
-      const promptKo = (shot as { promptKo?: string }).promptKo || (ROLE_KO[role as keyof typeof ROLE_KO] ?? `서브샷 ${i + 1}`);
       const clampedPrompt = prompt.length > 500
         ? (prompt.lastIndexOf(".", 500) > 400 ? prompt.slice(0, prompt.lastIndexOf(".", 500) + 1) : prompt.slice(0, 500))
         : prompt;
+      // promptKo: 기존 사용자 입력(30자+) > 영어 프롬프트 기반 한국어 > 역할 라벨 fallback
+      const existingKo = (shot as { promptKo?: string }).promptKo;
+      const promptKo = (existingKo && existingKo.length >= 30) ? existingKo
+        : generateShotSummaryKo(clampedPrompt, role as import("@/types").ShotRole)
+        || (ROLE_KO[role as keyof typeof ROLE_KO] ?? `서브샷 ${i + 1}`);
       return { index: i + 1, prompt: clampedPrompt, promptKo, duration, role };
     });
   }

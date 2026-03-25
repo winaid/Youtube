@@ -1033,16 +1033,9 @@ export default function ResultPanel({
             {result.cuts.map((cut, index) => (
               <div
                 key={cut.cutNumber}
-                draggable
-                onDragStart={() => handleDragStart(index)}
-                onDragOver={(e) => handleDragOver(e, index)}
-                onDrop={() => handleDrop(index)}
-                onDragEnd={handleDragEnd}
                 className="transition-all"
                 style={{
-                  borderTop: dragOverIndex === index ? "3px solid #787fff" : "3px solid transparent",
-                  opacity: dragItemRef.current === index ? 0.5 : 1,
-                  cursor: "grab",
+                  cursor: "default",
                 }}
               >
                 <CutCard
