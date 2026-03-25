@@ -772,7 +772,7 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
             koText += ". " + clauses.map(c => c.trim().split(/\s+/).slice(0, 8).join(" ")).join(", ");
           }
         }
-        shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 200);
+        shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 400);
       }
     }
   }
@@ -1464,7 +1464,7 @@ ${(() => {
 - ⚠️ charRef (캐릭터 외형)를 character-driven 서브샷(develop/peak)에 반드시 포함. charRef="${charRef}" — establish 샷도 인물이 보이면 포함.
 - ⚠️ 환경/조명 묘사를 모든 서브샷에 복붙 금지. 공유 환경은 establish 서브샷에만 1회 기술. 나머지 서브샷은 해당 서브샷 고유 피사체/행동에 집중.
 - ⚠️ prompt 필드는 반드시 영어 (VEO 영상생성 엔진 전달용). prompt 안에 한국어 단어 삽입 절대 금지.
-- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 영어 prompt를 **완전하고 상세하게** 한국어로 번역 (≤200자). 영어 prompt에 있는 모든 시각 정보(화각, 피사체, 행동, 환경, 분위기, 조명)를 빠짐없이 한국어로 옮겨라. 요약이 아니라 완전한 번역이어야 한다.
+- ⚠️ promptKo 필드는 반드시 한국어 (UI 표시용). 영어 prompt를 **1:1 대응하는 완전한 한국어 번역**으로 작성 (≤400자). 영어 prompt의 길이와 상세함을 그대로 유지하라. 요약/축약 절대 금지. 영어 prompt에 있는 화각, 피사체, 행동, 환경 묘사, 분위기, 조명, 카메라 워크 등 모든 시각 정보를 빠짐없이 한국어로 1:1 번역하라.
   예: "넓은 전경, 눈높이. 폐허가 된 병원 복도, 깨진 타일과 녹슨 파이프가 벽을 따라 노출됨. 천장 형광등이 깜빡이며 차갑고 푸른 빛을 복도 전체에 드리움. 손에 든 회중시계가 3시를 가리키고 있다"
   예: "미디엄 샷. 주인공이 떨리는 손으로 녹슨 문손잡이를 잡고, 숨을 멈춘 채 천천히 문을 밀어 연다. 문틈 사이로 따뜻한 호박색 빛이 새어 나와 얼굴 절반을 비춘다"
   promptKo가 비어있거나 3단어 이하면 규칙 위반.`;
@@ -1500,7 +1500,7 @@ ${(() => {
     const exampleCount = cutMaxShots;
     for (let i = 1; i <= exampleCount; i++) {
       const d = i === exampleCount ? remaining : shotDur;
-      exampleShots.push(`{"index":${i},"prompt":"...","promptKo":"영어 prompt의 한국어 번역 ≤80자","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
+      exampleShots.push(`{"index":${i},"prompt":"...english visual description 400-500 chars...","promptKo":"영어 prompt와 동일한 길이·상세함의 한국어 1:1 번역 (≤400자). 축약 금지","duration":"${d}","role":"${exampleRoles[i - 1] ?? "develop"}"}`);
       remaining -= shotDur;
     }
     return `[${base},"multiShot":[${exampleShots.join(",")}]}]`;

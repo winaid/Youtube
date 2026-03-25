@@ -30,6 +30,18 @@ import {
 import { ROLE_PROGRESSION_DIRECTIVE } from "@/lib/multi-shot-planner";
 import { generateShotSummaryKo } from "@/lib/shot-summary-ko";
 
+/** 영어 프롬프트에서 한국어 오염 제거 (기존 데이터 호환용) */
+function stripKoreanFromPrompt(text: string): string {
+  return text
+    .replace(/,?\s*[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+(?:\s*,?\s*[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+)*/g, "")
+    .replace(/[,.]\s*[,.]/g, ",")
+    .replace(/\.\s*\./g, ".")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[,.\s]+/, "")
+    .replace(/[,.\s]+$/, "")
+    .trim();
+}
+
 // ── Shot change indicator — shows what changed from previous shot ──
 function describeShotChange(prev: MultiShotPrompt, current: MultiShotPrompt, prevRole: ShotRole, currentRole: ShotRole): string | null {
   const changes: string[] = [];
@@ -402,7 +414,7 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                           <details className="mt-0.5">
                             <summary className="text-[8px] text-gray-400 cursor-pointer select-none">VEO 원문 (EN)</summary>
                             <div className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all">
-                              {shot.prompt}
+                              {stripKoreanFromPrompt(shot.prompt)}
                             </div>
                           </details>
                         )}
@@ -423,11 +435,11 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 </div>
               )}
 
-              {/* Per-shot char count (non-editing) */}
+              {/* Per-shot char count (non-editing) — VEO 영어 원문 기준 */}
               {!isEditing && shot.prompt && (
                 <div className="flex justify-end">
                   <span className="text-[9px] text-muted-foreground">
-                    {shot.prompt.length}/{PROMPT_MAX_LENGTH}
+                    VEO {stripKoreanFromPrompt(shot.prompt).length}/{PROMPT_MAX_LENGTH}
                   </span>
                 </div>
               )}
