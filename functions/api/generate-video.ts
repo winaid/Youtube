@@ -511,6 +511,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
       if (continuityParts.length > 0) {
         finalPromptForProvider = continuityParts.join(". ") + ". " + finalPromptForProvider;
+        // continuityMeta에 한글이 포함될 수 있음 (characterLock 등) → 재strip
+        finalPromptForProvider = stripTextForVeo(finalPromptForProvider);
       }
     }
 
@@ -640,7 +642,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const compactLock = extractCompactVisualLock(req.continuityMeta.visualLock);
         if (compactLock) characterParts.push(`Consistent look: ${compactLock}`);
       }
-      const characterPrefix = characterParts.length > 0 ? characterParts.join(". ") + ". " : "";
+      // characterParts에 한글이 포함될 수 있음 (characterLock, characterRef 등) → strip
+      const rawCharacterPrefix = characterParts.length > 0 ? characterParts.join(". ") + ". " : "";
+      const characterPrefix = rawCharacterPrefix ? stripTextForVeo(rawCharacterPrefix) + " " : "";
 
       // 각 subshot을 병렬 VEO 요청으로 전송 (타임스탬프 프롬프트 미사용)
       const strippedFirst = req.firstFrameBase64 ? stripDataPrefix(req.firstFrameBase64) : "";
