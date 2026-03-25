@@ -384,8 +384,10 @@ export interface Cut {
   sceneDescription: string;
   cameraDirection: string;
   moodLighting: string;
-  imagePrompt: string;
-  endImagePrompt: string;
+  /** @deprecated 더 이상 생성하지 않음. 스토리보드 이미지는 videoPrompt/멀티샷 prompt 사용 */
+  imagePrompt?: string;
+  /** @deprecated 더 이상 생성하지 않음 */
+  endImagePrompt?: string;
   videoPrompt: string;
   extendPrompt: string;
   transitionHint: string;

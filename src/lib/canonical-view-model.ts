@@ -42,8 +42,8 @@ export interface CutCardViewModel {
   sceneDescription: string;
   cameraDirection: string;
   moodLighting: string;
-  imagePrompt: string;
-  endImagePrompt: string;
+  imagePrompt?: string;
+  endImagePrompt?: string;
   transitionHint: string;
   characterConsistency: string;
   charactersInScene: string[];
@@ -129,7 +129,7 @@ export function canonicalResultToViewModel(
     sceneDescription: cut.sceneDescription,
     cameraDirection: cut.cameraDirection,
     moodLighting: cut.moodLighting,
-    imagePrompt: cut.imagePrompt,
+    imagePrompt: cut.imagePrompt || "",
     endImagePrompt: cut.endImagePrompt || "",
     transitionHint: cut.transitionHint,
     characterConsistency: cut.characterConsistency,

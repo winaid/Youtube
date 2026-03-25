@@ -534,8 +534,8 @@ interface MultiShotItem {
 
 interface CutDetail {
   cutNumber: number;
-  imagePrompt: string;
-  endImagePrompt: string;
+  imagePrompt?: string;
+  endImagePrompt?: string;
   videoPrompt: string;
   extendPrompt: string;
   cameraDirection: string;
@@ -679,7 +679,7 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
   // 0단계: 영어 전용 필드에서 한국어 오염 제거
   for (const fc of cuts) {
     const fcAny = fc as Record<string, unknown>;
-    for (const key of ["imagePrompt", "endImagePrompt", "videoPrompt", "extendPrompt", "cameraDirection", "moodLighting"] as const) {
+    for (const key of ["videoPrompt", "extendPrompt", "cameraDirection", "moodLighting"] as const) {
       const val = fcAny[key];
       if (typeof val === "string" && /[\uAC00-\uD7A3]/.test(val)) {
         fcAny[key] = stripKorean(val);
@@ -1416,8 +1416,7 @@ ${SCENE_TERM_PRECISION_BLOCK}
 ⚠️⚠️ 모든 prompt 필드는 400~500자 사이로 작성하라. 400자 미만 = 디테일 부족. 500자 초과 = 잘림 발생.
 ⚠️⚠️ 환경 디테일을 풍부하게, 구체적인 오브젝트/질감/행동을 추가하여 400자 이상 채워라.
 
-imagePrompt (≤55 words, 400~500 chars EN): "[shot type], [angle]. [charRef if protagonist/partial | environment if absent]. [sceneBeat1]. [환경 디테일 2+]. [moodLighting]. [noTextSuffix]"
-endImagePrompt (≤45 words, 400~500 chars EN): "[charRef if applicable]. [sceneBeat3 결과]. [변화]. [noTextSuffix]"
+⚠️ imagePrompt/endImagePrompt 필드는 더 이상 생성하지 마라. 빈 문자열로 남겨라.
 
 videoPrompt (≤120 words, 400~500 chars EN — 3비트 시퀀스, 각 비트 다른 shot size/앵글/피사체):
   Format: "[Beat1 shot], [angle]. [locationCue]. ${beatTemplate.replace("[start]", "[BEAT1: WHERE 장소 디테일 2+ 구체적 오브젝트/질감(cracked tile, rusted pipe, wilted flower, stacked books)]").replace("[develop]", "[BEAT2: WHAT 상황 증거(empty chair, closed shutters, overflowing ashtray, half-eaten meal)]").replace("[climax]", "[BEAT3: WHO/EMOTION 구체적 신체 행동(fingers grip armrest, shoulders slump forward, gaze drops to floor)]")}. [charRef if not absent]. [noTextSuffix]"
@@ -1502,7 +1501,7 @@ ${(() => {
     // 컷별 duration/shot 수: CUT1=8초 4샷, CUT2+=7초 3샷
     const cutDur = firstCutNum === 1 ? VEO_SEGMENT_CAP : VEO_EXTENSION_DURATION;
     const cutMaxShots = getMaxShots(VEO_DEFAULT_MODEL, cutDur);
-    const base = `{"cutNumber":${firstCutNum},"imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"...","subjectActionKo":"...","narrativeFunctionKo":"...","newInformationKo":"..."`;
+    const base = `{"cutNumber":${firstCutNum},"videoPrompt":"...","videoPromptKo":"...","extendPrompt":"${firstCutNum === 1 ? "" : "..."}","cameraDirection":"...","cameraDirectionKo":"...","moodLighting":"...","moodLightingKo":"...","subjectActionKo":"...","narrativeFunctionKo":"...","newInformationKo":"..."`;
     if (cutMaxShots <= 0) return `[${base}}]`;
     // 예시 multiShot: cutMaxShots에 맞춰 균등 분배
     const shotDur = Math.max(2, Math.floor(cutDur / cutMaxShots));
@@ -1703,9 +1702,7 @@ function buildDeterministicCuts(
     const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
     const shotDesc = shotLabel[shotType] || shotType;
 
-    const imagePrompt = cleanText(`${shotDesc}, eye-level. ${template.env}. ${defaultLighting} ${noTextSuffix}`).slice(0, 400);
     const videoPrompt = cleanText(`${shotDesc}, eye-level. ${cameraMovement}. ${template.env}. ${template.action}. ${defaultLighting} ${noTextSuffix}`).slice(0, 400);
-    const endImagePrompt = cleanText(`${template.mood}. ${noTextSuffix}`).slice(0, 400);
 
     const videoPromptJson: VideoPromptJson = {
       shotSize: shotType,
@@ -1739,8 +1736,6 @@ function buildDeterministicCuts(
       characterRole: i === 0 ? "absent" as const : "protagonist" as const,
       cameraDirection: `Lens 35mm. ${cameraMovement.slice(0, 30)}. ${directorName} style.`,
       moodLighting: defaultLighting,
-      imagePrompt,
-      endImagePrompt,
       videoPrompt,
       extendPrompt: i === 0 ? "" : `Continuing from previous scene. ${cameraMovement}. ${noTextSuffix}`,
       transitionHint: i < cutCount - 1 ? "디졸브" : "페이드 아웃",
@@ -3166,15 +3161,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         : "";
       const charactersInScene = needsCharacter ? [mainChar.id] : [];
 
-      // ── 이미지 프롬프트 fallback (씬 오프닝/엔딩 기반) ──────────────
-      const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
-      const defaultImagePrompt = needsCharacter
-        ? `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${charRefForCut}. ${outline.sceneBeat1}. ${noTextSuffix}`
-        : `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.sceneBeat1}. ${outline.sceneBeat2}. ${noTextSuffix}`;
-      const defaultEndImagePrompt = needsCharacter
-        ? `${charRefForCut}. ${outline.sceneBeat3}. ${noTextSuffix}`
-        : `${outline.sceneBeat3}. ${noTextSuffix}`;
       // defaultVideoPrompt: 자연어 중심 (메타태그 제거)
+      const shotLabel: Record<string, string> = { ECU: "Extreme close-up", CU: "Close-up", MCU: "Medium close-up", MS: "Medium shot", MLS: "Medium long shot", LS: "Long shot", WS: "Wide shot", OTS: "Over-the-shoulder", POV: "Point-of-view" };
       const defaultVideoPrompt = `${shotLabel[outline.shotType] || outline.shotType} shot, eye-level. ${outline.cameraMovement}. ${sceneTimingBeat}.${charRefForCut ? ` ${charRefForCut}.` : ""} ${noTextSuffix}`;
 
       // ── 대사 텍스트: outline.dialogueText → narrationText로 매핑 (TTS용) ──
@@ -3194,8 +3182,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         characterRole: outline.characterRole,
         cameraDirection:  d?.cameraDirection  ?? `Lens 35mm. Slow dolly in. ${String(directorName)} style.`,
         moodLighting,
-        imagePrompt:      (d?.imagePrompt      ?? defaultImagePrompt).slice(0, 400),
-        endImagePrompt:   (d?.endImagePrompt   ?? defaultEndImagePrompt).slice(0, 400),
+        // imagePrompt/endImagePrompt 제거됨 — 스토리보드 이미지는 videoPrompt 사용
         // 한국어 표시용 필드 — UI에서 사용자에게 보여주는 한국어 설명
         ...(d?.videoPromptKo ? { videoPromptKo: d.videoPromptKo } : {}),
         ...(d?.cameraDirectionKo ? { cameraDirectionKo: d.cameraDirectionKo } : {}),

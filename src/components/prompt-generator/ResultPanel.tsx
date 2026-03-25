@@ -1067,7 +1067,7 @@ export default function ResultPanel({
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ prompt: cut.imagePrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode, stylePrompt: resolveStylePrompt(animationMode), directorTechniques }),
+                        body: JSON.stringify({ prompt: cut.videoPrompt, aspectRatio: "9:16", sceneDescription: cut.sceneDescription, animationMode, stylePrompt: resolveStylePrompt(animationMode), directorTechniques }),
                       });
                       const data = await res.json();
                       if (res.ok && data.images?.[0]?.base64) {
@@ -1095,7 +1095,7 @@ export default function ResultPanel({
                   onGenerateEndImage={async () => {
                     setStoryboardEndLoading((prev) => ({ ...prev, [cut.cutNumber]: true }));
                     try {
-                      const endPrompt = cut.endImagePrompt || cut.imagePrompt;
+                      const endPrompt = cut.videoPrompt;
                       const res = await fetch("/api/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
