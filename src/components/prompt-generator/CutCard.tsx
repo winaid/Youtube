@@ -1082,20 +1082,6 @@ export default function CutCard({
               프롬프트 보기 / 수정하기
             </AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
-              <EditableField
-                label="시작 프레임 이미지 프롬프트"
-                value={cut.imagePrompt}
-                color="#787fff"
-                bgColor="#787fff10"
-                onSave={(v) => handleFieldSave("imagePrompt", v)}
-              />
-              <EditableField
-                label="끝 프레임 이미지 프롬프트"
-                value={cut.endImagePrompt || ""}
-                color="#22c55e"
-                bgColor="#22c55e10"
-                onSave={(v) => handleFieldSave("endImagePrompt", v)}
-              />
               {/* ── 한국어 영상 프롬프트 (메인 표시) ── */}
               {cut.videoPromptKo && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
