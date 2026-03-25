@@ -574,10 +574,33 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ═══════════════════════════════════════════════════════════════════
     // separate_clips 모드: 서브샷마다 독립 VEO 요청
     // ═══════════════════════════════════════════════════════════════════
-    if (req.separateClips && req.multiShot && req.multiShot.length >= 2) {
+    if (req.separateClips) {
+      // ── multiShot 자동 생성: separateClips=true인데 multiShot이 없으면 자동 생성 ──
+      let effectiveMultiShot = req.multiShot;
+      if (!effectiveMultiShot || effectiveMultiShot.length < 2) {
+        // renderVeoPrompt가 자동 4-shot 구조를 생성 → 그 shot들을 개별 요청용으로 변환
+        const autoShots = rendered.shotCount >= 2
+          ? rendered.timestampPrompt.split("\n")
+              .filter(l => l.startsWith("["))
+              .map((line, i) => {
+                const bracketEnd = line.indexOf("]");
+                const prompt = bracketEnd >= 0 ? line.slice(bracketEnd + 1).trim() : line.trim();
+                const timeMatch = line.match(/\[(\d+):(\d+)-(\d+):(\d+)\]/);
+                const startSec = timeMatch ? parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) : i * 2;
+                const endSec = timeMatch ? parseInt(timeMatch[3]) * 60 + parseInt(timeMatch[4]) : (i + 1) * 2;
+                return { index: i + 1, prompt, duration: String(endSec - startSec), role: ["establish", "develop", "peak", "resolve"][i] || "develop" };
+              })
+          : undefined;
+        if (autoShots && autoShots.length >= 2) {
+          effectiveMultiShot = autoShots;
+          console.info("[generate-video] SEPARATE_CLIPS: multiShot 자동 생성", { shotCount: autoShots.length });
+        }
+      }
+
+      if (effectiveMultiShot && effectiveMultiShot.length >= 2) {
       console.info("[generate-video] SEPARATE_CLIPS mode activated", {
         elapsedMs: Date.now() - tServerStart,
-        shotCount: req.multiShot.length,
+        shotCount: effectiveMultiShot.length,
       });
 
       const physicsNoAtmoSC = req.structuredSequence?.physicsRules && !req.structuredSequence.physicsRules.hasAtmosphere;
@@ -588,26 +611,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         hasSourceVideo: false,
       });
 
-      // ── continuity prefix 빌드 (separate_clips에서도 적용) ──
-      let continuityPrefix = "";
-      if (req.continuityMeta) {
-        const cm = req.continuityMeta;
-        const cParts: string[] = [];
-        if (cm.characterLock) cParts.push(`Maintain character: ${cm.characterLock}`);
-        if (cm.visualLock) {
-          const compactLock = extractCompactVisualLock(cm.visualLock);
-          if (compactLock) cParts.push(`Consistent look: ${compactLock}`);
-        }
-        if (cParts.length > 0) continuityPrefix = cParts.join(". ") + ". ";
+      // ── character/visual consistency — 모든 shot에 주입 ──
+      const characterParts: string[] = [];
+      // 1) continuityMeta의 characterLock
+      if (req.continuityMeta?.characterLock) {
+        characterParts.push(`Maintain character: ${req.continuityMeta.characterLock}`);
       }
+      // 2) structuredSequence의 characterRef (더 상세한 인물 묘사)
+      const characterRef = req.structuredSequence?.shotPlan?.subject?.characterRef;
+      if (characterRef) characterParts.push(characterRef);
+      // 3) visualLock
+      if (req.continuityMeta?.visualLock) {
+        const compactLock = extractCompactVisualLock(req.continuityMeta.visualLock);
+        if (compactLock) characterParts.push(`Consistent look: ${compactLock}`);
+      }
+      const characterPrefix = characterParts.length > 0 ? characterParts.join(". ") + ". " : "";
 
       // 각 subshot을 병렬 VEO 요청으로 전송 (타임스탬프 프롬프트 미사용)
-      // firstFrameBase64는 첫 번째 샷에만 전달 (image-to-video)
       const strippedFirst = req.firstFrameBase64 ? stripDataPrefix(req.firstFrameBase64) : "";
       const validFirstSC = strippedFirst.length > 100 ? strippedFirst : "";
 
       // 병렬 요청을 위한 task 배열 구성
-      const shotTasks = req.multiShot.map((shot) => {
+      const shotTasks = effectiveMultiShot.map((shot) => {
         const shotDuration = Math.max(2, Math.min(8, Math.round(parseFloat(shot.duration) || 2)));
         let shotPrompt = stripInternalTags(shot.prompt);
         shotPrompt = deduplicatePromptClauses(shotPrompt);
@@ -617,8 +642,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           return { shot, shotDuration, shotPrompt: null, skip: `Shot ${shot.index} prompt too short after cleanup` };
         }
 
-        if (continuityPrefix && shot.index === 1) {
-          shotPrompt = continuityPrefix + shotPrompt;
+        // 캐릭터/비주얼 일관성을 모든 shot에 주입 (shot 1만이 아님)
+        if (characterPrefix) {
+          shotPrompt = characterPrefix + shotPrompt;
         }
         if (!shotPrompt.includes("no text")) {
           shotPrompt = "no text, no watermark. " + shotPrompt;
@@ -705,7 +731,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           warnings: errors.length > 0 ? [`${errors.length} shot(s) failed`] : [],
         },
       });
-    }
+    } // end if (effectiveMultiShot >= 2)
+    } // end if (req.separateClips)
 
     // ── Audio: physics override (무대기 환경은 강제 off) ─────────────────────
     const physicsNoAtmo = req.structuredSequence?.physicsRules && !req.structuredSequence.physicsRules.hasAtmosphere;
