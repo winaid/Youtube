@@ -1605,6 +1605,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         generationMode: cfg.generationMode ?? "batch",
         sceneType: cut.shotCategory,
         intentionalOneTake: cut.intentionalOneTake,
+        // separate_clips 모드 — 서브샷마다 독립 VEO 요청
+        ...(cfg.separateClips ? { separateClips: true } : {}),
         // 분절 편집 컨텍스트 — UI에서 감지한 context를 server까지 전달
         ...(cut.fragmentedEditContext?.isFragmented ? { fragmentedEditContext: cut.fragmentedEditContext } : {}),
         // VideoPromptJson: canonical-derived preferred over legacy Cut field
@@ -1679,7 +1681,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         }
       }
 
-      // ── sentPromptEn / sentPromptKo 저장 (refine/verify 후 최종본) ──────
+      // ── sentPromptEn / sentPromptKoSummary 저장 (refine/verify 후 최종본) ──
       // 실제 provider에 전송될 영어 프롬프트를 기록하고,
       // 대응하는 한국어 UI 필드도 전송 직전 기준으로 생성
       {
@@ -1699,7 +1701,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         const sentKo = pureKo.length > 0
           ? pureKo.join(". ").slice(0, 500)
           : (cut.sceneDescription || `컷 ${cutNumber} 영상 프롬프트`);
-        updateClip(cutNumber, { sentPromptEn: sentEn, sentPromptKo: sentKo });
+        updateClip(cutNumber, { sentPromptEn: sentEn, sentPromptKoSummary: sentKo });
       }
 
       // ── 타이밍: 시퀀스 조립 완료 ──────────────────────────────────────────
@@ -1901,15 +1903,79 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         totalMs: Math.round(tGenDone - t0),
       });
 
-      startPolling(
-        cutNumber,
-        data.operationName,
-        data.engine,
-        data.taskId,
-        data.modeUsed === "extend",
-        variantsToPreserve,
-        job.jobId,
-      );
+      // ── separate_clips 모드: 개별 샷 polling + hard cut assembly ──────
+      if (data.separateClips && data.clipOperations && data.clipOperations.length > 0) {
+        console.log(`[CUT ${cutNumber}] SEPARATE_CLIPS: ${data.clipOperations.length} shots polling 시작`);
+        updateClip(cutNumber, { status: "polling", assemblyMethod: "hard_cut" });
+
+        // 모든 shot을 병렬 polling
+        const shotResults = await Promise.allSettled(
+          data.clipOperations.map(async (clipOp) => {
+            const result = await pollVideoTask(clipOp.operationName, {
+              longRunning: true,
+              jobId: undefined,
+              onProgress: (attempt, maxAttempts) => {
+                if (attempt % 12 === 11) {
+                  console.log(`[CUT ${cutNumber}] shot ${clipOp.shotIndex} polling #${attempt + 1}/${maxAttempts}`);
+                }
+              },
+            });
+            return { ...clipOp, pollResult: result };
+          }),
+        );
+
+        // 결과 취합
+        const completedClips: Array<{ shotIndex: number; videoUri: string; durationSec: number }> = [];
+        const failedShots: string[] = [];
+
+        for (const result of shotResults) {
+          if (result.status === "fulfilled") {
+            const { shotIndex, durationSec, pollResult } = result.value;
+            if (pollResult.status === "completed" && pollResult.videoUri) {
+              completedClips.push({ shotIndex, videoUri: pollResult.videoUri, durationSec });
+            } else {
+              failedShots.push(`shot ${shotIndex}: ${pollResult.error || pollResult.status}`);
+            }
+          } else {
+            failedShots.push(`shot: ${result.reason}`);
+          }
+        }
+
+        // 정렬 (shotIndex 순서)
+        completedClips.sort((a, b) => a.shotIndex - b.shotIndex);
+
+        if (completedClips.length === 0) {
+          updateClip(cutNumber, {
+            status: "failed",
+            error: `separate_clips 전체 실패: ${failedShots.join("; ")}`,
+          });
+        } else {
+          // 첫 번째 클립을 대표 videoUri로 사용 (조립 전)
+          // separateClipUris에 모든 개별 URI 저장
+          updateClip(cutNumber, {
+            status: "completed",
+            videoUri: completedClips[0].videoUri,
+            separateClipUris: completedClips,
+            completedAt: Date.now(),
+            ...(failedShots.length > 0 ? { error: `${failedShots.length}개 샷 실패: ${failedShots.join("; ")}` } : {}),
+          });
+          console.log(`[CUT ${cutNumber}] SEPARATE_CLIPS 완료: ${completedClips.length}/${data.clipOperations.length} 성공`, {
+            clipUris: completedClips.map(c => ({ shot: c.shotIndex, uri: c.videoUri.slice(0, 60) })),
+            failed: failedShots,
+          });
+        }
+      } else {
+        // 기존 단일 operationName polling
+        startPolling(
+          cutNumber,
+          data.operationName,
+          data.engine,
+          data.taskId,
+          data.modeUsed === "extend",
+          variantsToPreserve,
+          job.jobId,
+        );
+      }
     } catch (err) {
       const classified = classifyVideoError(
         err,

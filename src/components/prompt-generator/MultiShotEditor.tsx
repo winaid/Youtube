@@ -399,6 +399,8 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                     const rawKo = shot.promptKo?.trim() ?? "";
                     const koBody = (rawKo.length >= 30 ? rawKo : null)
                       || (shot.prompt ? generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)) : rawKo);
+                    // 한국어가 없으면 placeholder 표시 (영어 fallback 금지)
+                    const displayKo = koBody.trim().length > 0 ? koBody : "한국어 프롬프트 미생성";
                     const hasContent = koBody.trim().length > 0 || (shot.prompt && shot.prompt.trim().length > 0);
                     return hasContent ? (
                       <>
@@ -407,10 +409,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                           style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
                           onClick={() => {
                             setEditingIndex(shot.index);
-                            setEditDraft(koBody || shot.prompt);
+                            setEditDraft(koBody || "");
                           }}
                         >
-                          {koBody || shot.prompt}
+                          {displayKo}
                         </div>
                         {shot.prompt && shot.prompt.trim().length > 0 && (
                           <details className="mt-0.5">

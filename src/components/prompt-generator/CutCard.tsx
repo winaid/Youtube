@@ -1107,7 +1107,7 @@ export default function CutCard({
                     <div key={shot.index} className="flex items-center gap-2 text-[10px]" style={{ color: "#374151" }}>
                       <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
                       <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
-                      <span className="flex-1">{shot.promptKo || `${shot.prompt?.slice(0, 60)}${(shot.prompt?.length ?? 0) > 60 ? "…" : ""}`}</span>
+                      <span className="flex-1">{shot.promptKo || "한국어 프롬프트 미생성"}</span>
                       {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{koLabel(PURPOSE_KO, shot.role)}</span>}
                     </div>
                   ))}

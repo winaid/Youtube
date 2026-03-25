@@ -717,6 +717,16 @@ export default function VideoGenerationPanel({
                   </div>
                 )}
 
+                {/* ── 전송된 프롬프트 요약 (한국어) ── */}
+                {clip.sentPromptKoSummary && (
+                  <div className="px-3 pb-2">
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                      <span className="text-[10px] font-semibold block mb-0.5" style={{ color: "#059669" }}>전송된 프롬프트 요약</span>
+                      <span className="text-[12px] text-gray-800 leading-relaxed">{clip.sentPromptKoSummary}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Structured Sequence (source of truth) + Provider Payload Preview */}
                 {(clip.structuredSequence || clip.finalPrompt || clip.fallbackRenderedPrompt) && (
                   <div className="px-3 pb-2">

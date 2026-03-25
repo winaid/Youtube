@@ -67,6 +67,21 @@ export interface VideoSubmitParams {
     minShotCount: number;
     editStyle: string;
   };
+  /**
+   * separate_clips 모드 — 서브샷마다 독립 VEO 요청.
+   * true이면 서버가 multiShot의 각 shot을 개별 VEO generate로 전송하고
+   * clipOperations[] 배열을 반환한다.
+   */
+  separateClips?: boolean;
+}
+
+/** separate_clips 모드에서 개별 샷 생성 결과 */
+export interface ClipOperation {
+  shotIndex: number;
+  role: string;
+  durationSec: number;
+  operationName: string;
+  prompt: string;
 }
 
 /** generate-video API 응답 */
@@ -87,6 +102,12 @@ export interface VideoSubmitResult {
   sourceVideo?: string;
   /** 서버 진단 정보 */
   _diag?: Record<string, unknown>;
+  /** separate_clips 모드 응답 */
+  separateClips?: boolean;
+  /** 개별 샷 operation 배열 (separate_clips=true일 때) */
+  clipOperations?: ClipOperation[];
+  /** hard cut 조립 메타 (separate_clips=true일 때) */
+  assembly?: { method: string; totalShots: number; successfulShots: number };
 }
 
 /** API에서 받는 raw durationMeta */
@@ -299,6 +320,7 @@ export async function submitVideoGeneration(
   if (params.continuityMeta) body.continuityMeta = params.continuityMeta;
   if (params.workflowType) body.workflowType = params.workflowType;
   if (params.fragmentedEditContext?.isFragmented) body.fragmentedEditContext = params.fragmentedEditContext;
+  if (params.separateClips) body.separateClips = true;
   // referenceImages: VEO API 미지원 — 전송하지 않음
 
   // hook-specific 추가 필드 passthrough
@@ -329,9 +351,17 @@ export async function submitVideoGeneration(
 
   const data = await res.json() as Record<string, unknown>;
 
+  // separate_clips 응답 정규화
+  const isSeparateClips = !!data.separateClips;
+  const clipOps = isSeparateClips
+    ? (data.clipOperations as ClipOperation[] | undefined)
+    : undefined;
+  // separate_clips에서는 첫 번째 operation을 대표 taskId/operationName으로 사용
+  const primaryOp = clipOps?.[0]?.operationName || "";
+
   return {
-    taskId: (data.taskId as string) || (data.operationName as string) || "",
-    operationName: (data.operationName as string) || (data.taskId as string) || "",
+    taskId: (data.taskId as string) || (data.operationName as string) || primaryOp || "",
+    operationName: (data.operationName as string) || (data.taskId as string) || primaryOp || "",
     engine: "veo",
     modeUsed: (data.modeUsed as "generate" | "extend") || "generate",
     modelUsed: (data.modelUsed as string) || "",
@@ -342,6 +372,9 @@ export async function submitVideoGeneration(
     warning: data.warning as string | undefined,
     sourceVideo: data.sourceVideo as string | undefined,
     _diag: data._diag as Record<string, unknown> | undefined,
+    separateClips: isSeparateClips || undefined,
+    clipOperations: clipOps,
+    assembly: data.assembly as { method: string; totalShots: number; successfulShots: number } | undefined,
   };
 }
 

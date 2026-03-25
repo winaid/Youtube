@@ -760,6 +760,11 @@ export interface VideoGenerationConfig {
   cinematography: CinematographySelection;
   /** 생성 모드 — Studio(신중 검토) vs Batch(빠른 대량 생성). 기본 "batch". */
   generationMode?: "studio" | "batch";
+  /**
+   * separate_clips 모드 — 서브샷마다 독립 VEO 요청.
+   * true이면 각 shot을 개별 클립으로 생성하고 hard cut으로 조립.
+   */
+  separateClips?: boolean;
 }
 
 // ===== 시네마토그래피 용어 =====
@@ -1058,8 +1063,12 @@ export interface VideoClip {
   audioMeta?: AudioMeta;
   /** 실제 provider에 전송된 최종 영어 프롬프트 (refine/verify 후 최종본) */
   sentPromptEn?: string;
-  /** sentPromptEn의 한국어 번역본 (UI 표시용, 영어 혼입 금지) */
-  sentPromptKo?: string;
+  /** sentPromptEn 기준 한국어 요약 (UI 표시용, 영어 혼입 금지). Ko 필드 조합 기반. */
+  sentPromptKoSummary?: string;
+  /** separate_clips 모드: 개별 샷 클립 URI 배열 (hard cut 조립 전) */
+  separateClipUris?: Array<{ shotIndex: number; videoUri: string; durationSec: number }>;
+  /** separate_clips 모드: 조립 방법 */
+  assemblyMethod?: "hard_cut";
 }
 
 // ===== AI 피드백 리뷰 =====
