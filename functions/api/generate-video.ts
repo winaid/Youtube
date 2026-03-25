@@ -17,10 +17,7 @@ import {
   veoGenerate,
   veoExtend,
   VeoApiError,
-  VEO_DEFAULT_MODEL,
-  getCapability,
   resolveModelForWorkflow,
-  toVeoDuration,
   toVeoAspectRatio,
   type VeoEnv,
 } from "./_veo-api";

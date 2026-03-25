@@ -9,7 +9,7 @@
  *   Step2: maxTokens=8192~16384  (컷 1~N/2 상세)
  *   Step3: maxTokens=8192~16384  (컷 N/2+1~N 상세) — Step2와 병렬
  */
-import { GeminiEnv, streamingGenerate, GEMINI_MODEL_PRO, GEMINI_MODEL_FLASH, parseFirstJsonObject, parseFirstJsonArray, repairTruncatedJson } from "./_gemini-keys";
+import { GeminiEnv, streamingGenerate, GEMINI_MODEL_FLASH, parseFirstJsonObject, parseFirstJsonArray, repairTruncatedJson } from "./_gemini-keys";
 import type { VideoPromptJson, ExtendPromptJson } from "./_video-prompt-json";
 import { buildSequencePlanFromCuts, validateSequencePlan } from "./_sequence-plan";
 import { classifyCuts } from "./_structure-classification";
@@ -20,7 +20,7 @@ import type { EditorialPersona } from "./_editorial-persona";
 import { recommendMinimumCutCount, resolveCutCount, personaCutCountBias, recommendCutCountRange, resolveSegmentPlan, CUT_COUNT_MAX } from "./_sequence-density";
 import { distributeRhythm, densityToPacingMode } from "./_rhythm-distribution";
 import type { PacingMode } from "./_rhythm-distribution";
-import { VEO_DEFAULT_MODEL, VEO_SEGMENT_CAP, VEO_EXTENSION_DURATION, getCapability } from "./_veo-capability";
+import { VEO_DEFAULT_MODEL, VEO_SEGMENT_CAP, VEO_EXTENSION_DURATION } from "./_veo-capability";
 // VEO 정책: 8초=4샷, 7초(extend)=3샷
 const getMaxShots = (_modelId: string, durationSec: number) => durationSec <= 7 ? 3 : 4;
 import { reconcileShortformPlan, resolveShortformBandPolicy } from "./_shortform-rhythm";
