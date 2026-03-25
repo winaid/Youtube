@@ -437,7 +437,11 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
     || "";
   // actionBeat = 실제 행동 묘사 (subjectAction과 별개)
   const actionBeat = json?.actionBeat || "";
-  const characterRef = json?.characterRef || cut.characterConsistency || undefined;
+  // characterRef: VEO용이므로 한국어 부분 제거 (characterConsistency에 영어+한국어 혼합)
+  const rawCharRef = json?.characterRef || cut.characterConsistency || "";
+  const characterRef = rawCharRef
+    ? rawCharRef.replace(/캐릭터 고정:[^.]*\.?/g, "").replace(/모든 장면[^.]*\.?/g, "").replace(/[\uAC00-\uD7A3\u3131-\u318E]+/g, " ").replace(/\s{2,}/g, " ").trim() || undefined
+    : undefined;
 
   const beats = parseTimingBeats(json?.timingBeat, dur);
 

@@ -3210,8 +3210,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
 
       // ── 캐릭터 일관성: 캐릭터 중심 컷만 적용 ──────────────────────────
+      // 영어 appearance를 primary로 사용 (VEO 프롬프트에 직접 주입됨)
+      // 한국어는 UI 표시용으로만 보조 추가
       const characterConsistency = (outline.characterRole === "protagonist" || outline.characterRole === "partial")
-        ? `캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`
+        ? `${mainChar.appearance}. 캐릭터 고정: ${mainChar.appearanceKo}. 모든 장면 동일 유지.`
         : "";
       const charactersInScene = needsCharacter ? [mainChar.id] : [];
 
