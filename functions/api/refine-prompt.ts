@@ -235,11 +235,19 @@ ${String(feedback || "Make it better")}
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "{}";
 
-    let parsed;
+    let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(text);
     } catch {
       parsed = parseFirstJsonObject(text) ?? { error: "Failed to parse" };
+    }
+
+    // Gemini 응답 타입 검증 — non-string 프롬프트 제거
+    if (parsed.refinedVideoPrompt && typeof parsed.refinedVideoPrompt !== "string") {
+      parsed.refinedVideoPrompt = undefined;
+    }
+    if (parsed.refinedExtendPrompt && typeof parsed.refinedExtendPrompt !== "string") {
+      parsed.refinedExtendPrompt = undefined;
     }
 
     return Response.json(parsed);

@@ -213,15 +213,20 @@ function convertMultiShotToTimestamp(
     let runningStart = 0;
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
+      if (runningStart >= targetDuration) {
+        // 이미 목표 duration 초과 → 남은 shot 제거
+        entries.splice(i);
+        break;
+      }
       const origDur = e.endSec - e.startSec;
       const scaledDur = i === entries.length - 1
         ? targetDuration - runningStart  // 마지막 샷: 나머지 전부
         : Math.max(1, Math.round(origDur * ratio));
       e.startSec = runningStart;
-      e.endSec = runningStart + Math.max(1, scaledDur);
+      e.endSec = Math.min(runningStart + Math.max(1, scaledDur), targetDuration);
       runningStart = e.endSec;
     }
-    entries[entries.length - 1].endSec = targetDuration;
+    if (entries.length > 0) entries[entries.length - 1].endSec = targetDuration;
   }
 
   // ── 서브샷 간 중복 제거: establish 샷의 환경/장소를 후속 샷에서 제거 ──
@@ -333,11 +338,27 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
   // 타임스탬프 프롬프트 생성
   const timestampPrompt = renderTimestampPrompt(shots, globalAnchor);
 
+  // ── Historical grounding injection — 역사적 시각 앵커를 프롬프트에 주입 ──
+  // (분절 편집 hard clamp 이전에 주입해야 500자 한도가 정확히 적용됨)
+  let finalPrompt = timestampPrompt;
+  if (input.historicalGrounding) {
+    const hg = input.historicalGrounding;
+    if (hg.visualAnchors && hg.visualAnchors.length > 0) {
+      const anchorDirective = hg.visualAnchors
+        .map(va => `${va.description}`)
+        .join(". ");
+      const settingLine = (hg.region && hg.period)
+        ? `Historical setting: ${hg.region}, ${hg.period}. `
+        : "";
+      finalPrompt = `${settingLine}Visual references: ${anchorDirective}.\n\n${finalPrompt}`;
+      cleanupLog.push(`[veo-renderer] Historical grounding injected: ${hg.region} ${hg.period}`);
+    }
+  }
+
   // 각 샷 프롬프트 길이 제한
   // 분절 편집 모드: 500자 hard limit / 일반 모드: 3000자
   const FRAGMENTED_CHAR_LIMIT = 500;
   const maxPromptLen = input.fragmentedEditMode ? FRAGMENTED_CHAR_LIMIT : 3000;
-  let finalPrompt = timestampPrompt;
   if (finalPrompt.length > maxPromptLen) {
     // 분절 편집 모드에서는 정보 밀도를 높이는 방향으로 압축
     // shot 구조(timestamp brackets)를 보존하면서 action 부분만 축소
@@ -378,24 +399,6 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
       finalPrompt = finalPrompt.slice(0, FRAGMENTED_CHAR_LIMIT - 1) + "…";
     }
     cleanupLog.push(`[veo-renderer] Fragmented edit hard clamp applied: ${finalPrompt.length}/${FRAGMENTED_CHAR_LIMIT} chars, ${shotLines.length} shot boundaries preserved`);
-  }
-
-  // ── 텍스트 방지: noTextSuffix("no text, no watermark")가 프롬프트 끝에 포함됨.
-  // stripTextForVeo()가 불필요한 텍스트 관련 단어를 추가 정리.
-
-  // ── Historical grounding injection — 역사적 시각 앵커를 프롬프트에 주입 ──
-  if (input.historicalGrounding) {
-    const hg = input.historicalGrounding;
-    if (hg.visualAnchors && hg.visualAnchors.length > 0) {
-      const anchorDirective = hg.visualAnchors
-        .map(va => `${va.description}`)
-        .join(". ");
-      const settingLine = (hg.region && hg.period)
-        ? `Historical setting: ${hg.region}, ${hg.period}. `
-        : "";
-      finalPrompt = `${settingLine}Visual references: ${anchorDirective}.\n\n${finalPrompt}`;
-      cleanupLog.push(`[veo-renderer] Historical grounding injected: ${hg.region} ${hg.period}`);
-    }
   }
 
   // ── Historical grounding negative prompt — avoid 요소 추가 ──

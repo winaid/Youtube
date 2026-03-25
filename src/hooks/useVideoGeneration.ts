@@ -1905,6 +1905,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
 
       // ── separate_clips 모드: 개별 샷 polling + hard cut assembly ──────
       if (data.separateClips && data.clipOperations && data.clipOperations.length > 0) {
+        // 중복 실행 방지 — activePolls guard 적용
+        if (activePolls.current.has(cutNumber)) {
+          console.warn(`[CUT ${cutNumber}] SEPARATE_CLIPS 이미 진행 중 — 중복 호출 무시`);
+          return;
+        }
+        activePolls.current.add(cutNumber);
         console.log(`[CUT ${cutNumber}] SEPARATE_CLIPS: ${data.clipOperations.length} shots polling 시작`);
         updateClip(cutNumber, { status: "polling", assemblyMethod: "hard_cut" });
 
@@ -2024,6 +2030,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             });
           }
         }
+        // separate_clips polling 완료 → activePolls 해제
+        activePolls.current.delete(cutNumber);
       } else {
         // 기존 단일 operationName polling
         startPolling(
