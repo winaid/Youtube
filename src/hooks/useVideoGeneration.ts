@@ -201,6 +201,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   const mountedRef = useRef(true);
   const cutsRef = useRef(cuts);
   cutsRef.current = cuts; // 매 렌더마다 최신 cuts 동기화
+  const clipsRef = useRef(state.clips);
+  clipsRef.current = state.clips; // 매 렌더마다 최신 clips 동기화
   const pollTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
   // 동일 cutNumber에 대한 중복 폴링 방지
   const activePolls = useRef<Set<number>>(new Set());
@@ -667,7 +669,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
           console.warn(`[CUT ${cutNumber}] ⚠️ 영상 기록 저장 건너뜀: proxyUri 없음`);
         } else {
           const cut = cutsRef.current.find((c) => c.cutNumber === cutNumber);
-          const clipForRecord = state.clips.find(c => c.cutNumber === cutNumber);
+          const clipForRecord = clipsRef.current.find(c => c.cutNumber === cutNumber);
           const saved = saveVideoRecord({
             operationName,
             engine,
@@ -726,6 +728,8 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
                         cameraState: afData.state.cameraState?.slice(0, 50),
                       });
                       // cutsRef를 통해 다음 컷의 continuitySegment 업데이트 (불변성 유지)
+                      // NOTE: 부모의 cuts prop은 변경되지 않으므로, generateCut 등에서
+                      // 반드시 cutsRef.current를 통해 읽어야 이 업데이트를 반영할 수 있음.
                       if (nextCut.continuitySegment) {
                         const updatedSegment = {
                           ...nextCut.continuitySegment,
@@ -944,7 +948,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       activePolls.current.delete(cutNumber);
       pollTimers.current.delete(cutNumber);
     }
-  }, [updateClip, onSeedDetected, state.clips]);
+  }, [updateClip, onSeedDetected]);
 
   // 미완료 작업 polling 재개
   const resumeJob = useCallback((job: VideoJobRecord) => {
@@ -997,7 +1001,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
   // 단일 장면 생성
   const generateCut = useCallback(async (cutNumber: number, preserveVariants?: boolean) => {
     const t0 = performance.now(); // ── 전체 시작
-    let cut = cuts.find((c) => c.cutNumber === cutNumber);
+    let cut = cutsRef.current.find((c) => c.cutNumber === cutNumber);
     if (!cut) return;
 
     // 피드백 기반 재생성 시 prompt override 적용 (prop mutation 대신)
@@ -1039,7 +1043,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         legacyPrompt = cut.videoPrompt;
       }
     }
-    const clip = state.clips.find((c) => c.cutNumber === cutNumber);
+    const clip = clipsRef.current.find((c) => c.cutNumber === cutNumber);
     const retryCount = clip?.retryCount || 0;
 
     // CUT N>1: 이전 컷 시각 상태는 assemblePrompt()의 CONSISTENCY 블록에서 처리됨.
@@ -1047,12 +1051,12 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
     // (assemblePrompt에 characterConsistency/moodLighting을 직접 전달)
 
     // 이전 장면의 videoUri (Scene Extension)
-    const prevClip = state.clips.find(
+    const prevClip = clipsRef.current.find(
       (c) => c.cutNumber === cutNumber - 1 && c.status === "completed"
     );
 
     // preserveVariants=true 이면 기존 컷들을 보존하며 새 컷 추가 (컷 추가 생성 모드)
-    const existingClip = state.clips.find((c) => c.cutNumber === cutNumber);
+    const existingClip = clipsRef.current.find((c) => c.cutNumber === cutNumber);
     const variantsToPreserve: VideoVariant[] | undefined = preserveVariants && existingClip?.status === "completed"
       ? (existingClip.variants && existingClip.variants.length > 0
           ? existingClip.variants
@@ -1077,7 +1081,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       let negativePrompt = cfg.negativePrompt;
 
       if (retryCount === 0) {
-        const prevCut = cuts.find((c) => c.cutNumber === cutNumber - 1);
+        const prevCut = cutsRef.current.find((c) => c.cutNumber === cutNumber - 1);
 
         // 병렬 작업 목록
         const parallelTasks: Promise<void>[] = [];
@@ -1192,7 +1196,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
       // 문자열 prompt는 반환하지 않는다.
       // 직렬화는 body 생성 시 provider가 string-only이면 그때만 수행.
       const prevCutData = cutNumber > 1
-        ? cuts.find((c) => c.cutNumber === cutNumber - 1)
+        ? cutsRef.current.find((c) => c.cutNumber === cutNumber - 1)
         : undefined;
 
       const assembled = assembleFromJSON({
@@ -2054,7 +2058,7 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         error: classified.message,
       });
     }
-  }, [cuts, state.clips, state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt]);
+  }, [state.config, storyboardImages, storyboardEndImages, faceRefs, updateClip, startPolling, verifyPrompt]);
 
   // 자동 모드 (직렬 생성) — generating/pending 컷이 없을 때만 다음 idle 컷 시작
   // state.clips 변경 시마다 재실행 → generateCut이 항상 최신 클로저를 사용
