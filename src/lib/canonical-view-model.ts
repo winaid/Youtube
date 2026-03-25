@@ -165,6 +165,7 @@ export interface MultiShotViewModel {
 export function canonicalToMultiShotViewModel(
   seq: StructuredSequenceDocument,
   maxShots: number,
+  existingMultiShot?: MultiShotPrompt[],
 ): MultiShotViewModel {
   const seqShots = seq.shots || [];
 
@@ -186,7 +187,7 @@ export function canonicalToMultiShotViewModel(
     return {
       index: i + 1,
       prompt,
-      promptKo: (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`),
+      promptKo: existingMultiShot?.[i]?.promptKo || (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`),
       duration: String(Math.max(1, rawDurations[i])),
       role,
     };

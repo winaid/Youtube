@@ -120,8 +120,8 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
   let multiShot: MultiShotPrompt[];
 
   if (input.cut.structuredShots && input.cut.structuredShots.length >= 2) {
-    // structuredShots가 source of truth → multiShot은 derived view
-    multiShot = canonicalShotsToMultiShot(result.structuredSequence);
+    // structuredShots가 source of truth → multiShot은 derived view (promptKo는 원본에서 가져옴)
+    multiShot = canonicalShotsToMultiShot(result.structuredSequence, input.cut.multiShot);
     adapterConversions.push("adapter: derived multiShot from structuredShots (source of truth)");
   } else if (result.suggestedMultiShot) {
     multiShot = result.suggestedMultiShot;
@@ -130,7 +130,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
     multiShot = input.cut.multiShot;
     adapterConversions.push("adapter: preserved existing Cut.multiShot");
   } else {
-    multiShot = canonicalShotsToMultiShot(result.structuredSequence);
+    multiShot = canonicalShotsToMultiShot(result.structuredSequence, input.cut.multiShot);
     adapterConversions.push("adapter: derived multiShot from canonical shots[]");
   }
 
@@ -172,6 +172,7 @@ export function toCanonicalSequence(input: ToCanonicalInput): CanonicalResult {
  */
 export function canonicalShotsToMultiShot(
   seq: StructuredSequenceDocument,
+  existingMultiShot?: MultiShotPrompt[],
 ): MultiShotPrompt[] {
   if (!seq.shots || seq.shots.length === 0) return [];
 
@@ -219,7 +220,7 @@ export function canonicalShotsToMultiShot(
     return {
       index: i + 1,
       prompt,
-      promptKo: (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`),
+      promptKo: existingMultiShot?.[i]?.promptKo || (shot as { promptKo?: string }).promptKo || (ROLE_KO[role] ?? `서브샷 ${i + 1}`),
       duration: String(Math.max(1, rawDurations[i])),
       role,
     };
