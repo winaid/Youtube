@@ -582,11 +582,7 @@ export default function VideoSettingsPanel({
               </div>
             </div>
 
-            {/* 프롬프트 강도 조절 슬라이더 */}
-            <div className="space-y-1.5">
-
             {/* 컷별 개별 생성 (separate_clips) */}
-            <Separator style={{ background: "#c4b80030" }} />
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-xs">컷별 개별 생성 후 하드컷 편집</Label>
@@ -603,9 +599,8 @@ export default function VideoSettingsPanel({
                 />
               </button>
             </div>
-            <Separator style={{ background: "#c4b80030" }} />
-            </div>
 
+            {/* 프롬프트 강도 조절 슬라이더 */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">감독 스타일 강도</Label>

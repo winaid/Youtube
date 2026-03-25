@@ -591,6 +591,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         hasSourceVideo: false,
       });
 
+      // ── continuity prefix 빌드 (separate_clips에서도 적용) ──
+      let continuityPrefix = "";
+      if (req.continuityMeta) {
+        const cm = req.continuityMeta;
+        const cParts: string[] = [];
+        if (cm.characterLock) cParts.push(`Maintain character: ${cm.characterLock}`);
+        if (cm.visualLock) {
+          const compactLock = extractCompactVisualLock(cm.visualLock);
+          if (compactLock) cParts.push(`Consistent look: ${compactLock}`);
+        }
+        if (cParts.length > 0) continuityPrefix = cParts.join(". ") + ". ";
+      }
+
       // 각 subshot을 개별 VEO 요청으로 전송 (타임스탬프 프롬프트 미사용)
       const clipOperations: Array<{
         shotIndex: number;
@@ -611,6 +624,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         if (!shotPrompt || shotPrompt.trim().length < 10) {
           errors.push({ shotIndex: shot.index, error: `Shot ${shot.index} prompt too short after cleanup` });
           continue;
+        }
+
+        // continuity prefix 주입 (첫 번째 샷에만 — 이후 샷은 독립 생성)
+        if (continuityPrefix && shot.index === 1) {
+          shotPrompt = continuityPrefix + shotPrompt;
         }
 
         // TEXT_FREE_DIRECTIVE

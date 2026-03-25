@@ -1996,12 +1996,19 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             } catch (stitchErr) {
               // 조립 실패 시 개별 clip 유지, 첫 번째 clip을 대표 URI로
               const errMsg = stitchErr instanceof Error ? stitchErr.message : String(stitchErr);
-              console.error(`[CUT ${cutNumber}] hard-cut stitch 실패:`, errMsg);
+              const stitchErrCode = (stitchErr as { code?: string })?.code;
+              const reason = stitchErrCode === "ffmpeg_unavailable" ? "FFmpeg 미지원 환경"
+                : stitchErrCode === "fetch_failed" ? "클립 다운로드 실패"
+                : stitchErrCode === "concat_failed" ? "FFmpeg concat 실패"
+                : stitchErrCode === "output_empty" ? "결과물 빈 파일"
+                : errMsg.includes("loadFFmpeg") || errMsg.includes("SharedArrayBuffer") ? "FFmpeg 미지원 환경"
+                : "알 수 없는 오류";
+              console.error(`[CUT ${cutNumber}] hard-cut stitch 실패 (${reason}):`, errMsg);
               updateClip(cutNumber, {
                 status: "completed",
                 videoUri: completedClips[0].videoUri,
                 completedAt: Date.now(),
-                error: `조립 실패 — 개별 클립만 생성됨: ${errMsg}`,
+                error: `조립 실패 (${reason}) — 개별 클립만 생성됨`,
               });
             }
           } else {
