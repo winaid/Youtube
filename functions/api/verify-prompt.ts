@@ -452,6 +452,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     const systemPrompt = `You are an AI video generation prompt QA expert. Review the following prompt for issues that cause the video model to deviate from user intent.
 
+## Language Instructions
+issues와 suggestions 배열의 내용은 반드시 한국어로 작성하라. improvedVideoPrompt와 improvedExtendPrompt는 영어로 작성하라.
+
 ## Prompt to Review
 - Scene: CUT ${cutNumber || 1}
 - Duration: ${duration} seconds

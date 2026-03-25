@@ -395,8 +395,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 >
                   {/* 한국어 본문 (메인) + 영어 원문 (접힌 상태, VEO용) */}
                   {(() => {
-                    const koBody = shot.promptKo
-                      || (shot.prompt ? generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)) : "");
+                    // promptKo가 짧은 역할 라벨이면 영어 프롬프트에서 상세 한국어 생성
+                    const rawKo = shot.promptKo?.trim() ?? "";
+                    const koBody = (rawKo.length >= 30 ? rawKo : null)
+                      || (shot.prompt ? generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)) : rawKo);
                     const hasContent = koBody.trim().length > 0 || (shot.prompt && shot.prompt.trim().length > 0);
                     return hasContent ? (
                       <>

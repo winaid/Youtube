@@ -798,6 +798,54 @@ function enforceCinematicRealismMedium(parts: string[], json: VideoPromptJson): 
 
 // ─── VEO 렌더러 ─────────────────────────────────────────────────────────────
 
+/** Normalize a clause for comparison: lowercase, strip punctuation & extra whitespace */
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Remove redundant parts where one clause is substantially contained in another.
+ * If a new part's normalized text is a substring of an already-accepted part
+ * (or vice-versa), skip the shorter/duplicate one — keeping the longer version.
+ */
+function deduplicateParts(parts: string[]): string[] {
+  const result: string[] = [];
+  const norms: string[] = [];
+
+  for (const part of parts) {
+    const n = normalize(part);
+    if (!n) continue;
+
+    let dominated = false;
+    let dominatesIdx = -1;
+
+    for (let i = 0; i < norms.length; i++) {
+      if (norms[i].includes(n)) {
+        // existing part already covers this one — skip new part
+        dominated = true;
+        break;
+      }
+      if (n.includes(norms[i])) {
+        // new part is a superset of an existing one — replace existing
+        dominatesIdx = i;
+        break;
+      }
+    }
+
+    if (dominated) continue;
+
+    if (dominatesIdx >= 0) {
+      result[dominatesIdx] = part;
+      norms[dominatesIdx] = n;
+    } else {
+      result.push(part);
+      norms.push(n);
+    }
+  }
+
+  return result;
+}
+
 /**
  * VideoPromptJson → VEO 호환 프롬프트 문자열
  * VEO는 더 간결한 프롬프트를 선호 — 핵심만 추출
@@ -862,7 +910,10 @@ export function renderPromptFromJson(json: VideoPromptJson): string {
   // Cinematic realism medium enforcement — 3D/CGI drift 방지
   enforceCinematicRealismMedium(parts, json);
 
-  return stripDialogueAndKorean(parts.filter(Boolean).join(". "));
+  // Clause-level deduplication — locationCue/situationCue/subjectAction often overlap
+  const deduped = deduplicateParts(parts.filter(Boolean));
+
+  return stripDialogueAndKorean(deduped.join(". "));
 }
 
 /**
