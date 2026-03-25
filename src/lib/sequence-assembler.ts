@@ -106,6 +106,7 @@ export interface SingleShotDocument {
 
   subject: {
     primary: string;
+    characterRef?: string;
     action: string;
     bodySignal?: string;
     blocking?: string;
@@ -553,6 +554,7 @@ export function buildShotDocument(input: BuildShotDocumentInput): SingleShotDocu
 
     subject: {
       primary: primarySubject,
+      characterRef: characterRef,
       action: actionBeat || "",  // actionBeat 사용 (subjectAction과 중복 방지)
       bodySignal: json?.bodySignal,
       blocking: json?.subjectBlocking,

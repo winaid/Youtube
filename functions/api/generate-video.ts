@@ -250,7 +250,9 @@ function serializeSequenceToPrompt(
   else if (shot.locationCue) parts.push(shot.locationCue);
   if (seq.situationEvidence && seq.situationEvidence.length > 0) parts.push(seq.situationEvidence.join(", "));
   else if (shot.situationCue) parts.push(shot.situationCue);
-  if (shot.subject.characterRef) parts.push(shot.subject.characterRef);
+  // characterRef: subject에 있으면 사용, 없으면 continuity에서 fallback
+  const effectiveCharRef = shot.subject.characterRef || seq.continuity?.characterRef;
+  if (effectiveCharRef) parts.push(effectiveCharRef);
   if (shot.emotionalAnchor) parts.push(shot.emotionalAnchor);
   if (shot.action) parts.push(shot.action);
   // actionBeat/bodySignal: Gemini Step2/3가 생성한 상세 물리 동작 (videoPromptJson에서 가져옴)
