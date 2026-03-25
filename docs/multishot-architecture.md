@@ -226,14 +226,24 @@ Client post step: hard cut 조립 (cross-dissolve/transition 없음)
 }
 ```
 
+### 조립 결과물
+
+- **형식**: FFmpeg.wasm concat demuxer (`-c copy`, stream copy — 재인코딩 없음)
+- **결과**: `Blob URL` (브라우저 메모리)
+- **제한**: Blob URL은 페이지 새로고침 시 소멸. 영속 저장이 필요하면 MP4 다운로드 필수.
+- **개별 shot**: `separateClipUris[]`에 shot별 원본 URI 보존 (서버 URI → 영속적)
+- **UI**: 조립 완료 시 "MP4 다운로드" 버튼 + 개별 shot 다운로드 링크 제공
+- **실패 시**: 개별 shot clip은 유지, 에러 메시지 표시 ("조립 실패 — 개별 클립만 생성됨")
+
 ### 언어 정책
 
 - **provider/VEO에 보내는 필드**: 영어 전용. 한국어 텍스트는 `stripTextForVeo()`에서 제거됨.
 - **UI에 보여주는 필드**: 한국어 전용.
   - Ko 필드가 비어 있을 때 영어를 복사하지 않고 반드시 번역/생성.
   - `promptKo` 생성 시 영어 clause 혼입 금지, 100% 한국어.
-  - `refine/verify`로 영어 prompt가 바뀌면 `sentPromptEn`/`sentPromptKo`를 전송 직전 기준으로 갱신.
-  - UI에는 "실제 전송된 최종 영어 prompt의 한국어 번역본"(`sentPromptKo`)을 표시.
+  - `refine/verify`로 영어 prompt가 바뀌면 `sentPromptEn`/`sentPromptKoSummary`를 전송 직전 기준으로 갱신.
+  - UI에는 "최종 전송 프롬프트 요약 (한국어)" — Ko 필드 기반 요약. 완전 번역이 아님.
+  - 영어 원문은 `[개발자]` 접이식 블록 뒤에 숨겨짐 (일반 사용자 미노출).
 
 ## Key Files
 

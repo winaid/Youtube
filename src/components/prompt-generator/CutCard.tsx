@@ -888,16 +888,10 @@ export default function CutCard({
           <div>
             <span className="font-medium" style={{ color: "#787fff" }}>카메라: </span>
             {cut.cameraDirectionKo || "한국어 카메라 연출 미생성"}
-            {cut.cameraDirectionKo && cut.cameraDirection && (
-              <details className="inline"><summary className="text-[8px] text-zinc-400 cursor-pointer">EN</summary><span className="text-[9px] text-zinc-500 block mt-0.5">{cut.cameraDirection}</span></details>
-            )}
           </div>
           <div>
             <span className="font-medium" style={{ color: "#c4b800" }}>조명: </span>
             {cut.moodLightingKo || "한국어 조명 설명 미생성"}
-            {cut.moodLightingKo && cut.moodLighting && (
-              <details className="inline"><summary className="text-[8px] text-zinc-400 cursor-pointer">EN</summary><span className="text-[9px] text-zinc-500 block mt-0.5">{cut.moodLighting}</span></details>
-            )}
           </div>
         </div>
 
@@ -1113,10 +1107,10 @@ export default function CutCard({
                   ))}
                 </div>
               )}
-              {/* ── 영어 프롬프트 (접기 가능 — VEO 전달용 원문 확인) ── */}
-              <details className="group">
-                <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 select-none">
-                  영어 원문 보기 (VEO 전달용)
+              {/* ── 영어 프롬프트 (개발자 전용 — 일반 사용자에게 숨김) ── */}
+              <details className="group" data-debug="true">
+                <summary className="text-[9px] text-gray-300 cursor-pointer hover:text-gray-400 select-none">
+                  [개발자] 영어 원문 (VEO 전달용)
                 </summary>
                 <div className="mt-1 space-y-2">
                   {effectiveVideoPromptJson ? (

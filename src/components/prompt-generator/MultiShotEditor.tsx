@@ -415,8 +415,8 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                           {displayKo}
                         </div>
                         {shot.prompt && shot.prompt.trim().length > 0 && (
-                          <details className="mt-0.5">
-                            <summary className="text-[8px] text-gray-400 cursor-pointer select-none">VEO 원문 (EN)</summary>
+                          <details className="mt-0.5" data-debug="true">
+                            <summary className="text-[7px] text-gray-300 cursor-pointer select-none hover:text-gray-400">[개발자] VEO 영어 원문</summary>
                             <div className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all">
                               {stripKoreanFromPrompt(shot.prompt)}
                             </div>
@@ -439,10 +439,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 </div>
               )}
 
-              {/* Per-shot char count (non-editing) — VEO 영어 원문 기준 */}
+              {/* Per-shot char count (non-editing) — 개발자 전용 */}
               {!isEditing && shot.prompt && (
-                <div className="flex justify-end">
-                  <span className="text-[9px] text-muted-foreground">
+                <div className="flex justify-end" data-debug="true">
+                  <span className="text-[7px] text-gray-300">
                     VEO {stripKoreanFromPrompt(shot.prompt).length}/{PROMPT_MAX_LENGTH}
                   </span>
                 </div>

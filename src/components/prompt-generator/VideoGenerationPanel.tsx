@@ -732,8 +732,8 @@ export default function VideoGenerationPanel({
                 {(clip.structuredSequence || clip.finalPrompt || clip.fallbackRenderedPrompt) && (
                   <div className="px-3 pb-2">
                     <details className="group">
-                      <summary className="text-[10px] font-medium cursor-pointer select-none" style={{ color: "#555" }}>
-                        시퀀스 디버그
+                      <summary className="text-[9px] font-medium cursor-pointer select-none" style={{ color: "#999" }}>
+                        [개발자] 시퀀스 디버그
                         {clip.structuredSequence && <Badge className="ml-1 text-[8px]" style={{ background: "#16a34a20", color: "#16a34a" }}>JSON-first</Badge>}
                         {clip.assembledDebug?.isMapScene && (
                           <Badge className="ml-1 text-[8px]" style={{ background: "#0891b220", color: "#0891b2" }}>MAP</Badge>
@@ -870,6 +870,44 @@ export default function VideoGenerationPanel({
                       >
                         초기화
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* separate_clips 조립 정보 */}
+                {clip.status === "completed" && clip.separateClipUris && clip.separateClipUris.length > 0 && (
+                  <div className="px-3 pb-2">
+                    <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-2 space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold" style={{ color: "#3b82f6" }}>
+                          하드컷 조립 ({clip.separateClipUris.length}개 샷)
+                        </span>
+                        {clip.assemblyMethod === "hard_cut" && (
+                          <span className="text-[8px] px-1 rounded" style={{ background: "#3b82f610", color: "#3b82f6" }}>HARD CUT</span>
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        {clip.separateClipUris.map((sc) => (
+                          <div key={sc.shotIndex} className="flex items-center gap-2 text-[9px] text-gray-600">
+                            <span className="font-mono" style={{ color: "#3b82f6" }}>#{sc.shotIndex}</span>
+                            <span>{sc.durationSec}초</span>
+                            <a
+                              href={sc.videoUri}
+                              download={`scene-${cut.cutNumber}-shot-${sc.shotIndex}.mp4`}
+                              className="text-[8px] underline"
+                              style={{ color: "#16a34a" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              개별 다운로드
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                      {clip.videoUri?.startsWith("blob:") && (
+                        <p className="text-[8px] text-gray-400 mt-1">
+                          조립 결과는 브라우저 메모리(Blob URL)에 임시 저장됩니다. 새로고침 시 사라지므로 MP4 다운로드를 권장합니다.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
