@@ -52,7 +52,7 @@ export function normalizeMultiShotPrompt(shot: Partial<MultiShotPrompt> & { inde
   return {
     index: safeNumber(shot.index, fallbackIndex),
     prompt: safeString(shot.prompt),
-    ...(shot.promptKo !== undefined ? { promptKo: safeString(shot.promptKo) } : {}),
+    promptKo: safeString(shot.promptKo) || "장면",
     duration: (() => {
       const raw = safeString(shot.duration);
       const parsed = parseFloat(raw);

@@ -855,7 +855,7 @@ export function distributeEvenly(
     return {
       index: i + 1,
       prompt: existing?.prompt ?? "",
-      promptKo: existing?.promptKo,
+      promptKo: existing?.promptKo ?? ROLE_KO[existing?.role ?? inferShotRole(i, shotCount)] ?? `서브샷 ${i + 1}`,
       duration: String(Math.max(isLast ? 1 : minDur, dur)),
       role: existing?.role ?? inferShotRole(i, shotCount),
     };

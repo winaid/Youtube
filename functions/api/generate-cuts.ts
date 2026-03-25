@@ -527,7 +527,7 @@ interface CutOutline {
 interface MultiShotItem {
   index: number;
   prompt: string;
-  promptKo?: string;
+  promptKo: string;
   duration: string;
   role?: string;
 }
@@ -706,16 +706,30 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
         const lastDot = p.lastIndexOf(".", 400);
         shAny.prompt = lastDot > 300 ? p.slice(0, lastDot + 1) : p.slice(0, 400);
       }
-      // promptKo 생성
+      // promptKo 생성 — LLM이 누락했으면 영어 prompt에서 한국어 요약 자동 생성
       if (!shAny.promptKo || String(shAny.promptKo).trim().length === 0) {
         const role = (shAny.role as string) ?? "develop";
         const roleLabel = roleKoMap[role] ?? "전개";
+        const prompt = String(shAny.prompt ?? "");
+        // 1차: Cut-level 한국어 필드에서 조합
         let koText = "";
         if (role === "establish") koText = sceneKo || vpKo || roleDescKo[role]!;
         else if (role === "develop" || role === "peak") koText = subActKo || sceneKo || vpKo || roleDescKo[role]!;
         else if (role === "insert") koText = moodKo || sceneKo || roleDescKo[role]!;
         else if (role === "resolve") koText = camKo && sceneKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || camKo || roleDescKo[role]!;
         else koText = sceneKo || vpKo || roleDescKo[role]!;
+        // 2차: 영어 prompt에서 핵심 구절 추출 (Cut-level 한국어가 너무 짧으면)
+        if (koText.length < 8 && prompt.length > 15) {
+          const stripped = prompt
+            .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
+            .replace(/^(eye-level|high angle|low angle|dutch angle)\s*,?\s*/gi, "")
+            .replace(/^(slow\s+)?(push[- ]?in|pull[- ]?back|pan|tilt|orbit|tracking|dolly|drift)\s*,?\s*/gi, "")
+            .trim();
+          const firstClause = stripped.split(/[.,;]/).filter(c => c.trim().length > 5)[0]?.trim() || "";
+          if (firstClause.length > 5) {
+            koText = firstClause.split(/\s+/).slice(0, 8).join(" ");
+          }
+        }
         shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 80);
       }
     }
