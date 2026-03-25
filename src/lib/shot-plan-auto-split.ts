@@ -69,6 +69,8 @@ export interface AutoSplitInput {
   beatHint?: ShotBeatHint;
   /** 스타일 접미사 */
   styleSuffix?: string;
+  /** 감독 시그니처 카메라 워크 */
+  directorCameraWork?: string;
 }
 
 export interface AutoSplitResult {
@@ -219,6 +221,7 @@ export function planAutoSplitShots(input: AutoSplitInput): AutoSplitResult {
       camera: input.camera,
       beatHint: input.beatHint,
       styleSuffix: input.styleSuffix,
+      directorCameraWork: input.directorCameraWork,
     });
 
     const compressedPrompt = compressAutoSplitPrompt(splitResult.shots, input);

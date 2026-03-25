@@ -473,6 +473,7 @@ export async function generatePrompt(
           camera: { framing: "MS", angle: "eye-level", motion: "steady" },
           sceneType: cut.shotCategory,
           styleSuffix: cut.videoPrompt?.includes("No text") ? "No text, no watermark" : undefined,
+          directorCameraWork: director?.signatureTechniques?.cameraWork,
         };
         const autoResult = planAutoSplitShots(splitInput);
         if (autoResult.validation.passed && autoResult.shots.length >= 3) {

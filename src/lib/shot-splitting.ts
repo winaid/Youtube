@@ -217,6 +217,114 @@ const SCENE_SPLIT_TEMPLATES: Record<string, SplitTemplate> = {
 };
 
 // ═══════════════════════════════════════════════════════════════════
+// 3b. Director-specific shot pattern overrides
+// ═══════════════════════════════════════════════════════════════════
+
+/** 감독 cameraWork 키워드 → shot 패턴 매핑 */
+interface DirectorShotOverride {
+  /** shot별 프레이밍 오버라이드 (인덱스별) */
+  framings: string[];
+  /** shot별 모션 오버라이드 */
+  motions: string[];
+  /** shot별 앵글 오버라이드 (optional) */
+  angles?: string[];
+}
+
+/**
+ * 감독 cameraWork 문자열에서 시그니처 shot 패턴을 추출.
+ * 매칭 안 되면 undefined → 기본 템플릿 사용.
+ */
+function resolveDirectorShotPattern(cameraWork: string | undefined, shotCount: number): DirectorShotOverride | undefined {
+  if (!cameraWork) return undefined;
+  const cw = cameraWork.toLowerCase();
+
+  // ── 봉준호: 수직 이동, 공간 계층, 의도적 움직임 ──
+  if (/vertical movement|stairs|spatial hierarchy/i.test(cw)) {
+    return {
+      framings: ["WS", "MS", "CU", "WS", "ECU", "MS"].slice(0, shotCount),
+      motions:  ["slow crane down", "steady tracking", "slow push-in", "slow crane up", "static", "slow dolly"].slice(0, shotCount),
+      angles:   ["high_angle", "eye_level", "eye_level", "low_angle", "eye_level", "high_angle"].slice(0, shotCount),
+    };
+  }
+
+  // ── 박찬욱: 대칭, 느린 횡이동, 거울 반사 ──
+  if (/symmetry|lateral tracking|mirror/i.test(cw)) {
+    return {
+      framings: ["MS", "WS", "ECU", "MS", "CU", "WS"].slice(0, shotCount),
+      motions:  ["slow lateral track", "slow pull-back", "static", "slow lateral track", "slow push-in", "slow orbit"].slice(0, shotCount),
+    };
+  }
+
+  // ── 웨스 앤더슨: 정중앙 대칭, 평면 프레이밍, 수평 이동만 ──
+  if (/dead-center|flat frontal|horizontal-only/i.test(cw)) {
+    return {
+      framings: ["WS", "MS", "WS", "CU", "MS", "WS"].slice(0, shotCount),
+      motions:  ["static", "slow pan", "static", "static", "slow pan", "slow pull-back"].slice(0, shotCount),
+    };
+  }
+
+  // ── 핀처: 정밀한 카메라, 어두운 톤, 느린 줌 ──
+  if (/precise|meticulous|methodical|clinical.*camera/i.test(cw)) {
+    return {
+      framings: ["MS", "CU", "WS", "ECU", "MS", "CU"].slice(0, shotCount),
+      motions:  ["slow dolly", "imperceptible push-in", "slow crane", "static", "tracking", "slow push-in"].slice(0, shotCount),
+    };
+  }
+
+  // ── 빌뇌브: 광활한 공중샷, 스케일 강조, 최소 움직임 ──
+  if (/vast aerial|immense scale|minimal movement/i.test(cw)) {
+    return {
+      framings: ["WS", "WS", "MS", "ECU", "WS", "CU"].slice(0, shotCount),
+      motions:  ["slow aerial drift", "slow dolly forward", "static", "static", "slow crane up", "slow push-in"].slice(0, shotCount),
+      angles:   ["overhead", "eye_level", "eye_level", "eye_level", "high_angle", "eye_level"].slice(0, shotCount),
+    };
+  }
+
+  // ── 타란티노: 로우앵글, 트렁크샷, 긴 대화 ──
+  if (/low.?angle|trunk shot|conversation/i.test(cw)) {
+    return {
+      framings: ["WS", "MCU", "CU", "WS", "ECU", "MS"].slice(0, shotCount),
+      motions:  ["slow dolly", "static", "slow push-in", "slow pan", "static", "tracking"].slice(0, shotCount),
+      angles:   ["low_angle", "eye_level", "eye_level", "low_angle", "eye_level", "low_angle"].slice(0, shotCount),
+    };
+  }
+
+  // ── 미야자키: 넓은 공간, 자연 속 인물, 공중 비행 ──
+  if (/sweeping|nature|pastoral|flight|soaring/i.test(cw)) {
+    return {
+      framings: ["WS", "MS", "WS", "CU", "WS", "MS"].slice(0, shotCount),
+      motions:  ["slow aerial pan", "gentle tracking", "slow drift", "static", "slow crane up", "gentle tracking"].slice(0, shotCount),
+    };
+  }
+
+  // ── 왕가위: 핸드헬드, 스텝 프린팅, 슬로모 ──
+  if (/handheld|step.?print|smeared|blur/i.test(cw)) {
+    return {
+      framings: ["MS", "CU", "WS", "MCU", "ECU", "MS"].slice(0, shotCount),
+      motions:  ["handheld drift", "handheld close", "slow motion pan", "handheld", "static", "handheld drift"].slice(0, shotCount),
+    };
+  }
+
+  // ── 누아르/레프: 네온, 미니멀 대사, 느린 드라이빙 ──
+  if (/neon|minimal.*dialogue|driving|slow.*burn/i.test(cw)) {
+    return {
+      framings: ["WS", "CU", "MS", "ECU", "WS", "CU"].slice(0, shotCount),
+      motions:  ["slow dolly", "static", "slow tracking", "static", "slow crane", "slow push-in"].slice(0, shotCount),
+    };
+  }
+
+  // ── 고레에다: 일상, 자연광, 관찰적 ──
+  if (/observational|naturalistic|still.*camera|documentary/i.test(cw)) {
+    return {
+      framings: ["MS", "WS", "MCU", "MS", "CU", "WS"].slice(0, shotCount),
+      motions:  ["static", "static", "static", "slow pan", "static", "slow pull-back"].slice(0, shotCount),
+    };
+  }
+
+  return undefined;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 4. Shot Splitting
 // ═══════════════════════════════════════════════════════════════════
 
@@ -315,6 +423,8 @@ export function splitSingleShotSequence(input: {
   camera: { framing: string; angle: string; motion: string };
   beatHint?: ShotBeatHint;
   styleSuffix?: string;
+  /** 감독 시그니처 카메라 워크 (directors.ts의 signatureTechniques.cameraWork) */
+  directorCameraWork?: string;
 }): SplitResult {
   const progression = detectShotProgression(input.action, input.subjectPrimary);
 
@@ -357,6 +467,12 @@ export function splitSingleShotSequence(input: {
   const shots: ShotDescriptor[] = [];
   const splitLog: string[] = [];
 
+  // 감독 시그니처 shot 패턴 (있으면 템플릿 오버라이드)
+  const directorPattern = resolveDirectorShotPattern(input.directorCameraWork, shotCount);
+  if (directorPattern) {
+    splitLog.push(`[shot-split] Director shot pattern applied (${shotCount} shots)`);
+  }
+
   for (let i = 0; i < shotCount; i++) {
     const tmpl = template.shots[i] || template.shots[template.shots.length - 1];
     const timing = timings[i];
@@ -378,16 +494,18 @@ export function splitSingleShotSequence(input: {
       shotFocus = tmpl.focusTemplate.replace("{env}", input.environment.slice(0, 60));
     }
 
-    // 멀티샷에서는 모든 shot이 템플릿 프레이밍 사용 (원본은 단일 샷 디폴트)
-    // hook 시퀀스의 첫 샷은 반드시 WS로 강제
+    // ── 감독 패턴 우선, 없으면 템플릿 프레이밍 ──
     const isHookFirstShot = i === 0 && beatHint === "hook";
-    let framing = isHookFirstShot ? "WS" : tmpl.framingHint;
+    let framing = isHookFirstShot ? "WS"
+      : directorPattern?.framings[i] || tmpl.framingHint;
+    const shotMotion = directorPattern?.motions[i] || (isHookFirstShot ? "slow pan" : tmpl.motionHint);
+    const shotAngle = directorPattern?.angles?.[i] || input.camera.angle;
+
     // 인접 shot 프레이밍 중복 방지 — 같은 사이즈 연속 금지
     if (i > 0 && shots[i - 1]) {
       const prevFraming = shots[i - 1].camera.framing;
       const sameSize = (f: string) => /^(CU|ECU|MCU)$/i.test(f) ? "tight" : /^(WS|LS|EWS)$/i.test(f) ? "wide" : "mid";
       if (sameSize(framing) === sameSize(prevFraming)) {
-        // tight→tight이면 wide로, wide→wide이면 MS로
         framing = sameSize(framing) === "tight" ? "WS" : sameSize(framing) === "wide" ? "MS" : "CU";
       }
     }
@@ -409,8 +527,8 @@ export function splitSingleShotSequence(input: {
       endSec: timing.endSec,
       camera: {
         framing,
-        angle: input.camera.angle,
-        motion: isHookFirstShot ? "slow pan" : tmpl.motionHint,
+        angle: shotAngle,
+        motion: shotMotion,
       },
       subject: shotSubject,
       action: shotAction,
