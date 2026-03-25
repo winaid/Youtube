@@ -1617,18 +1617,14 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         ...(canonicalVideoPromptJson ? { videoPromptJson: canonicalVideoPromptJson } : {}),
         ...(cut.extendPromptJson ? { extendPromptJson: cut.extendPromptJson } : {}),
         // Custom Element 제거됨 (v2에서 VEO Reference Images로 구현 예정)
-        // ── Continuity metadata (continuitySegment가 있으면 전달) ──
-        ...(cut.continuitySegment ? {
+        // ── Continuity metadata — characterLock/visualLock은 항상 전달 (separate_clips 인물 일관성 필수) ──
+        ...((cut.continuitySegment || cut.characterConsistency) ? {
           continuityMeta: {
-            segmentIndex: cut.continuitySegment.segmentIndex ?? 0,
+            segmentIndex: cut.continuitySegment?.segmentIndex ?? 0,
             totalSegments: cutsRef.current.length,
-            isLastSegment: cut.continuitySegment.isLastSegment ?? (cutNumber === cutsRef.current.length),
-            prevEndState: cut.continuitySegment.startState as unknown as Record<string, unknown> | undefined,
+            isLastSegment: cut.continuitySegment?.isLastSegment ?? (cutNumber === cutsRef.current.length),
+            prevEndState: cut.continuitySegment?.startState as unknown as Record<string, unknown> | undefined,
             characterLock: cut.characterConsistency || "",
-            // Client sends the raw styleSuffix — server's extractCompactVisualLock()
-            // is authoritative about what to keep (medium, material, palette, light)
-            // and what to discard (aspect ratio, "no text", emotional tone).
-            // Empty string = omit visual lock entirely (style is already in the prompt).
             visualLock: cut.videoPromptJson?.styleSuffix || "",
           },
         } : {}),
