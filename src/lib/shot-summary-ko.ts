@@ -236,8 +236,20 @@ export function generateShotSummaryKo(
     return parts.join(" ");
   }
 
-  // Fallback to role-based template
-  return ROLE_FALLBACK_KO[role || "establish"] || "장면";
+  // Fallback: role 기반 + 프롬프트 첫 핵심 정보
+  const roleFallback = ROLE_FALLBACK_KO[role || "establish"] || "장면";
+  // 프롬프트에서 shot size 뒤 첫 구절을 추출하여 보충
+  const afterShot = prompt.replace(/^(wide|medium|close[- ]?up|extreme|tight|overhead|establishing|eye-level|high angle|low angle)[^.]*\.\s*/gi, "").trim();
+  if (afterShot.length > 10) {
+    // 첫 구절 (마침표/콤마 기준) 50자까지
+    const firstClause = afterShot.split(/[.,]/).filter(c => c.trim().length > 5)[0]?.trim() || "";
+    if (firstClause.length > 5) {
+      // 간단한 핵심어 추출 (명사/형용사 위주)
+      const words = firstClause.split(/\s+/).slice(0, 6).join(" ");
+      return `${roleFallback} — ${words}`;
+    }
+  }
+  return roleFallback;
 }
 
 /**

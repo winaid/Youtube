@@ -376,11 +376,12 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 <div
                   className="rounded px-1 py-0.5 transition-all min-h-[24px]"
                 >
-                  {/* 한국어 프롬프트 — LLM 생성 promptKo 우선, 없으면 자동 생성 */}
+                  {/* 한국어 프롬프트 (메인) + 영어 원문 (접힌 상태) */}
                   {(() => {
                     const koSummary = shot.promptKo
                       || (shot.prompt ? generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)) : "");
-                    return koSummary ? (
+                    const hasPrompt = shot.prompt && shot.prompt.trim().length > 0;
+                    return hasPrompt ? (
                       <>
                         <div
                           className="text-[12px] font-sans text-gray-900 leading-relaxed cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
@@ -390,17 +391,20 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                             setEditDraft(shot.prompt);
                           }}
                         >
-                          {koSummary}
+                          {koSummary || shot.prompt.slice(0, 80)}
                         </div>
-                        <div
-                          className="mt-1 text-[9px] font-mono text-gray-400 leading-snug break-all line-clamp-2 cursor-pointer hover:line-clamp-none"
-                          onClick={() => {
-                            setEditingIndex(shot.index);
-                            setEditDraft(shot.prompt);
-                          }}
-                        >
-                          {shot.prompt}
-                        </div>
+                        <details className="mt-0.5">
+                          <summary className="text-[8px] text-gray-400 cursor-pointer select-none">원문 (EN)</summary>
+                          <div
+                            className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all cursor-pointer"
+                            onClick={() => {
+                              setEditingIndex(shot.index);
+                              setEditDraft(shot.prompt);
+                            }}
+                          >
+                            {shot.prompt}
+                          </div>
+                        </details>
                       </>
                     ) : (
                       <div

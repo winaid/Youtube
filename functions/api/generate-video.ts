@@ -634,11 +634,31 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           extendDowngradedToGenerate = true;
         }
 
+        // ── image-to-video 모드: 멀티샷 타임스탬프 제거 ──────────────
+        // VEO image-to-video는 시작 이미지 기준 연속 영상 생성 → 타임스탬프 무시됨
+        // 타임스탬프 brackets를 제거하고 첫 번째 샷 프롬프트만 사용
+        let generatePrompt = rendered.timestampPrompt;
+        if (validFirst) {
+          // 타임스탬프 제거: "[00:00-00:02] ..." → 첫 번째 샷 내용만
+          const firstShotMatch = generatePrompt.match(/\[00:00[^\]]*\]\s*(.+?)(?:\n\[|$)/s);
+          if (firstShotMatch) {
+            // 글로벌 앵커(첫 줄, 타임스탬프 아닌 줄) + 첫 번째 샷 프롬프트
+            const nonTimestampLines = generatePrompt.split("\n").filter(l => !l.startsWith("["));
+            const anchor = nonTimestampLines.filter(l => l.trim()).join(" ").trim();
+            generatePrompt = anchor ? `${anchor} ${firstShotMatch[1].trim()}` : firstShotMatch[1].trim();
+            console.info("[generate-video] image-to-video: stripped multishot timestamps, using first shot only", {
+              originalLen: rendered.timestampPrompt.length,
+              strippedLen: generatePrompt.length,
+            });
+          }
+        }
+
         console.info("[generate-video] VEO GENERATE mode selected", {
           elapsedMs: Date.now() - tServerStart,
           hasImage: !!validFirst,
           model: modelUsed,
           duration: 8,
+          imageToVideoSimplified: !!validFirst,
         });
         console.info("[generate-video] Before VEO GENERATE API call", {
           elapsedMs: Date.now() - tServerStart,
@@ -647,12 +667,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),
           generateAudio,
           hasImage: !!validFirst,
-          promptLen: rendered.timestampPrompt.length,
+          promptLen: generatePrompt.length,
           personGeneration: req.personGeneration || "allow_all",
         });
         const tVeoStart = Date.now();
         const result = await veoGenerate(context.env, {
-          prompt: rendered.timestampPrompt,
+          prompt: generatePrompt,
           model: modelUsed,
           durationSeconds: 8,
           aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),
