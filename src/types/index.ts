@@ -806,6 +806,7 @@ export const DEFAULT_VIDEO_CONFIG: VideoGenerationConfig = {
   autoVerifyPrompts: true,
   autoEnglishRefine: true,
   cinematography: { lighting: [], composition: [], lens: [], cameraMove: [], countryStyle: [], colorGrade: [] },
+  separateClips: false,
 };
 
 // ===== Duration 추적 메타 =====

@@ -604,70 +604,79 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         if (cParts.length > 0) continuityPrefix = cParts.join(". ") + ". ";
       }
 
-      // 각 subshot을 개별 VEO 요청으로 전송 (타임스탬프 프롬프트 미사용)
-      const clipOperations: Array<{
-        shotIndex: number;
-        role: string;
-        durationSec: number;
-        operationName: string;
-        prompt: string;
-      }> = [];
-      const errors: Array<{ shotIndex: number; error: string }> = [];
+      // 각 subshot을 병렬 VEO 요청으로 전송 (타임스탬프 프롬프트 미사용)
+      // firstFrameBase64는 첫 번째 샷에만 전달 (image-to-video)
+      const strippedFirst = req.firstFrameBase64 ? stripDataPrefix(req.firstFrameBase64) : "";
+      const validFirstSC = strippedFirst.length > 100 ? strippedFirst : "";
 
-      for (const shot of req.multiShot) {
+      // 병렬 요청을 위한 task 배열 구성
+      const shotTasks = req.multiShot.map((shot) => {
         const shotDuration = Math.max(2, Math.min(8, Math.round(parseFloat(shot.duration) || 2)));
-        // 서브샷 프롬프트 정화 (영어 전용, 한글 제거)
         let shotPrompt = stripInternalTags(shot.prompt);
         shotPrompt = deduplicatePromptClauses(shotPrompt);
         shotPrompt = stripTextForVeo(shotPrompt);
 
         if (!shotPrompt || shotPrompt.trim().length < 10) {
-          errors.push({ shotIndex: shot.index, error: `Shot ${shot.index} prompt too short after cleanup` });
-          continue;
+          return { shot, shotDuration, shotPrompt: null, skip: `Shot ${shot.index} prompt too short after cleanup` };
         }
 
-        // continuity prefix 주입 (첫 번째 샷에만 — 이후 샷은 독립 생성)
         if (continuityPrefix && shot.index === 1) {
           shotPrompt = continuityPrefix + shotPrompt;
         }
-
-        // TEXT_FREE_DIRECTIVE
         if (!shotPrompt.includes("no text")) {
           shotPrompt = "no text, no watermark. " + shotPrompt;
         }
 
-        console.info(`[generate-video] SEPARATE_CLIPS shot ${shot.index}/${req.multiShot.length}`, {
-          elapsedMs: Date.now() - tServerStart,
-          role: shot.role || "develop",
-          duration: shotDuration,
-          promptLen: shotPrompt.length,
-          promptPreview: shotPrompt.slice(0, 100),
-        });
+        return { shot, shotDuration, shotPrompt, skip: null };
+      });
 
-        try {
+      // 병렬 VEO 요청 실행
+      const results = await Promise.allSettled(
+        shotTasks.map(async (task) => {
+          if (task.skip) throw new Error(task.skip);
+
+          console.info(`[generate-video] SEPARATE_CLIPS shot ${task.shot.index}/${req.multiShot!.length}`, {
+            elapsedMs: Date.now() - tServerStart,
+            role: task.shot.role || "develop",
+            duration: task.shotDuration,
+            promptLen: task.shotPrompt!.length,
+          });
+
           const result = await veoGenerate(context.env, {
-            prompt: shotPrompt,
+            prompt: task.shotPrompt!,
             model: modelUsedSC,
-            durationSeconds: shotDuration,
+            durationSeconds: task.shotDuration,
             aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),
             resolution: "720p",
             personGeneration: (req.personGeneration as "allow_all" | "allow_adult" | "dont_allow") || "allow_all",
             generateAudio: generateAudioSC,
+            // 첫 번째 샷에만 firstFrame 전달 (image-to-video)
+            ...(task.shot.index === 1 && validFirstSC ? { imageBase64: validFirstSC, imageMimeType: "image/png" } : {}),
           });
 
-          clipOperations.push({
-            shotIndex: shot.index,
-            role: shot.role || "develop",
-            durationSec: shotDuration,
+          return {
+            shotIndex: task.shot.index,
+            role: task.shot.role || "develop",
+            durationSec: task.shotDuration,
             operationName: result.operationName,
-            prompt: shotPrompt,
-          });
-        } catch (shotErr) {
-          const errMsg = shotErr instanceof Error ? shotErr.message : String(shotErr);
-          console.error(`[generate-video] SEPARATE_CLIPS shot ${shot.index} failed:`, errMsg);
-          errors.push({ shotIndex: shot.index, error: errMsg });
+            prompt: task.shotPrompt!,
+          };
+        }),
+      );
+
+      // 결과 취합
+      const clipOperations: Array<{
+        shotIndex: number; role: string; durationSec: number; operationName: string; prompt: string;
+      }> = [];
+      const errors: Array<{ shotIndex: number; error: string }> = [];
+
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") {
+          clipOperations.push(r.value);
+        } else {
+          errors.push({ shotIndex: shotTasks[i].shot.index, error: r.reason?.message || String(r.reason) });
         }
-      }
+      });
 
       const serverTotalMs = Date.now() - tServerStart;
       console.info("[generate-video] SEPARATE_CLIPS complete", {
@@ -677,8 +686,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         totalShots: req.multiShot.length,
       });
 
+      const primaryOpName = clipOperations[0]?.operationName || `separate_clips_${Date.now()}`;
       return Response.json({
         separateClips: true,
+        taskId: primaryOpName,
+        operationName: primaryOpName,
         engine: "veo",
         modelUsed: modelUsedSC,
         modeUsed: "generate",
