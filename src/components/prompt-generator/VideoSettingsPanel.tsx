@@ -584,6 +584,29 @@ export default function VideoSettingsPanel({
 
             {/* 프롬프트 강도 조절 슬라이더 */}
             <div className="space-y-1.5">
+
+            {/* 컷별 개별 생성 (separate_clips) */}
+            <Separator style={{ background: "#c4b80030" }} />
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs">컷별 개별 생성 후 하드컷 편집</Label>
+                <p className="text-[10px] text-muted-foreground">각 샷을 별도 생성한 뒤 순서대로 이어붙입니다. 개별 샷 재생성 가능.</p>
+              </div>
+              <button
+                className="relative w-10 h-5 rounded-full transition-colors"
+                style={{ background: config.separateClips ? "#7c3aed" : "#ccc" }}
+                onClick={() => update({ separateClips: !config.separateClips })}
+              >
+                <div
+                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                  style={{ left: config.separateClips ? "22px" : "2px" }}
+                />
+              </button>
+            </div>
+            <Separator style={{ background: "#c4b80030" }} />
+            </div>
+
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">감독 스타일 강도</Label>
                 <span className="text-[10px] font-mono" style={{ color: "#7c3aed" }}>{config.styleIntensity}%</span>

@@ -1950,19 +1950,69 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
             error: `separate_clips 전체 실패: ${failedShots.join("; ")}`,
           });
         } else {
-          // 첫 번째 클립을 대표 videoUri로 사용 (조립 전)
-          // separateClipUris에 모든 개별 URI 저장
+          // 개별 clip URI 저장
           updateClip(cutNumber, {
-            status: "completed",
-            videoUri: completedClips[0].videoUri,
             separateClipUris: completedClips,
-            completedAt: Date.now(),
-            ...(failedShots.length > 0 ? { error: `${failedShots.length}개 샷 실패: ${failedShots.join("; ")}` } : {}),
+            assemblyMethod: "hard_cut",
           });
-          console.log(`[CUT ${cutNumber}] SEPARATE_CLIPS 완료: ${completedClips.length}/${data.clipOperations.length} 성공`, {
+
+          console.log(`[CUT ${cutNumber}] SEPARATE_CLIPS polling 완료: ${completedClips.length}/${data.clipOperations.length} 성공`, {
             clipUris: completedClips.map(c => ({ shot: c.shotIndex, uri: c.videoUri.slice(0, 60) })),
             failed: failedShots,
           });
+
+          // ── hard-cut stitch: FFmpeg.wasm concat ──
+          if (completedClips.length >= 2) {
+            try {
+              updateClip(cutNumber, { status: "polling" }); // "encoding" 대신 기존 상태 재사용
+              console.log(`[CUT ${cutNumber}] hard-cut stitch 시작: ${completedClips.length}개 clip`);
+
+              const { fetchClipBlobs, concatClips } = await import("@/lib/client-stitch");
+              const { loadFFmpeg } = await import("@/lib/ffmpeg-wasm-loader");
+
+              // MontageClip shape으로 변환
+              const montageClips = completedClips.map(c => ({
+                cutNumber: c.shotIndex,
+                videoUri: c.videoUri,
+                durationSec: c.durationSec,
+                status: "completed" as const,
+              }));
+
+              const clipBlobs = await fetchClipBlobs(montageClips);
+              const ffmpeg = await loadFFmpeg();
+              const stitchedData = await concatClips(ffmpeg, clipBlobs);
+
+              // Blob URL 생성
+              const stitchedBlob = new Blob([stitchedData.buffer as ArrayBuffer], { type: "video/mp4" });
+              const stitchedUrl = URL.createObjectURL(stitchedBlob);
+
+              updateClip(cutNumber, {
+                status: "completed",
+                videoUri: stitchedUrl,
+                completedAt: Date.now(),
+                ...(failedShots.length > 0 ? { error: `${failedShots.length}개 샷 실패 (부분 조립): ${failedShots.join("; ")}` } : {}),
+              });
+              console.log(`[CUT ${cutNumber}] hard-cut stitch 완료: ${stitchedData.length} bytes`);
+            } catch (stitchErr) {
+              // 조립 실패 시 개별 clip 유지, 첫 번째 clip을 대표 URI로
+              const errMsg = stitchErr instanceof Error ? stitchErr.message : String(stitchErr);
+              console.error(`[CUT ${cutNumber}] hard-cut stitch 실패:`, errMsg);
+              updateClip(cutNumber, {
+                status: "completed",
+                videoUri: completedClips[0].videoUri,
+                completedAt: Date.now(),
+                error: `조립 실패 — 개별 클립만 생성됨: ${errMsg}`,
+              });
+            }
+          } else {
+            // 1개 clip만 성공 → 그대로 사용
+            updateClip(cutNumber, {
+              status: "completed",
+              videoUri: completedClips[0].videoUri,
+              completedAt: Date.now(),
+              ...(failedShots.length > 0 ? { error: `${failedShots.length}개 샷 실패: ${failedShots.join("; ")}` } : {}),
+            });
+          }
         }
       } else {
         // 기존 단일 operationName polling

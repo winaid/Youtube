@@ -721,8 +721,9 @@ export default function VideoGenerationPanel({
                 {clip.sentPromptKoSummary && (
                   <div className="px-3 pb-2">
                     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-                      <span className="text-[10px] font-semibold block mb-0.5" style={{ color: "#059669" }}>전송된 프롬프트 요약</span>
+                      <span className="text-[10px] font-semibold block mb-0.5" style={{ color: "#059669" }}>최종 전송 프롬프트 요약 (한국어)</span>
                       <span className="text-[12px] text-gray-800 leading-relaxed">{clip.sentPromptKoSummary}</span>
+                      <span className="text-[9px] text-gray-400 block mt-1">Ko 필드 기반 요약 — 영어 원문의 완전 번역이 아닙니다</span>
                     </div>
                   </div>
                 )}

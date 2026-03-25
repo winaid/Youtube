@@ -1840,7 +1840,7 @@ export default function InputPanel({ onGenerate, isLoading, prefillScenario, onP
                         </span>
                       )}
                       <span className="text-[11px] font-semibold truncate">
-                        {getStyleById(rec.mode)?.nameKo || rec.mode}
+                        {getStyleById(rec.mode)?.nameKo || "스타일 미정"}
                       </span>
                     </div>
                     <p className="text-[9px] mt-0.5 leading-snug" style={{ opacity: 0.7 }}>

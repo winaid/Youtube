@@ -247,4 +247,5 @@ Client post step: hard cut 조립 (cross-dissolve/transition 없음)
 | `src/components/prompt-generator/CutCard.tsx` | Per-cut editor, auto-init, one-take toggle |
 | `src/components/prompt-generator/MultiShotEditor.tsx` | Shot-level editing UI |
 | `functions/api/generate-video.ts` | Server enforcement, auto-repair, VEO submission, separate_clips 모드 |
-| `functions/api/_veo-prompt-renderer.ts` | Timestamp formatting, renderSeparateClipShots() |
+| `functions/api/_veo-prompt-renderer.ts` | Timestamp formatting |
+| `src/lib/client-stitch.ts` | FFmpeg.wasm 기반 hard-cut concat (separate_clips 조립) |

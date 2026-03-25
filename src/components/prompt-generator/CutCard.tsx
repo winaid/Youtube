@@ -887,16 +887,16 @@ export default function CutCard({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
           <div>
             <span className="font-medium" style={{ color: "#787fff" }}>카메라: </span>
-            {cut.cameraDirectionKo || cut.cameraDirection}
+            {cut.cameraDirectionKo || "한국어 카메라 연출 미생성"}
             {cut.cameraDirectionKo && cut.cameraDirection && (
-              <span className="text-[9px] text-zinc-500 block mt-0.5">{cut.cameraDirection}</span>
+              <details className="inline"><summary className="text-[8px] text-zinc-400 cursor-pointer">EN</summary><span className="text-[9px] text-zinc-500 block mt-0.5">{cut.cameraDirection}</span></details>
             )}
           </div>
           <div>
             <span className="font-medium" style={{ color: "#c4b800" }}>조명: </span>
-            {cut.moodLightingKo || cut.moodLighting}
+            {cut.moodLightingKo || "한국어 조명 설명 미생성"}
             {cut.moodLightingKo && cut.moodLighting && (
-              <span className="text-[9px] text-zinc-500 block mt-0.5">{cut.moodLighting}</span>
+              <details className="inline"><summary className="text-[8px] text-zinc-400 cursor-pointer">EN</summary><span className="text-[9px] text-zinc-500 block mt-0.5">{cut.moodLighting}</span></details>
             )}
           </div>
         </div>

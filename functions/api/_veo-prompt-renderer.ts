@@ -415,61 +415,6 @@ export function renderVeoPrompt(input: VeoPromptRendererInput): VeoRenderedPromp
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// separate_clips 지원 — 개별 샷 프롬프트 렌더링
-// ═══════════════════════════════════════════════════════════════════
-
-export interface SeparateClipShot {
-  /** 샷 인덱스 (1-based) */
-  index: number;
-  /** 개별 샷 프롬프트 (타임스탬프 없음, VEO에 직접 전송) */
-  prompt: string;
-  /** 듀레이션 (초) */
-  durationSec: number;
-  /** 역할 */
-  role: string;
-  /** 네거티브 프롬프트 */
-  negativePrompt: string;
-}
-
-/**
- * separate_clips 모드용 — 멀티샷 배열을 개별 샷 프롬프트 배열로 변환.
- * 타임스탬프 형식 미사용. 각 샷이 독립 VEO 요청으로 전송됨.
- *
- * @param multiShot 기존 멀티샷 배열
- * @param basePrompt 베이스 프롬프트 (멀티샷 없을 때 fallback)
- * @param negativePrompt 네거티브 프롬프트
- * @returns 개별 샷 프롬프트 배열
- */
-export function renderSeparateClipShots(
-  multiShot: Array<{ index: number; prompt: string; duration: string; role?: string }> | undefined,
-  basePrompt: string,
-  negativePrompt: string,
-): SeparateClipShot[] {
-  const defaultNeg = negativePrompt || "text overlay, watermark, logo, blurry, distorted face";
-
-  if (!multiShot || multiShot.length < 2) {
-    // 멀티샷 없으면 기본 4샷 자동 생성 후 개별 반환
-    const structure = SHOT_STRUCTURES.FOUR;
-    const defaults = buildDefaultMultiShot(basePrompt, structure);
-    return defaults.map(shot => ({
-      index: shot.index,
-      prompt: shot.prompt,
-      durationSec: shot.endSec - shot.startSec,
-      role: shot.role || "develop",
-      negativePrompt: defaultNeg,
-    }));
-  }
-
-  return multiShot.map(shot => ({
-    index: shot.index,
-    prompt: stripInternalTags(shot.prompt),
-    durationSec: Math.max(2, Math.min(8, Math.round(parseFloat(shot.duration) || 2))),
-    role: shot.role || "develop",
-    negativePrompt: defaultNeg,
-  }));
-}
-
 /**
  * 프롬프트에서 글로벌 스타일 앵커를 추출.
  */
