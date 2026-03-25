@@ -650,7 +650,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
               originalLen: rendered.timestampPrompt.length,
               strippedLen: generatePrompt.length,
             });
+          } else {
+            console.warn("[generate-video] image-to-video: timestamp regex match failed, proceeding with full multishot timestamps");
           }
+        }
+
+        // TEXT_FREE_DIRECTIVE — generate 경로에서도 텍스트/워터마크 방지
+        if (!generatePrompt.includes("no text")) {
+          generatePrompt = "no text, no watermark. " + generatePrompt;
         }
 
         console.info("[generate-video] VEO GENERATE mode selected", {

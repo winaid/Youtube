@@ -202,6 +202,16 @@ export function validateMultiShots(
       }
     }
 
+    // promptKo 검증
+    if (!shot.promptKo || shot.promptKo.trim().length === 0) {
+      shotIssues.push({
+        shotIndex: shot.index,
+        field: "prompt",
+        severity: "warning",
+        message: "한국어 요약이 비어있습니다.",
+      });
+    }
+
     // duration 최소값
     const dur = parseFloat(shot.duration) || 0;
     if (dur < VEO_MIN_SHOT_DURATION) {

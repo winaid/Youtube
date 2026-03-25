@@ -716,7 +716,7 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
         else if (role === "insert") koText = moodKo || sceneKo || roleDescKo[role]!;
         else if (role === "resolve") koText = camKo && sceneKo ? `${camKo}, ${sceneKo.slice(0, 15)}` : sceneKo || camKo || roleDescKo[role]!;
         else koText = sceneKo || vpKo || roleDescKo[role]!;
-        shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 40);
+        shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 80);
       }
     }
   }

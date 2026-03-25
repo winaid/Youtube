@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import type { MultiShotPrompt, ShotRole, Cut } from "@/types";
 import { SHOT_ROLE_META, SHOT_ROLES } from "@/types";
+import { ROLE_KO } from "@/lib/multi-shot-planner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -150,8 +151,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
           // Only overwrite if promptKo matches the old role's auto-generated label
           const oldRole = s.role ?? inferShotRole(s.index - 1, shots.length);
           const oldLabel = SHOT_ROLE_META[oldRole].label;
-          if (s.promptKo === oldLabel || s.promptKo.startsWith(oldLabel)) {
-            patch.promptKo = SHOT_ROLE_META[role].label;
+          const oldRoleKo = ROLE_KO[oldRole] ?? oldLabel;
+          if (s.promptKo === oldLabel || s.promptKo === oldRoleKo || s.promptKo.startsWith(oldLabel)) {
+            // promptKo를 ROLE_KO (상세 설명) 사용 — multishot-validation과 일관성 유지
+            patch.promptKo = ROLE_KO[role] ?? SHOT_ROLE_META[role].label;
           }
           // else: user has customized promptKo, preserve it
         }
@@ -164,9 +167,12 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
 
   const handlePromptSave = useCallback(
     (shotIndex: number, prompt: string) => {
-      const updated = shots.map((s) =>
-        s.index === shotIndex ? { ...s, prompt } : s,
-      );
+      const updated = shots.map((s) => {
+        if (s.index !== shotIndex) return s;
+        // 프롬프트 변경 시 promptKo 재생성 (한국어 요약을 영어와 동기화)
+        const newPromptKo = generateShotSummaryKo(prompt, s.role ?? inferShotRole(s.index - 1, shots.length));
+        return { ...s, prompt, promptKo: newPromptKo };
+      });
       updateShots(updated);
       setEditingIndex(null);
     },
