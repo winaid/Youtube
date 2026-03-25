@@ -1096,65 +1096,68 @@ export default function CutCard({
                 bgColor="#22c55e10"
                 onSave={(v) => handleFieldSave("endImagePrompt", v)}
               />
-              {/* 한국어 영상 프롬프트 요약 — 사용자가 장면 내용을 한눈에 파악 */}
+              {/* ── 한국어 영상 프롬프트 (메인 표시) ── */}
               {cut.videoPromptKo && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                  <span className="text-[10px] font-semibold block mb-0.5" style={{ color: "#c4b800" }}>장면 요약</span>
+                  <span className="text-[10px] font-semibold block mb-0.5" style={{ color: "#c4b800" }}>영상 프롬프트 ({effectiveDurationSec}초)</span>
                   <span className="text-[13px] text-gray-900 leading-relaxed">{cut.videoPromptKo}</span>
                 </div>
               )}
-              {/* Video Prompt: JSON 뷰 (있으면) + raw string 토글 */}
-              {/* Source: canonical view-model when available, fallback to Cut */}
-              {effectiveVideoPromptJson ? (
-                <>
-                  <JsonPromptView
-                    json={effectiveVideoPromptJson}
-                    label={`영상 프롬프트 (${effectiveDurationSec}초)`}
-                    color="#c4b800"
-                    onSaveField={(field, value) => {
-                      if (onUpdate && effectiveVideoPromptJson) {
-                        onUpdate({
-                          ...cut,
-                          videoPromptJson: { ...effectiveVideoPromptJson, [field]: value },
-                        });
-                      }
-                    }}
-                  />
-                  {/* Multi-shot payload indicator — shows actual generation structure */}
-                  {/* Source: effectiveMultiShot (canonical when available) */}
-                  {effectiveMultiShot.length >= 2 && (
-                    <div
-                      className="rounded-lg p-2 space-y-1"
-                      style={{ background: "#e85d0408", border: "1px solid #e85d0420" }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold" style={{ color: "#e85d04" }}>
-                          실제 생성 페이로드: {effectiveMultiShot.length}샷 멀티샷
-                        </span>
-                        <Badge variant="outline" className="text-[9px] py-0 px-1" style={{ borderColor: "#e85d04", color: "#e85d04" }}>
-                          {cvm ? "CANONICAL" : "MULTI-SHOT"}
-                        </Badge>
-                      </div>
-                      {effectiveMultiShot.map((shot) => (
-                        <div key={shot.index} className="flex items-center gap-2 text-[9px]" style={{ color: "#6b7280" }}>
-                          <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
-                          <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
-                          <span className="truncate flex-1">{shot.promptKo || `${shot.prompt?.slice(0, 60)}${(shot.prompt?.length ?? 0) > 60 ? "…" : ""}`}</span>
-                          {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{koLabel(PURPOSE_KO, shot.role)}</span>}
-                        </div>
-                      ))}
+              {/* ── 멀티샷 한국어 표시 (메인) ── */}
+              {effectiveMultiShot.length >= 2 && (
+                <div
+                  className="rounded-lg p-2 space-y-1"
+                  style={{ background: "#e85d0408", border: "1px solid #e85d0420" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold" style={{ color: "#e85d04" }}>
+                      {effectiveMultiShot.length}샷 멀티샷 구성
+                    </span>
+                    <Badge variant="outline" className="text-[9px] py-0 px-1" style={{ borderColor: "#e85d04", color: "#e85d04" }}>
+                      {cvm ? "CANONICAL" : "MULTI-SHOT"}
+                    </Badge>
+                  </div>
+                  {effectiveMultiShot.map((shot) => (
+                    <div key={shot.index} className="flex items-center gap-2 text-[10px]" style={{ color: "#374151" }}>
+                      <span className="font-mono" style={{ color: "#e85d04", minWidth: 16 }}>#{shot.index}</span>
+                      <span style={{ color: "#9ca3af" }}>{shot.duration}s</span>
+                      <span className="flex-1">{shot.promptKo || `${shot.prompt?.slice(0, 60)}${(shot.prompt?.length ?? 0) > 60 ? "…" : ""}`}</span>
+                      {shot.role && <span className="text-[8px] px-1 rounded" style={{ background: "#e85d0410", color: "#e85d04" }}>{koLabel(PURPOSE_KO, shot.role)}</span>}
                     </div>
-                  )}
-                </>
-              ) : (
-                <EditableField
-                  label={`영상 프롬프트 (${effectiveDurationSec}초)`}
-                  value={effectiveVideoPrompt}
-                  color="#c4b800"
-                  bgColor="#fff78720"
-                  onSave={(v) => handleFieldSave("videoPrompt", v)}
-                />
+                  ))}
+                </div>
               )}
+              {/* ── 영어 프롬프트 (접기 가능 — VEO 전달용 원문 확인) ── */}
+              <details className="group">
+                <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 select-none">
+                  영어 원문 보기 (VEO 전달용)
+                </summary>
+                <div className="mt-1 space-y-2">
+                  {effectiveVideoPromptJson ? (
+                    <JsonPromptView
+                      json={effectiveVideoPromptJson}
+                      label={`영어 프롬프트 (${effectiveDurationSec}초)`}
+                      color="#c4b800"
+                      onSaveField={(field, value) => {
+                        if (onUpdate && effectiveVideoPromptJson) {
+                          onUpdate({
+                            ...cut,
+                            videoPromptJson: { ...effectiveVideoPromptJson, [field]: value },
+                          });
+                        }
+                      }}
+                    />
+                  ) : (
+                    <EditableField
+                      label={`영어 프롬프트 (${effectiveDurationSec}초)`}
+                      value={effectiveVideoPrompt}
+                      color="#c4b800"
+                      bgColor="#fff78720"
+                      onSave={(v) => handleFieldSave("videoPrompt", v)}
+                    />
+                  )}
+                </div>
+              </details>
               {cut.cutNumber > 1 && (
                 <EditableField
                   label="확장 프롬프트 (이전 클립 연장)"
