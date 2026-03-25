@@ -1983,7 +1983,10 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
               const stitchedData = await concatClips(ffmpeg, clipBlobs);
 
               // Blob URL 생성
-              const stitchedBlob = new Blob([stitchedData.buffer as ArrayBuffer], { type: "video/mp4" });
+              // Uint8Array.buffer가 SharedArrayBuffer일 수 있으므로 ArrayBuffer로 복사
+              const safeBuf = new ArrayBuffer(stitchedData.byteLength);
+              new Uint8Array(safeBuf).set(stitchedData);
+              const stitchedBlob = new Blob([safeBuf], { type: "video/mp4" });
               const stitchedUrl = URL.createObjectURL(stitchedBlob);
 
               updateClip(cutNumber, {

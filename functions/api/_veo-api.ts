@@ -404,12 +404,9 @@ export async function veoCheckStatus(
   env: VeoEnv,
   operationName: string,
 ): Promise<VeoTaskStatus> {
-  const headers = veoHeaders(getApiKeys(env)[0]);
-
   const url = `${VEO_API_BASE}/${operationName}`;
-  const res = await fetch(url, {
+  const res = await veoFetchWithKeyFallback(env, url, {
     method: "GET",
-    headers,
   });
 
   const text = await res.text();

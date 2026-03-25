@@ -205,7 +205,7 @@ function serializeSequenceToPrompt(
       prompt: vpjPrompt,
       negatives: ["text overlay", "watermark"],
       framing: seq.videoPromptJson.shotSize || "MS",
-      shotCategory: seq.shotCategory,
+      shotCategory: seq.shotPlan?.shotCategory,
       physicsRules: seq.physicsRules,
       sceneType: seq.sceneType,
       durationSec: 8,

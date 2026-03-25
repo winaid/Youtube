@@ -214,7 +214,10 @@ export function exportStitchedVideo(
   data: Uint8Array,
   projectTitle?: string,
 ): { blobUrl: string; sizeBytes: number } {
-  const blob = new Blob([data.buffer as ArrayBuffer], { type: "video/mp4" });
+  // Uint8Array.buffer가 SharedArrayBuffer일 수 있으므로 ArrayBuffer로 복사
+  const safeBuf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(safeBuf).set(data);
+  const blob = new Blob([safeBuf], { type: "video/mp4" });
   const blobUrl = URL.createObjectURL(blob);
 
   const prefix = projectTitle
