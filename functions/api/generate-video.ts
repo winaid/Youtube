@@ -574,7 +574,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // ═══════════════════════════════════════════════════════════════════
     // separate_clips 모드: 서브샷마다 독립 VEO 요청
     // ═══════════════════════════════════════════════════════════════════
-    if (req.separateClips) {
+    // Image-to-Video + 멀티샷 조합: 자동으로 separate_clips 전환
+    // VEO image-to-video는 타임스탬프를 무시하므로 separate_clips로 처리해야 함
+    const hasImageToVideo = !!req.firstFrameBase64;
+    const hasMultiShot = (req.multiShot && req.multiShot.length >= 2) || rendered.shotCount >= 2;
+    const autoSeparateClips = hasImageToVideo && hasMultiShot && !req.separateClips;
+    if (autoSeparateClips) {
+      console.info("[generate-video] Image-to-Video + multishot detected → auto-enabling separate_clips", {
+        elapsedMs: Date.now() - tServerStart,
+        hasMultiShot: !!req.multiShot,
+        renderedShotCount: rendered.shotCount,
+      });
+    }
+
+    if (req.separateClips || autoSeparateClips) {
       // ── multiShot 자동 생성: separateClips=true인데 multiShot이 없으면 자동 생성 ──
       let effectiveMultiShot = req.multiShot;
       if (!effectiveMultiShot || effectiveMultiShot.length < 2) {
@@ -658,7 +671,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         shotTasks.map(async (task) => {
           if (task.skip) throw new Error(task.skip);
 
-          console.info(`[generate-video] SEPARATE_CLIPS shot ${task.shot.index}/${req.multiShot!.length}`, {
+          console.info(`[generate-video] SEPARATE_CLIPS shot ${task.shot.index}/${effectiveMultiShot.length}`, {
             elapsedMs: Date.now() - tServerStart,
             role: task.shot.role || "develop",
             duration: task.shotDuration,
@@ -706,7 +719,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         serverTotalMs,
         successCount: clipOperations.length,
         errorCount: errors.length,
-        totalShots: req.multiShot.length,
+        totalShots: effectiveMultiShot.length,
       });
 
       const primaryOpName = clipOperations[0]?.operationName || `separate_clips_${Date.now()}`;
@@ -722,7 +735,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         errors: errors.length > 0 ? errors : undefined,
         assembly: {
           method: "hard_cut",
-          totalShots: req.multiShot.length,
+          totalShots: effectiveMultiShot.length,
           successfulShots: clipOperations.length,
         },
         durationMeta: {
