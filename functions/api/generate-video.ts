@@ -593,8 +593,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           : rendered.timestampPrompt;
         // extend 프롬프트에도 동일한 정화 파이프라인 적용 (내부 태그 제거, 중복 제거, VEO 텍스트 정리)
         extendPromptText = stripTextForVeo(stripInternalTags(deduplicatePromptClauses(extendPromptText)));
-        // TEXT_FREE_DIRECTIVE — extend에서도 텍스트/자막 방지 강제
-        if (req.extendPromptJson && !extendPromptText.includes("no text")) {
+        // TEXT_FREE_DIRECTIVE — extend에서도 텍스트/자막 방지 강제 (JSON/timestamp 모두)
+        if (!extendPromptText.includes("no text")) {
           extendPromptText = "no text, no watermark. " + extendPromptText;
         }
         console.info("[generate-video] VEO EXTEND mode selected", {
