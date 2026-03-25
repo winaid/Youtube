@@ -159,7 +159,6 @@ export async function veoGenerate(
   env: VeoEnv,
   req: VeoGenerateRequest,
 ): Promise<{ operationName: string; model: string; durationSent: number }> {
-  const headers = veoHeaders(getApiKeys(env)[0]);
   const model = req.model || VEO_DEFAULT_MODEL;
   const cap = getCapability(model);
   const duration = req.durationSeconds
@@ -225,9 +224,8 @@ export async function veoGenerate(
       console.warn("[_veo-api] inlineData not supported by model — retrying without image/lastFrame");
       const cleanInstance = { prompt: instance.prompt };
       const retryBody = { instances: [cleanInstance], parameters };
-      const retryRes = await fetch(url, {
+      const retryRes = await veoFetchWithKeyFallback(env, url, {
         method: "POST",
-        headers,
         body: JSON.stringify(retryBody),
       });
       text = await retryRes.text();
@@ -243,9 +241,8 @@ export async function veoGenerate(
       console.warn("[_veo-api] generateAudio not supported by model — retrying without audio");
       delete parameters.generateAudio;
       const retryBody = { instances: body.instances, parameters };
-      const retryRes = await fetch(url, {
+      const retryRes = await veoFetchWithKeyFallback(env, url, {
         method: "POST",
-        headers,
         body: JSON.stringify(retryBody),
       });
       text = await retryRes.text();
@@ -291,7 +288,6 @@ export async function veoExtend(
   env: VeoEnv,
   req: VeoExtendRequest,
 ): Promise<{ operationName: string; model: string; durationSent: number }> {
-  const headers = veoHeaders(getApiKeys(env)[0]);
   const model = req.model || VEO_DEFAULT_MODEL;
   const cap = getCapability(model);
 

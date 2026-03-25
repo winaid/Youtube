@@ -781,7 +781,12 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
       const shAny = sh as Record<string, unknown>;
       // 서브샷 prompt 한국어 오염 제거
       if (typeof shAny.prompt === "string" && /[\uAC00-\uD7A3]/.test(shAny.prompt)) {
-        shAny.prompt = stripKorean(shAny.prompt);
+        const stripped = stripKorean(shAny.prompt);
+        // 한국어 제거 후 빈 문자열이면 원본 유지 (전체가 한국어였던 경우)
+        if (stripped.length >= 10) {
+          shAny.prompt = stripped;
+        }
+        // 10자 미만이면 원본 prompt를 유지 — VEO에서 빈 프롬프트 에러 방지
       }
       // prompt 400자 클램핑
       const p = shAny.prompt as string | undefined;
