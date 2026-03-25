@@ -166,12 +166,11 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
   );
 
   const handlePromptSave = useCallback(
-    (shotIndex: number, prompt: string) => {
+    (shotIndex: number, newKoText: string) => {
       const updated = shots.map((s) => {
         if (s.index !== shotIndex) return s;
-        // 프롬프트 변경 시 promptKo 재생성 (한국어 요약을 영어와 동기화)
-        const newPromptKo = generateShotSummaryKo(prompt, s.role ?? inferShotRole(s.index - 1, shots.length));
-        return { ...s, prompt, promptKo: newPromptKo };
+        // 한국어 본문(promptKo)을 직접 편집 — 영어 prompt(VEO용)는 유지
+        return { ...s, promptKo: newKoText };
       });
       updateShots(updated);
       setEditingIndex(null);
@@ -382,35 +381,31 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                 <div
                   className="rounded px-1 py-0.5 transition-all min-h-[24px]"
                 >
-                  {/* 한국어 프롬프트 (메인) + 영어 원문 (접힌 상태) */}
+                  {/* 한국어 본문 (메인) + 영어 원문 (접힌 상태, VEO용) */}
                   {(() => {
-                    const koSummary = shot.promptKo
+                    const koBody = shot.promptKo
                       || (shot.prompt ? generateShotSummaryKo(shot.prompt, shot.role ?? inferShotRole(shot.index - 1, shots.length)) : "");
-                    const hasPrompt = shot.prompt && shot.prompt.trim().length > 0;
-                    return hasPrompt ? (
+                    const hasContent = koBody.trim().length > 0 || (shot.prompt && shot.prompt.trim().length > 0);
+                    return hasContent ? (
                       <>
                         <div
                           className="text-[12px] font-sans text-gray-900 leading-relaxed cursor-pointer hover:ring-1 hover:ring-offset-1 rounded"
                           style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
                           onClick={() => {
                             setEditingIndex(shot.index);
-                            setEditDraft(shot.prompt);
+                            setEditDraft(koBody || shot.prompt);
                           }}
                         >
-                          {koSummary || shot.prompt.slice(0, 80)}
+                          {koBody || shot.prompt}
                         </div>
-                        <details className="mt-0.5">
-                          <summary className="text-[8px] text-gray-400 cursor-pointer select-none">원문 (EN)</summary>
-                          <div
-                            className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all cursor-pointer"
-                            onClick={() => {
-                              setEditingIndex(shot.index);
-                              setEditDraft(shot.prompt);
-                            }}
-                          >
-                            {shot.prompt}
-                          </div>
-                        </details>
+                        {shot.prompt && shot.prompt.trim().length > 0 && (
+                          <details className="mt-0.5">
+                            <summary className="text-[8px] text-gray-400 cursor-pointer select-none">VEO 원문 (EN)</summary>
+                            <div className="mt-0.5 text-[9px] font-mono text-gray-400 leading-snug break-all">
+                              {shot.prompt}
+                            </div>
+                          </details>
+                        )}
                       </>
                     ) : (
                       <div
@@ -418,10 +413,10 @@ export default function MultiShotEditor({ cut, modelId, onUpdate, effectiveMulti
                         style={{ "--tw-ring-color": meta.color } as React.CSSProperties}
                         onClick={() => {
                           setEditingIndex(shot.index);
-                          setEditDraft(shot.prompt);
+                          setEditDraft("");
                         }}
                       >
-                        <span className="text-[11px] text-muted-foreground italic">프롬프트를 입력하세요...</span>
+                        <span className="text-[11px] text-muted-foreground italic">한국어 프롬프트를 입력하세요...</span>
                       </div>
                     );
                   })()}
