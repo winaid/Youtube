@@ -317,45 +317,7 @@ export function generateShotSummaryKo(
     parts.push(`${framingKo} 장면`);
   }
 
-  // ── Layer 2: 영어 구절 추출 (Layer 1 보충용 또는 단독 사용) ──
-  // shot size/angle/camera 지시 제거 후 핵심 내용 추출
-  const stripped = prompt
-    .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
-    .replace(/^(eye-level|high angle|low angle|dutch angle|bird's eye|over-the-shoulder|pov)\s*,?\s*/gi, "")
-    .replace(/^(slow\s+)?(push[- ]?in|pull[- ]?back|pan|tilt|orbit|tracking|dolly|drift|crane|handheld|steadicam|zoom\s+in|zoom\s+out)\s*,?\s*/gi, "")
-    .replace(/^(slow|fast|gentle|subtle)\s+(pan|tilt|push|pull|drift|zoom)\s*,?\s*/gi, "")
-    .trim();
-
-  if (stripped.length > 8) {
-    // 스타일/워터마크 지시문 제거
-    const cleaned = stripped
-      .replace(/\b(no text|no watermark|no subtitle)[^.]*\.?\s*/gi, "")
-      .replace(/\b(fully painted|hand[- ]?painted|oil\/watercolor|impasto|brushwork|wet[- ]?on[- ]?wet|visible brush)[^.]*\.?\s*/gi, "")
-      .replace(/\b(expressive visible|thick impasto)[^.]*\.?\s*/gi, "")
-      .trim();
-    // 최대 5개 구절 추출, 구절당 12단어까지
-    const clauses = cleaned.split(/[.,;]/)
-      .map(c => c.trim())
-      .filter(c => c.length > 5)
-      .slice(0, 5);
-
-    if (clauses.length > 0) {
-      const enSummary = clauses
-        .map(c => c.split(/\s+/).slice(0, 12).join(" "))
-        .join(". ");
-      // Layer 1 한국어 키워드 + Layer 2 영어 구절 결합
-      if (parts.length > 0) {
-        const koPrefix = parts.join(", ");
-        return `${koPrefix}. ${enSummary}`.slice(0, 400);
-      }
-      const roleFallback = ROLE_FALLBACK_KO[role || "establish"]?.split(" — ")[0] || "";
-      return roleFallback
-        ? `${roleFallback} — ${enSummary}`.slice(0, 400)
-        : enSummary.slice(0, 400);
-    }
-  }
-
-  // Layer 1만 있고 Layer 2 실패 시
+  // Layer 1 한국어 키워드만 사용 (영어 구절 혼입 금지)
   if (parts.length > 0) {
     return parts.join(", ").slice(0, 400);
   }
