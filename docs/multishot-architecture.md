@@ -171,6 +171,70 @@ When a model or duration doesn't support multi-shot:
 
 **Export/payload honesty**: If multi-shot is not supported, `multiShot` is `null` in the export JSON. The server strips `multiShot` if `serverMaxShots <= 0`.
 
+## separate_clips 모드
+
+### 개요
+
+기본 모드(8초 멀티샷)는 4개 서브샷을 타임스탬프 프롬프트로 묶어 **1회 VEO 요청**으로 생성한다.
+`separate_clips` 모드는 각 서브샷을 **독립 VEO 요청**으로 보내고, 최종 결과를 **hard cut**으로 조립한다.
+
+### 언제 사용하는가
+
+- 서브샷마다 완전히 다른 시각적 톤/스타일이 필요할 때
+- 개별 샷의 품질 제어가 중요할 때 (실패한 샷만 재생성 가능)
+- 프로덕션 수준 컷바이컷 제어가 필요할 때
+
+### 요청 흐름
+
+```
+Client: { separateClips: true, multiShot: [shot_1, shot_2, shot_3, shot_4] }
+           ↓
+Server: separate_clips 감지
+           ↓
+  shot_1 → veoGenerate(prompt=shot_1.prompt, duration=shot_1.duration)
+  shot_2 → veoGenerate(prompt=shot_2.prompt, duration=shot_2.duration)
+  shot_3 → veoGenerate(prompt=shot_3.prompt, duration=shot_3.duration)
+  shot_4 → veoGenerate(prompt=shot_4.prompt, duration=shot_4.duration)
+           ↓
+Response: { separateClips: true, clipOperations: [...], assembly: { method: "hard_cut" } }
+           ↓
+Client post step: hard cut 조립 (cross-dissolve/transition 없음)
+```
+
+### 타임스탬프 프롬프트와의 차이
+
+| 항목 | 기본 (timestamp) | separate_clips |
+|------|-------------------|----------------|
+| VEO 요청 수 | 1회 | shot 수만큼 |
+| 프롬프트 형식 | `[00:00-00:02] ...` | 플레인 텍스트 (타임스탬프 없음) |
+| 조립 | VEO 내부 | 클라이언트 hard cut |
+| 개별 샷 재생성 | 불가 | 가능 |
+| 연속성 | VEO가 보장 | 프롬프트 일관성으로 유지 |
+
+### 응답 형식
+
+```typescript
+{
+  separateClips: true,
+  clipOperations: [
+    { shotIndex: 1, role: "establish", durationSec: 2, operationName: "op_xxx", prompt: "..." },
+    { shotIndex: 2, role: "develop", durationSec: 2, operationName: "op_yyy", prompt: "..." },
+    ...
+  ],
+  assembly: { method: "hard_cut", totalShots: 4, successfulShots: 4 },
+  errors?: [{ shotIndex: 3, error: "..." }]
+}
+```
+
+### 언어 정책
+
+- **provider/VEO에 보내는 필드**: 영어 전용. 한국어 텍스트는 `stripTextForVeo()`에서 제거됨.
+- **UI에 보여주는 필드**: 한국어 전용.
+  - Ko 필드가 비어 있을 때 영어를 복사하지 않고 반드시 번역/생성.
+  - `promptKo` 생성 시 영어 clause 혼입 금지, 100% 한국어.
+  - `refine/verify`로 영어 prompt가 바뀌면 `sentPromptEn`/`sentPromptKo`를 전송 직전 기준으로 갱신.
+  - UI에는 "실제 전송된 최종 영어 prompt의 한국어 번역본"(`sentPromptKo`)을 표시.
+
 ## Key Files
 
 | File | Owns |
@@ -182,4 +246,5 @@ When a model or duration doesn't support multi-shot:
 | `src/lib/video-generation-core.ts` | Client-side repair, submission, polling |
 | `src/components/prompt-generator/CutCard.tsx` | Per-cut editor, auto-init, one-take toggle |
 | `src/components/prompt-generator/MultiShotEditor.tsx` | Shot-level editing UI |
-| `functions/api/generate-video.ts` | Server enforcement, auto-repair, VEO submission |
+| `functions/api/generate-video.ts` | Server enforcement, auto-repair, VEO submission, separate_clips 모드 |
+| `functions/api/_veo-prompt-renderer.ts` | Timestamp formatting, renderSeparateClipShots() |

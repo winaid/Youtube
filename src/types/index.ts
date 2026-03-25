@@ -1056,6 +1056,10 @@ export interface VideoClip {
   narrationStatus?: "idle" | "generating" | "completed" | "failed";
   /** 오디오 메타 */
   audioMeta?: AudioMeta;
+  /** 실제 provider에 전송된 최종 영어 프롬프트 (refine/verify 후 최종본) */
+  sentPromptEn?: string;
+  /** sentPromptEn의 한국어 번역본 (UI 표시용, 영어 혼입 금지) */
+  sentPromptKo?: string;
 }
 
 // ===== AI 피드백 리뷰 =====

@@ -380,6 +380,15 @@ interface GenerateVideoRequest {
     minShotCount: number;
     editStyle: string;
   };
+  /**
+   * separate_clips 모드 — 서브샷마다 독립 VEO 요청 발송.
+   * true이면:
+   *   - multiShot의 각 shot을 개별 VEO generate 요청으로 보냄
+   *   - 타임스탬프 기반 단일 프롬프트 사용 안 함
+   *   - 응답에 clipOperations[] 배열로 shot별 operationName 반환
+   *   - 최종 조립은 클라이언트 post step에서 hard cut으로 수행
+   */
+  separateClips?: boolean;
 }
 
 function stripDataPrefix(b64: string): string {
@@ -564,6 +573,112 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       promptPreview: rendered.timestampPrompt.slice(0, 200),
       cleanupLog: rendered.cleanupLog,
     });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // separate_clips 모드: 서브샷마다 독립 VEO 요청
+    // ═══════════════════════════════════════════════════════════════════
+    if (req.separateClips && req.multiShot && req.multiShot.length >= 2) {
+      console.info("[generate-video] SEPARATE_CLIPS mode activated", {
+        elapsedMs: Date.now() - tServerStart,
+        shotCount: req.multiShot.length,
+      });
+
+      const physicsNoAtmoSC = req.structuredSequence?.physicsRules && !req.structuredSequence.physicsRules.hasAtmosphere;
+      const generateAudioSC = physicsNoAtmoSC ? false : (req.generateAudio !== false);
+      const modelUsedSC = resolveModelForWorkflow({
+        workflow: req.workflowType,
+        hasImage: !!req.firstFrameBase64,
+        hasSourceVideo: false,
+      });
+
+      // 각 subshot을 개별 VEO 요청으로 전송 (타임스탬프 프롬프트 미사용)
+      const clipOperations: Array<{
+        shotIndex: number;
+        role: string;
+        durationSec: number;
+        operationName: string;
+        prompt: string;
+      }> = [];
+      const errors: Array<{ shotIndex: number; error: string }> = [];
+
+      for (const shot of req.multiShot) {
+        const shotDuration = Math.max(2, Math.min(8, Math.round(parseFloat(shot.duration) || 2)));
+        // 서브샷 프롬프트 정화 (영어 전용, 한글 제거)
+        let shotPrompt = stripInternalTags(shot.prompt);
+        shotPrompt = deduplicatePromptClauses(shotPrompt);
+        shotPrompt = stripTextForVeo(shotPrompt);
+
+        if (!shotPrompt || shotPrompt.trim().length < 10) {
+          errors.push({ shotIndex: shot.index, error: `Shot ${shot.index} prompt too short after cleanup` });
+          continue;
+        }
+
+        // TEXT_FREE_DIRECTIVE
+        if (!shotPrompt.includes("no text")) {
+          shotPrompt = "no text, no watermark. " + shotPrompt;
+        }
+
+        console.info(`[generate-video] SEPARATE_CLIPS shot ${shot.index}/${req.multiShot.length}`, {
+          elapsedMs: Date.now() - tServerStart,
+          role: shot.role || "develop",
+          duration: shotDuration,
+          promptLen: shotPrompt.length,
+          promptPreview: shotPrompt.slice(0, 100),
+        });
+
+        try {
+          const result = await veoGenerate(context.env, {
+            prompt: shotPrompt,
+            model: modelUsedSC,
+            durationSeconds: shotDuration,
+            aspectRatio: toVeoAspectRatio(req.aspectRatio ?? "16:9"),
+            resolution: "720p",
+            personGeneration: (req.personGeneration as "allow_all" | "allow_adult" | "dont_allow") || "allow_all",
+            generateAudio: generateAudioSC,
+          });
+
+          clipOperations.push({
+            shotIndex: shot.index,
+            role: shot.role || "develop",
+            durationSec: shotDuration,
+            operationName: result.operationName,
+            prompt: shotPrompt,
+          });
+        } catch (shotErr) {
+          const errMsg = shotErr instanceof Error ? shotErr.message : String(shotErr);
+          console.error(`[generate-video] SEPARATE_CLIPS shot ${shot.index} failed:`, errMsg);
+          errors.push({ shotIndex: shot.index, error: errMsg });
+        }
+      }
+
+      const serverTotalMs = Date.now() - tServerStart;
+      console.info("[generate-video] SEPARATE_CLIPS complete", {
+        serverTotalMs,
+        successCount: clipOperations.length,
+        errorCount: errors.length,
+        totalShots: req.multiShot.length,
+      });
+
+      return Response.json({
+        separateClips: true,
+        engine: "veo",
+        modelUsed: modelUsedSC,
+        modeUsed: "generate",
+        status: clipOperations.length > 0 ? "RUNNING" : "FAILED",
+        clipOperations,
+        errors: errors.length > 0 ? errors : undefined,
+        assembly: {
+          method: "hard_cut",
+          totalShots: req.multiShot.length,
+          successfulShots: clipOperations.length,
+        },
+        durationMeta: {
+          requestedSecondsPerScene: 8,
+          perShotDurations: clipOperations.map(c => ({ shotIndex: c.shotIndex, durationSec: c.durationSec })),
+          warnings: errors.length > 0 ? [`${errors.length} shot(s) failed`] : [],
+        },
+      });
+    }
 
     // ── Audio: physics override (무대기 환경은 강제 off) ─────────────────────
     const physicsNoAtmo = req.structuredSequence?.physicsRules && !req.structuredSequence.physicsRules.hasAtmosphere;

@@ -1679,6 +1679,29 @@ export function useVideoGeneration({ cuts, sequencePlan: externalSequencePlan, s
         }
       }
 
+      // ── sentPromptEn / sentPromptKo 저장 (refine/verify 후 최종본) ──────
+      // 실제 provider에 전송될 영어 프롬프트를 기록하고,
+      // 대응하는 한국어 UI 필드도 전송 직전 기준으로 생성
+      {
+        const sentEn = (assembled.preview?.renderedPrompt || legacyPrompt || "").trim();
+        // 한국어 번역: cut의 Ko 필드들을 조합 (영어 혼입 금지)
+        const koFragments: string[] = [];
+        if (cut.sceneDescription) koFragments.push(cut.sceneDescription);
+        if (cut.videoPromptKo) koFragments.push(cut.videoPromptKo);
+        if (cut.subjectActionKo) koFragments.push(cut.subjectActionKo);
+        if (cut.moodLightingKo) koFragments.push(cut.moodLightingKo);
+        if (cut.cameraDirectionKo) koFragments.push(cut.cameraDirectionKo);
+        // 영어 비율 30% 초과하는 fragment 제외
+        const pureKo = koFragments.filter(f => {
+          const alphaCount = (f.match(/[a-zA-Z]/g) || []).length;
+          return alphaCount <= f.length * 0.3;
+        });
+        const sentKo = pureKo.length > 0
+          ? pureKo.join(". ").slice(0, 500)
+          : (cut.sceneDescription || `컷 ${cutNumber} 영상 프롬프트`);
+        updateClip(cutNumber, { sentPromptEn: sentEn, sentPromptKo: sentKo });
+      }
+
       // ── 타이밍: 시퀀스 조립 완료 ──────────────────────────────────────────
       const tBuildDone = performance.now();
       const buildMs = Math.round(tBuildDone - t0);

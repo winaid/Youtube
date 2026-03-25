@@ -687,16 +687,72 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
     }
   }
 
-  // 1단계: Ko 필드 보충
+  // 1단계: Ko 필드 보충 — 영어 복사 금지, 반드시 한국어 번역
+  // 영어→한국어 간이 번역 맵 (자주 쓰이는 카메라/무드/액션 표현)
+  const cameraTermKo: Record<string, string> = {
+    "wide shot": "와이드 샷", "medium shot": "미디엄 샷", "close-up": "클로즈업",
+    "extreme close-up": "익스트림 클로즈업", "over-the-shoulder": "오버 숄더",
+    "eye-level": "눈높이", "low angle": "로우 앵글", "high angle": "하이 앵글",
+    "dutch angle": "더치 앵글", "overhead": "오버헤드", "pov": "1인칭 시점",
+    "push-in": "전진", "pull-back": "후퇴", "pan": "팬", "tilt": "틸트",
+    "tracking": "트래킹", "dolly": "달리", "crane": "크레인", "orbit": "오빗",
+    "handheld": "핸드헬드", "steadicam": "스테디캠", "static": "고정",
+    "slow push-in": "느린 전진", "lateral tracking": "측면 트래킹",
+  };
+  const moodTermKo: Record<string, string> = {
+    "warm": "따뜻한", "cool": "차가운", "dramatic": "극적인", "soft": "부드러운",
+    "harsh": "강렬한", "natural": "자연광", "golden hour": "골든아워",
+    "backlit": "역광", "rim light": "림라이트", "low-key": "로우키",
+    "high-key": "하이키", "moody": "무디한", "cinematic": "시네마틱",
+    "desaturated": "탈색된", "muted": "절제된", "neon": "네온",
+    "tungsten": "텅스텐", "candlelit": "촛불 조명", "overcast": "흐린 하늘",
+  };
+  const narrativeFnKo: Record<string, string> = {
+    "establish": "도입", "introduce": "소개", "reveal": "밝힘", "develop": "전개",
+    "escalate": "고조", "climax": "절정", "resolve": "해결", "transition": "전환",
+    "contrast": "대비", "parallel": "병렬", "montage": "몽타주", "foreshadow": "복선",
+  };
+  function translateToKo(en: string, dict: Record<string, string>, maxLen: number): string {
+    let result = en.toLowerCase();
+    // 사전에 있는 표현 치환
+    for (const [eng, kor] of Object.entries(dict)) {
+      result = result.replace(new RegExp(eng.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), kor);
+    }
+    // 영어 알파벳이 여전히 50% 이상이면 → 번역 실패, 일반 한국어 설명 사용
+    const alphaCount = (result.match(/[a-zA-Z]/g) || []).length;
+    if (alphaCount > result.length * 0.5) {
+      return ""; // 빈 문자열 반환 → 호출자가 fallback 처리
+    }
+    return result.slice(0, maxLen);
+  }
+
   for (const fc of cuts) {
     const fcAny = fc as Record<string, unknown>;
     const sceneKo = (fcAny.sceneDescription as string | undefined)?.trim() || (fcAny.sceneKo as string | undefined)?.trim() || "";
     if (!fcAny.videoPromptKo && sceneKo) fcAny.videoPromptKo = sceneKo.slice(0, 60);
-    if (!fcAny.cameraDirectionKo && fcAny.cameraDirection) fcAny.cameraDirectionKo = String(fcAny.cameraDirection).slice(0, 30);
-    if (!fcAny.moodLightingKo && fcAny.moodLighting) fcAny.moodLightingKo = String(fcAny.moodLighting).slice(0, 30);
-    if (!fcAny.subjectActionKo && fcAny.subjectAction) fcAny.subjectActionKo = String(fcAny.subjectAction).slice(0, 30);
-    if (!fcAny.narrativeFunctionKo && fcAny.narrativeFunction) fcAny.narrativeFunctionKo = String(fcAny.narrativeFunction).slice(0, 15);
-    if (!fcAny.newInformationKo && fcAny.newInformation) fcAny.newInformationKo = String(fcAny.newInformation).slice(0, 30);
+    // cameraDirectionKo: 영어 복사 금지 — 번역 시도, 실패 시 일반 한국어
+    if (!fcAny.cameraDirectionKo && fcAny.cameraDirection) {
+      const translated = translateToKo(String(fcAny.cameraDirection), cameraTermKo, 30);
+      fcAny.cameraDirectionKo = translated || "카메라 연출";
+    }
+    // moodLightingKo: 영어 복사 금지 — 번역 시도
+    if (!fcAny.moodLightingKo && fcAny.moodLighting) {
+      const translated = translateToKo(String(fcAny.moodLighting), moodTermKo, 30);
+      fcAny.moodLightingKo = translated || "분위기 조명";
+    }
+    // subjectActionKo: 영어 복사 금지 — Ko 필드는 한국어 필수
+    if (!fcAny.subjectActionKo && fcAny.subjectAction) {
+      fcAny.subjectActionKo = "인물 행동";
+    }
+    // narrativeFunctionKo: 영어 복사 금지
+    if (!fcAny.narrativeFunctionKo && fcAny.narrativeFunction) {
+      const translated = translateToKo(String(fcAny.narrativeFunction), narrativeFnKo, 15);
+      fcAny.narrativeFunctionKo = translated || "서사 기능";
+    }
+    // newInformationKo: 영어 복사 금지
+    if (!fcAny.newInformationKo && fcAny.newInformation) {
+      fcAny.newInformationKo = "새로운 정보 전달";
+    }
   }
 
   // 2단계: prompt 클램핑 + promptKo 생성 + 멀티샷 수 강제
@@ -733,53 +789,46 @@ function postRepairCuts(cuts: Array<{ cutNumber: number; durationSec: number; mu
         const lastDot = p.lastIndexOf(".", 400);
         shAny.prompt = lastDot > 300 ? p.slice(0, lastDot + 1) : p.slice(0, 400);
       }
-      // promptKo 보강 — LLM이 누락하거나 짧게 줬으면 영어 prompt + Ko 필드로 상세 생성
+      // promptKo 보강 — 영어 혼입 절대 금지, 100% 한국어 전용
+      // LLM이 누락하거나 짧게 줬으면 Ko 필드들로만 상세 생성
       const existingKo = String(shAny.promptKo ?? "").trim();
-      const needsKo = !existingKo || existingKo.length < 50;
+      // 기존 Ko에 영어가 50% 이상이면 재생성 강제
+      const koAlphaRatio = existingKo.length > 0
+        ? (existingKo.match(/[a-zA-Z]/g) || []).length / existingKo.length
+        : 1;
+      const needsKo = !existingKo || existingKo.length < 50 || koAlphaRatio > 0.5;
       if (needsKo) {
         const role = (shAny.role as string) ?? "develop";
         const roleLabel = roleKoMap[role] ?? "전개";
-        const prompt = String(shAny.prompt ?? "");
 
-        // 모든 Ko 필드 수집
+        // 모든 Ko 필드 수집 (한국어 텍스트만)
         const allKoParts: string[] = [];
         if (sceneKo) allKoParts.push(sceneKo);
         if (subActKo) allKoParts.push(subActKo);
         if (vpKo && vpKo !== sceneKo) allKoParts.push(vpKo);
         if (moodKo) allKoParts.push(moodKo);
         if (camKo) allKoParts.push(camKo);
-        const koBase = allKoParts.filter(Boolean).join(". ");
+        // 영어가 섞인 파트 필터링 (영어 비율 50% 초과 시 제외)
+        const pureKoParts = allKoParts.filter(part => {
+          const alpha = (part.match(/[a-zA-Z]/g) || []).length;
+          return alpha <= part.length * 0.3; // 30% 이하 영어만 허용 (고유명사 등)
+        });
+        const koBase = pureKoParts.filter(Boolean).join(". ");
 
-        // 영어 prompt에서 핵심 구절 추출 (카메라/스타일 지시 제거)
-        const stripped = prompt
-          .replace(/\b(no text|no watermark|no subtitle)[^.]*\.?\s*/gi, "")
-          .replace(/\b(fully painted|hand[- ]?painted|oil\/watercolor|impasto|brushwork|wet[- ]?on[- ]?wet|visible brush)[^.]*\.?\s*/gi, "")
-          .replace(/\b(expressive visible|thick impasto)[^.]*\.?\s*/gi, "")
-          .replace(/^(extreme\s+)?(wide|medium|close[- ]?up|tight|overhead|establishing|aerial|full)\s+(shot\s+)?/gi, "")
-          .replace(/^(eye-level|high angle|low angle|dutch angle|bird's eye|over-the-shoulder|pov)\s*,?\s*/gi, "")
-          .replace(/^(slow\s+)?(push[- ]?in|pull[- ]?back|pan|tilt|orbit|tracking|dolly|drift|crane|handheld|steadicam|zoom\s+in|zoom\s+out|subtle\s+push[- ]?in)\s*,?\s*/gi, "")
-          .trim();
-
-        // 영어에서 의미있는 구절들 추출 (최대 5개)
-        const enClauses = stripped.split(/[.,;]/)
-          .map(c => c.trim())
-          .filter(c => c.length > 8 && !/^(slow|fast|gentle)\s/i.test(c))
-          .slice(0, 5)
-          .map(c => c.split(/\s+/).slice(0, 10).join(" "));
-
+        // 한국어 전용 — 영어 clause 절대 혼입 금지
         let koText: string;
         if (koBase.length >= 30) {
-          // Ko 필드가 충분히 있으면 그걸 기반으로
           koText = koBase;
-          // 영어에서 추가 디테일 보충
-          if (koText.length < 120 && enClauses.length > 0) {
-            koText += ". " + enClauses.slice(0, 3).join(". ");
+          // 짧으면 역할 설명으로 보충 (영어 아닌 한국어로만)
+          if (koText.length < 80) {
+            koText += `. ${roleDescKo[role] || "장면이 전개됨"}`;
           }
-        } else if (enClauses.length > 0) {
-          // Ko 필드 부족하면 영어 구절 전체 활용 + Ko 필드 prefix
-          koText = koBase ? `${koBase}. ${enClauses.join(". ")}` : enClauses.join(". ");
+        } else if (koBase.length > 0) {
+          // Ko 필드가 약간이라도 있으면 역할 설명과 결합
+          koText = `${koBase}. ${roleDescKo[role] || "장면이 전개됨"}`;
         } else {
-          koText = koBase || roleDescKo[role] || "장면";
+          // Ko 필드 전혀 없으면 역할 기반 기본 한국어 설명
+          koText = roleDescKo[role] || "장면";
         }
 
         shAny.promptKo = `${roleLabel}: ${koText}`.slice(0, 400);
