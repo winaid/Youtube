@@ -56,7 +56,7 @@ const INTERNAL_TAG_PATTERNS = [
   /\[Shot \d+\/\d+[^\]]*\]\s*/gi,
 ];
 
-/** 한글 텍스트, 인용문, 대사 패턴을 VEO 전달 직전에 최종 제거 */
+/** 한글 텍스트, 인용문, 대사 패턴, 메타 텍스트를 VEO 전달 직전에 최종 제거 */
 function stripTextForVeo(text: string): string {
   let cleaned = text;
   // 따옴표 인용문 제거
@@ -66,9 +66,12 @@ function stripTextForVeo(text: string): string {
   cleaned = cleaned.replace(/『[^』]*』/g, "");
   // "says/whispers + 인용" → speaks
   cleaned = cleaned.replace(/\b(says?|whispers?|shouts?|yells?|murmurs?|mutters?|exclaims?)\s*["'""'「『][^"'""'」』]*["'""'」』]/gi, "speaks");
-  // 한글 제거
-  cleaned = cleaned.replace(/[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+/g, "");
-  return cleaned.replace(/\s{2,}/g, " ").replace(/[,.]\s*[,.]/g, ",").replace(/\.\s*\./g, ".").trim();
+  // 메타 텍스트 제거 (VEO가 해석 못하는 내부 태그)
+  cleaned = cleaned.replace(/\b(establishing view|character introduction|narrative function|scene transition|emotional anchor)[^.]*\./gi, "");
+  cleaned = cleaned.replace(/\b(establishing view|character introduction|narrative function|scene transition|emotional anchor)\s*[:—]\s*/gi, "");
+  // 한글 + 주변 콤마/공백 정리 (한글 단어와 이어지는 구두점까지 제거)
+  cleaned = cleaned.replace(/,?\s*[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+(?:\s*,?\s*[\uAC00-\uD7A3\u3131-\u3163\u1100-\u11FF]+)*/g, "");
+  return cleaned.replace(/\s{2,}/g, " ").replace(/[,.]\s*[,.]/g, ",").replace(/\.\s*\./g, ".").replace(/^[,.\s]+/, "").trim();
 }
 
 function stripInternalTags(text: string): string {

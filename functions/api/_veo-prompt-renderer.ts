@@ -224,6 +224,24 @@ export function convertMultiShotToTimestamp(
     entries[entries.length - 1].endSec = targetDuration;
   }
 
+  // ── 서브샷 간 중복 제거: establish 샷의 환경/장소를 후속 샷에서 제거 ──
+  if (entries.length >= 2) {
+    const firstPrompt = entries[0].prompt.toLowerCase();
+    // 첫 번째 샷에서 장소/환경 구(phrase) 추출 (3단어 이상 구)
+    const firstClauses = firstPrompt.split(/[.,]/).map(c => c.trim()).filter(c => c.length > 15);
+    for (let i = 1; i < entries.length; i++) {
+      let cleaned = entries[i].prompt;
+      for (const clause of firstClauses) {
+        // 대소문자 무시하고 후속 샷에서 같은 구 제거
+        const re = new RegExp(clause.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+        cleaned = cleaned.replace(re, "");
+      }
+      // 정리: 연속 콤마/마침표/공백
+      cleaned = cleaned.replace(/[,.]\s*[,.]/g, ",").replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").replace(/^[,.\s]+/, "").trim();
+      if (cleaned.length > 20) entries[i].prompt = cleaned;
+    }
+  }
+
   return entries;
 }
 
