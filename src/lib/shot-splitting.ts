@@ -378,11 +378,19 @@ export function splitSingleShotSequence(input: {
       shotFocus = tmpl.focusTemplate.replace("{env}", input.environment.slice(0, 60));
     }
 
-    // For hook sequences, ensure first shot framing is wide/establishing
+    // 멀티샷에서는 모든 shot이 템플릿 프레이밍 사용 (원본은 단일 샷 디폴트)
+    // hook 시퀀스의 첫 샷은 반드시 WS로 강제
     const isHookFirstShot = i === 0 && beatHint === "hook";
-    const framing = isHookFirstShot ? "WS"
-      : i === 0 ? input.camera.framing
-      : tmpl.framingHint;
+    let framing = isHookFirstShot ? "WS" : tmpl.framingHint;
+    // 인접 shot 프레이밍 중복 방지 — 같은 사이즈 연속 금지
+    if (i > 0 && shots[i - 1]) {
+      const prevFraming = shots[i - 1].camera.framing;
+      const sameSize = (f: string) => /^(CU|ECU|MCU)$/i.test(f) ? "tight" : /^(WS|LS|EWS)$/i.test(f) ? "wide" : "mid";
+      if (sameSize(framing) === sameSize(prevFraming)) {
+        // tight→tight이면 wide로, wide→wide이면 MS로
+        framing = sameSize(framing) === "tight" ? "WS" : sameSize(framing) === "wide" ? "MS" : "CU";
+      }
+    }
 
     // 프레이밍별 시각 레이어 차별화 — WS는 환경, CU/ECU는 피사체만
     const isWide = /^(WS|LS|EWS)$/i.test(framing);
