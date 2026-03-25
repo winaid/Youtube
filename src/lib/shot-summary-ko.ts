@@ -221,23 +221,75 @@ const ROLE_FALLBACK_KO: Record<string, string> = {
 // Layer 2: Multi-word extraction helper
 // ═══════════════════════════════════════════════════════════════════
 
-function extractFirst(lower: string, dict: Record<string, string>): string {
+// 한국어 조사 헬퍼 — 받침(종성) 유무에 따라 올바른 조사 선택
+function hasJongseong(char: string): boolean {
+  const code = char.charCodeAt(0);
+  // 한글 음절 범위: 0xAC00 ~ 0xD7A3
+  if (code < 0xAC00 || code > 0xD7A3) return false;
+  return (code - 0xAC00) % 28 !== 0;
+}
+
+/** "인물이/인물가" → 받침 있으면 "이", 없으면 "가" */
+function josa_이가(noun: string): string {
+  const last = noun[noun.length - 1];
+  return hasJongseong(last) ? "이" : "가";
+}
+
+/** "의자를/치과를" → 받침 있으면 "을", 없으면 "를" */
+function josa_을를(noun: string): string {
+  const last = noun[noun.length - 1];
+  return hasJongseong(last) ? "을" : "를";
+}
+
+// false positive 방지 — 이 구절들이 포함되면 해당 키워드 매칭 무시
+const CHARACTER_FALSE_POSITIVES = [
+  "character introduction", "character lock", "character of",
+  "maintain character", "in character", "character ref",
+];
+const ACTION_FALSE_POSITIVES = [
+  "visible brushwork", "visible brush", "visible texture",
+  "visible impasto", "visible grain", "visible stroke",
+];
+
+// 스타일/기법 설명에서 오브젝트로 잘못 매칭되는 것 방지
+const OBJECT_FALSE_POSITIVES = [
+  "painted animation", "oil painting", "watercolor painting", "hand-painted",
+  "painting in motion", "oil/watercolor painting", "acrylic painting",
+  "painting style", "painting technique",
+];
+
+/** 단어 경계 매칭 — "clinic"이 "clinical"에 잘못 매칭되는 것 방지 */
+function matchesWord(lower: string, keyword: string): boolean {
+  // keyword가 "-" 포함 (push-in 등)이면 그대로 매칭
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?:^|[\\s,.:;!?("'\\-])${escaped}(?:[\\s,.:;!?)"'\\-]|s\\b|$)`, "i");
+  return re.test(lower);
+}
+
+function extractFirst(lower: string, dict: Record<string, string>, falsePositives?: string[]): string {
   // 길이 순 정렬 (긴 구 먼저 매칭)
   const sorted = Object.entries(dict).sort((a, b) => b[0].length - a[0].length);
   for (const [en, ko] of sorted) {
-    if (lower.includes(en)) return ko;
+    if (!matchesWord(lower, en)) continue;
+    // false positive 체크
+    if (falsePositives?.some(fp => lower.includes(fp) && fp.includes(en))) continue;
+    return ko;
   }
   return "";
 }
 
-function extractAll(lower: string, dict: Record<string, string>, max: number): string[] {
+function extractAll(lower: string, dict: Record<string, string>, max: number, falsePositives?: string[]): string[] {
   const sorted = Object.entries(dict).sort((a, b) => b[0].length - a[0].length);
   const found: string[] = [];
+  const foundEn: string[] = []; // 이미 매칭된 영어 키워드 (중복 방지)
   for (const [en, ko] of sorted) {
-    if (lower.includes(en) && !found.includes(ko)) {
-      found.push(ko);
-      if (found.length >= max) break;
-    }
+    if (!matchesWord(lower, en) || found.includes(ko)) continue;
+    if (falsePositives?.some(fp => lower.includes(fp) && fp.includes(en))) continue;
+    // 이미 매칭된 긴 구의 일부인 짧은 키워드 스킵 (dental chair → chair 중복 방지)
+    if (foundEn.some(prev => prev.includes(en))) continue;
+    found.push(ko);
+    foundEn.push(en);
+    if (found.length >= max) break;
   }
   return found;
 }
@@ -265,13 +317,13 @@ export function generateShotSummaryKo(
   const lower = prompt.toLowerCase();
   const parts: string[] = [];
 
-  // ── Layer 1: Keyword extraction ──
+  // ── Layer 1: Keyword extraction (false positive 방지 적용) ──
   const framingKo = extractFirst(lower, FRAMING_KO);
   const cameraKo = extractFirst(lower, CAMERA_KO);
   const moodKo = extractFirst(lower, MOOD_KO);
-  const actionKo = extractFirst(lower, ACTION_KO);
-  const characterKo = extractFirst(lower, CHARACTER_KO);
-  const objectsFound = extractAll(lower, OBJECT_KO, 2);
+  const actionKo = extractFirst(lower, ACTION_KO, ACTION_FALSE_POSITIVES);
+  const characterKo = extractFirst(lower, CHARACTER_KO, CHARACTER_FALSE_POSITIVES);
+  const objectsFound = extractAll(lower, OBJECT_KO, 2, OBJECT_FALSE_POSITIVES);
   const placeKo = extractFirst(lower, PLACE_KO);
 
   // ── Build summary from extracted keywords ──
@@ -279,39 +331,35 @@ export function generateShotSummaryKo(
   // 분위기
   if (moodKo) parts.push(moodKo);
 
-  // 장소 + 프레이밍
-  if (placeKo && (framingKo === "전경" || framingKo === "초광각" || framingKo === "공중")) {
+  // 장소 + 오브젝트 (구체적 피사체 우선)
+  if (objectsFound.length > 0 && placeKo) {
+    parts.push(`${placeKo}, ${objectsFound.join(", ")}`);
+  } else if (placeKo && (framingKo === "전경" || framingKo === "초광각" || framingKo === "공중")) {
     parts.push(`${placeKo} ${framingKo}`);
   } else if (placeKo) {
     parts.push(placeKo);
+  } else if (objectsFound.length > 0) {
+    parts.push(objectsFound.join(", "));
   }
 
-  // 인물/캐릭터 + 행동
+  // 인물/캐릭터 + 행동 (조사 올바르게)
   if (characterKo && actionKo) {
-    parts.push(`${characterKo}가 ${actionKo}`);
+    parts.push(`${characterKo}${josa_이가(characterKo)} ${actionKo}`);
   } else if (characterKo) {
     if (framingKo === "클로즈업" || framingKo === "극접사" || framingKo === "밀착") {
       parts.push(`${characterKo} ${framingKo}`);
     } else {
       parts.push(characterKo);
     }
-  } else if (objectsFound.length > 0) {
-    const objStr = objectsFound.join(", ");
-    if (actionKo) {
-      parts.push(`${objStr}이 ${actionKo}`);
-    } else if (cameraKo) {
-      parts.push(`${objStr}을 ${cameraKo} 훑어봄`);
-    } else if (framingKo === "클로즈업" || framingKo === "극접사" || framingKo === "밀착") {
-      parts.push(`${objStr} ${framingKo}`);
-    } else {
-      parts.push(objStr);
-    }
-  } else if (actionKo) {
+  } else if (objectsFound.length === 0 && actionKo) {
+    // 인물/오브젝트 없이 동작만 있을 때
     parts.push(actionKo);
   }
 
-  // 카메라만 있고 다른 정보 없을 때
-  if (parts.length === 0 && cameraKo) {
+  // 카메라 움직임 (다른 정보가 있을 때도 보조 정보로 추가)
+  if (cameraKo && parts.length > 0 && parts.length < 3) {
+    parts.push(cameraKo);
+  } else if (parts.length === 0 && cameraKo) {
     parts.push(`${cameraKo} ${framingKo || "장면"}`);
   } else if (parts.length === 0 && framingKo) {
     parts.push(`${framingKo} 장면`);
